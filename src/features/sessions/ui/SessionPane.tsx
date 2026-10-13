@@ -112,6 +112,7 @@ import { AstraWelcome } from "./AstraWelcome";
 import { OpusWelcome } from "./OpusWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { canEditLastTurn, lastTurnRecall } from "../model/editLastTurn";
+import { latestReply } from "../../voice/model/spokenReply";
 import {
   loadProjectChatBackgroundSettings,
   projectChatBackgroundImageRevision,
@@ -669,6 +670,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk || !!agent));
   const composerDockMotion = useComposerDockMotion(dockComposer);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  const voiceReply = useMemo(
+    () =>
+      session.busy
+        ? null
+        : latestReply(session.blocks, session.queuedMessages),
+    [session.blocks, session.busy, session.queuedMessages],
+  );
   const composer = (
     <Composer
       key={session.id}
@@ -801,6 +809,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onUsageLimitDismiss={() => onUsageLimitDismiss(session.id)}
       onOpenFile={onOpenFile}
       busy={!!session.busy}
+      voiceReply={voiceReply}
       editLastTurnSupported={editLastTurnSupported}
       lastTurnRecall={turnRecall}
       onRecallLastTurnReady={(recall) => {

@@ -135,7 +135,13 @@ export function DictationStrip({
 }
 
 /** A rolling view of the last second of input loudness. */
-function LevelBars({ levels, live }: { levels: LevelStore; live: boolean }) {
+export function LevelBars({
+  levels,
+  live,
+}: {
+  levels: LevelStore;
+  live: boolean;
+}) {
   const [history, setHistory] = useState<number[]>(() =>
     Array.from({ length: BARS }, () => 0),
   );

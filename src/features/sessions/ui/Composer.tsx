@@ -242,7 +242,15 @@ import {
 import {
   DICTATE_COMMAND,
   isDictateShortcut,
+  isVoiceModeShortcut,
+  VOICE_MODE_COMMAND,
 } from "../../voice/model/voiceShortcuts";
+import { useVoiceConversation } from "../../voice/hooks/useVoiceConversation";
+import type { Reply } from "../../voice/model/spokenReply";
+import {
+  VoiceModeButton,
+  VoiceModeStrip,
+} from "../../voice/ui/VoiceModeControls";
 import {
   DictationButton,
   DictationErrorNotice,
@@ -285,6 +293,8 @@ type Props = {
   handoffCard?: HandoffComposerCard;
   question?: UserQuestionPrompt;
   busy?: boolean;
+  /** The agent's last finished reply, which voice mode reads aloud. */
+  voiceReply?: Reply | null;
   /** Allow typed text to replace Stop with Send while a turn is running. */
   allowBusySubmit?: boolean;
   editLastTurnSupported?: boolean;
@@ -449,6 +459,7 @@ export function Composer({
   handoffCard,
   question,
   busy = false,
+  voiceReply = null,
   allowBusySubmit = true,
   editLastTurnSupported = false,
   lastTurnRecall = null,
@@ -780,6 +791,7 @@ export function Composer({
   const dictationAnchorRef = useRef<DictationAnchor | null>(null);
   /** Enter while dictating sends once the transcript settles. */
   const sendAfterDictationRef = useRef(false);
+  const dictationWordsRef = useRef<() => void>(() => {});
   const dictation = useDictation({
     onBegin: () => {
       const el = ref.current;
@@ -806,6 +818,7 @@ export function Composer({
       }
       const next = spliceTranscript(anchor, text);
       writeDraft(next.text, next.caret);
+      if (!final) dictationWordsRef.current();
     },
     onEnd: (reason) => {
       const anchor = dictationAnchorRef.current;
@@ -821,7 +834,8 @@ export function Composer({
       const send = sendAfterDictationRef.current && reason === "final";
       sendAfterDictationRef.current = false;
       ref.current?.focus();
-      if (send) submit(ref.current?.value ?? "");
+      const value = ref.current?.value ?? "";
+      if (send && value.trim()) submit(value);
     },
   });
   const dictationShortcut = keybindingShortcutLabel(
@@ -829,10 +843,42 @@ export function Composer({
     `${MOD}${SHIFT}E`,
   );
   const { detach: detachDictation, toggle: toggleDictation } = dictation;
+  const conversation = useVoiceConversation({
+    dictation,
+    available: enabled && !disabled && !worktreeRemoved && dictationAvailable,
+    busy,
+    draftEmpty: !draft.trim() && attachments.length === 0,
+    reply: voiceReply,
+    send: () => {
+      sendAfterDictationRef.current = true;
+      dictation.stop();
+    },
+  });
+  dictationWordsRef.current = conversation.noteWords;
+  const voiceModeShortcut = keybindingShortcutLabel(
+    VOICE_MODE_COMMAND,
+    `${MOD}${SHIFT}L`,
+  );
+  const {
+    toggle: toggleVoiceMode,
+    stopSpeaking,
+    phase: conversationPhase,
+  } = conversation;
   useEffect(() => {
     if (!hotkeys || !enabled || disabled || !dictationAvailable) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
+      if (event.key === "Escape" && conversationPhase === "speaking") {
+        event.preventDefault();
+        stopSpeaking();
+        return;
+      }
+      if (isVoiceModeShortcut(event)) {
+        event.preventDefault();
+        ref.current?.focus();
+        toggleVoiceMode();
+        return;
+      }
       if (!isDictateShortcut(event)) return;
       event.preventDefault();
       ref.current?.focus();
@@ -840,7 +886,16 @@ export function Composer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dictationAvailable, disabled, enabled, hotkeys, toggleDictation]);
+  }, [
+    conversationPhase,
+    dictationAvailable,
+    disabled,
+    enabled,
+    hotkeys,
+    stopSpeaking,
+    toggleDictation,
+    toggleVoiceMode,
+  ]);
   useEffect(() => {
     if (disabled || !dictationAvailable) detachDictation();
   }, [detachDictation, dictationAvailable, disabled]);
@@ -1745,6 +1800,21 @@ export function Composer({
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
     if (creatingSkill) return;
+    if (
+      conversation.on &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      ![
+        "Shift",
+        "Alt",
+        "Meta",
+        "Control",
+        "CapsLock",
+        "Escape",
+        "Enter",
+      ].includes(e.key)
+    )
+      conversation.noteTyping();
     if (dictation.active) {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -2443,7 +2513,24 @@ export function Composer({
             />
           ) : null}
 
-          {dictation.phase !== "idle" ? (
+          {conversation.error ? (
+            <DictationErrorNotice
+              error={{ message: conversation.error }}
+              onDismiss={conversation.clearError}
+            />
+          ) : null}
+
+          {conversation.phase !== "off" ? (
+            <VoiceModeStrip
+              phase={conversation.phase}
+              heard={conversation.heard}
+              pauseMs={voiceSettings.conversationPauseMs}
+              readReplies={voiceSettings.readReplies}
+              levels={dictation.levels}
+              onStopSpeaking={conversation.stopSpeaking}
+              onEnd={conversation.turnOff}
+            />
+          ) : dictation.phase !== "idle" ? (
             <DictationStrip
               phase={dictation.phase}
               startedAt={dictation.startedAt}
@@ -2732,6 +2819,14 @@ export function Composer({
               </button>
             ) : null}
             <div className="flex shrink-0 items-center gap-1">
+              {dictationAvailable ? (
+                <VoiceModeButton
+                  on={conversation.on}
+                  shortcut={voiceModeShortcut}
+                  disabled={disabled || worktreeRemoved}
+                  onToggle={conversation.toggle}
+                />
+              ) : null}
               {dictationAvailable ? (
                 <DictationButton
                   phase={dictation.phase}

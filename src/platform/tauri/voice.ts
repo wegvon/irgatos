@@ -153,3 +153,121 @@ export async function saveTranscriptionKey(key: string): Promise<boolean> {
 export function openVoicePrivacySettings(pane: "microphone" | "speech") {
   void invoke("voice_open_privacy_settings", { pane }).catch(console.error);
 }
+
+/** Rust reports here when an utterance stops, for whatever reason. */
+export const SPEECH_EVENT = "monocode:voice-speech";
+
+export type SystemVoice = { name: string; locale: string };
+
+export type SpeechOptions = {
+  /** A system voice name; empty uses the Spoken Content voice. */
+  voice?: string;
+  /** Words per minute; 0 uses the Spoken Content rate. */
+  rate?: number;
+};
+
+export type SpeechHandle = {
+  id: string;
+  /** Settles when speech ends; `interrupted` when it was cut short. */
+  done: Promise<{ interrupted: boolean }>;
+  stop: () => void;
+};
+
+const utterances = new Map<string, (interrupted: boolean) => void>();
+let speechSubscription: Promise<UnlistenFn | void> | null = null;
+
+function subscribeSpeech() {
+  speechSubscription ??= listen<{ id: string; interrupted: boolean }>(
+    SPEECH_EVENT,
+    ({ payload }) => {
+      const resolve = utterances.get(payload.id);
+      utterances.delete(payload.id);
+      resolve?.(payload.interrupted);
+    },
+  ).catch(console.error);
+  return speechSubscription;
+}
+
+/** `say` speaks about 180 words a minute; the webview's 1 is the same pace. */
+const WEBVIEW_WORDS_PER_MINUTE = 180;
+
+function speakInWebview(
+  id: string,
+  text: string,
+  options: SpeechOptions,
+): SpeechHandle {
+  const synth = globalThis.speechSynthesis;
+  if (!synth) throw new Error("This system cannot read replies aloud");
+  let settle!: (interrupted: boolean) => void;
+  const done = new Promise<{ interrupted: boolean }>((resolve) => {
+    let settled = false;
+    settle = (interrupted) => {
+      if (settled) return;
+      settled = true;
+      resolve({ interrupted });
+    };
+  });
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (options.rate) utterance.rate = options.rate / WEBVIEW_WORDS_PER_MINUTE;
+  const voice = options.voice
+    ? synth.getVoices().find((candidate) => candidate.name === options.voice)
+    : undefined;
+  if (voice) utterance.voice = voice;
+  utterance.onend = () => settle(false);
+  utterance.onerror = () => settle(true);
+  synth.cancel();
+  synth.speak(utterance);
+  return {
+    id,
+    done,
+    stop: () => {
+      settle(true);
+      synth.cancel();
+    },
+  };
+}
+
+/**
+ * Reads `text` aloud with the macOS system voice, interrupting anything
+ * already speaking. Elsewhere the webview's speech synthesis stands in.
+ */
+export async function speak(
+  text: string,
+  options: SpeechOptions = {},
+): Promise<SpeechHandle> {
+  const id = `speech-${Date.now().toString(36)}-${++sequence}`;
+  if (!isTauri()) return speakInWebview(id, text, options);
+  const done = new Promise<{ interrupted: boolean }>((resolve) => {
+    utterances.set(id, (interrupted) => resolve({ interrupted }));
+  });
+  await subscribeSpeech();
+  try {
+    await invoke("voice_speak", {
+      id,
+      text,
+      voice: options.voice || null,
+      rate: options.rate || null,
+    });
+  } catch (reason) {
+    utterances.delete(id);
+    if (globalThis.speechSynthesis) return speakInWebview(id, text, options);
+    throw new Error(errorText(reason));
+  }
+  return {
+    id,
+    done,
+    stop: () => {
+      void invoke("voice_stop_speaking", { id }).catch(console.error);
+    },
+  };
+}
+
+export async function systemVoices(): Promise<SystemVoice[]> {
+  try {
+    if (!isTauri()) return [];
+    const voices = await invoke<SystemVoice[]>("voice_list_voices");
+    return Array.isArray(voices) ? voices : [];
+  } catch {
+    return [];
+  }
+}

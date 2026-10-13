@@ -420,6 +420,10 @@ import {
   openVoicePrivacySettings,
   requestVoiceAccess,
   saveTranscriptionKey,
+  speak,
+  systemVoices,
+  type SpeechHandle,
+  type SystemVoice,
   voiceStatus,
   type VoiceEngine,
   type VoiceStatus,
@@ -430,6 +434,8 @@ import {
   loadVoiceSettings,
   saveVoiceSettings,
   subscribeVoiceSettings,
+  CONVERSATION_PAUSES,
+  SPEECH_RATES,
   VOICE_LANGUAGES,
 } from "../../voice/model/voiceSettings";
 
@@ -1242,6 +1248,41 @@ function VoicePage() {
   const [key, setKey] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
+  const [voices, setVoices] = useState<SystemVoice[]>([]);
+  const [previewing, setPreviewing] = useState(false);
+  const preview = useRef<SpeechHandle | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void systemVoices().then((list) => {
+      if (live) setVoices(list);
+    });
+    return () => {
+      live = false;
+      preview.current?.stop();
+    };
+  }, []);
+
+  const onPreview = () => {
+    if (previewing) {
+      preview.current?.stop();
+      return;
+    }
+    setPreviewing(true);
+    void speak("This is how MonoCode reads an agent's reply in voice mode.", {
+      voice: voice.speechVoice,
+      rate: voice.speechRate,
+    })
+      .then((handle) => {
+        preview.current = handle;
+        return handle.done;
+      })
+      .catch(() => {})
+      .finally(() => {
+        preview.current = null;
+        setPreviewing(false);
+      });
+  };
 
   const refresh = useCallback(() => {
     void voiceStatus(voice.locale).then(setStatus);
@@ -1348,6 +1389,76 @@ function VoicePage() {
               ) : null}
             </>
           ) : null}
+        </Row>
+      </Group>
+
+      <Group
+        title="Voice mode"
+        description={`Talk with the agent hands-free. Press ${keybindingShortcutLabel("Composer: Voice Mode", `${MOD}${SHIFT}L`) ?? "the wave button"} in a composer: it listens, sends when you pause, reads the reply aloud, then listens again. Esc or typing interrupts a reply, and typing pauses listening until you send.`}
+      >
+        <Row
+          id="voice-mode-pause"
+          label="Pause before sending"
+          description="How long you stay quiet before what you said is sent. Longer leaves room to think mid-sentence."
+        >
+          <Segmented
+            label="Pause before sending"
+            value={String(voice.conversationPauseMs)}
+            options={CONVERSATION_PAUSES.map((ms) => ({
+              value: String(ms),
+              label: `${ms / 1000} s`,
+            }))}
+            onChange={(next) =>
+              saveVoiceSettings({ conversationPauseMs: Number(next) })
+            }
+          />
+        </Row>
+        <Row
+          id="voice-mode-read-replies"
+          label="Read replies aloud"
+          description="Read the agent's final message in each turn with the system voice. Code blocks and links are skipped, and long replies stop early."
+        >
+          <Toggle
+            label="Read replies aloud"
+            on={voice.readReplies}
+            onChange={(next) => saveVoiceSettings({ readReplies: next })}
+          />
+        </Row>
+        <Row
+          id="voice-mode-voice"
+          label="Reading voice"
+          description="Spoken Content follows System Settings › Accessibility › Spoken Content. Download more voices there."
+        >
+          <Select
+            label="Reading voice"
+            value={voice.speechVoice}
+            options={[
+              { value: "", label: "Spoken Content voice" },
+              ...voices.map((option) => ({
+                value: option.name,
+                label: `${option.name} · ${option.locale}`,
+              })),
+            ]}
+            onChange={(next) => saveVoiceSettings({ speechVoice: next })}
+          />
+          <SecondaryButton onClick={onPreview}>
+            {previewing ? "Stop" : "Preview"}
+          </SecondaryButton>
+        </Row>
+        <Row
+          id="voice-mode-rate"
+          label="Reading speed"
+          description="Normal uses the Spoken Content rate."
+        >
+          <Segmented
+            label="Reading speed"
+            value={String(voice.speechRate)}
+            options={SPEECH_RATES.map((rate) => ({
+              value: String(rate),
+              label: rate === 0 ? "Normal" : rate < 180 ? "Slower" : "Faster",
+            }))}
+            onChange={(next) => saveVoiceSettings({ speechRate: Number(next) })}
+          />
         </Row>
       </Group>
 

@@ -5,7 +5,12 @@ import {
   saveKeybindingOverride,
 } from "../../settings/model/settings";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
-import { DICTATE_COMMAND, isDictateShortcut } from "./voiceShortcuts";
+import {
+  DICTATE_COMMAND,
+  isDictateShortcut,
+  isVoiceModeShortcut,
+  VOICE_MODE_COMMAND,
+} from "./voiceShortcuts";
 
 function key(code: string, modifiers: Partial<KeyboardEventInit> = {}) {
   return {
@@ -74,5 +79,20 @@ describe("isDictateShortcut", () => {
       keys: `${MOD}${SHIFT}E`,
       when: "Composer",
     });
+  });
+});
+
+describe("isVoiceModeShortcut", () => {
+  it("matches Command or Control with Shift and L, and is listed", () => {
+    expect(
+      isVoiceModeShortcut(key("KeyL", { metaKey: true, shiftKey: true })),
+    ).toBe(true);
+    expect(isVoiceModeShortcut(key("KeyL", { metaKey: true }))).toBe(false);
+    expect(
+      isVoiceModeShortcut(key("KeyE", { metaKey: true, shiftKey: true })),
+    ).toBe(false);
+    expect(
+      KEYBINDINGS.find((row) => row.command === VOICE_MODE_COMMAND)?.keys,
+    ).toBe(`${MOD}${SHIFT}L`);
   });
 });

@@ -149,3 +149,100 @@ describe("transcription key", () => {
     });
   });
 });
+
+describe("speak", () => {
+  function emitSpeech(payload: { id: string; interrupted: boolean }) {
+    const call = vi
+      .mocked(listen)
+      .mock.calls.find(([event]) => event === "monocode:voice-speech")!;
+    call[1]({ event: "monocode:voice-speech", id: 0, payload });
+  }
+
+  it("reads aloud through Rust and settles when that utterance ends", async () => {
+    const voice = await load();
+    const handle = await voice.speak("Done.", { voice: "Yelda", rate: 230 });
+    expect(invoke).toHaveBeenCalledWith("voice_speak", {
+      id: handle.id,
+      text: "Done.",
+      voice: "Yelda",
+      rate: 230,
+    });
+    const settled = vi.fn();
+    void handle.done.then(settled);
+
+    emitSpeech({ id: "someone-else", interrupted: true });
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    emitSpeech({ id: handle.id, interrupted: false });
+    await expect(handle.done).resolves.toEqual({ interrupted: false });
+  });
+
+  it("uses the system voice and rate unless they are set", async () => {
+    const voice = await load();
+    await voice.speak("Hi", { voice: "", rate: 0 });
+    expect(invoke).toHaveBeenCalledWith("voice_speak", {
+      id: expect.any(String),
+      text: "Hi",
+      voice: null,
+      rate: null,
+    });
+  });
+
+  it("stops only its own utterance", async () => {
+    const voice = await load();
+    const handle = await voice.speak("Long reply");
+    handle.stop();
+    expect(invoke).toHaveBeenLastCalledWith("voice_stop_speaking", {
+      id: handle.id,
+    });
+  });
+
+  it("falls back to the webview voice where Rust cannot speak", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "voice_speak")
+        throw "Reading aloud uses the macOS system voice";
+    });
+    const spoken: { text: string; rate: number; onend?: () => void }[] = [];
+    class Utterance {
+      rate = 1;
+      voice: unknown = null;
+      onend?: () => void;
+      onerror?: () => void;
+      constructor(public text: string) {}
+    }
+    const synth = {
+      speak: vi.fn((utterance: Utterance) => spoken.push(utterance)),
+      cancel: vi.fn(),
+      getVoices: () => [],
+    };
+    vi.stubGlobal("SpeechSynthesisUtterance", Utterance);
+    vi.stubGlobal("speechSynthesis", synth);
+    try {
+      const voice = await load();
+      const handle = await voice.speak("Hello", { rate: 270 });
+      expect(spoken[0]).toMatchObject({ text: "Hello", rate: 1.5 });
+      spoken[0].onend?.();
+      await expect(handle.done).resolves.toEqual({ interrupted: false });
+
+      const second = await voice.speak("Again");
+      second.stop();
+      expect(synth.cancel).toHaveBeenCalled();
+      await expect(second.done).resolves.toEqual({ interrupted: true });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("lists system voices, and none outside Tauri", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { name: "Yelda", locale: "tr-TR" },
+    ]);
+    const voice = await load();
+    expect(await voice.systemVoices()).toEqual([
+      { name: "Yelda", locale: "tr-TR" },
+    ]);
+    vi.mocked(isTauri).mockReturnValue(false);
+    expect(await voice.systemVoices()).toEqual([]);
+  });
+});

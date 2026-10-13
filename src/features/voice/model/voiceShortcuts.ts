@@ -22,3 +22,17 @@ export function isDictateShortcut(event: KeyEvent): boolean {
       event.code === "KeyE",
   );
 }
+
+export const VOICE_MODE_COMMAND = "Composer: Voice Mode";
+
+/** ⌘⇧L (Ctrl+Shift+L elsewhere) turns hands-free voice mode on and off. */
+export function isVoiceModeShortcut(event: KeyEvent): boolean {
+  return keybindingPressed(
+    VOICE_MODE_COMMAND,
+    event,
+    (event.metaKey || event.ctrlKey) &&
+      event.shiftKey &&
+      !event.altKey &&
+      event.code === "KeyL",
+  );
+}

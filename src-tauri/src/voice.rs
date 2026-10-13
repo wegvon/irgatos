@@ -7,6 +7,8 @@
 //! OpenAI-compatible transcription endpoint (a cloud API, or a whisper.cpp
 //! server on localhost) is an opt-in alternative that receives the recording
 //! once capture stops. Other platforms report voice as unsupported.
+//!
+//! Voice mode reads agent replies back with the macOS system voice.
 
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -20,8 +22,11 @@ use crate::notifications::Permission;
 mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
+mod speech;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod transcription;
+
+static SPEAKER: speech::Speaker = speech::Speaker::new();
 
 /// Every capture event goes out on one channel; the payload names its capture.
 pub const EVENT: &str = "monocode:voice";
@@ -175,6 +180,38 @@ pub fn voice_open_privacy_settings(pane: String) -> Result<(), String> {
     platform::open_privacy_settings(&pane)
 }
 
+/// Reads `text` aloud, interrupting anything already speaking. A
+/// `monocode:voice-speech` event names the utterance when it ends.
+#[tauri::command]
+pub fn voice_speak(
+    app: AppHandle,
+    id: String,
+    text: String,
+    voice: Option<String>,
+    rate: Option<u32>,
+) -> Result<(), String> {
+    let text = speech::speakable(&text);
+    if text.is_empty() {
+        return Err("Nothing to read aloud".into());
+    }
+    let command = platform::speech_command(voice.as_deref(), rate)?;
+    SPEAKER.speak(command, id, text, move |ended| {
+        let _ = app.emit(speech::EVENT, ended);
+    })
+}
+
+/// Stops reading aloud; with an id, only if that utterance is still speaking.
+#[tauri::command]
+pub fn voice_stop_speaking(id: Option<String>) {
+    SPEAKER.stop_if(id.as_deref());
+}
+
+/// The system voices `say` can use, for the voice picker.
+#[tauri::command]
+pub async fn voice_list_voices() -> Vec<speech::SystemVoice> {
+    platform::list_voices().await
+}
+
 fn event_sink(app: &AppHandle) -> Sink {
     let app = app.clone();
     Arc::new(move |event| {
@@ -271,6 +308,25 @@ mod platform {
         on_main(app, move || apple::cancel(&capture)).await;
     }
 
+    pub(super) fn speech_command(
+        voice: Option<&str>,
+        rate: Option<u32>,
+    ) -> Result<std::process::Command, String> {
+        Ok(super::speech::say_command(voice, rate))
+    }
+
+    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
+        tauri::async_runtime::spawn_blocking(|| {
+            std::process::Command::new("/usr/bin/say")
+                .args(["-v", "?"])
+                .output()
+                .map(|output| super::speech::parse_voices(&String::from_utf8_lossy(&output.stdout)))
+                .unwrap_or_default()
+        })
+        .await
+        .unwrap_or_default()
+    }
+
     pub(super) fn open_privacy_settings(pane: &str) -> Result<(), String> {
         let anchor = match pane {
             "speech" => "Privacy_SpeechRecognition",
@@ -322,6 +378,17 @@ mod platform {
 
     pub(super) fn open_privacy_settings(_pane: &str) -> Result<(), String> {
         Err(UNSUPPORTED.into())
+    }
+
+    pub(super) fn speech_command(
+        _voice: Option<&str>,
+        _rate: Option<u32>,
+    ) -> Result<std::process::Command, String> {
+        Err("Reading aloud uses the macOS system voice".into())
+    }
+
+    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
+        Vec::new()
     }
 }
 

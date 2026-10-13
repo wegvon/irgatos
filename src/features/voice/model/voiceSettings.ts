@@ -18,7 +18,18 @@ export type VoiceSettings = {
   allowServer: boolean;
   cloudEndpoint: string;
   cloudModel: string;
+  /** Silence after speech that sends the message in voice mode. */
+  conversationPauseMs: number;
+  /** Voice mode reads each finished reply aloud. */
+  readReplies: boolean;
+  /** A `say` voice name; empty uses the Spoken Content voice. */
+  speechVoice: string;
+  /** Words per minute; 0 uses the Spoken Content rate. */
+  speechRate: number;
 };
+
+export const CONVERSATION_PAUSES = [800, 1200, 2000] as const;
+export const SPEECH_RATES = [160, 0, 230] as const;
 
 export const VOICE_SETTINGS_DEFAULTS: VoiceSettings = {
   dictation: true,
@@ -27,6 +38,10 @@ export const VOICE_SETTINGS_DEFAULTS: VoiceSettings = {
   allowServer: false,
   cloudEndpoint: DEFAULT_CLOUD_ENDPOINT,
   cloudModel: DEFAULT_CLOUD_MODEL,
+  conversationPauseMs: 1200,
+  readReplies: true,
+  speechVoice: "",
+  speechRate: 0,
 };
 
 /** Languages Apple's recognizer ships on-device models for on recent macOS. */
@@ -84,6 +99,14 @@ function parse(raw: string | null): VoiceSettings {
       cloudModel: pick(
         "cloudModel",
         (value) => isText(value) && (value as string).trim() !== "",
+      ),
+      conversationPauseMs: pick("conversationPauseMs", (value) =>
+        (CONVERSATION_PAUSES as readonly unknown[]).includes(value),
+      ),
+      readReplies: pick("readReplies", isBool),
+      speechVoice: pick("speechVoice", isText),
+      speechRate: pick("speechRate", (value) =>
+        (SPEECH_RATES as readonly unknown[]).includes(value),
       ),
     };
   } catch {

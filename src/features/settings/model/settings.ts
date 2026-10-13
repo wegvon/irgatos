@@ -97,7 +97,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Voice",
     description:
-      "Dictate into the composer, and how MonoCode turns speech into text.",
+      "Dictate into the composer, talk to agents hands-free, and how MonoCode turns speech into text.",
     keywords:
       "voice dictation dictate speech microphone mic transcription whisper speak talk",
   },
@@ -451,6 +451,30 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "voice",
     label: "Transcription service",
     keywords: "endpoint url model api key openai whisper.cpp groq",
+  },
+  {
+    id: "voice-mode-pause",
+    section: "voice",
+    label: "Pause before sending",
+    keywords: "voice mode hands free conversation silence end of speech",
+  },
+  {
+    id: "voice-mode-read-replies",
+    section: "voice",
+    label: "Read replies aloud",
+    keywords: "voice mode text to speech tts say speak answer",
+  },
+  {
+    id: "voice-mode-voice",
+    section: "voice",
+    label: "Reading voice",
+    keywords: "system voice siri spoken content say tts",
+  },
+  {
+    id: "voice-mode-rate",
+    section: "voice",
+    label: "Reading speed",
+    keywords: "rate words per minute fast slow tts",
   },
   {
     id: "agent-clis",
@@ -1169,6 +1193,11 @@ export const KEYBINDINGS: KeybindingRow[] = [
     when: "Draft session composer",
   },
   { command: "Composer: Dictate", keys: `${MOD}${SHIFT}E`, when: "Composer" },
+  {
+    command: "Composer: Voice Mode",
+    keys: `${MOD}${SHIFT}L`,
+    when: "Composer",
+  },
   { command: "View: Reload", keys: `${MOD}${SHIFT}R`, when: "Always" },
   { command: "View: Zoom In", keys: `${MOD}+`, when: "Always" },
   { command: "View: Zoom Out", keys: `${MOD}-`, when: "Always" },
