@@ -258,7 +258,7 @@ export function CreateSkillForm({
         aria-label="Skill name"
         disabled={busy}
         onChange={(e) => setName(e.target.value)}
-        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
+        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-content/40 ${monospace ? "font-irgat" : "font-sans"}`}
       />
       <div className="mb-2 flex gap-1">
         <ScopeButton
@@ -334,7 +334,7 @@ function ScopeButton({
     >
       <span className="text-[12px]">{label}</span>
       <span
-        className={`truncate text-[10px] text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
+        className={`truncate text-[10px] text-content/40 ${monospace ? "font-irgat" : "font-sans"}`}
       >
         {hint}
       </span>
@@ -346,8 +346,8 @@ function scopeLabel(skill: Skill): string {
   if (skill.kind === "native") {
     return skill.origin ? `${skill.source} · ${skill.origin}` : skill.source;
   }
-  if (skill.kind === "builtin") return "monocode";
+  if (skill.kind === "builtin") return "irgat";
   if (skill.scope === "user") return "personal";
-  if (skill.source !== "agents" && skill.source !== "monocode") return skill.source;
+  if (skill.source !== "agents" && skill.source !== "irgat") return skill.source;
   return "project";
 }

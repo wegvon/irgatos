@@ -41,7 +41,7 @@ export const QUICK_COMPOSER_CATALOG_REQUEST_EVENT =
 /** Workspace windows answer with every live catalog they hold. */
 export const QUICK_COMPOSER_CATALOG_EVENT = "quick_composer_catalog";
 
-const LAST_PROJECT_KEY = "monocode.quickComposerProject";
+const LAST_PROJECT_KEY = "irgat.quickComposerProject";
 
 /** Live model lists keyed by harness, as a workspace window knows them. */
 export type QuickCatalog = {
@@ -52,7 +52,7 @@ export type QuickCatalog = {
 export type QuickChoice = { harness: HarnessId; model: string };
 
 export type QuickLaunch = {
-  /** Mono's visibility preference, captured before creating the session. */
+  /** Irgat's visibility preference, captured before creating the session. */
   sidebarHidden?: boolean;
   prompt: string;
   /** Create an unsent user draft instead of starting an agent turn. */

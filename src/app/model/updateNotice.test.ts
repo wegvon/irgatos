@@ -32,9 +32,9 @@ describe("installed update marker", () => {
     "removes malformed marker %j",
     (value) => {
       const store = memoryStore();
-      store.setItem("monocode.installedUpdate", value);
+      store.setItem("irgat.installedUpdate", value);
       expect(consumeInstalledUpdate(store)).toBeNull();
-      expect(store.getItem("monocode.installedUpdate")).toBeNull();
+      expect(store.getItem("irgat.installedUpdate")).toBeNull();
     },
   );
 

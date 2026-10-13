@@ -116,7 +116,7 @@ export function TranscriptFind({
       const target = event.target instanceof Element ? event.target : null;
       if (
         target?.closest(
-          ".cm-editor, .monocode-terminal, [role='dialog'], [data-app-search]",
+          ".cm-editor, .irgat-terminal, [role='dialog'], [data-app-search]",
         )
       )
         return;
@@ -190,7 +190,7 @@ export function TranscriptFind({
         />
         <span
           aria-live="polite"
-          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-content/50"
+          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-irgat text-[11px] tabular-nums text-content/50"
         >
           {searching
             ? "Searching…"

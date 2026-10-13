@@ -40,10 +40,10 @@ import { TabLabel } from "../../shared/ui/TabLabel";
 import { WindowControls } from "./WindowControls";
 import { PixelMascot } from "../../features/projects/ui/PixelMascot";
 import {
-  MONO_STATUS_LABEL,
-  type MonoLook,
-  type MonoState,
-} from "../../features/monos/model/mono";
+  IRGAT_STATUS_LABEL,
+  type IrgatLook,
+  type IrgatState,
+} from "../../features/irgats/model/irgat";
 import { IS_MAC, IS_WIN, MOD, SHIFT } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import {
@@ -95,15 +95,15 @@ type Props = {
   activeId: string;
   cwd: string;
   /**
-   * The Mono filling the main area. It takes the tabs' place, and nothing
+   * The Irgat filling the main area. It takes the tabs' place, and nothing
    * project-scoped belongs beside it.
    */
-  mono?: { look: MonoLook; state: MonoState };
-  /** Shows or hides the Mono's overview panel beside its chat. */
-  onToggleMonoOverview?: () => void;
-  monoOverviewOpen?: boolean;
-  onOpenMonoSettings?: () => void;
-  /** The full-height Mono panel owns these while it is open. */
+  irgat?: { look: IrgatLook; state: IrgatState };
+  /** Shows or hides the Irgat's overview panel beside its chat. */
+  onToggleIrgatOverview?: () => void;
+  irgatOverviewOpen?: boolean;
+  onOpenIrgatSettings?: () => void;
+  /** The full-height Irgat panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
   sessionSidebarOpen?: boolean;
@@ -622,10 +622,10 @@ function TitleBarComponent({
   tabs,
   activeId,
   cwd,
-  mono,
-  onToggleMonoOverview,
-  monoOverviewOpen = false,
-  onOpenMonoSettings,
+  irgat,
+  onToggleIrgatOverview,
+  irgatOverviewOpen = false,
+  onOpenIrgatSettings,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -769,12 +769,12 @@ function TitleBarComponent({
       : "";
     const project = cwd ? basename(cwd) : "";
     if (activeName && project && activeName !== project) {
-      return `${activeName} — ${project} — MonoCode`;
+      return `${activeName} — ${project} — Irgat`;
     }
     if (project) {
-      return `${project} — MonoCode`;
+      return `${project} — Irgat`;
     }
-    return "MonoCode";
+    return "Irgat";
   }, [activeTab, cwd]);
 
   useEffect(() => {
@@ -887,26 +887,26 @@ function TitleBarComponent({
   const showProjectButton =
     railClosed && Boolean(onSelectProject) && !showCurrentProject;
   const showTrailingActions =
-    !mono &&
+    !irgat &&
     projectless &&
     railClosed &&
     Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
   const trailingControls =
     showTrailingActions ||
-    (mono && (onToggleMonoOverview || onOpenMonoSettings)) ||
+    (irgat && (onToggleIrgatOverview || onOpenIrgatSettings)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
-        {mono && (onToggleMonoOverview || onOpenMonoSettings) ? (
+        {irgat && (onToggleIrgatOverview || onOpenIrgatSettings) ? (
           <div className="flex items-center gap-1 px-3">
-            {onToggleMonoOverview ? (
+            {onToggleIrgatOverview ? (
               <button
                 type="button"
-                aria-pressed={monoOverviewOpen}
-                title={monoOverviewOpen ? "Hide overview" : "Show overview"}
+                aria-pressed={irgatOverviewOpen}
+                title={irgatOverviewOpen ? "Hide overview" : "Show overview"}
                 data-tauri-drag-region="false"
-                onClick={onToggleMonoOverview}
+                onClick={onToggleIrgatOverview}
                 className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
-                  monoOverviewOpen
+                  irgatOverviewOpen
                     ? "bg-content/10 text-content"
                     : "bg-content/5 text-content/70 hover:bg-content/8 hover:text-content"
                 }`}
@@ -915,10 +915,10 @@ function TitleBarComponent({
                 Overview
               </button>
             ) : null}
-            {onOpenMonoSettings ? (
+            {onOpenIrgatSettings ? (
               <IconButton
-                label={`${mono.look.name} settings`}
-                onClick={onOpenMonoSettings}
+                label={`${irgat.look.name} settings`}
+                onClick={onOpenIrgatSettings}
               >
                 <Settings className="size-3.5" strokeWidth={1.75} />
               </IconButton>
@@ -954,15 +954,15 @@ function TitleBarComponent({
   return (
     <header
       className={`flex h-10 shrink-0 select-none items-stretch border-b border-stroke${
-        compactRail && !mono ? " body-glass" : ""
+        compactRail && !irgat ? " body-glass" : ""
       }`}
       data-tauri-drag-region="deep"
     >
       {compactRail ? (
         <div
           data-compact-title-nav
-          // A full Mono's title bar starts beside the 48px compact rail.
-          className={`flex shrink-0 items-center ${mono ? "pl-[22px]" : "pl-[70px]"}`}
+          // A full Irgat's title bar starts beside the 48px compact rail.
+          className={`flex shrink-0 items-center ${irgat ? "pl-[22px]" : "pl-[70px]"}`}
         >
           <TabVisitNav
             canGoBack={canGoBack}
@@ -1018,8 +1018,8 @@ function TitleBarComponent({
           showProjectButton ? " border-l border-stroke" : ""
         }`}
       >
-        {mono ? (
-          <MonoTitle look={mono.look} state={mono.state} />
+        {irgat ? (
+          <IrgatTitle look={irgat.look} state={irgat.state} />
         ) : (
           <div
             className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1144,11 +1144,11 @@ function TitleBarComponent({
 
 export const TitleBar = memo(TitleBarComponent);
 
-/** In a Mono's view the title bar names it and shows its status. */
-function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
+/** In a Irgat's view the title bar names it and shows its status. */
+function IrgatTitle({ look, state }: { look: IrgatLook; state: IrgatState }) {
   return (
     <div
-      data-mono-title
+      data-irgat-title
       className="flex min-w-0 flex-1 items-center gap-2 px-4"
     >
       <PixelMascot
@@ -1162,12 +1162,12 @@ function MonoTitle({ look, state }: { look: MonoLook; state: MonoState }) {
         {look.name}
       </span>
       <span
-        data-mono-status={state.status}
+        data-irgat-status={state.status}
         className={`shrink-0 text-[12px] ${
           state.status === "needs-you" ? "text-accent" : "text-content/45"
         }`}
       >
-        {MONO_STATUS_LABEL[state.status]}
+        {IRGAT_STATUS_LABEL[state.status]}
       </span>
     </div>
   );

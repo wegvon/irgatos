@@ -42,7 +42,7 @@ describe("voice settings", () => {
 
   it("falls back per field on stored values it does not understand", () => {
     localStorage.setItem(
-      "monocode.voice",
+      "irgat.voice",
       JSON.stringify({
         engine: "whisper",
         dictation: "yes",
@@ -57,7 +57,7 @@ describe("voice settings", () => {
       cloudModel: "whisper-1",
     });
 
-    localStorage.setItem("monocode.voice", "{not json");
+    localStorage.setItem("irgat.voice", "{not json");
     expect(loadVoiceSettings()).toEqual(VOICE_SETTINGS_DEFAULTS);
   });
 

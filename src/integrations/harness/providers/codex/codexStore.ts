@@ -1,8 +1,8 @@
 import {
   acquireHarnessBridge,
-  copyMonoCodexThreads,
+  copyIrgatxThreads,
   killChild,
-  prepareMonoCodexStore,
+  prepareIrgatxStore,
   spawnChild,
   unwatchChild,
   watchChild,
@@ -42,7 +42,7 @@ const inFlight = new Map<
 
 /** Read account configuration in its original home, then retain exact native
  * rollouts privately. No inference or transcript summarization is involved. */
-export function prepareCodexMonoContext(input: {
+export function prepareCodexIrgatContext(input: {
   sessionId: string;
   path: string;
   cwd: string;
@@ -58,7 +58,7 @@ export function prepareCodexMonoContext(input: {
       pending.migrationOnly === input.migrationOnly
     )
       return pending.task;
-    return pending.task.then(() => prepareCodexMonoContext(input));
+    return pending.task.then(() => prepareCodexIrgatContext(input));
   }
   const task = prepare(input).finally(() => {
     if (inFlight.get(key)?.task === task) inFlight.delete(key);
@@ -72,9 +72,9 @@ export function prepareCodexMonoContext(input: {
 }
 
 async function prepare(
-  input: Parameters<typeof prepareCodexMonoContext>[0],
+  input: Parameters<typeof prepareCodexIrgatContext>[0],
 ): Promise<PreparedContext> {
-  const store = await prepareMonoCodexStore(
+  const store = await prepareIrgatxStore(
     input.providerAccountId,
     input.threadId,
   );
@@ -116,7 +116,7 @@ async function prepare(
       "codex",
     );
     await request("initialize", {
-      clientInfo: { name: "monocode", title: "MonoCode", version: "0.1.0" },
+      clientInfo: { name: "irgat", title: "Irgat", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
     await rpc.notify("initialized", undefined);
@@ -144,7 +144,7 @@ async function prepare(
         throw error;
       }
       if (!root.path)
-        throw new Error("Codex did not return the saved Mono context");
+        throw new Error("Codex did not return the saved Irgat context");
       const descendants = new Map<string, Thread>();
       for (const archived of [false, true]) {
         let cursor: string | undefined;
@@ -186,10 +186,10 @@ async function prepare(
           includeTurns: false,
         });
         if (!retained.thread.path)
-          throw new Error("Codex did not retain a Mono thread file");
+          throw new Error("Codex did not retain a Irgat thread file");
         paths.push(retained.thread.path);
       }
-      await copyMonoCodexThreads(
+      await copyIrgatxThreads(
         input.providerAccountId,
         root.id,
         paths,

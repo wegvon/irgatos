@@ -93,7 +93,7 @@ pub fn artifacts_delete(
     let conn = store.lock_conn()?;
     delete_artifact(&conn, &id).map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit("monocode:artifact-deleted", &id);
+    let _ = app.emit("irgat:artifact-deleted", &id);
     Ok(())
 }
 
@@ -103,10 +103,10 @@ fn delete_artifact(conn: &Connection, id: &str) -> rusqlite::Result<()> {
         "DELETE FROM notes WHERE id = ?1 AND content_kind = 'artifact'",
         [id],
     )?;
-    // Update paginated Mono history and older full-session transcripts in the
+    // Update paginated Irgat history and older full-session transcripts in the
     // same transaction. Reply text and all unrelated metadata stay intact.
     tx.execute(
-        "UPDATE mono_blocks SET block_json = json_set(block_json, '$.artifactCards',
+        "UPDATE irgat_blocks SET block_json = json_set(block_json, '$.artifactCards',
            (SELECT json_group_array(json(card.value))
             FROM json_each(block_json, '$.artifactCards') AS card
             WHERE json_extract(card.value, '$.id') != ?1))
@@ -202,7 +202,7 @@ const HTML_CSP: &str = "sandbox allow-scripts; default-src 'none'; \
 
 /// Runs first in every page: applies the theme the app posts, reports the
 /// content height so the frame can fit it, and hands web links to the app.
-const HTML_BOOTSTRAP: &str = r#"<script>(function(){var s=document.createElement("style"),c=document.currentScript,h;c.parentNode.insertBefore(s,c.nextSibling);var base="html{background:var(--background);color:var(--foreground);font-family:var(--font-sans)}body{margin:0}";s.textContent=base;function post(m){if(parent!==window)parent.postMessage(m,"*");}window.addEventListener("message",function(e){var d=e.data;if(e.source!==parent||!d||d.type!=="monocode:theme"||!d.vars)return;var css=":root{color-scheme:"+(d.scheme==="light"?"light":"dark")+";";for(var k in d.vars)if(/^--[a-z0-9-]+$/.test(k))css+=k+":"+String(d.vars[k]).replace(/[;{}<>]/g,"")+";";s.textContent=css+"}"+base;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null,u;if(!a)return;try{u=new URL(a.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol))return;e.preventDefault();if(e.isTrusted)post({type:"monocode:open-link",url:u.href});},true);function size(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;post({type:"monocode:height",height:v});}if(window.ResizeObserver){var o=new ResizeObserver(size);o.observe(document.documentElement);document.addEventListener("DOMContentLoaded",function(){if(document.body)o.observe(document.body);});}window.addEventListener("load",size);document.addEventListener("DOMContentLoaded",size);post({type:"monocode:ready"});})();</script>"#;
+const HTML_BOOTSTRAP: &str = r#"<script>(function(){var s=document.createElement("style"),c=document.currentScript,h;c.parentNode.insertBefore(s,c.nextSibling);var base="html{background:var(--background);color:var(--foreground);font-family:var(--font-sans)}body{margin:0}";s.textContent=base;function post(m){if(parent!==window)parent.postMessage(m,"*");}window.addEventListener("message",function(e){var d=e.data;if(e.source!==parent||!d||d.type!=="irgat:theme"||!d.vars)return;var css=":root{color-scheme:"+(d.scheme==="light"?"light":"dark")+";";for(var k in d.vars)if(/^--[a-z0-9-]+$/.test(k))css+=k+":"+String(d.vars[k]).replace(/[;{}<>]/g,"")+";";s.textContent=css+"}"+base;});document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a[href]"):null,u;if(!a)return;try{u=new URL(a.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol))return;e.preventDefault();if(e.isTrusted)post({type:"irgat:open-link",url:u.href});},true);function size(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;post({type:"irgat:height",height:v});}if(window.ResizeObserver){var o=new ResizeObserver(size);o.observe(document.documentElement);document.addEventListener("DOMContentLoaded",function(){if(document.body)o.observe(document.body);});}window.addEventListener("load",size);document.addEventListener("DOMContentLoaded",size);post({type:"irgat:ready"});})();</script>"#;
 
 /// Serves `<scheme>://localhost/<id>`. Only `html` artifacts are served, so a
 /// frame can never show a document's Markdown as a page.
@@ -373,7 +373,7 @@ mod tests {
             title: "PR report".into(),
             body: "# Report".into(),
             tags: Vec::new(),
-            source_session_id: Some("mono-1".into()),
+            source_session_id: Some("irgat-1".into()),
             source_cwd: Some("/repo".into()),
             finalize_slug: false,
         };
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(list_artifacts(&conn).unwrap()[0].id, note.id);
         let json = serde_json::to_value(artifact).unwrap();
         assert_eq!(json["kind"], "document");
-        assert_eq!(json["sourceSessionId"], "mono-1");
+        assert_eq!(json["sourceSessionId"], "irgat-1");
         assert!(json.get("tags").is_none());
         assert!(json.get("slug").is_none());
         assert!(get_artifact(&conn, "missing").unwrap().is_none());
@@ -444,12 +444,12 @@ mod tests {
         }))
         .unwrap();
         upsert_session(&conn, &session).unwrap();
-        let mono = SessionUpsert {
-            id: "mono".into(),
+        let irgat = SessionUpsert {
+            id: "irgat".into(),
             ..session.clone()
         };
-        upsert_session(&conn, &mono).unwrap();
-        crate::mono_transcript::migrate_transcript(&conn, "mono").unwrap();
+        upsert_session(&conn, &irgat).unwrap();
+        crate::irgat_transcript::migrate_transcript(&conn, "irgat").unwrap();
         delete_artifact(&conn, "remove").unwrap();
         delete_artifact(&conn, "remove").unwrap();
         delete_artifact(&conn, "personal").unwrap();
@@ -469,7 +469,7 @@ mod tests {
             json!([{ "id": "keep", "kind": "document", "title": "Other" }])
         );
         assert_eq!(blocks[1], session.blocks[1]);
-        let raw: String = conn.query_row("SELECT block_json FROM mono_blocks WHERE session_id = 'mono' AND block_id = 'turn'", [], |row| row.get(0)).unwrap();
+        let raw: String = conn.query_row("SELECT block_json FROM irgat_blocks WHERE session_id = 'irgat' AND block_id = 'turn'", [], |row| row.get(0)).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&raw).unwrap(), blocks[0]);
         // An older client save still contains both references, but the deleted
         // card is filtered before it reaches storage again.
@@ -478,7 +478,7 @@ mod tests {
             get_session(&conn, "normal").unwrap().unwrap().blocks,
             blocks
         );
-        let stale = retain_existing_cards(&conn, &mono.blocks).unwrap();
+        let stale = retain_existing_cards(&conn, &irgat.blocks).unwrap();
         assert_eq!(stale.as_ref(), &blocks);
     }
 }

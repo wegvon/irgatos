@@ -309,17 +309,17 @@ import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import {
-  defaultMonoName,
-  listMonos,
-  monoLook,
-  monoProjectsPhrase,
+  defaultIrgatName,
+  listIrgats,
+  irgatLook,
+  irgatProjectsPhrase,
   monosSnapshot,
-  subscribeMonos,
-  updateMono,
-  type Mono,
-} from "../../monos/model/mono";
-import { resetMonoDefaults } from "../../monos/model/monoFiles";
-import { ConfirmReset } from "../../monos/ui/ConfirmReset";
+  subscribeIrgats,
+  updateIrgat,
+  type Irgat,
+} from "../../irgats/model/irgat";
+import { resetIrgatDefaults } from "../../irgats/model/irgatFiles";
+import { ConfirmReset } from "../../irgats/ui/ConfirmReset";
 import {
   filterKeybindings,
   currentKeybindings,
@@ -337,11 +337,11 @@ import {
   loadModelControls,
   loadNotesEnabled,
   loadMonosEnabled,
-  loadMonoMenuBarIcon,
+  loadIrgatMenuBarIcon,
   loadKeybindingOverrides,
   keybindingShortcutLabel,
-  saveMonoMenuBarIcon,
-  subscribeMonoMenuBarIcon,
+  saveIrgatMenuBarIcon,
+  subscribeIrgatMenuBarIcon,
   loadQuickComposerEnabled,
   loadQuickComposerShortcut,
   loadTabAnimationsEnabled,
@@ -622,7 +622,7 @@ export function SettingsView({
               {section === "chat" ? <ChatPage /> : null}
               {section === "voice" ? <VoicePage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
-              {section === "monos" ? <MonosPage /> : null}
+              {section === "irgats" ? <MonosPage /> : null}
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
               ) : null}
@@ -879,7 +879,7 @@ function GeneralPage({
     <>
       <Group
         title="Alerts"
-        description="How MonoCode reaches you while you are looking somewhere else."
+        description="How Irgat reaches you while you are looking somewhere else."
       >
         <Row
           id="sounds"
@@ -895,7 +895,7 @@ function GeneralPage({
         <Row
           id="notifications"
           label="Notifications"
-          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while MonoCode is in the background. Click the notification to open that session."
+          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while Irgat is in the background. Click the notification to open that session."
         >
           {notificationsEnabled && notificationPermission === "denied" ? (
             <NotificationsBlocked />
@@ -954,7 +954,7 @@ function GeneralPage({
           <Row
             id="quick-composer"
             label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
+            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to Irgat. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
           >
             {quickComposerError ? (
               <span className="text-[12px] text-content/45">
@@ -1139,7 +1139,7 @@ function ChatPage() {
         <Row
           id="composer-autocorrect"
           label="Autocorrect"
-          description="Spell check and autocorrect prompts in session and mono composers. Turn this off to keep the text exactly as typed."
+          description="Spell check and autocorrect prompts in session and irgat composers. Turn this off to keep the text exactly as typed."
         >
           <Toggle
             label="Autocorrect"
@@ -1269,7 +1269,7 @@ function VoicePage() {
       return;
     }
     setPreviewing(true);
-    void speak("This is how MonoCode reads an agent's reply in voice mode.", {
+    void speak("This is how Irgat reads an agent's reply in voice mode.", {
       voice: voice.speechVoice,
       rate: voice.speechRate,
     })
@@ -1554,7 +1554,7 @@ function VoicePage() {
         </Row>
         <Row
           label="API key"
-          description="Stored in MonoCode's app data, readable only by you. A local server usually needs none."
+          description="Stored in Irgat's app data, readable only by you. A local server usually needs none."
         >
           {status?.cloudKey ? (
             <>
@@ -1730,7 +1730,7 @@ function GithubSettings() {
   }, [checkStatus]);
 
   const description = status?.connected
-    ? "GitHub CLI is installed and authenticated. MonoCode uses it for GitHub inbox items."
+    ? "GitHub CLI is installed and authenticated. Irgat uses it for GitHub inbox items."
     : status?.installed
       ? "Run gh auth login in a terminal, complete the sign-in flow, then check again."
       : "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then check again.";
@@ -2229,7 +2229,7 @@ function UpdateRow({
               ? (snapshot.error ?? "Update check failed.")
               : snapshot.packageManaged
                 ? packageManagerHint(snapshot.packageManaged)
-                : "MonoCode updates itself from the release feed.";
+                : "Irgat updates itself from the release feed.";
 
   return (
     <Row
@@ -2237,7 +2237,7 @@ function UpdateRow({
       label={
         <span className="flex items-baseline gap-2">
           Version
-          <span className="font-mono text-[12px] text-content/45">
+          <span className="font-irgat text-[12px] text-content/45">
             {snapshot.currentVersion}
           </span>
         </span>
@@ -2641,7 +2641,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         description={
           glassDisabled
             ? "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved."
-            : "How much of the desktop shows through MonoCode. Blur costs more to composite the higher it goes."
+            : "How much of the desktop shows through Irgat. Blur costs more to composite the higher it goes."
         }
       >
         <Row
@@ -3034,7 +3034,7 @@ function ShortcutEditor({
           onFocus={beginRecording}
           onClick={beginRecording}
           onBlur={() => setRecording(false)}
-          className={`h-6 w-28 shrink-0 truncate rounded-md border bg-transparent px-1.5 py-0 font-mono text-[11px] leading-none outline-none focus:border-accent ${
+          className={`h-6 w-28 shrink-0 truncate rounded-md border bg-transparent px-1.5 py-0 font-irgat text-[11px] leading-none outline-none focus:border-accent ${
             busy ? "opacity-50" : ""
           } ${
             display === null
@@ -3218,7 +3218,7 @@ function KeybindingsPage() {
                   onSave={save}
                 />
               )}
-              <span className="w-28 shrink-0 font-mono text-[11px] text-content/40">
+              <span className="w-28 shrink-0 font-irgat text-[11px] text-content/40">
                 {row.when}
               </span>
             </div>
@@ -3449,11 +3449,11 @@ function ProviderBinaryControl({
                 disabled={working}
                 autoFocus
                 onChange={(event) => setDraft(event.target.value)}
-                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
+                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-irgat text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 Enter the absolute path to the CLI executable. Changes apply
-                after restarting MonoCode.
+                after restarting Irgat.
               </p>
               {error ? (
                 <span
@@ -3490,7 +3490,7 @@ function ProviderBinaryControl({
           ) : (
             <>
               <div className="mt-2 rounded-md border border-content/10 bg-content/[0.03] px-2.5 py-2">
-                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] text-content/65">
+                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-irgat text-[10px] text-content/65">
                   {inspection?.path ??
                     (error
                       ? "CLI could not be resolved"
@@ -3714,8 +3714,8 @@ function ProvidersPage({
         }
         description={
           project
-            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for MonoCode.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for MonoCode and apply to every project."
+            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for Irgat.`
+            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for Irgat and apply to every project."
         }
       >
         {HARNESSES.map((harness) => {
@@ -4446,7 +4446,7 @@ function formatDate(value: number): string {
   }
 }
 
-/** Monos on or off, and each Mono the user has. */
+/** Irgats on or off, and each Irgat the user has. */
 function MonosPage() {
   const enabled = useSyncExternalStore(
     subscribeMonosEnabled,
@@ -4454,31 +4454,31 @@ function MonosPage() {
     () => true,
   );
   const menuBarIcon = useSyncExternalStore(
-    subscribeMonoMenuBarIcon,
-    loadMonoMenuBarIcon,
+    subscribeIrgatMenuBarIcon,
+    loadIrgatMenuBarIcon,
     () => true,
   );
   const railPinned = useRailMonosPinned();
-  const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monos = useMemo(() => listMonos(), [snapshot]);
+  const snapshot = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const irgats = useMemo(() => listIrgats(), [snapshot]);
 
   return (
     <>
-      <Group title="Monos">
+      <Group title="Irgats">
         <Row
-          id="monos-enabled"
-          label="Show monos"
+          id="irgats-enabled"
+          label="Show irgats"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show monos" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle label="Show irgats" on={enabled} onChange={saveMonosEnabled} />
         </Row>
         <Row
-          id="rail-monos-pinned"
-          label="Pin monos to the icon rail"
-          description="When the project rail is collapsed to icons, show each Mono at the top of the rail, above a divider, instead of inside the project picker."
+          id="rail-irgats-pinned"
+          label="Pin irgats to the icon rail"
+          description="When the project rail is collapsed to icons, show each Irgat at the top of the rail, above a divider, instead of inside the project picker."
         >
           <Toggle
-            label="Pin monos to the icon rail"
+            label="Pin irgats to the icon rail"
             on={railPinned}
             onChange={saveRailMonosPinned}
             disabled={!enabled}
@@ -4486,28 +4486,28 @@ function MonosPage() {
         </Row>
         {IS_MAC && (
           <Row
-            id="mono-menu-bar-icon"
+            id="irgat-menu-bar-icon"
             label="Menu bar icon"
-            description="Chat with a Mono or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
+            description="Chat with a Irgat or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
           >
             <Toggle
               label="Menu bar icon"
               on={menuBarIcon}
-              onChange={saveMonoMenuBarIcon}
+              onChange={saveIrgatMenuBarIcon}
             />
           </Row>
         )}
       </Group>
       <Group
-        id="mono-list"
-        title="Your monos"
-        description="Choose whether new sessions started by each Mono appear in the sidebar. Hidden sessions remain saved and can be opened from the Mono's chat. Add a Mono with the plus on the rail and choose its projects from its details."
+        id="irgat-list"
+        title="Your irgats"
+        description="Choose whether new sessions started by each Irgat appear in the sidebar. Hidden sessions remain saved and can be opened from the Irgat's chat. Add a Irgat with the plus on the rail and choose its projects from its details."
       >
-        {monos.length ? (
-          monos.map((mono) => <MonoRow key={mono.id} mono={mono} />)
+        {irgats.length ? (
+          irgats.map((irgat) => <IrgatRow key={irgat.id} irgat={irgat} />)
         ) : (
           <p className="px-4 py-3.5 text-[12px] text-content/45">
-            No monos yet.
+            No irgats yet.
           </p>
         )}
       </Group>
@@ -4515,8 +4515,8 @@ function MonosPage() {
   );
 }
 
-function MonoRow({ mono }: { mono: Mono }) {
-  const look = monoLook(mono);
+function IrgatRow({ irgat }: { irgat: Irgat }) {
+  const look = irgatLook(irgat);
   return (
     <Row
       label={
@@ -4532,30 +4532,30 @@ function MonoRow({ mono }: { mono: Mono }) {
       }
       description={
         look.projects.length
-          ? `Works on ${monoProjectsPhrase(look.projects)}`
+          ? `Works on ${irgatProjectsPhrase(look.projects)}`
           : "No projects yet"
       }
     >
       <span className="text-[12px] leading-5 text-content/50">
-        Show Mono spawned session on the sidebar
+        Show Irgat spawned session on the sidebar
       </span>
       <Toggle
         label={`Show sessions started by ${look.name} in sidebar`}
-        on={mono.showStartedSessionsInSidebar === true}
+        on={irgat.showStartedSessionsInSidebar === true}
         onChange={(on) =>
-          updateMono(mono.id, (entry) => ({
+          updateIrgat(irgat.id, (entry) => ({
             ...entry,
             showStartedSessionsInSidebar: on,
           }))
         }
       />
       <ConfirmReset
-        label="Reset Mono"
+        label="Reset Irgat"
         title={`Reset ${look.name} to its defaults?`}
-        body={`Its soul goes back to the default and its name to ${defaultMonoName(look.mascot)}. Changes to its soul can't be recovered.`}
+        body={`Its soul goes back to the default and its name to ${defaultIrgatName(look.mascot)}. Changes to its soul can't be recovered.`}
         kept="Its conversation, projects, memory and habits will be kept."
-        failure="Could not reset the Mono."
-        onConfirm={() => resetMonoDefaults(mono.id)}
+        failure="Could not reset the Irgat."
+        onConfirm={() => resetIrgatDefaults(irgat.id)}
       >
         {(open, ref) => (
           <button

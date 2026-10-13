@@ -90,7 +90,7 @@ import {
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
-import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
+import { IrgatRailSection, type IrgatRailProps } from "./IrgatRailSection";
 
 type Props = {
   visible?: boolean;
@@ -129,8 +129,8 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos section above the projects; absent while Monos are off. */
-  monos?: MonoRailProps;
+  /** The Irgats section above the projects; absent while Irgats are off. */
+  irgats?: IrgatRailProps;
 };
 
 export function ProjectRail({
@@ -170,7 +170,7 @@ export function ProjectRail({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
+  irgats,
 }: Props) {
   const resize = useDragResize({
     min: PROJECT_RAIL_WIDTH_MIN,
@@ -341,7 +341,7 @@ export function ProjectRail({
     notesActive ||
     automationsActive ||
     kanbanActive ||
-    !!monos?.activeId;
+    !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
   const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y");
@@ -436,10 +436,10 @@ export function ProjectRail({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
-            {monos ? (
-              <MonoRailSection
-                {...monos}
-                introAvailable={visible && !!monos.introAvailable}
+            {irgats ? (
+              <IrgatRailSection
+                {...irgats}
+                introAvailable={visible && !!irgats.introAvailable}
               />
             ) : null}
 

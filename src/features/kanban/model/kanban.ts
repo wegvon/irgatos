@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { projectKey } from "../../../shared/lib/paths";
 
-export const KANBAN_CHANGED = "monocode:kanban-changed";
+export const KANBAN_CHANGED = "irgat:kanban-changed";
 export const DEFAULT_KANBAN_COLUMNS = [
   "Backlog",
   "In progress",

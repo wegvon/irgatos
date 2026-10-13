@@ -258,7 +258,7 @@ export function DateTimePicker({
             onChange={(event) =>
               onChange(`${dateKey(selected)}T${event.target.value}`)
             }
-            className="w-full bg-transparent px-2 py-1.5 text-center font-mono text-xs tabular-nums text-content outline-none placeholder:text-content/30"
+            className="w-full bg-transparent px-2 py-1.5 text-center font-irgat text-xs tabular-nums text-content outline-none placeholder:text-content/30"
           />
         </div>
       </div>

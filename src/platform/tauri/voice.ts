@@ -2,7 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 /** Rust emits every capture event here; the payload names its capture. */
-export const VOICE_EVENT = "monocode:voice";
+export const VOICE_EVENT = "irgat:voice";
 
 export type VoicePermission = "prompt" | "granted" | "denied" | "unsupported";
 
@@ -157,7 +157,7 @@ export function openVoicePrivacySettings(pane: "microphone" | "speech") {
 }
 
 /** Rust reports here when an utterance stops, for whatever reason. */
-export const SPEECH_EVENT = "monocode:voice-speech";
+export const SPEECH_EVENT = "irgat:voice-speech";
 
 export type SystemVoice = { name: string; locale: string };
 

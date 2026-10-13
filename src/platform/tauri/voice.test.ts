@@ -17,7 +17,7 @@ async function load(): Promise<VoiceModule> {
 
 function emit(payload: unknown) {
   const handler = vi.mocked(listen).mock.calls[0][1];
-  handler({ event: "monocode:voice", id: 0, payload });
+  handler({ event: "irgat:voice", id: 0, payload });
 }
 
 function handlers() {
@@ -154,8 +154,8 @@ describe("speak", () => {
   function emitSpeech(payload: { id: string; interrupted: boolean }) {
     const call = vi
       .mocked(listen)
-      .mock.calls.find(([event]) => event === "monocode:voice-speech")!;
-    call[1]({ event: "monocode:voice-speech", id: 0, payload });
+      .mock.calls.find(([event]) => event === "irgat:voice-speech")!;
+    call[1]({ event: "irgat:voice-speech", id: 0, payload });
   }
 
   it("reads aloud through Rust and settles when that utterance ends", async () => {

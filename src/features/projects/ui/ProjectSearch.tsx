@@ -285,10 +285,10 @@ export function ProjectSearch({
                     onDoubleClick={() => openMatch(match, true)}
                     className="flex w-full items-start gap-2 px-2 py-1 text-left hover:bg-content/5"
                   >
-                    <span className="w-7 shrink-0 pt-px text-right font-mono text-[11px] text-content/35 tabular-nums">
+                    <span className="w-7 shrink-0 pt-px text-right font-irgat text-[11px] text-content/35 tabular-nums">
                       {match.line}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-5 text-content/80">
+                    <span className="min-w-0 flex-1 truncate font-irgat text-[11px] leading-5 text-content/80">
                       <MatchPreview
                         preview={match.preview.trimEnd()}
                         query={query.trim()}

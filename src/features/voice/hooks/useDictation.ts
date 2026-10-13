@@ -90,13 +90,13 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
     }
     if (status.microphone !== "granted") {
       return fail({
-        message: "Microphone access is off for MonoCode.",
+        message: "Microphone access is off for Irgat.",
         pane: "microphone",
       });
     }
     if (apple && status.speech !== "granted") {
       return fail({
-        message: "Speech recognition is off for MonoCode.",
+        message: "Speech recognition is off for Irgat.",
         pane: "speech",
       });
     }

@@ -85,7 +85,7 @@ it("uses the interface typeface for branch names and search", async () => {
   const branchName = picker.querySelector<HTMLElement>('[role="option"] span')!;
 
   expect(search.className).toContain("font-sans");
-  expect(branchName.className).not.toContain("font-mono");
+  expect(branchName.className).not.toContain("font-irgat");
   expect(branchName.className).toContain("font-medium");
 });
 

@@ -29,7 +29,7 @@ mod transcription;
 static SPEAKER: speech::Speaker = speech::Speaker::new();
 
 /// Every capture event goes out on one channel; the payload names its capture.
-pub const EVENT: &str = "monocode:voice";
+pub const EVENT: &str = "irgat:voice";
 
 const KEY_FILE: &str = "voice-transcription-key";
 
@@ -184,7 +184,7 @@ pub fn voice_open_privacy_settings(pane: String) -> Result<(), String> {
 }
 
 /// Reads `text` aloud, interrupting anything already speaking. A
-/// `monocode:voice-speech` event names the utterance when it ends.
+/// `irgat:voice-speech` event names the utterance when it ends.
 #[tauri::command]
 pub fn voice_speak(
     app: AppHandle,

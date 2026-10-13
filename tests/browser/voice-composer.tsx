@@ -47,20 +47,20 @@ const driver: VoiceDriver = {
   heard: "",
   calls: [],
   level: (level) =>
-    emit("monocode:voice", { kind: "level", capture: driver.capture, level }),
+    emit("irgat:voice", { kind: "level", capture: driver.capture, level }),
   partial: (text) => {
     driver.heard = text;
-    return emit("monocode:voice", {
+    return emit("irgat:voice", {
       kind: "partial",
       capture: driver.capture,
       text,
     });
   },
   final: (text = driver.heard) =>
-    emit("monocode:voice", { kind: "final", capture: driver.capture, text }),
+    emit("irgat:voice", { kind: "final", capture: driver.capture, text }),
   reply: () => {},
   finishSpeech: () =>
-    emit("monocode:voice-speech", { id: driver.speech, interrupted: false }),
+    emit("irgat:voice-speech", { id: driver.speech, interrupted: false }),
 };
 window.voice = driver;
 
@@ -83,7 +83,7 @@ mockIPC(
         driver.speech = payload.id as string;
         return null;
       case "voice_stop_speaking":
-        void emit("monocode:voice-speech", {
+        void emit("irgat:voice-speech", {
           id: payload.id,
           interrupted: true,
         });
@@ -137,7 +137,7 @@ function ComposerFixture() {
         harness="codex"
         model=""
         runtimeMode="supervised"
-        executionCwd="~/code/monocode"
+        executionCwd="~/code/irgat"
         hideTopBar
         busy={busy}
         voiceReply={busy ? null : reply}
@@ -160,7 +160,7 @@ function SettingsFixture() {
     <div className="h-screen">
       <SettingsView
         section="voice"
-        cwd="~/code/monocode"
+        cwd="~/code/irgat"
         sessions={[]}
         onClose={() => {}}
         onSelectSection={() => {}}

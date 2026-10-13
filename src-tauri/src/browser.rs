@@ -30,6 +30,8 @@ const EVENT: &str = "inline-browser";
 /// persist apart from the app UI's default store (macOS 14+; older systems
 /// fall back to the default store).
 #[cfg(target_os = "macos")]
+// This namespace is part of Browser's persisted WebKit data. Keep it stable so
+// existing imported sign-ins remain available after the Irgat rebrand.
 const DATA_STORE_ID: [u8; 16] = *b"monocode-browser";
 
 thread_local! {
@@ -151,7 +153,7 @@ fn allowed_url(value: &str, app_origin: Option<&Url>) -> Result<Url, String> {
     if url.host_str().is_some_and(is_app_host)
         || app_origin.is_some_and(|origin| origin.origin() == url.origin())
     {
-        return Err("MonoCode's own pages can't be opened in the browser".into());
+        return Err("Irgat's own pages can't be opened in the browser".into());
     }
     Ok(url)
 }
@@ -340,7 +342,7 @@ pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
                 .and_then(|profiles| {
                     if profiles.is_empty() {
                         return Err(String::from(
-                            "No Chrome profiles are accessible. Grant MonoCode Full Disk Access in System Settings > Privacy & Security, then restart MonoCode.",
+                            "No Chrome profiles are accessible. Grant Irgat Full Disk Access in System Settings > Privacy & Security, then restart Irgat.",
                         ));
                     }
                     Ok(profiles
@@ -687,7 +689,7 @@ fn with_copied_sqlite<T>(
     read: impl FnOnce(&Path) -> Result<T, String>,
 ) -> Result<T, String> {
     let directory =
-        std::env::temp_dir().join(format!("monocode-chrome-import-{}", uuid::Uuid::new_v4()));
+        std::env::temp_dir().join(format!("irgat-chrome-import-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&directory).map_err(|_| import_error())?;
     let copied = directory.join(filename);
     let result = (|| {

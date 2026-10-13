@@ -613,7 +613,7 @@ function FileCard({
         {icon}
         <p className="text-[13px] text-content">{title}</p>
         <p className="mt-1 text-[12px] leading-5 text-content/50">{detail}</p>
-        <p className="mt-1 truncate font-mono text-[11px] text-content/35">
+        <p className="mt-1 truncate font-irgat text-[11px] text-content/35">
           {displayPath(path, cwd)}
         </p>
         <div className="mt-4 flex items-center justify-center gap-2">

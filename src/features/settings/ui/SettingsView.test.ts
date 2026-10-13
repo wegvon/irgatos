@@ -25,11 +25,11 @@ import {
 } from "../../sessions/model/session";
 import { saveMaskEmails, saveShowRemainingUsage } from "../model/displayPrefs";
 import {
-  createMono,
-  findMono,
-  monoLook,
-  updateMono,
-} from "../../monos/model/mono";
+  createIrgat,
+  findIrgat,
+  irgatLook,
+  updateIrgat,
+} from "../../irgats/model/irgat";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -120,29 +120,29 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
-  it("saves each Mono's session visibility and restores it when settings reopen", async () => {
-    const mono = createMono();
-    const other = createMono();
+  it("saves each Irgat's session visibility and restores it when settings reopen", async () => {
+    const irgat = createIrgat();
+    const other = createIrgat();
     const toggle = (id: string) =>
       container.querySelector<HTMLButtonElement>(
-        `[role="switch"][aria-label="Show sessions started by ${monoLook(findMono(id)!).name} in sidebar"]`,
+        `[role="switch"][aria-label="Show sessions started by ${irgatLook(findIrgat(id)!).name} in sidebar"]`,
       )!;
-    await render("monos");
-    // Off until turned on: a Mono's sessions stay in its overview.
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("false");
+    await render("irgats");
+    // Off until turned on: a Irgat's sessions stay in its overview.
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
     expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
-    await act(async () => toggle(mono.id).click());
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("true");
-    expect(findMono(mono.id)?.showStartedSessionsInSidebar).toBe(true);
+    await act(async () => toggle(irgat.id).click());
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
+    expect(findIrgat(irgat.id)?.showStartedSessionsInSidebar).toBe(true);
     expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
     await render("general");
-    await render("monos");
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("true");
-    await act(async () => updateMono(mono.id, (entry) => ({
+    await render("irgats");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
+    await act(async () => updateIrgat(irgat.id, (entry) => ({
       ...entry,
       showStartedSessionsInSidebar: false,
     })));
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("false");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
   });
 
   it("blurs account emails by default and hides them when settings reopen", async () => {
@@ -264,7 +264,7 @@ describe("settings pages", () => {
 
   it("shows background effect choices above scope when artwork is available", async () => {
     localStorage.setItem(
-      "monocode.chatBackgroundPath",
+      "irgat.chatBackgroundPath",
       "/app-data/backgrounds/chat-background.png",
     );
     await render("appearance");
@@ -287,7 +287,7 @@ describe("settings pages", () => {
       vi.fn(async () => ({ ok: false })),
     );
     await act(async () => (effect as HTMLButtonElement).click());
-    expect(localStorage.getItem("monocode.newThreadBackgroundEffect")).toBe(
+    expect(localStorage.getItem("irgat.newThreadBackgroundEffect")).toBe(
       "dither",
     );
     expect(effect.getAttribute("aria-checked")).toBe("true");
@@ -297,8 +297,8 @@ describe("settings pages", () => {
   });
 
   it("previews and restores Haze with the existing empty-chat visibility", async () => {
-    localStorage.setItem("monocode.chatBackgroundPath", "/background.png");
-    localStorage.setItem("monocode.chatBackgroundEmptyOpacity", "0.4");
+    localStorage.setItem("irgat.chatBackgroundPath", "/background.png");
+    localStorage.setItem("irgat.chatBackgroundEmptyOpacity", "0.4");
     await render("appearance");
 
     const option = container.querySelector<HTMLButtonElement>(
@@ -313,7 +313,7 @@ describe("settings pages", () => {
     expect(option.getAttribute("aria-checked")).toBe("true");
     expect(preview.style.opacity).toBe("0.4");
     expect(preview.querySelectorAll("span")).toHaveLength(2);
-    expect(localStorage.getItem("monocode.newThreadBackgroundEffect")).toBe(
+    expect(localStorage.getItem("irgat.newThreadBackgroundEffect")).toBe(
       "gradient-blur",
     );
 
@@ -474,7 +474,7 @@ describe("settings pages", () => {
     await save("OpenCode", "/opt/opencode/bin/opencode");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ),
     ).toEqual({
       codex: "/opt/codex/bin/codex",
@@ -500,7 +500,7 @@ describe("settings pages", () => {
     expect(container.textContent).not.toContain("/opt/codex/bin/codex");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBe("/opt/codex/bin/codex");
     await act(async () =>
@@ -517,7 +517,7 @@ describe("settings pages", () => {
     );
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBe("/opt/codex/bin/codex");
 
@@ -525,7 +525,7 @@ describe("settings pages", () => {
     await save("Codex", "");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBeUndefined();
     await act(async () => details.click());
@@ -668,7 +668,7 @@ describe("settings pages", () => {
     await act(async () => topBar?.click());
 
     expect(topBar?.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.fileTabMode")).toBe("workspace");
+    expect(localStorage.getItem("irgat.fileTabMode")).toBe("workspace");
   });
 
   it("offers tab animations as an opt-in", async () => {
@@ -680,7 +680,7 @@ describe("settings pages", () => {
     expect(control.getAttribute("aria-checked")).toBe("false");
     await act(async () => control.click());
     expect(control.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.tabAnimationsEnabled")).toBe("1");
+    expect(localStorage.getItem("irgat.tabAnimationsEnabled")).toBe("1");
   });
 
   it("defaults to the icon rail and lets users hide it", async () => {
@@ -698,7 +698,7 @@ describe("settings pages", () => {
     await act(async () => hidden?.click());
 
     expect(hidden?.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.collapsedProjectRailMode")).toBe(
+    expect(localStorage.getItem("irgat.collapsedProjectRailMode")).toBe(
       "hidden",
     );
 
@@ -732,7 +732,7 @@ describe("settings pages", () => {
     expect(option).toBeTruthy();
     await act(async () => option!.click());
 
-    expect(localStorage.getItem("monocode.uiScale")).toBe("1.5");
+    expect(localStorage.getItem("irgat.uiScale")).toBe("1.5");
     expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 150%");
     document.documentElement.style.removeProperty("zoom");
   });
@@ -947,7 +947,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Control+Shift+KeyM"}}',
     );
     expect(input.value).toBe("Ctrl+Shift+M");
@@ -984,7 +984,7 @@ describe("settings search", () => {
         }),
       ),
     );
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Command+Delete"}}',
     );
   });
@@ -1036,7 +1036,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Option+KeyM"}}',
     );
     expect(input.value).toBe("Alt+M");
@@ -1059,7 +1059,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"disabled":true}}',
     );
     expect(input.value).toBe("Disabled");
@@ -1071,7 +1071,7 @@ describe("settings search", () => {
         )!
         .click(),
     );
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBeNull();
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBeNull();
   });
 
   it("reveals a setting on the current page", async () => {
@@ -1099,11 +1099,11 @@ describe("providers scope inheritance", () => {
 
   it("inherits the global default provider and picker visibility in project scope", async () => {
     localStorage.setItem(
-      "monocode.lastModel",
+      "irgat.lastModel",
       JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
     );
     localStorage.setItem(
-      "monocode.hiddenPickerProviders",
+      "irgat.hiddenPickerProviders",
       JSON.stringify(["cursor"]),
     );
     await render("providers");

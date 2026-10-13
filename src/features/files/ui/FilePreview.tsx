@@ -101,7 +101,7 @@ export function FilePreview({
         {filePath && onOpenFile ? (
           <button
             type="button"
-            className="min-w-0 flex-1 truncate text-left font-mono text-[12px] font-medium text-content/85 hover:text-sky-300 hover:underline"
+            className="min-w-0 flex-1 truncate text-left font-irgat text-[12px] font-medium text-content/85 hover:text-sky-300 hover:underline"
             title={path}
             onClick={() => onOpenFile(filePath)}
           >
@@ -109,7 +109,7 @@ export function FilePreview({
           </button>
         ) : (
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[12px] font-medium text-content/85"
+            className="min-w-0 flex-1 truncate font-irgat text-[12px] font-medium text-content/85"
             title={path}
           >
             {label}
@@ -142,7 +142,7 @@ export function FilePreview({
             aria-label={variant === "popover" ? "Preview lines" : undefined}
           >
             {preview.contentOnly && !lines.length ? (
-              <p className="px-3 py-2 font-mono text-xs text-content/50">
+              <p className="px-3 py-2 font-irgat text-xs text-content/50">
                 Empty file
               </p>
             ) : null}
@@ -195,18 +195,18 @@ function PreviewLine({
       className={`relative flex items-baseline ${scrollable ? "w-max min-w-full" : ""} ${bg}`}
     >
       <span className={`absolute inset-y-0 left-0 w-0.5 ${bar}`} />
-      <span className="w-7 shrink-0 pr-1 text-right font-mono text-[10px] text-content/35">
+      <span className="w-7 shrink-0 pr-1 text-right font-irgat text-[10px] text-content/35">
         {line.number ?? " "}
       </span>
       {showGutter ? (
         <span
-          className={`w-3 shrink-0 text-center font-mono text-[10px] font-bold ${markColor}`}
+          className={`w-3 shrink-0 text-center font-irgat text-[10px] font-bold ${markColor}`}
         >
           {mark}
         </span>
       ) : null}
       <span
-        className={`min-w-0 flex-1 pr-2 font-mono text-[11px] leading-4.5 ${scrollable ? "whitespace-pre" : "truncate"}`}
+        className={`min-w-0 flex-1 pr-2 font-irgat text-[11px] leading-4.5 ${scrollable ? "whitespace-pre" : "truncate"}`}
       >
         {highlight(line.text, line.kind === "context")}
       </span>

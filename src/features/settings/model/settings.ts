@@ -15,7 +15,7 @@ import {
 } from "../../quick-composer/model/quickComposerShortcut";
 import { readFlag, writeFlag } from "./storageFlags";
 
-const SECTION_KEY = "monocode.settingsSection";
+const SECTION_KEY = "irgat.settingsSection";
 
 export type SettingsSectionId =
   | "general"
@@ -27,7 +27,7 @@ export type SettingsSectionId =
   | "providers"
   | "mcp"
   | "skills"
-  | "monos"
+  | "irgats"
   | "inbox"
   | "worktrees"
   | "archive";
@@ -56,7 +56,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "app",
     label: "General",
     description:
-      "The build you are running, how MonoCode reaches you, and the panels it shows.",
+      "The build you are running, how Irgat reaches you, and the panels it shows.",
     keywords: "version update sounds notifications notes rail",
   },
   {
@@ -97,7 +97,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Voice",
     description:
-      "Dictate into the composer, talk to agents hands-free, and how MonoCode turns speech into text.",
+      "Dictate into the composer, talk to agents hands-free, and how Irgat turns speech into text.",
     keywords:
       "voice dictation dictate speech microphone mic transcription whisper speak talk",
   },
@@ -106,7 +106,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Providers",
     description:
-      "Provider accounts, agent CLIs MonoCode can drive, and the model new sessions start with.",
+      "Provider accounts, agent CLIs Irgat can drive, and the model new sessions start with.",
     keywords:
       "account sign in login model harness claude codex gemini cli default hooks",
   },
@@ -128,12 +128,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     keywords: "skill instructions prompt",
   },
   {
-    id: "monos",
+    id: "irgats",
     group: "agents",
-    label: "Monos",
+    label: "Irgats",
     description:
       "The resident agent beside your tabs, and which projects have one.",
-    keywords: "mono resident agent mascot claim project title bar",
+    keywords: "irgat resident agent mascot claim project title bar",
   },
   {
     id: "inbox",
@@ -196,23 +196,23 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "claude tools connections oauth authenticate login add remove",
   },
   {
-    id: "monos-enabled",
-    section: "monos",
-    label: "Show monos",
-    keywords: "mono agent rail hide",
+    id: "irgats-enabled",
+    section: "irgats",
+    label: "Show irgats",
+    keywords: "irgat agent rail hide",
   },
   {
-    id: "rail-monos-pinned",
-    section: "monos",
-    label: "Pin monos to the icon rail",
-    keywords: "mono rail compact collapsed icons top divider project picker",
+    id: "rail-irgats-pinned",
+    section: "irgats",
+    label: "Pin irgats to the icon rail",
+    keywords: "irgat rail compact collapsed icons top divider project picker",
   },
   {
-    id: "mono-list",
-    section: "monos",
-    label: "Your monos",
+    id: "irgat-list",
+    section: "irgats",
+    label: "Your irgats",
     keywords:
-      "mono reset soul name projects sessions sidebar visibility hidden show",
+      "irgat reset soul name projects sessions sidebar visibility hidden show",
   },
   {
     id: "project-worktrees",
@@ -666,19 +666,19 @@ export function saveSettingsSection(id: SettingsSectionId) {
   }
 }
 
-const COMPOSER_RUNNER_KEY = "monocode.composerRunner";
+const COMPOSER_RUNNER_KEY = "irgat.composerRunner";
 
-const FOLLOW_UP_BEHAVIOR_KEY = "monocode.followUpBehavior";
+const FOLLOW_UP_BEHAVIOR_KEY = "irgat.followUpBehavior";
 
-const COMPOSER_EFFORT_VISIBLE_KEY = "monocode.composerEffortVisible";
+const COMPOSER_EFFORT_VISIBLE_KEY = "irgat.composerEffortVisible";
 
-const MODEL_CONTROLS_KEY = "monocode.modelControls";
+const MODEL_CONTROLS_KEY = "irgat.modelControls";
 
-const FILE_TAB_MODE_KEY = "monocode.fileTabMode";
+const FILE_TAB_MODE_KEY = "irgat.fileTabMode";
 
-const TAB_ANIMATIONS_ENABLED_KEY = "monocode.tabAnimationsEnabled";
+const TAB_ANIMATIONS_ENABLED_KEY = "irgat.tabAnimationsEnabled";
 
-const COLLAPSED_PROJECT_RAIL_MODE_KEY = "monocode.collapsedProjectRailMode";
+const COLLAPSED_PROJECT_RAIL_MODE_KEY = "irgat.collapsedProjectRailMode";
 
 export type FollowUpBehavior = "steer" | "queue";
 
@@ -741,7 +741,7 @@ export const COLLAPSED_PROJECT_RAIL_MODE_DEFAULT: CollapsedProjectRailMode =
   "compact";
 
 export const COLLAPSED_PROJECT_RAIL_MODE_CHANGE_EVENT =
-  "monocode:collapsed-project-rail-mode-change";
+  "irgat:collapsed-project-rail-mode-change";
 
 export function loadCollapsedProjectRailMode(): CollapsedProjectRailMode {
   try {
@@ -787,7 +787,7 @@ export type ModelControls = "menu" | "beside";
 export const MODEL_CONTROLS_DEFAULT: ModelControls = "menu";
 
 /** Fired on `window` when the composer model controls setting flips. */
-export const MODEL_CONTROLS_CHANGE_EVENT = "monocode:model-controls-change";
+export const MODEL_CONTROLS_CHANGE_EVENT = "irgat:model-controls-change";
 
 export function loadModelControls(): ModelControls {
   try {
@@ -828,7 +828,7 @@ export function subscribeModelControls(onStoreChange: () => void) {
 export const COMPOSER_RUNNER_DEFAULT = true;
 
 /** Fired on `window` when the composer mascot setting flips. */
-export const COMPOSER_RUNNER_CHANGE_EVENT = "monocode:composer-runner-change";
+export const COMPOSER_RUNNER_CHANGE_EVENT = "irgat:composer-runner-change";
 
 export function loadComposerRunner(): boolean {
   return readFlag(COMPOSER_RUNNER_KEY) ?? COMPOSER_RUNNER_DEFAULT;
@@ -842,12 +842,12 @@ export function saveComposerRunner(value: boolean) {
   );
 }
 
-const NOTES_ENABLED_KEY = "monocode.notesEnabled";
+const NOTES_ENABLED_KEY = "irgat.notesEnabled";
 
 export const NOTES_ENABLED_DEFAULT = true;
 
 /** Fired on `window` when the Notes UI setting flips. */
-export const NOTES_ENABLED_CHANGE_EVENT = "monocode:notes-enabled-change";
+export const NOTES_ENABLED_CHANGE_EVENT = "irgat:notes-enabled-change";
 
 export function loadNotesEnabled(): boolean {
   return readFlag(NOTES_ENABLED_KEY) ?? NOTES_ENABLED_DEFAULT;
@@ -868,57 +868,57 @@ export function subscribeNotesEnabled(onStoreChange: () => void) {
     window.removeEventListener(NOTES_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
-const MONOS_ENABLED_KEY = "monocode.monosEnabled";
+const IRGATS_ENABLED_KEY = "irgat.monosEnabled";
 
-export const MONOS_ENABLED_DEFAULT = true;
+export const IRGATS_ENABLED_DEFAULT = true;
 
-/** Fired on `window` when monos are shown or hidden. */
-export const MONOS_ENABLED_CHANGE_EVENT = "monocode:monos-enabled-change";
+/** Fired on `window` when irgats are shown or hidden. */
+export const IRGATS_ENABLED_CHANGE_EVENT = "irgat:irgats-enabled-change";
 
-/** Whether monos show in the title bar at all, across every project. */
+/** Whether irgats show in the title bar at all, across every project. */
 export function loadMonosEnabled(): boolean {
-  return readFlag(MONOS_ENABLED_KEY) ?? MONOS_ENABLED_DEFAULT;
+  return readFlag(IRGATS_ENABLED_KEY) ?? IRGATS_ENABLED_DEFAULT;
 }
 
 export function saveMonosEnabled(value: boolean) {
-  writeFlag(MONOS_ENABLED_KEY, value);
+  writeFlag(IRGATS_ENABLED_KEY, value);
   if (typeof window === "undefined") return;
   window.dispatchEvent(
-    new CustomEvent<boolean>(MONOS_ENABLED_CHANGE_EVENT, { detail: value }),
+    new CustomEvent<boolean>(IRGATS_ENABLED_CHANGE_EVENT, { detail: value }),
   );
 }
 
 export function subscribeMonosEnabled(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
-  window.addEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
+  window.addEventListener(IRGATS_ENABLED_CHANGE_EVENT, onStoreChange);
   return () =>
-    window.removeEventListener(MONOS_ENABLED_CHANGE_EVENT, onStoreChange);
+    window.removeEventListener(IRGATS_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
-const MONO_MENU_BAR_KEY = "monocode.monoMenuBarIcon";
+const IRGAT_MENU_BAR_KEY = "irgat.irgatMenuBarIcon";
 
 /** Fired on `window` when the menu bar icon is shown or hidden. */
-export const MONO_MENU_BAR_CHANGE_EVENT = "monocode:mono-menu-bar-change";
+export const IRGAT_MENU_BAR_CHANGE_EVENT = "irgat:irgat-menu-bar-change";
 
-export function loadMonoMenuBarIcon(): boolean {
-  return readFlag(MONO_MENU_BAR_KEY) ?? true;
+export function loadIrgatMenuBarIcon(): boolean {
+  return readFlag(IRGAT_MENU_BAR_KEY) ?? true;
 }
 
-export function saveMonoMenuBarIcon(value: boolean) {
-  writeFlag(MONO_MENU_BAR_KEY, value);
+export function saveIrgatMenuBarIcon(value: boolean) {
+  writeFlag(IRGAT_MENU_BAR_KEY, value);
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(MONO_MENU_BAR_CHANGE_EVENT));
+  window.dispatchEvent(new CustomEvent(IRGAT_MENU_BAR_CHANGE_EVENT));
 }
 
-export function subscribeMonoMenuBarIcon(onStoreChange: () => void) {
+export function subscribeIrgatMenuBarIcon(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
-  window.addEventListener(MONO_MENU_BAR_CHANGE_EVENT, onStoreChange);
+  window.addEventListener(IRGAT_MENU_BAR_CHANGE_EVENT, onStoreChange);
   return () =>
-    window.removeEventListener(MONO_MENU_BAR_CHANGE_EVENT, onStoreChange);
+    window.removeEventListener(IRGAT_MENU_BAR_CHANGE_EVENT, onStoreChange);
 }
 
-const QUICK_COMPOSER_ENABLED_KEY = "monocode.quickComposerEnabled";
-const QUICK_COMPOSER_SHORTCUT_KEY = "monocode.quickComposerShortcut";
+const QUICK_COMPOSER_ENABLED_KEY = "irgat.quickComposerEnabled";
+const QUICK_COMPOSER_SHORTCUT_KEY = "irgat.quickComposerShortcut";
 
 export const QUICK_COMPOSER_ENABLED_DEFAULT = true;
 
@@ -953,13 +953,13 @@ export function saveQuickComposerShortcut(value: string) {
   }
 }
 
-const LIVE_AGENTS_ENABLED_KEY = "monocode.liveAgentsEnabled";
+const LIVE_AGENTS_ENABLED_KEY = "irgat.liveAgentsEnabled";
 
 export const LIVE_AGENTS_ENABLED_DEFAULT = true;
 
 /** Fired on `window` when the working-agents rail card setting flips. */
 export const LIVE_AGENTS_ENABLED_CHANGE_EVENT =
-  "monocode:live-agents-enabled-change";
+  "irgat:live-agents-enabled-change";
 
 export function loadLiveAgentsEnabled(): boolean {
   return readFlag(LIVE_AGENTS_ENABLED_KEY) ?? LIVE_AGENTS_ENABLED_DEFAULT;
@@ -982,7 +982,7 @@ export function subscribeLiveAgentsEnabled(onStoreChange: () => void) {
     window.removeEventListener(LIVE_AGENTS_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
-const CLOSE_TO_TRAY_KEY = "monocode.closeToTray";
+const CLOSE_TO_TRAY_KEY = "irgat.closeToTray";
 
 export const CLOSE_TO_TRAY_DEFAULT = true;
 
@@ -996,13 +996,13 @@ export function saveCloseToTray(value: boolean) {
   writeFlag(CLOSE_TO_TRAY_KEY, value);
 }
 
-const GRID_ARCADE_ENABLED_KEY = "monocode.gridArcadeEnabled";
+const GRID_ARCADE_ENABLED_KEY = "irgat.gridArcadeEnabled";
 
 export const GRID_ARCADE_ENABLED_DEFAULT = true;
 
 /** Fired on `window` when the empty-session games setting flips. */
 export const GRID_ARCADE_ENABLED_CHANGE_EVENT =
-  "monocode:grid-arcade-enabled-change";
+  "irgat:grid-arcade-enabled-change";
 
 export function loadGridArcadeEnabled(): boolean {
   return readFlag(GRID_ARCADE_ENABLED_KEY) ?? GRID_ARCADE_ENABLED_DEFAULT;
@@ -1025,14 +1025,14 @@ export function subscribeGridArcadeEnabled(onStoreChange: () => void) {
     window.removeEventListener(GRID_ARCADE_ENABLED_CHANGE_EVENT, onStoreChange);
 }
 
-const DIFF_VIEWER_KEY = "monocode.diffViewer";
+const DIFF_VIEWER_KEY = "irgat.diffViewer";
 
 export type DiffViewer = "editor" | "unified";
 
 export const DIFF_VIEWER_DEFAULT: DiffViewer = "editor";
 
 /** Fired on `window` when the working-tree diff layout flips. */
-export const DIFF_VIEWER_CHANGE_EVENT = "monocode:diff-viewer-change";
+export const DIFF_VIEWER_CHANGE_EVENT = "irgat:diff-viewer-change";
 
 function isDiffViewer(value: unknown): value is DiffViewer {
   return value === "editor" || value === "unified";
@@ -1067,7 +1067,7 @@ export function subscribeDiffViewer(onStoreChange: () => void) {
     window.removeEventListener(DIFF_VIEWER_CHANGE_EVENT, onStoreChange);
 }
 
-const FORMAT_ON_SAVE_KEY = "monocode.formatOnSave";
+const FORMAT_ON_SAVE_KEY = "irgat.formatOnSave";
 
 export const FORMAT_ON_SAVE_DEFAULT = true;
 
@@ -1079,8 +1079,8 @@ export function saveFormatOnSave(value: boolean) {
   writeFlag(FORMAT_ON_SAVE_KEY, value);
 }
 
-const AUTOSAVE_KEY = "monocode.autosave";
-const AUTOSAVE_CHANGE_EVENT = "monocode:autosave-change";
+const AUTOSAVE_KEY = "irgat.autosave";
+const AUTOSAVE_CHANGE_EVENT = "irgat:autosave-change";
 
 export const AUTOSAVE_DEFAULT = false;
 
@@ -1110,7 +1110,7 @@ export function subscribeAutosave(onStoreChange: () => void) {
   };
 }
 
-const CLAUDE_HOOKS_KEY = "monocode.claudeHooks";
+const CLAUDE_HOOKS_KEY = "irgat.claudeHooks";
 
 export const CLAUDE_HOOKS_DEFAULT = true;
 
@@ -1122,7 +1122,7 @@ export function saveClaudeHooks(value: boolean) {
   writeFlag(CLAUDE_HOOKS_KEY, value);
 }
 
-const IDLE_AGENT_LIMIT_KEY = "monocode.idleAgentLimit";
+const IDLE_AGENT_LIMIT_KEY = "irgat.idleAgentLimit";
 
 /** How many finished conversations keep their agent CLI warm. */
 export const IDLE_AGENT_LIMITS = [0, 1, 2, 3, 5] as const;
@@ -1186,7 +1186,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
     when: "Always",
   },
   { command: "App: Switch Model", keys: `${MOD}.`, when: "Always" },
-  { command: "App: Toggle Mono", keys: `${MOD}I`, when: "Project with a mono" },
+  { command: "App: Toggle Irgat", keys: `${MOD}I`, when: "Project with a irgat" },
   {
     command: "Composer: Toggle Workspace",
     keys: `${MOD}${SHIFT}G`,
@@ -1270,8 +1270,8 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "Editor: Replace", keys: `${MOD}${ALT}F`, when: "editorFocus" },
 ];
 
-const KEYBINDING_OVERRIDES_KEY = "monocode.keybindingOverrides";
-const KEYBINDINGS_CHANGE_EVENT = "monocode:keybindings-change";
+const KEYBINDING_OVERRIDES_KEY = "irgat.keybindingOverrides";
+const KEYBINDINGS_CHANGE_EVENT = "irgat:keybindings-change";
 
 export type KeybindingOverride = {
   disabled?: boolean;

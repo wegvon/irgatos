@@ -4,7 +4,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
-pub(crate) const CHANGED: &str = "monocode:kanban-changed";
+pub(crate) const CHANGED: &str = "irgat:kanban-changed";
 const DEFAULT_COLUMNS: [&str; 4] = ["Backlog", "In progress", "Review", "Done"];
 const CARD_TITLE_MAX: usize = 200;
 const COLUMN_TITLE_MAX: usize = 60;
@@ -1238,7 +1238,7 @@ mod tests {
     #[test]
     fn the_board_survives_reopening_the_database() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-kanban-{}-{}",
+            "irgat-kanban-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

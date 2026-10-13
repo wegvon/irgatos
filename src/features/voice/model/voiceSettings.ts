@@ -1,8 +1,8 @@
 import type { VoiceEngine } from "../../../platform/tauri/voice";
 
-const KEY = "monocode.voice";
+const KEY = "irgat.voice";
 
-export const VOICE_SETTINGS_CHANGE_EVENT = "monocode:voice-settings-change";
+export const VOICE_SETTINGS_CHANGE_EVENT = "irgat:voice-settings-change";
 
 export const DEFAULT_CLOUD_ENDPOINT =
   "https://api.openai.com/v1/audio/transcriptions";

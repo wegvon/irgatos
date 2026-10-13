@@ -13,7 +13,7 @@ import {
 import {
   killChild,
   resolveCodexBinary,
-  restoreMonoCodexAgentState,
+  restoreIrgatxAgentState,
   spawnChild,
   unwatchChild,
   watchChild,
@@ -46,7 +46,7 @@ import {
 } from "./codexQuestions";
 import { codexMcpConfirmation } from "./codexElicitation";
 import { snapshotRemainder } from "../../core/streamText";
-import { prepareCodexMonoContext } from "./codexStore";
+import { prepareCodexIrgatContext } from "./codexStore";
 import type {
   ApprovalDecision,
   CompactContextInput,
@@ -91,7 +91,7 @@ type Live = {
   /** Thread-level network policy used when this app-server opened the thread. */
   controlsAgents: boolean;
   ephemeral: boolean;
-  codexStore?: "mono";
+  codexStore?: "irgat";
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
@@ -139,7 +139,7 @@ type Resume = {
   cwd: string;
   providerAccountId?: string;
   ephemeral?: boolean;
-  codexStore?: "mono";
+  codexStore?: "irgat";
 };
 
 const liveByThread = new Map<string, Live>();
@@ -470,14 +470,14 @@ export function bindCodexSession(
   });
 }
 
-export async function migrateMonoCodexSession(input: {
+export async function migrateIrgatxSession(input: {
   sessionId: string;
   threadId: string;
   cwd: string;
   providerAccountId?: string;
 }): Promise<void> {
   const { path } = await resolveCodexBinaryImpl();
-  await prepareCodexMonoContext({ ...input, path, migrationOnly: true });
+  await prepareCodexIrgatContext({ ...input, path, migrationOnly: true });
 }
 
 /** Ephemeral context exists only while its app-server is alive. */
@@ -551,8 +551,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
   const { path } = await resolveCodexBinaryImpl();
   const store =
-    codexStore === "mono"
-      ? await prepareCodexMonoContext({
+    codexStore === "irgat"
+      ? await prepareCodexIrgatContext({
           sessionId: input.sessionId,
           path,
           cwd: input.cwd,
@@ -660,8 +660,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   try {
     await rpc.request("initialize", {
       clientInfo: {
-        name: "monocode",
-        title: "MonoCode",
+        name: "irgat",
+        title: "Irgat",
         version: "0.1.0",
       },
       capabilities: {
@@ -672,7 +672,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     });
     await rpc.notify("initialized", undefined);
     if (store?.hasThread && canResume && resume) {
-      await restoreMonoCodexAgentState(
+      await restoreIrgatxAgentState(
         input.providerAccountId,
         resume.threadId,
       );
@@ -714,7 +714,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       } catch (error) {
         if (store?.hasThread)
           throw new Error(
-            "The saved Mono Codex context could not be resumed. Retry to keep its saved context.",
+            "The saved Irgat Codex context could not be resumed. Retry to keep its saved context.",
           );
         if (!isRecoverableThreadResumeError(error)) throw error;
         threadId = undefined;
@@ -933,7 +933,7 @@ function handleNotification(
   const mapped = mapCodexNotification(method, params);
   if (mapped.diagnostic) {
     console.debug(
-      `[monocode] codex ${live.threadId} ${method}`,
+      `[irgat] codex ${live.threadId} ${method}`,
       mapped.diagnostic,
     );
   }
@@ -1437,7 +1437,7 @@ async function handleServerRequest(
       if (!live.cancelled && !live.muteUpdates)
         live.onEvent({
           type: "status",
-          text: "This MCP server requested a form or browser sign-in that MonoCode does not support yet. Complete it in the server's own interface.",
+          text: "This MCP server requested a form or browser sign-in that Irgat does not support yet. Complete it in the server's own interface.",
         });
       await live.rpc.respond(id, {
         action: "cancel",

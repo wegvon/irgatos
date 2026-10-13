@@ -118,19 +118,19 @@ function fixture() {
     notes: vi.fn(async () => [note]),
     note: vi.fn(async (id) => (id === note.id ? note : null)),
     saveNote: vi.fn(async (input) => ({ ...note, ...input })),
-    isMono: () => false,
+    isIrgat: () => false,
   };
   return { source, host };
 }
 
 describe("agent app commands", () => {
   it.each([undefined, true, false])(
-    "uses the Mono's sidebar preference for both submitted and draft sessions: %s",
+    "uses the Irgat's sidebar preference for both submitted and draft sessions: %s",
     async (showStartedSessionsInSidebar) => {
       const { source, host } = fixture();
-      host.isMono = () => true;
-      host.monoOf = () => ({
-        id: "mono",
+      host.isIrgat = () => true;
+      host.irgatOf = () => ({
+        id: "irgat",
         projects: [source.cwd],
         showStartedSessionsInSidebar,
       });
@@ -148,11 +148,11 @@ describe("agent app commands", () => {
     },
   );
 
-  it("uses the owning Mono's preference when a habit starts a session", async () => {
+  it("uses the owning Irgat's preference when a habit starts a session", async () => {
     const { source, host } = fixture();
     host.isHabitRun = () => true;
-    host.monoOf = () => ({
-      id: "mono",
+    host.irgatOf = () => ({
+      id: "irgat",
       projects: [source.cwd],
       showStartedSessionsInSidebar: false,
     });
@@ -166,11 +166,11 @@ describe("agent app commands", () => {
     );
   });
 
-  it("files a Mono's sessions into a folder named after it", async () => {
+  it("files a Irgat's sessions into a folder named after it", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
-    host.monoOf = () => ({
-      id: "mono",
+    host.isIrgat = () => true;
+    host.irgatOf = () => ({
+      id: "irgat",
       projects: [source.cwd],
       showStartedSessionsInSidebar: true,
       folder: { name: "Captain Jack", color: "#5b8def" },
@@ -189,11 +189,11 @@ describe("agent app commands", () => {
     ]);
   });
 
-  it("leaves a hidden Mono session out of its folder", async () => {
+  it("leaves a hidden Irgat session out of its folder", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
-    host.monoOf = () => ({
-      id: "mono",
+    host.isIrgat = () => true;
+    host.irgatOf = () => ({
+      id: "irgat",
       projects: [source.cwd],
       showStartedSessionsInSidebar: false,
       folder: { name: "Captain Jack", color: "#5b8def" },
@@ -238,12 +238,12 @@ describe("agent app commands", () => {
       }
     });
 
-    it("lets a Mono manage sessions in a selected assigned project", async () => {
+    it("lets a Irgat manage sessions in a selected assigned project", async () => {
       const { source, host } = fixture();
       source.cwd = "/home/user";
-      host.isMono = (id) => id === source.id;
-      host.monoOf = () => ({
-        id: "mono",
+      host.isIrgat = (id) => id === source.id;
+      host.irgatOf = () => ({
+        id: "irgat",
         projects: ["/code/app", "/code/site"],
       });
       vi.mocked(host.session).mockResolvedValue({
@@ -318,13 +318,13 @@ describe("agent app commands", () => {
       expect(host.remove).not.toHaveBeenCalled();
     });
 
-    it("does not manage Mono chats, habit runs or orchestration workers", async () => {
+    it("does not manage Irgat chats, habit runs or orchestration workers", async () => {
       const { source, host } = fixture();
-      host.isMono = () => true;
+      host.isIrgat = () => true;
       await expect(
-        handleAgentApp(source, "mono", action, { sessionId: "other" }, host),
+        handleAgentApp(source, "irgat", action, { sessionId: "other" }, host),
       ).rejects.toThrow("Only regular project sessions");
-      host.isMono = () => false;
+      host.isIrgat = () => false;
       host.isHabitRun = () => true;
       await expect(
         handleAgentApp(source, "habit", action, { sessionId: "other" }, host),
@@ -373,7 +373,7 @@ describe("agent app commands", () => {
     });
   });
 
-  it("allows session inspection in a Mono's projects when its chat lives at home", () => {
+  it("allows session inspection in a Irgat's projects when its chat lives at home", () => {
     const { source } = fixture();
     source.cwd = "/home/user";
     const projects = ["/code/app", "/code/site"];
@@ -388,9 +388,9 @@ describe("agent app commands", () => {
     expect(canAccessAgentAppProject(source, "/code/app")).toBe(false);
   });
 
-  it.each([undefined, true])("reports completion of Mono launches with notifyOnComplete=%s", async (notifyOnComplete) => {
+  it.each([undefined, true])("reports completion of Irgat launches with notifyOnComplete=%s", async (notifyOnComplete) => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
+    host.isIrgat = (id) => id === source.id;
     expect(
       await handleAgentApp(
         source,
@@ -427,9 +427,9 @@ describe("agent app commands", () => {
     );
   });
 
-  it("does not monitor a Mono's unsent draft by default", async () => {
+  it("does not monitor a Irgat's unsent draft by default", async () => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
+    host.isIrgat = (id) => id === source.id;
     const result = await handleAgentApp(
       source,
       "draft",
@@ -445,7 +445,7 @@ describe("agent app commands", () => {
     );
   });
 
-  it.each([false, true])("leaves non-Mono launches unmonitored when habitRun=%s", async (habitRun) => {
+  it.each([false, true])("leaves non-Irgat launches unmonitored when habitRun=%s", async (habitRun) => {
     const { source, host } = fixture();
     host.isHabitRun = () => habitRun;
     const result = await handleAgentApp(
@@ -462,9 +462,9 @@ describe("agent app commands", () => {
     );
   });
 
-  it("reports completion of a sent follow-up to its calling Mono", async () => {
+  it("reports completion of a sent follow-up to its calling Irgat", async () => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
+    host.isIrgat = (id) => id === source.id;
     expect(
       await handleAgentApp(
         source,
@@ -492,9 +492,9 @@ describe("agent app commands", () => {
     { reveal: true, notifyOnComplete: true },
     { reveal: true, draft: true },
     { reveal: true, placement: "right", besideSessionId: "other" },
-  ])("keeps Mono-launched sessions in the background for %j", async (options) => {
+  ])("keeps Irgat-launched sessions in the background for %j", async (options) => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
+    host.isIrgat = (id) => id === source.id;
     await handleAgentApp(
       source,
       "background",
@@ -510,7 +510,7 @@ describe("agent app commands", () => {
 
   it("reports completion by default through split placement", async () => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
+    host.isIrgat = (id) => id === source.id;
     await handleAgentApp(
       source,
       "monitored-split",
@@ -552,12 +552,12 @@ describe("agent app commands", () => {
       await expect(
         handleAgentApp(
           source,
-          "not-mono",
+          "not-irgat",
           action,
           { ...input, notifyOnComplete: true },
           host,
         ),
-      ).rejects.toThrow("only available in a Mono");
+      ).rejects.toThrow("only available in a Irgat");
       expect(host.start).not.toHaveBeenCalled();
       expect(host.send).not.toHaveBeenCalled();
       await handleAgentApp(
@@ -572,7 +572,7 @@ describe("agent app commands", () => {
 
   it("rejects completion reports for an unsent draft", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
+    host.isIrgat = () => true;
     await expect(
       handleAgentApp(
         source,
@@ -589,10 +589,10 @@ describe("agent app commands", () => {
     expect(host.start).not.toHaveBeenCalled();
   });
 
-  it("lets a Mono page its own chat without requiring a project", async () => {
+  it("lets a Irgat page its own chat without requiring a project", async () => {
     const { source, host } = fixture();
-    host.isMono = (id) => id === source.id;
-    host.readConversation = vi.fn(async () => ({ sessionId: source.id, title: "Mono", busy: false, hasDraft: false, turns: [], nextBefore: "older" }));
+    host.isIrgat = (id) => id === source.id;
+    host.readConversation = vi.fn(async () => ({ sessionId: source.id, title: "Irgat", busy: false, hasDraft: false, turns: [], nextBefore: "older" }));
     const options = { before: "cursor", limit: 3, maxChars: 1200 };
     expect(await handleAgentApp(source, "own-chat", "sessions.read", { sessionId: source.id, ...options }, host)).toMatchObject({ nextBefore: "older" });
     expect(host.readConversation).toHaveBeenCalledWith(source, options);
@@ -703,8 +703,8 @@ describe("agent app commands", () => {
     ]) {
       for (const prompt of [
         "/operator list notes",
-        "/mono list notes",
-        "  /MONOCODE list notes",
+        "/irgat list notes",
+        "  /IRGAT list notes",
       ]) {
         await expect(
           handleAgentApp(
@@ -846,8 +846,8 @@ describe("agent app commands", () => {
   ])("inherits a worktree only when launching in the source project: %s", async (project, expectedWorktree) => {
     const { source, host } = fixture();
     source.worktreeCwd = "/tmp/project-worktrees/source";
-    host.isMono = () => true;
-    host.monoOf = () => ({ id: "mono", projects: [source.cwd, "/tmp/other"] });
+    host.isIrgat = () => true;
+    host.irgatOf = () => ({ id: "irgat", projects: [source.cwd, "/tmp/other"] });
     await handleAgentApp(source, "launch", "sessions.start", {
       prompt: "Review the project",
       project,
@@ -858,11 +858,11 @@ describe("agent app commands", () => {
     expect(launch.worktreeCwd).toBe(expectedWorktree);
   });
 
-  it("validates an explicit worktree in the Mono's selected project", async () => {
+  it("validates an explicit worktree in the Irgat's selected project", async () => {
     const { source, host } = fixture();
     source.worktreeCwd = "/tmp/project-worktrees/source";
-    host.isMono = () => true;
-    host.monoOf = () => ({ id: "mono", projects: [source.cwd, "/tmp/other"] });
+    host.isIrgat = () => true;
+    host.irgatOf = () => ({ id: "irgat", projects: [source.cwd, "/tmp/other"] });
     const chosen = "/tmp/other-worktrees/feature";
     vi.mocked(host.worktrees).mockResolvedValue({
       worktrees: [{ ...featureWorktree, path: chosen }],
@@ -1200,7 +1200,7 @@ describe("agent app commands", () => {
 
   it("saves artifacts separately, returns metadata, and attaches one reference on retries", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
+    host.isIrgat = () => true;
     let created: Artifact | null = null;
     host.artifact = vi.fn(async (id) => (id === created?.id ? created : null));
     host.saveArtifact = vi.fn(async (input) => {
@@ -1261,7 +1261,7 @@ describe("agent app commands", () => {
 
   it("revises a document without changing omitted fields and refuses note IDs", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
+    host.isIrgat = () => true;
     host.artifact = vi.fn(async (id) =>
       id === "artifact-1" ? { ...artifact, id } : null,
     );
@@ -1315,7 +1315,7 @@ describe("agent app commands", () => {
     expect(host.saveArtifact).toHaveBeenCalledTimes(1);
   });
 
-  it("restricts artifact actions to Monos and lists only document metadata", async () => {
+  it("restricts artifact actions to Irgats and lists only document metadata", async () => {
     const { source, host } = fixture();
     await expect(
       handleAgentApp(
@@ -1325,8 +1325,8 @@ describe("agent app commands", () => {
         { body: "Report" },
         host,
       ),
-    ).rejects.toThrow("Only a Mono");
-    host.isMono = () => true;
+    ).rejects.toThrow("Only a Irgat");
+    host.isIrgat = () => true;
     host.artifact = vi.fn(async () => artifact);
     host.artifacts = vi.fn(async () => [{ ...artifact, id: "artifact-1" }]);
     const result = await handleAgentApp(
@@ -1371,7 +1371,7 @@ describe("agent app commands", () => {
 
   it("saves an html visual with its kind and posts it to the reply", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
+    host.isIrgat = () => true;
     host.artifact = vi.fn(async () => null);
     host.saveArtifact = vi.fn(async (artifact) => ({
       ...artifact,
@@ -1399,7 +1399,7 @@ describe("agent app commands", () => {
 
   it("rejects unsupported artifact kinds before saving or posting a card", async () => {
     const { source, host } = fixture();
-    host.isMono = () => true;
+    host.isIrgat = () => true;
     host.artifact = vi.fn(async () => null);
     host.artifacts = vi.fn(async () => []);
     host.saveArtifact = vi.fn();

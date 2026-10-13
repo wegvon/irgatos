@@ -14,8 +14,8 @@ export type RemoteProject = {
   cwd: string;
 };
 
-const KEY = "monocode.remote-projects.v2";
-export const REMOTE_PROJECTS_CHANGED = "monocode:remote-projects-changed";
+const KEY = "irgat.remote-projects.v2";
+export const REMOTE_PROJECTS_CHANGED = "irgat:remote-projects-changed";
 
 const slashed = (path: string) => path.replace(/\\/g, "/");
 

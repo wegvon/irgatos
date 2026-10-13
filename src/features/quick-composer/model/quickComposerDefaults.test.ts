@@ -17,8 +17,8 @@ beforeEach(() => {
 afterEach(() => resetHarnessModelOverlays());
 
 it("uses the configured Codex default instead of the last quick-composer model", () => {
-  localStorage.setItem("monocode.quickComposerHarness", "cursor");
-  localStorage.setItem("monocode.quickComposerModel", "cursor:composer-2.5");
+  localStorage.setItem("irgat.quickComposerHarness", "cursor");
+  localStorage.setItem("irgat.quickComposerModel", "cursor:composer-2.5");
   saveLastModelChoice("codex", "codex:gpt-5.6-luna");
   expect(initialQuickChoice()).toEqual({
     harness: "codex",

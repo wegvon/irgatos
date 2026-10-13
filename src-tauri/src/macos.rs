@@ -58,9 +58,9 @@ pub const BLUR_MIN: u8 = 1;
 pub const BLUR_MAX: u8 = 64;
 pub const BLUR_DEFAULT: u8 = 24;
 
-const GLASS_BACKING_ID: &str = "monocode.webview-glass-backing";
-const FLOATING_GLASS_ID: &str = "monocode.floating-glass";
-const FLOATING_CONTENT_ID: &str = "monocode.floating-content";
+const GLASS_BACKING_ID: &str = "irgat.webview-glass-backing";
+const FLOATING_GLASS_ID: &str = "irgat.floating-glass";
+const FLOATING_CONTENT_ID: &str = "irgat.floating-content";
 /// Matches the floating chat's `rounded-2xl` CSS outline.
 const FLOATING_CORNER_RADIUS: f64 = 16.0;
 
@@ -222,7 +222,7 @@ fn set_launch_background(window: &WebviewWindow, r: u8, g: u8, b: u8) {
         return;
     };
     set_glass_backing(&ns_window, false);
-    ns_window.setOpaque(!window.label().starts_with(crate::window::MONO_CHAT_PREFIX));
+    ns_window.setOpaque(!window.label().starts_with(crate::window::IRGAT_CHAT_PREFIX));
     set_native_background(
         window,
         &ns_window,
@@ -314,7 +314,7 @@ fn floating_corner_mask() -> Retained<NSImage> {
 }
 
 fn set_native_background(window: &WebviewWindow, native: &NSWindow, color: &NSColor) {
-    if window.label().starts_with(crate::window::MONO_CHAT_PREFIX) {
+    if window.label().starts_with(crate::window::IRGAT_CHAT_PREFIX) {
         if let Some(layer) = native.contentView().and_then(|view| {
             view.subviews()
                 .iter()
@@ -441,7 +441,7 @@ fn set_glass_backing(window: &NSWindow, enabled: bool) {
 fn apply_blur(window: &WebviewWindow, radius: u8) {
     // This API blurs the window rectangle independently of CALayer clipping.
     // The floating panel's masked AppKit material owns its backdrop instead.
-    let radius = if window.label().starts_with(crate::window::MONO_CHAT_PREFIX) {
+    let radius = if window.label().starts_with(crate::window::IRGAT_CHAT_PREFIX) {
         0
     } else {
         radius
@@ -606,7 +606,7 @@ struct DockMenuTargetIvars {
 
 define_class!(
     #[unsafe(super(NSObject))]
-    #[name = "MonoCodeDockMenuTarget"]
+    #[name = "IrgatDockMenuTarget"]
     #[ivars = DockMenuTargetIvars]
     struct DockMenuTarget;
 
@@ -698,7 +698,7 @@ pub(crate) fn install_dock_menu(app: &AppHandle) {
 #[cfg(debug_assertions)]
 pub(crate) fn ensure_dev_bundle() {
     if let Err(err) = relaunch_from_dev_bundle() {
-        eprintln!("monocode: macos dev bundle: {err}");
+        eprintln!("irgat: macos dev bundle: {err}");
     }
 }
 
@@ -765,7 +765,7 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
     std::fs::create_dir_all(&macos_dir).map_err(|e| e.to_string())?;
     write_dev_bundle_icons(&app, &app_name)?;
 
-    let bundled = macos_dir.join("monocode");
+    let bundled = macos_dir.join("irgat");
     let _ = std::fs::remove_file(&bundled);
     // A copy, not a hard link: re-signing below rewrites the file, and the
     // linked original is the executable running this code.
@@ -776,7 +776,7 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
     perms.set_mode(0o755);
     std::fs::set_permissions(&bundled, perms).map_err(|e| e.to_string())?;
 
-    // The linker's ad-hoc signature carries a `monocode-<hash>` identifier.
+    // The linker's ad-hoc signature carries a `irgat-<hash>` identifier.
     // UNUserNotificationCenter refuses authorization, without prompting,
     // unless the signing identifier matches CFBundleIdentifier.
     let signed = Command::new("/usr/bin/codesign")
@@ -786,7 +786,7 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
         .map(|status| status.success())
         .unwrap_or(false);
     if !signed {
-        eprintln!("monocode: macos dev bundle: codesign failed; notifications stay off");
+        eprintln!("irgat: macos dev bundle: codesign failed; notifications stay off");
     }
 
     let err = Command::new(&bundled)
@@ -811,10 +811,12 @@ fn write_dev_bundle_icons(app: &Path, app_name: &str) -> Result<(), String> {
 
 /// Must match `CFBundleIdentifier` in the generated dev bundle plist and tauri.conf.json.
 #[cfg(debug_assertions)]
-const DEV_BUNDLE_DEFAULT_NAME: &str = "MonoCode";
+const DEV_BUNDLE_DEFAULT_NAME: &str = "Irgat";
 #[cfg(debug_assertions)]
-const DEV_BUNDLE_NAME_ENV: &str = "MONOCODE_DEV_APP_NAME";
+const DEV_BUNDLE_NAME_ENV: &str = "IRGAT_DEV_APP_NAME";
 #[cfg(debug_assertions)]
+// Keep the established identifier until the dedicated identity-migration
+// release moves the existing application data to a new Irgat location.
 const DEV_BUNDLE_ID: &str = "com.monocode.desktop";
 #[cfg(debug_assertions)]
 const DEV_ICNS: &[u8] = include_bytes!("../icons/icon.icns");
@@ -876,7 +878,7 @@ fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
 	<key>CFBundleDisplayName</key>
 	<string>{app_name}</string>
 	<key>CFBundleExecutable</key>
-	<string>monocode</string>
+	<string>irgat</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIconName</key>
@@ -898,9 +900,9 @@ fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>MonoCode listens while you dictate a message or talk to an agent in voice mode.</string>
+	<string>Irgat listens while you dictate a message or talk to an agent in voice mode.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>MonoCode turns what you say into text for the message composer, on this Mac when the language is installed.</string>
+	<string>Irgat turns what you say into text for the message composer, on this Mac when the language is installed.</string>
 </dict>
 </plist>
 "#
@@ -939,11 +941,11 @@ mod tests {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!(
-            "monocode-macos-tests-{}-{nonce}",
+            "irgat-macos-tests-{}-{nonce}",
             std::process::id()
         ));
         let app = root.join(app_name);
-        let exe = app.join("Contents/MacOS/monocode");
+        let exe = app.join("Contents/MacOS/irgat");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
         std::fs::write(app.join("Contents/Info.plist"), b"plist").unwrap();
         (root, exe)
@@ -952,8 +954,8 @@ mod tests {
     #[test]
     fn sanitized_dev_bundle_name_accepts_single_component() {
         assert_eq!(
-            sanitized_dev_bundle_name("  MonoCode Dev  "),
-            Some("MonoCode Dev".into())
+            sanitized_dev_bundle_name("  Irgat Dev  "),
+            Some("Irgat Dev".into())
         );
     }
 
@@ -967,8 +969,8 @@ mod tests {
     #[test]
     fn bundle_name_from_app_path_reads_existing_bundle_name() {
         assert_eq!(
-            bundle_name_from_app_path(Path::new("/tmp/MonoCode Dev.app")),
-            Some("MonoCode Dev".into())
+            bundle_name_from_app_path(Path::new("/tmp/Irgat Dev.app")),
+            Some("Irgat Dev".into())
         );
     }
 
@@ -981,16 +983,16 @@ mod tests {
 
     #[test]
     fn dev_bundle_plist_uses_the_provided_app_name() {
-        let plist = String::from_utf8(dev_bundle_plist("MonoCode Dev")).unwrap();
-        assert!(plist.contains("<string>MonoCode Dev</string>"));
-        assert!(!plist.contains("<string>MonoCode</string>"));
+        let plist = String::from_utf8(dev_bundle_plist("Irgat Dev")).unwrap();
+        assert!(plist.contains("<string>Irgat Dev</string>"));
+        assert!(!plist.contains("<string>Irgat</string>"));
     }
 
     /// The Speech framework terminates an app that asks without these keys,
     /// and `tauri dev` runs from this generated bundle, not `Info.plist`.
     #[test]
     fn dev_bundle_plist_declares_voice_usage() {
-        let plist = String::from_utf8(dev_bundle_plist("MonoCode")).unwrap();
+        let plist = String::from_utf8(dev_bundle_plist("Irgat")).unwrap();
         assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
         assert!(plist.contains("<key>NSSpeechRecognitionUsageDescription</key>"));
     }

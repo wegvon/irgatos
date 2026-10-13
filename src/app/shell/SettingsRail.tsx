@@ -31,7 +31,7 @@ const SECTION_ICONS: Record<SettingsSectionId, IconComponent> = {
   providers: Bot,
   mcp: Globe,
   skills: Sparkles,
-  monos: Ghost,
+  irgats: Ghost,
   inbox: Inbox,
   worktrees: FolderTree,
   archive: Archive,

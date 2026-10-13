@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-pub const EVENT: &str = "monocode:voice-speech";
+pub const EVENT: &str = "irgat:voice-speech";
 
 /// `say` accepts any rate, but outside this range speech stops being useful.
 const RATE_RANGE: std::ops::RangeInclusive<u32> = 90..=400;

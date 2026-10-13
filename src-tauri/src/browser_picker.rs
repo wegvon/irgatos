@@ -16,10 +16,10 @@ use wry::WebView;
 use crate::browser::{on_main, VIEWS};
 
 const PICKER_JS: &str = include_str!("browser_picker.js");
-const POLL_JS: &str = r#"(() => { const picker = globalThis.__monocodePicker; return picker ? picker.take() : '{"state":"missing"}'; })()"#;
-const STOP_JS: &str = "globalThis.__monocodePicker?.stop()";
+const POLL_JS: &str = r#"(() => { const picker = globalThis.__irgatPicker; return picker ? picker.take() : '{"state":"missing"}'; })()"#;
+const STOP_JS: &str = "globalThis.__irgatPicker?.stop()";
 #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
-const WORLD: &str = "monocode-picker";
+const WORLD: &str = "irgat-picker";
 
 const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_ELEMENTS: usize = 12;

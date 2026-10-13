@@ -2,13 +2,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-import { monoSessionCompletionMessage } from "../../monos/model/monoSessionCompletion";
+import { irgatSessionCompletionMessage } from "../../irgats/model/irgatSessionCompletion";
 import { MessageQueue } from "./MessageQueue";
 
 it("labels a pending completion and offers removal without editing or steering it", () => {
-  const message = monoSessionCompletionMessage({
+  const message = irgatSessionCompletionMessage({
     sessionId: "worker",
-    requestId: "app-mono-monitor",
+    requestId: "app-irgat-monitor",
     project: "/code/project",
     prompt: "Review",
     session: undefined,
@@ -26,7 +26,7 @@ it("labels a pending completion and offers removal without editing or steering i
   );
   expect(container.textContent).toContain("Session completed: Agent session");
   expect(container.textContent).not.toContain(
-    "MonoCode completion notification",
+    "Irgat completion notification",
   );
   expect(container.textContent).not.toContain("Steer");
   expect(
@@ -40,17 +40,17 @@ it("labels a pending completion and offers removal without editing or steering i
 });
 
 it("labels a combined report without exposing the app prompt", () => {
-  const message = monoSessionCompletionMessage({
+  const message = irgatSessionCompletionMessage({
     sessionId: "worker",
     requestId: "request",
     project: "/code/project",
     prompt: "Review",
     outcome: { status: "completed", text: "Done" },
   });
-  message.monoSessionCompletion!.sessionCount = 3;
+  message.irgatSessionCompletion!.sessionCount = 3;
   const markup = renderToStaticMarkup(
     createElement(MessageQueue, { messages: [message] }),
   );
   expect(markup).toContain("3 sessions finished");
-  expect(markup).not.toContain("MonoCode completion notification");
+  expect(markup).not.toContain("Irgat completion notification");
 });

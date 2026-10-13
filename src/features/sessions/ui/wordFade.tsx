@@ -11,14 +11,14 @@ import { useEffect, useReducer, useRef, useState } from "react";
  * index.css.
  *
  * The older paced reveal, which lets text out a word at a time at a steady
- * rate, stays available behind `localStorage["monocode.pacedReveal"] = "1"`.
+ * rate, stays available behind `localStorage["irgat.pacedReveal"] = "1"`.
  */
 
 /** How long one word takes to fade in while paced. */
 export const WORD_FADE_MS = 320;
 
 /** Opt back into the paced word-at-a-time reveal. */
-export const PACED_REVEAL_KEY = "monocode.pacedReveal";
+export const PACED_REVEAL_KEY = "irgat.pacedReveal";
 
 /**
  * Fade length tracks an average of the gaps between bursts: three gaps long,

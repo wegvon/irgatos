@@ -1,10 +1,10 @@
 import { getComposerDraft, setComposerDraft } from "./draftCache";
 import { appendSessionReference } from "./sessionReferences";
 
-export const OPEN_REFERENCED_SESSION_EVENT = "monocode:open-referenced-session";
-export const SEND_TO_SESSION_EVENT = "monocode:send-to-session";
+export const OPEN_REFERENCED_SESSION_EVENT = "irgat:open-referenced-session";
+export const SEND_TO_SESSION_EVENT = "irgat:send-to-session";
 export const INSERT_SESSION_REFERENCE_EVENT =
-  "monocode:insert-session-reference";
+  "irgat:insert-session-reference";
 
 export type OpenReferencedSessionRequest = {
   sessionId: string;

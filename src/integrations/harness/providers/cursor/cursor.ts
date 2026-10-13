@@ -237,7 +237,7 @@ export async function forgetCursorSession(sessionId: string): Promise<void> {
   await stopCursorTitleGeneration(sessionId);
 }
 
-/** Seed ACP resume state for a restored MonoCode session. */
+/** Seed ACP resume state for a restored Irgat session. */
 export function bindCursorSession(
   threadId: string,
   acpSessionId: string,
@@ -315,7 +315,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     await acp.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: CLIENT_CAPABILITIES,
-      clientInfo: { name: "monocode", version: "0.1.0" },
+      clientInfo: { name: "irgat", version: "0.1.0" },
     });
 
     let setup: SessionSetupResult | undefined;
@@ -402,7 +402,7 @@ function cursorStartupError(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
   if (/authentication required|cursor_login|agent login/i.test(message)) {
     return new Error(
-      "Cursor CLI is not signed in. Run `agent login` in Terminal, complete the browser sign-in, then retry this prompt. MonoCode will reuse the CLI's existing login.",
+      "Cursor CLI is not signed in. Run `agent login` in Terminal, complete the browser sign-in, then retry this prompt. Irgat will reuse the CLI's existing login.",
     );
   }
   return error instanceof Error ? error : new Error(message);

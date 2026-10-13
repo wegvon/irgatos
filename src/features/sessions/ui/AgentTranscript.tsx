@@ -33,7 +33,7 @@ import {
 import { flushSync } from "react-dom";
 import { AttachmentChip } from "./AttachmentChip";
 import { GeneratedImage } from "./GeneratedImage";
-import { MonocodeSparkles } from "./MonocodeSparkles";
+import { IrgatSparkles } from "./IrgatSparkles";
 import { OrchestratorConstellation } from "./OrchestratorConstellation";
 import { PlanStepsBurst } from "./PlanStepsBurst";
 import { settleWordFades } from "./wordFade";
@@ -54,15 +54,15 @@ import { TerminalSpinner } from "./TerminalSpinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
-import type { MonoLook } from "../../monos/model/mono";
+import type { IrgatLook } from "../../irgats/model/irgat";
 import {
-  monoSpawnedSessions,
+  irgatSpawnedSessions,
   type LaunchedSessionView,
-} from "../../monos/model/monoSpawnedSessions";
-import type { MonoSpawnedSession } from "../model/session";
-import { LaunchedSessionCard } from "../../monos/ui/LaunchedSessionCard";
-import type { MessageDelivery } from "../../monos/model/monoMessaging";
-import { monoReactionBlocks } from "../../monos/model/monoReaction";
+} from "../../irgats/model/irgatSpawnedSessions";
+import type { IrgatSpawnedSession } from "../model/session";
+import { LaunchedSessionCard } from "../../irgats/ui/LaunchedSessionCard";
+import type { MessageDelivery } from "../../irgats/model/irgatMessaging";
+import { irgatReactionBlocks } from "../../irgats/model/irgatReaction";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
   isHarnessAuthError,
@@ -106,8 +106,8 @@ import { useBottomChatMotion } from "../hooks/useBottomChatMotion";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { TranscriptLayout } from "../../settings/model/appearance";
 import { AgentMarkdown } from "./AgentMarkdown";
-import { MonoWorkTicker } from "./MonoWorkTicker";
-import { monoWorkStatus } from "../model/monoWorkStatus";
+import { IrgatWorkTicker } from "./IrgatWorkTicker";
+import { irgatWorkStatus } from "../model/irgatWorkStatus";
 import { isEmojiOnlyMessage } from "../model/emojiMessage";
 import { attachmentPreviewSrc } from "../model/attachments";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
@@ -140,8 +140,8 @@ import {
   turnCopyText,
   workKind,
   workSummaryLine,
-  monoTurnLatestStart,
-  monoTurnRuns,
+  irgatTurnLatestStart,
+  irgatTurnRuns,
   opensNewStretch,
   type ActivityPhase,
   type ActivityPhaseKind,
@@ -150,10 +150,10 @@ import {
 } from "../model/transcriptActivity";
 import { lastUserTurnBlock } from "../model/editLastTurn";
 import {
-  monoCodeToolCall,
-  monoCodeWorkSummary,
-  type MonoCodeToolCall,
-} from "../model/monocodeToolCall";
+  irgatCodeToolCall,
+  irgatCodeWorkSummary,
+  type IrgatToolCall,
+} from "../model/irgatToolCall";
 import {
   isOperatorUserTurn,
   operatorUserPrompt,
@@ -199,20 +199,20 @@ type Props = {
   onReturnToLatest?: () => void;
   busy?: boolean;
   cwd?: string;
-  /** Who the turns are by, in place of the model: a Mono's name. */
+  /** Who the turns are by, in place of the model: a Irgat's name. */
   agentName?: string;
-  /** A Mono's mascot and color, in place of the provider's mark. */
-  agentMascot?: Pick<MonoLook, "mascot" | "color">;
+  /** A Irgat's mascot and color, in place of the provider's mark. */
+  agentMascot?: Pick<IrgatLook, "mascot" | "color">;
   /** Keeps short conversations at the bottom and skips prompt-to-top anchoring. */
   bottomAligned?: boolean;
   /** Keeps process in the activity trail, with live progress in the header. */
   inlineWork?: boolean;
   messageDeliveries?: ReadonlyMap<string, MessageDelivery>;
   onRetryMessage?: (blockId: string) => void;
-  /** Inspect a Mono turn in the activity sidebar. */
+  /** Inspect a Irgat turn in the activity sidebar. */
   onShowWork?: (turnId: string, blocks: Block[]) => void;
   activeWorkTurnId?: string;
-  /** Open one of a Mono turn's launched sessions in the sidebar. */
+  /** Open one of a Irgat turn's launched sessions in the sidebar. */
   onOpenSession?: (turnId: string, blocks: Block[], sessionId: string) => void;
   /** Launched sessions' live status by id, where this window tracks it. */
   launchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
@@ -319,11 +319,11 @@ function AgentTranscriptComponent({
   onScrollerChange,
   managed = false,
 }: Props) {
-  const isMonoChat = !!agentMascot;
+  const isIrgatChat = !!agentMascot;
   const blocks = useMemo(() => {
-    // A Mono's reaction sits on the message it answers, not in a bubble.
-    const chatBlocks = isMonoChat
-      ? monoReactionBlocks(sourceBlocks)
+    // A Irgat's reaction sits on the message it answers, not in a bubble.
+    const chatBlocks = isIrgatChat
+      ? irgatReactionBlocks(sourceBlocks)
       : sourceBlocks;
     if (!harness || !supportsHarnessLogin(harness)) return chatBlocks;
     const visibleBlocks = chatBlocks.filter(
@@ -337,7 +337,7 @@ function AgentTranscriptComponent({
     return visibleBlocks.length === chatBlocks.length
       ? chatBlocks
       : visibleBlocks;
-  }, [harness, isMonoChat, sourceBlocks]);
+  }, [harness, isIrgatChat, sourceBlocks]);
   const editableUserBlockId = useMemo(
     () => lastUserTurnBlock(blocks)?.id,
     [blocks],
@@ -502,7 +502,7 @@ function AgentTranscriptComponent({
     (el: HTMLDivElement | null) => {
       scroller.current = el;
       setScrollerEl(el);
-      // The Mono already has overscroll-none. Prefer native scrolling where
+      // The Irgat already has overscroll-none. Prefer native scrolling where
       // supported so its first wheel event need not wait on a blocking listener.
       const nativeOverscroll =
         bottomAligned && CSS.supports?.("overscroll-behavior", "none");
@@ -729,7 +729,7 @@ function AgentTranscriptComponent({
   // A scheduled update can land while the chat's own turn is still running.
   const activeTurnIndex = turns.reduce(
     (latest, turn, index) =>
-      turn[0].monoHabit || turn[0].role === "handoff" ? latest : index,
+      turn[0].irgatHabit || turn[0].role === "handoff" ? latest : index,
     -1,
   );
   const firstVisibleTurn = Math.max(0, turns.length - visibleTurnCount);
@@ -1008,7 +1008,7 @@ function AgentTranscriptComponent({
   return (
     <div
       ref={setScroller}
-      className={`agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-[13px] leading-5${bottomAligned ? " mono-transcript-fades scrollbar-none" : ""}`}
+      className={`agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-irgat text-[13px] leading-5${bottomAligned ? " irgat-transcript-fades scrollbar-none" : ""}`}
     >
       <TranscriptContent bottomAligned={bottomAligned}>
         {onReturnToLatest ? (
@@ -1059,18 +1059,18 @@ function AgentTranscriptComponent({
         ) : null}
         {visibleTurns.map((turn, turnIndex) => {
           const isLastTurn = firstVisibleTurn + turnIndex === turns.length - 1;
-          // A Mono's own follow-up replies join the turn they follow; each
+          // A Irgat's own follow-up replies join the turn they follow; each
           // run keeps its prompt, but the turn reads as one message.
-          const runs = inlineWork ? monoTurnRuns(turn) : [turn];
+          const runs = inlineWork ? irgatTurnRuns(turn) : [turn];
           const userBlock = inlineWork
-            ? monoTurnUserBlock(runs[0], messageDeliveries)
+            ? irgatTurnUserBlock(runs[0], messageDeliveries)
             : turnUserBlock(turn, managed);
           const lastRun =
             runs.length > 1
-              ? monoTurnUserBlock(runs[runs.length - 1], messageDeliveries)
+              ? irgatTurnUserBlock(runs[runs.length - 1], messageDeliveries)
               : userBlock;
-          const habit = turn[0].monoHabit;
-          // Older saved reports may have lost their habit tag. A Mono's
+          const habit = turn[0].irgatHabit;
+          // Older saved reports may have lost their habit tag. A Irgat's
           // standalone reply still needs its identity and response actions.
           const standaloneReply =
             !userBlock && !!(agentName || habit) && turn.some(isProseBlock);
@@ -1079,7 +1079,7 @@ function AgentTranscriptComponent({
               ? sumDurations(
                   runs.map(
                     (run) =>
-                      monoTurnUserBlock(run, messageDeliveries)?.durationMs,
+                      irgatTurnUserBlock(run, messageDeliveries)?.durationMs,
                   ),
                 )
               : userBlock?.durationMs;
@@ -1107,9 +1107,9 @@ function AgentTranscriptComponent({
           const previousAt = !previousTurn
             ? undefined
             : inlineWork
-              ? monoTurnLatestStart(previousTurn)
+              ? irgatTurnLatestStart(previousTurn)
               : (turnUserBlock(previousTurn, managed)?.startedAt ??
-                previousTurn[0].monoHabit?.at ??
+                previousTurn[0].irgatHabit?.at ??
                 previousTurn[0].startedAt);
           const stampAt =
             daySeparators &&
@@ -1137,10 +1137,10 @@ function AgentTranscriptComponent({
           // Work the turn has already answered for folds away behind one line,
           // leaving the prompt and the answer to it.
           const turnId = turn[0].id;
-          const spawnedSessions = inlineWork ? monoSpawnedSessions(turn) : [];
+          const spawnedSessions = inlineWork ? irgatSpawnedSessions(turn) : [];
           const launchCards = launchAnchors(items, spawnedSessions);
           const renderLaunches = (
-            launches: readonly MonoSpawnedSession[],
+            launches: readonly IrgatSpawnedSession[],
             key: string,
             spacing: string,
           ) => (
@@ -1176,7 +1176,7 @@ function AgentTranscriptComponent({
           // the last: the mark, and the clock beside it. It never moves, so a
           // turn settling does not shuffle the layout around the answer.
           const live = visible && !settled && !preparingHandoff;
-          // A Mono's turns are its own, whichever model ran them.
+          // A Irgat's turns are its own, whichever model ran them.
           const turnModelName =
             agentName ??
             turnModel?.name ??
@@ -1202,7 +1202,7 @@ function AgentTranscriptComponent({
                 modelName={turnModelName}
               />
             ) : agentMascot && agentName ? (
-              // A Mono signs its settled turns with just its mascot and name.
+              // A Irgat signs its settled turns with just its mascot and name.
               <span className="font-medium text-content/80">{agentName}</span>
             ) : durationMs != null ? (
               formatWorkingDuration(durationMs, turnModelName, true)
@@ -1211,7 +1211,7 @@ function AgentTranscriptComponent({
             ) : (
               workSummaryLine(summarizedWork)
             );
-          // A Mono that only reacted answered on the message itself.
+          // A Irgat that only reacted answered on the message itself.
           const reactedOnly =
             inlineWork &&
             !live &&
@@ -1219,7 +1219,7 @@ function AgentTranscriptComponent({
               (item) => item.type === "block" && item.block.role === "user",
             ) &&
             items.some(
-              (item) => item.type === "block" && !!item.block.monoReaction,
+              (item) => item.type === "block" && !!item.block.irgatReaction,
             );
           const showFoldLine =
             !reactedOnly &&
@@ -1291,7 +1291,7 @@ function AgentTranscriptComponent({
               />
             ) : item.type !== "block" ? (
               inlineWork ? (
-                <MonoWorkApprovals
+                <IrgatWorkApprovals
                   key={item.blocks[0].id}
                   blocks={item.blocks}
                   cwd={cwd}
@@ -1332,7 +1332,7 @@ function AgentTranscriptComponent({
                 }
                 layout={transcriptLayout}
                 bubbleTail={!!agentMascot}
-                localMedia={isMonoChat}
+                localMedia={isIrgatChat}
                 compactFollowUp={isCompactFollowUp(item, itemIndex)}
                 stackedOnPrevious={
                   itemIndex === 0
@@ -1398,7 +1398,7 @@ function AgentTranscriptComponent({
           const foldLineRow = (
             <TurnRow key="work-fold" folded={!showFoldLine}>
               {inlineWork ? (
-                <MonoTurnHeader
+                <IrgatTurnHeader
                   blocks={turn}
                   title={foldTitle}
                   name={turnModelName}
@@ -1445,7 +1445,7 @@ function AgentTranscriptComponent({
               data-transcript-turn={turnId}
               // A stacked message sits as close as one in the same turn, so
               // the gap between turns gives way.
-              className={`transcript-turn flex min-w-0 flex-col${inlineWork && !reactedOnly ? " transcript-turn-mono" : ""}${stacksIntoNextTurn ? " -mb-1" : ""}${
+              className={`transcript-turn flex min-w-0 flex-col${inlineWork && !reactedOnly ? " transcript-turn-irgat" : ""}${stacksIntoNextTurn ? " -mb-1" : ""}${
                 isLastTurn ? " transcript-turn-live" : ""
               }${
                 promptAnchor && anchorTurn && isLastTurn && userBlock
@@ -2226,7 +2226,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   /** True when the parent surface already provides the horizontal gutter. */
   embedded?: boolean;
   cwd?: string;
-  /** Show local images and videos a reply links to, as Mono chats do. */
+  /** Show local images and videos a reply links to, as Irgat chats do. */
   localMedia?: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -2379,16 +2379,16 @@ const TranscriptBlock = memo(function TranscriptBlock({
 });
 
 /**
- * A Mono's emoji answer, on the corner of the message it answers. The top
+ * A Irgat's emoji answer, on the corner of the message it answers. The top
  * left keeps it clear of the bubble's tail and the hover actions below.
  */
-function MonoReactionBadge({ emoji, live }: { emoji: string; live: boolean }) {
+function IrgatReactionBadge({ emoji, live }: { emoji: string; live: boolean }) {
   return (
     <span
       role="img"
       aria-label={`Reacted ${emoji}`}
-      data-mono-reaction={emoji}
-      className={`${live ? "mono-reaction-in " : ""}mono-reaction-badge absolute -top-2.5 -left-2.5 z-[1] grid h-[22px] place-items-center rounded-[8px] px-[7px] font-sans text-[11px] leading-none`}
+      data-irgat-reaction={emoji}
+      className={`${live ? "irgat-reaction-in " : ""}irgat-reaction-badge absolute -top-2.5 -left-2.5 z-[1] grid h-[22px] place-items-center rounded-[8px] px-[7px] font-sans text-[11px] leading-none`}
     >
       {emoji}
     </span>
@@ -2432,15 +2432,15 @@ function UserMessageBlock({
   const [overflows, setOverflows] = useState(false);
   const [singleLine, setSingleLine] = useState(false);
   // Only a reaction that arrives while the chat is open pops in.
-  const [reactionAtMount] = useState(block.monoReaction);
+  const [reactionAtMount] = useState(block.irgatReaction);
   const textRef = useRef<HTMLElement>(null);
   const card = block.secondOpinion;
   const note = block.noteCard;
-  const monocode = isOperatorUserTurn(block);
+  const irgat = isOperatorUserTurn(block);
   const text =
     card && card.kind !== "handoff"
       ? ""
-      : visibleUserPrompt(monocode ? operatorUserPrompt(block) : block.text);
+      : visibleUserPrompt(irgat ? operatorUserPrompt(block) : block.text);
   const messageLink = text ? parseUserMessageLink(text) : null;
   const displayText = messageLink
     ? `${messageLink.beforeText}${messageLink.afterText}`
@@ -2452,7 +2452,7 @@ function UserMessageBlock({
     : bubbleTail && (block.sentAt != null || stackedOnPrevious)
       ? "pt-1 pb-5"
       : "pt-1.5 pb-5";
-  // A Mono's chat shows sent images above the bubble, like photos in a
+  // A Irgat's chat shows sent images above the bubble, like photos in a
   // messaging app; only other files stay inside it.
   const photos =
     bubbleTail && chat && !block.draft
@@ -2562,13 +2562,13 @@ function UserMessageBlock({
         ) : null}
       </div>
     ) : null;
-  // In a Mono's chat a few emoji stand alone, like a reaction: no bubble,
+  // In a Irgat's chat a few emoji stand alone, like a reaction: no bubble,
   // time or actions.
   if (
     bubbleTail &&
     chat &&
     textOnly &&
-    !monocode &&
+    !irgat &&
     !messageLink &&
     isEmojiOnlyMessage(displayText)
   ) {
@@ -2585,10 +2585,10 @@ function UserMessageBlock({
           className="relative select-none font-sans text-6xl leading-none"
         >
           {displayText.trim()}
-          {block.monoReaction ? (
-            <MonoReactionBadge
-              emoji={block.monoReaction}
-              live={block.monoReaction !== reactionAtMount}
+          {block.irgatReaction ? (
+            <IrgatReactionBadge
+              emoji={block.irgatReaction}
+              live={block.irgatReaction !== reactionAtMount}
             />
           ) : null}
         </div>
@@ -2632,7 +2632,7 @@ function UserMessageBlock({
           {bubbleEmpty ? null : (
             <div
               data-draft={block.draft ? "true" : undefined}
-              data-monocode={monocode ? "true" : undefined}
+              data-irgat={irgat ? "true" : undefined}
               data-chat-message={photos.length ? undefined : block.id}
               data-chat-message-role={photos.length ? undefined : "user"}
               className={`user-message-bubble relative min-w-0 px-3 py-2 font-sans text-content transition-[background-color] duration-200 ${
@@ -2715,7 +2715,7 @@ function UserMessageBlock({
                     CI instructions and failure details included with this
                     request.
                   </p>
-                  <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-content/5 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-content/70">
+                  <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-content/5 p-2.5 font-irgat text-[11px] leading-relaxed whitespace-pre-wrap break-words text-content/70">
                     {block.ciContext}
                   </pre>
                 </details>
@@ -2750,8 +2750,8 @@ function UserMessageBlock({
                   </span>
                 </div>
               ) : null}
-              {monocode ? (
-                <MonocodeSparkles
+              {irgat ? (
+                <IrgatSparkles
                   blockId={block.id}
                   startedAt={block.startedAt}
                 />
@@ -2766,10 +2766,10 @@ function UserMessageBlock({
                   startedAt={block.startedAt}
                 />
               ) : null}
-              {block.monoReaction ? (
-                <MonoReactionBadge
-                  emoji={block.monoReaction}
-                  live={block.monoReaction !== reactionAtMount}
+              {block.irgatReaction ? (
+                <IrgatReactionBadge
+                  emoji={block.irgatReaction}
+                  live={block.irgatReaction !== reactionAtMount}
                 />
               ) : null}
             </div>
@@ -2874,21 +2874,21 @@ function TurnRow({
 /** A turn item's identity, stable as the group it names grows. */
 /**
  * Where a turn's launched sessions go: each after the first reply that came
- * after its launch, so a Mono reporting back later in the same turn writes
+ * after its launch, so a Irgat reporting back later in the same turn writes
  * below them, as it happened. A launch no reply has followed goes at the end.
  */
 function launchAnchors(
   items: readonly TurnItem[],
-  launches: readonly MonoSpawnedSession[],
+  launches: readonly IrgatSpawnedSession[],
 ): {
-  afterItem: Map<number, MonoSpawnedSession[]>;
-  atEnd: MonoSpawnedSession[];
+  afterItem: Map<number, IrgatSpawnedSession[]>;
+  atEnd: IrgatSpawnedSession[];
 } {
-  const afterItem = new Map<number, MonoSpawnedSession[]>();
-  const atEnd: MonoSpawnedSession[] = [];
+  const afterItem = new Map<number, IrgatSpawnedSession[]>();
+  const atEnd: IrgatSpawnedSession[] = [];
   if (launches.length === 0) return { afterItem, atEnd };
   const launched = items.map((item) =>
-    monoSpawnedSessions(
+    irgatSpawnedSessions(
       item.type === "block" ? [item.block] : item.blocks,
       launches,
     ).map((entry) => entry.sessionId),
@@ -2992,13 +2992,13 @@ function WorkFoldLine({
       {title}
     </span>
   );
-  // A settled Mono turn signs off in a pill, like the day separators.
+  // A settled Irgat turn signs off in a pill, like the day separators.
   const content =
     agentMascot && !live ? (
-      <MonoSignaturePill>
+      <IrgatSignaturePill>
         {icon}
         {label}
-      </MonoSignaturePill>
+      </IrgatSignaturePill>
     ) : (
       <>
         {icon}
@@ -3034,7 +3034,7 @@ function WorkFoldLine({
   );
 }
 
-function MonoSignaturePill({ children }: { children: ReactNode }) {
+function IrgatSignaturePill({ children }: { children: ReactNode }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5 rounded-full bg-content/[0.07] py-0.5 pr-3 pl-2">
       {children}
@@ -3255,7 +3255,7 @@ function markScrollEdges(el: HTMLElement) {
 }
 
 /** The live ticker shares the identity line instead of adding a work row. */
-function MonoTurnHeader({
+function IrgatTurnHeader({
   blocks,
   title,
   name,
@@ -3287,7 +3287,7 @@ function MonoTurnHeader({
     [blocks],
   );
   let status = useMemo(
-    () => monoWorkStatus(activity, active),
+    () => irgatWorkStatus(activity, active),
     [activity, active],
   );
   if (active && waitingForAnswers && !activity.some(needsApproval)) {
@@ -3315,11 +3315,11 @@ function MonoTurnHeader({
     <ActivityPhaseIcon kind={status.kind} />
   );
   const ticker = (
-    <MonoWorkTicker status={{ ...status, active: live }} showIcon={false} />
+    <IrgatWorkTicker status={{ ...status, active: live }} showIcon={false} />
   );
   return (
     <div
-      data-mono-work
+      data-irgat-work
       data-transcript-search-item
       data-transcript-search-current={searchCurrent || undefined}
       className="flex min-w-0 items-center gap-1.5 px-4 py-1 font-sans text-sm text-content/50"
@@ -3327,18 +3327,18 @@ function MonoTurnHeader({
       {active ? (
         <>
           {agentMascot ? (
-            // The pill holds the Mono's signature from the first token on;
+            // The pill holds the Irgat's signature from the first token on;
             // the ticker runs beside it.
             <>
               <span className="max-w-[45%] shrink-0">
-                <MonoSignaturePill>
+                <IrgatSignaturePill>
                   {mark}
                   {name ? (
                     <span className="min-w-0 truncate font-medium text-content/80">
                       {name}
                     </span>
                   ) : null}
-                </MonoSignaturePill>
+                </IrgatSignaturePill>
               </span>
               <span aria-hidden className="shrink-0 text-content/25">
                 ·
@@ -3373,10 +3373,10 @@ function MonoTurnHeader({
           )}
         </>
       ) : agentMascot ? (
-        <MonoSignaturePill>
+        <IrgatSignaturePill>
           {mark}
           <span className="min-w-0 truncate">{title}</span>
-        </MonoSignaturePill>
+        </IrgatSignaturePill>
       ) : (
         <>
           {mark}
@@ -3387,19 +3387,19 @@ function MonoTurnHeader({
   );
 }
 
-type MonoWorkApprovalsProps = Pick<
+type IrgatWorkApprovalsProps = Pick<
   ActivityPhasesProps,
   "blocks" | "cwd" | "onApproval" | "onOpenFile" | "onOpenDiff"
 >;
 
 /** Pending approvals stay actionable while the rest of the work is hidden. */
-const MonoWorkApprovals = memo(function MonoWorkApprovals({
+const IrgatWorkApprovals = memo(function IrgatWorkApprovals({
   blocks,
   cwd,
   onApproval,
   onOpenFile,
   onOpenDiff,
-}: MonoWorkApprovalsProps) {
+}: IrgatWorkApprovalsProps) {
   return (
     <div className="flex min-w-0 flex-col px-4">
       {blocks.filter(needsApproval).map((block) => (
@@ -3418,7 +3418,7 @@ const MonoWorkApprovals = memo(function MonoWorkApprovals({
 }, sameActivity);
 
 /** Full turn activity in transcript order, without the chat's work folding. */
-export function MonoActivityTrail({
+export function IrgatActivityTrail({
   blocks,
   live = false,
   cwd,
@@ -3457,26 +3457,26 @@ export function MonoActivityTrail({
           return (
             <li
               key={first.id}
-              data-mono-activity-block={first.id}
+              data-irgat-activity-block={first.id}
               className="min-w-0 px-1 text-content/80"
             >
               <AgentMarkdown
                 text={first.text}
                 cwd={cwd}
                 onOpenFile={onOpenFile}
-                className="mono-run-report"
+                className="irgat-run-report"
               />
             </li>
           );
         return (
           <li
             key={first.id}
-            className="mono-activity-steps flex min-w-0 flex-col px-1"
+            className="irgat-activity-steps flex min-w-0 flex-col px-1"
           >
             {segment.blocks.map((block, step) => (
               <div
                 key={block.id}
-                data-mono-activity-block={block.id}
+                data-irgat-activity-block={block.id}
                 className="relative min-w-0 pl-4"
               >
                 {/* The rail runs between the steps' dots, not past the ends. */}
@@ -3558,7 +3558,7 @@ function ActivityPhaseGroup({
   }, [phase.steps]);
   const turnFor = useStepQueue();
   const title = activityPhaseTitle(phase, active);
-  const monoCodePhase = !!monoCodeWorkSummary(phase.steps, active);
+  const irgatCodePhase = !!irgatCodeWorkSummary(phase.steps, active);
   // Opening a group on purpose is also how you read the line that titled it,
   // whole. The auto-open while it runs is a live view, not a reading one, and
   // a one-line note the header already shows in full has nothing to add.
@@ -3573,7 +3573,7 @@ function ActivityPhaseGroup({
   if (!phase.headline && phase.steps.length === 1) {
     return (
       <div className="flex min-w-0 items-start gap-1.5">
-        {monoCodePhase ? null : (
+        {irgatCodePhase ? null : (
           <ActivityPhaseIcon kind={phase.kind} className="mt-[7px]" />
         )}
         <div className="min-w-0 flex-1">
@@ -3628,8 +3628,8 @@ function ActivityPhaseGroup({
          * between them leaves both half-drawn on top of each other.
          */}
         <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-          {monoCodePhase ? (
-            <MonoCodeMark className="size-3.5 group-hover:opacity-0" />
+          {irgatCodePhase ? (
+            <IrgatMark className="size-3.5 group-hover:opacity-0" />
           ) : (
             <ActivityPhaseIcon
               kind={phase.kind}
@@ -3984,7 +3984,7 @@ function SubagentPanel({
             {report ? (
               <div className="zen-phase-step py-1">
                 {failed ? (
-                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-red-400/80">
+                  <pre className="min-w-0 whitespace-pre-wrap break-words font-irgat text-[12px] leading-5 text-red-400/80">
                     {report}
                   </pre>
                 ) : (
@@ -4423,10 +4423,10 @@ function ActivityToolRow({
   onOpenDiff?: (path: string) => void;
 }) {
   const [errorOpen, setErrorOpen] = useState(false);
-  const appCall = monoCodeToolCall(block);
+  const appCall = irgatCodeToolCall(block);
   if (appCall) {
     return (
-      <MonoCodeCallRow block={block} call={appCall} onApproval={onApproval} />
+      <IrgatCallRow block={block} call={appCall} onApproval={onApproval} />
     );
   }
   const label = toolCallLabel(block, cwd);
@@ -4490,7 +4490,7 @@ function ActivityToolRow({
       ) : null}
       {errorOpen && errorDetail ? (
         <pre
-          className={`min-w-0 whitespace-pre-wrap break-words py-1 font-mono text-[12px] leading-5 text-red-400/80 ${bare ? "" : "pl-5"}`}
+          className={`min-w-0 whitespace-pre-wrap break-words py-1 font-irgat text-[12px] leading-5 text-red-400/80 ${bare ? "" : "pl-5"}`}
         >
           {errorDetail}
         </pre>
@@ -4499,18 +4499,18 @@ function ActivityToolRow({
   );
 }
 
-function MonoCodeMark({ className = "size-4" }: { className?: string }) {
-  return <img src="/monocode.png" alt="" className={`shrink-0 ${className}`} />;
+function IrgatMark({ className = "size-4" }: { className?: string }) {
+  return <img src="/irgat.png" alt="" className={`shrink-0 ${className}`} />;
 }
 
-/** MonoCode commands read like the other activity rows; failures expose their output. */
-function MonoCodeCallRow({
+/** Irgat commands read like the other activity rows; failures expose their output. */
+function IrgatCallRow({
   block,
   call,
   onApproval,
 }: {
   block: Block;
-  call: MonoCodeToolCall;
+  call: IrgatToolCall;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
   const state = toolCallState(block);
@@ -4519,7 +4519,7 @@ function MonoCodeCallRow({
   const [errorOpen, setErrorOpen] = useState(false);
   const hasError = state === "rejected" && !!output;
   const pendingApproval = needsApproval(block);
-  const command = `monocode app ${call.action}`;
+  const command = `irgat app ${call.action}`;
   const verb = pendingApproval
     ? "Run"
     : state === "pending"
@@ -4533,10 +4533,10 @@ function MonoCodeCallRow({
         {verb}
       </span>
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-content/6 px-1 font-mono text-[13px] ${state === "rejected" ? "text-red-400" : "text-content/70"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-content/6 px-1 font-irgat text-[13px] ${state === "rejected" ? "text-red-400" : "text-content/70"}`}
         title={command}
       >
-        <MonoCodeMark className="size-3.5" />
+        <IrgatMark className="size-3.5" />
         <span className="min-w-0 truncate">{command}</span>
       </span>
       <ToolCallStatusIcon state={state} />
@@ -4549,12 +4549,12 @@ function MonoCodeCallRow({
     </>
   );
   return (
-    <div data-monocode-tool-call={call.action} className="min-w-0">
+    <div data-irgat-tool-call={call.action} className="min-w-0">
       {hasError ? (
         <button
           type="button"
           aria-expanded={errorOpen}
-          aria-label={`${errorOpen ? "Hide" : "Show"} error details for MonoCode: ${call.label}`}
+          aria-label={`${errorOpen ? "Hide" : "Show"} error details for Irgat: ${call.label}`}
           onClick={() => setErrorOpen((value) => !value)}
           className="flex w-full min-w-0 items-center gap-1.5 py-1 text-left"
         >
@@ -4564,12 +4564,12 @@ function MonoCodeCallRow({
         <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
       )}
       {errorOpen && hasError ? (
-        <pre className="min-w-0 whitespace-pre-wrap break-words py-1 pl-5 font-mono text-[12px] leading-5 text-red-400/80">
+        <pre className="min-w-0 whitespace-pre-wrap break-words py-1 pl-5 font-irgat text-[12px] leading-5 text-red-400/80">
           {output}
         </pre>
       ) : null}
       {pendingApproval ? (
-        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-[12px] leading-5 text-content/70">
+        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-irgat text-[12px] leading-5 text-content/70">
           {call.command}
         </pre>
       ) : null}
@@ -4711,11 +4711,11 @@ function ToolCall({
 
   const frame = embedded ? "py-0.5" : "px-4 py-1";
 
-  const appCall = monoCodeToolCall(block);
+  const appCall = irgatCodeToolCall(block);
   if (appCall) {
     return (
       <div className={frame}>
-        <MonoCodeCallRow block={block} call={appCall} onApproval={onApproval} />
+        <IrgatCallRow block={block} call={appCall} onApproval={onApproval} />
       </div>
     );
   }
@@ -4790,7 +4790,7 @@ function ToolCall({
         </div>
       )}
       {open && expandable ? (
-        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-[12px] leading-5 text-content/55">
+        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-irgat text-[12px] leading-5 text-content/55">
           {expanded}
         </pre>
       ) : null}
@@ -4826,7 +4826,7 @@ function ToolCallSummary({
   if (!action || !target) {
     return (
       <span
-        className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
+        className={`min-w-0 flex-1 truncate font-irgat text-[13px] ${
           failed ? "text-red-400" : chip ? "text-content/65" : "text-content/80"
         }`}
         title={label}
@@ -4854,7 +4854,7 @@ function ToolCallSummary({
       : "text-content/85";
 
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[13px]">
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-irgat text-[13px]">
       <span className={`shrink-0 font-sans text-sm ${actionTone}`}>
         {action}
       </span>
@@ -5114,7 +5114,7 @@ function turnUserBlock(blocks: Block[], managed = false): Block | undefined {
 }
 
 /**
- * Whether a Mono turn that ended in only a reaction stacks into the next
+ * Whether a Irgat turn that ended in only a reaction stacks into the next
  * one: the next turn opens with a message of the user's own, in the same
  * stretch of time.
  */
@@ -5126,19 +5126,19 @@ function stacksAfterReaction(
   const start = next?.[0];
   return (
     !!start &&
-    turn.some((block) => !!block.monoReaction) &&
+    turn.some((block) => !!block.irgatReaction) &&
     start.role === "user" &&
     !start.internal &&
-    !start.monoHabit &&
+    !start.irgatHabit &&
     !(
       daySeparators &&
       start.startedAt != null &&
-      opensNewStretch(start.startedAt, monoTurnLatestStart(turn))
+      opensNewStretch(start.startedAt, irgatTurnLatestStart(turn))
     )
   );
 }
 
-function monoTurnUserBlock(
+function irgatTurnUserBlock(
   blocks: Block[],
   deliveries?: ReadonlyMap<string, MessageDelivery>,
 ): Block | undefined {

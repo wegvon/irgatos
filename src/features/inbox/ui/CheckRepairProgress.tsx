@@ -408,7 +408,7 @@ function RepairCard({
           </ul>
           <p>
             Latest PR commit:{" "}
-            <span className="font-mono">
+            <span className="font-irgat">
               {view.checks?.headOid.slice(0, 7) || "Unavailable"}
             </span>
             . Results appear in the checks below.

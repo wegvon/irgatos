@@ -12,9 +12,9 @@ import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
 import { keybindingPressed } from "../../settings/model/settings";
 
 const MATCH_CAP = 999;
-const MATCH_HIGHLIGHT = "monocode-file-preview-search-match";
-const CURRENT_HIGHLIGHT = "monocode-file-preview-search-current";
-const HIGHLIGHT_STYLE_ID = "monocode-file-preview-search-styles";
+const MATCH_HIGHLIGHT = "irgat-file-preview-search-match";
+const CURRENT_HIGHLIGHT = "irgat-file-preview-search-current";
+const HIGHLIGHT_STYLE_ID = "irgat-file-preview-search-styles";
 const BLOCK_ELEMENTS = new Set([
   "address",
   "article",
@@ -371,11 +371,11 @@ export function FilePreviewSearch({
               autoCapitalize="off"
               spellCheck={false}
               onChange={(event) => updateQuery(event.currentTarget.value)}
-              className="h-6 min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-[12px] text-content outline-none"
+              className="h-6 min-w-0 flex-1 border-0 bg-transparent p-0 font-irgat text-[12px] text-content outline-none"
             />
             <span
               aria-live="polite"
-              className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-[11px] tabular-nums text-ellipsis whitespace-nowrap ${
+              className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-irgat text-[11px] tabular-nums text-ellipsis whitespace-nowrap ${
                 (query && total === 0) || result.invalid
                   ? "text-red-400"
                   : "text-content/45"
@@ -453,7 +453,7 @@ function FindToggle({
       aria-pressed={pressed}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className={`grid size-6 shrink-0 place-items-center rounded-md font-mono text-[11px] font-semibold hover:bg-content/10 hover:text-content ${
+      className={`grid size-6 shrink-0 place-items-center rounded-md font-irgat text-[11px] font-semibold hover:bg-content/10 hover:text-content ${
         pressed ? "bg-accent/25 text-content" : "text-content/60"
       }`}
     >

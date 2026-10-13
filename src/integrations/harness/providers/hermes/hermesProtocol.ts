@@ -43,7 +43,7 @@ export function hermesPromptBlocks(
   return promptBlocks(text, attachments);
 }
 
-/** Map MonoCode access levels to Hermes' edit-approval modes. */
+/** Map Irgat access levels to Hermes' edit-approval modes. */
 export function hermesModeId(
   runtimeMode: RuntimeMode,
   planning = false,

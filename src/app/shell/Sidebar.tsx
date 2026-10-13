@@ -179,23 +179,23 @@ import { SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
-  isMonoSession,
-  listMonos,
-  MONO_STATUS_LABEL,
-  monoLook,
+  isIrgatSession,
+  listIrgats,
+  IRGAT_STATUS_LABEL,
+  irgatLook,
   monosSnapshot,
-  subscribeMonos,
-  type MonoStatus,
-} from "../../features/monos/model/mono";
-import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
+  subscribeIrgats,
+  type IrgatStatus,
+} from "../../features/irgats/model/irgat";
+import { IrgatRailMascot } from "../../features/irgats/ui/IrgatRailMascot";
 import { useRailMonosPinned } from "../../features/settings/model/displayPrefs";
-import type { PickerMonos } from "../../features/projects/ui/SearchableProjectPicker";
-import { isHabitRun } from "../../features/monos/model/monoHabits";
+import type { PickerIrgats } from "../../features/projects/ui/SearchableProjectPicker";
+import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 import {
   unreadBadge,
   unreadLabel,
-  type MonoRailProps,
-} from "./MonoRailSection";
+  type IrgatRailProps,
+} from "./IrgatRailSection";
 import {
   refreshRemoteProjectSessions,
   remoteRequest,
@@ -351,10 +351,10 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos on the rail; absent while Monos are off. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area, which has no project sidebar. */
-  monoViewActive?: boolean;
+  /** The Irgats on the rail; absent while Irgats are off. */
+  irgats?: IrgatRailProps;
+  /** A Irgat fills the main area, which has no project sidebar. */
+  irgatViewActive?: boolean;
 };
 
 function SidebarComponent({
@@ -450,8 +450,8 @@ function SidebarComponent({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
-  monoViewActive = false,
+  irgats,
+  irgatViewActive = false,
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
@@ -658,14 +658,14 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
+  useSyncExternalStore(subscribeIrgats, monosSnapshot);
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
     sessionFolders,
   ).filter(
     (session) =>
-      !isMonoSession(session.id) &&
+      !isIrgatSession(session.id) &&
       !session.sidebarHidden &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&
@@ -805,14 +805,14 @@ function SidebarComponent({
     automationsActive ||
     kanbanActive ||
     settingsOpen;
-  // A remembered Mono sits underneath these views; select it only while visible.
-  const railMonos = monos
-    ? { ...monos, activeId: otherViewActive ? undefined : monos.activeId }
+  // A remembered Irgat sits underneath these views; select it only while visible.
+  const railIrgats = irgats
+    ? { ...irgats, activeId: otherViewActive ? undefined : irgats.activeId }
     : undefined;
   // A blank session has no project to browse, so the shell stands alone until
   // one is picked — whether or not the rail is open.
   const sidebarAvailable =
-    !otherViewActive && !monoViewActive && inProject;
+    !otherViewActive && !irgatViewActive && inProject;
   const sidebarVisible = open && sidebarAvailable;
   // With the sidebar collapsed beside the compact rail, its tab shortcuts
   // open the sidebar temporarily until the user clicks away.
@@ -1165,8 +1165,8 @@ function SidebarComponent({
               },
               {
                 kind: "item" as const,
-                id: "copy-monocode-session-id",
-                label: "MonoCode session ID",
+                id: "copy-irgat-session-id",
+                label: "Irgat session ID",
               },
             ],
           },
@@ -1322,7 +1322,7 @@ function SidebarComponent({
       setRenamingSessionId(sessionId);
       return;
     }
-    if (id === "copy-harness-session-id" || id === "copy-monocode-session-id") {
+    if (id === "copy-harness-session-id" || id === "copy-irgat-session-id") {
       const value =
         id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
@@ -2290,8 +2290,8 @@ function SidebarComponent({
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}
-          monos={railMonos}
-          monoViewActive={monoViewActive}
+          irgats={railIrgats}
+          irgatViewActive={irgatViewActive}
         />
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
@@ -2332,7 +2332,7 @@ function SidebarComponent({
           updateNotice={updateNotice}
           onOpenWhatsNew={onOpenWhatsNew}
           onDismissUpdate={onDismissUpdate}
-          monos={railMonos}
+          irgats={railIrgats}
         />
       ) : null}
       {sidebarVisible ? sidebarContent : null}
@@ -2546,8 +2546,8 @@ function CompactProjectRail({
   onTogglePanel,
   onLeaveActive,
   titleBarAbove,
-  monos,
-  monoViewActive = false,
+  irgats,
+  irgatViewActive = false,
 }: {
   cwd: string;
   recents: RecentProject[];
@@ -2577,32 +2577,32 @@ function CompactProjectRail({
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
   titleBarAbove: boolean;
-  /** Monos have no row here, so the project button lists them too. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area: no workspace tab is the current one. */
-  monoViewActive?: boolean;
+  /** Irgats have no row here, so the project button lists them too. */
+  irgats?: IrgatRailProps;
+  /** A Irgat fills the main area: no workspace tab is the current one. */
+  irgatViewActive?: boolean;
 }) {
-  const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
+  const monosSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
   const monosPinned = useRailMonosPinned();
-  const monoItems = useMemo(() => {
-    if (!monos) return [];
-    return listMonos().map((mono) => ({
-      id: mono.id,
-      ...monoLook(mono),
-      status: monos.states.get(mono.id)?.status ?? "idle",
+  const irgatItems = useMemo(() => {
+    if (!irgats) return [];
+    return listIrgats().map((irgat) => ({
+      id: irgat.id,
+      ...irgatLook(irgat),
+      status: irgats.states.get(irgat.id)?.status ?? "idle",
     }));
     // The roster is read through its snapshot.
-  }, [monos, monosSnap]);
-  const pickerMonos = useMemo((): PickerMonos | undefined => {
-    if (!monos) return undefined;
+  }, [irgats, monosSnap]);
+  const pickerIrgats = useMemo((): PickerIrgats | undefined => {
+    if (!irgats) return undefined;
     return {
-      // Pinned Monos have their own buttons; the picker keeps "New mono".
-      items: monosPinned ? [] : monoItems,
-      activeId: monos.activeId,
-      onOpen: monos.onOpen,
-      onCreate: monos.onCreate,
+      // Pinned Irgats have their own buttons; the picker keeps "New irgat".
+      items: monosPinned ? [] : irgatItems,
+      activeId: irgats.activeId,
+      onOpen: irgats.onOpen,
+      onCreate: irgats.onCreate,
     };
-  }, [monos, monoItems, monosPinned]);
+  }, [irgats, irgatItems, monosPinned]);
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -2615,7 +2615,7 @@ function CompactProjectRail({
     !notesActive &&
     !automationsActive &&
     !kanbanActive &&
-    !monoViewActive;
+    !irgatViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
     onTabChange(nextTab);
@@ -2649,34 +2649,34 @@ function CompactProjectRail({
           icon={PanelLeft}
           onClick={onTogglePanel}
         />
-        {monos && monosPinned && monoItems.length ? (
+        {irgats && monosPinned && irgatItems.length ? (
           <>
             <div
               role="group"
-              aria-label="Monos"
-              data-compact-rail-monos
+              aria-label="Irgats"
+              data-compact-rail-irgats
               className="flex flex-col items-center gap-1.5"
             >
-              {monoItems.map((mono) => (
-                <CompactRailMono
-                  key={mono.id}
-                  name={mono.name}
-                  mascot={mono.mascot}
-                  color={mono.color}
-                  status={mono.status}
-                  active={mono.id === monos.activeId}
+              {irgatItems.map((irgat) => (
+                <CompactRailIrgat
+                  key={irgat.id}
+                  name={irgat.name}
+                  mascot={irgat.mascot}
+                  color={irgat.color}
+                  status={irgat.status}
+                  active={irgat.id === irgats.activeId}
                   unseen={
-                    mono.id === monos.activeId
+                    irgat.id === irgats.activeId
                       ? 0
-                      : (monos.unseenCounts?.get(mono.id) ?? 0)
+                      : (irgats.unseenCounts?.get(irgat.id) ?? 0)
                   }
-                  onClick={() => monos.onOpen(mono.id)}
+                  onClick={() => irgats.onOpen(irgat.id)}
                 />
               ))}
             </div>
             <span
               aria-hidden
-              data-compact-rail-monos-divider
+              data-compact-rail-irgats-divider
               className="h-px w-6 shrink-0 bg-stroke"
             />
           </>
@@ -2692,7 +2692,7 @@ function CompactProjectRail({
             onOpenProject={onOpenProject}
             onRemoveProject={onRemoveProject}
             onOpenNotificationSettings={onOpenNotificationSettings}
-            monos={pickerMonos}
+            irgats={pickerIrgats}
           />
         ) : null}
         <div
@@ -2779,7 +2779,7 @@ function CompactProjectRail({
   );
 }
 
-function CompactRailMono({
+function CompactRailIrgat({
   name,
   mascot,
   color,
@@ -2791,20 +2791,20 @@ function CompactRailMono({
   name: string;
   mascot: string;
   color: string;
-  status: MonoStatus;
+  status: IrgatStatus;
   active: boolean;
   /** Replies the user has not read. */
   unseen: number;
   onClick: () => void;
 }) {
-  const label = `${name}, ${MONO_STATUS_LABEL[status]}`;
+  const label = `${name}, ${IRGAT_STATUS_LABEL[status]}`;
   return (
     <button
       type="button"
-      title={`${name}\n${MONO_STATUS_LABEL[status]}`}
+      title={`${name}\n${IRGAT_STATUS_LABEL[status]}`}
       aria-label={unseen ? `${label}, ${unreadLabel(unseen)}` : label}
       aria-current={active ? "true" : undefined}
-      data-compact-rail-mono
+      data-compact-rail-irgat
       onClick={onClick}
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
@@ -2812,11 +2812,11 @@ function CompactRailMono({
           : "opacity-65 hover:bg-content/10 hover:opacity-100"
       }`}
     >
-      <MonoRailMascot name={mascot} color={color} status={status} />
+      <IrgatRailMascot name={mascot} color={color} status={status} />
       {unseen ? (
         <span
           aria-hidden
-          data-mono-unread={unseen}
+          data-irgat-unread={unseen}
           className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-background-base px-0.5 text-[9px] font-medium tabular-nums leading-none text-content/80 ring-1 ring-content/15"
         >
           {unreadBadge(unseen)}

@@ -100,10 +100,10 @@ export function MessageQueue({
           const sending = sendingId === message.id;
           const editing = editingId === message.id;
           const label =
-            (message.monoSessionCompletion
-              ? message.monoSessionCompletion.sessionCount
-                ? `${message.monoSessionCompletion.sessionCount} sessions finished`
-                : `Session ${message.monoSessionCompletion.status}: ${message.monoSessionCompletion.title}`
+            (message.irgatSessionCompletion
+              ? message.irgatSessionCompletion.sessionCount
+                ? `${message.irgatSessionCompletion.sessionCount} sessions finished`
+                : `Session ${message.irgatSessionCompletion.status}: ${message.irgatSessionCompletion.title}`
               : message.text.trim()) ||
             message.noteCard?.title ||
             message.handoffCard?.brief ||
@@ -170,7 +170,7 @@ export function MessageQueue({
                       </p>
                     ) : null}
                   </div>
-                  {onSteer && !message.monoSessionCompletion ? (
+                  {onSteer && !message.irgatSessionCompletion ? (
                     <button
                       type="button"
                       disabled={sending}
@@ -185,7 +185,7 @@ export function MessageQueue({
                     type="button"
                     title="Edit queued message"
                     aria-label="Edit queued message"
-                    disabled={sending || !!message.monoSessionCompletion}
+                    disabled={sending || !!message.irgatSessionCompletion}
                     onClick={() => startEdit(message)}
                     className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
                   >

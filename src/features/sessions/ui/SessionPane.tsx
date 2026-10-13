@@ -69,28 +69,28 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import {
-  monoForSession,
-  monoLook,
+  irgatForSession,
+  irgatLook,
   monosSnapshot,
-  subscribeMonos,
-} from "../../monos/model/mono";
-import { MonoHeader } from "../../monos/ui/MonoHeader";
-import { MonoComposer } from "../../monos/ui/MonoComposer";
-import type { LaunchedSessionView } from "../../monos/model/monoSpawnedSessions";
+  subscribeIrgats,
+} from "../../irgats/model/irgat";
+import { IrgatHeader } from "../../irgats/ui/IrgatHeader";
+import { IrgatComposer } from "../../irgats/ui/IrgatComposer";
+import type { LaunchedSessionView } from "../../irgats/model/irgatSpawnedSessions";
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
-import { MonoUsageLimitNotice } from "../../monos/ui/MonoUsageLimitNotice";
+import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
 import { QuestionForm } from "./QuestionForm";
 import {
-  monoMessageDeliveries,
-  monoPendingTranscriptBlocks,
-  visibleMonoCompletionMessages,
-} from "../../monos/model/monoMessaging";
+  irgatMessageDeliveries,
+  irgatPendingTranscriptBlocks,
+  visibleIrgatCompletionMessages,
+} from "../../irgats/model/irgatMessaging";
 import { MessageQueue } from "./MessageQueue";
-import { useMonoTranscript } from "../../monos/hooks/useMonoTranscript";
-import { MONO_PAGE_TURNS } from "../data/sessionStore";
+import { useIrgatTranscript } from "../../irgats/hooks/useIrgatTranscript";
+import { IRGAT_PAGE_TURNS } from "../data/sessionStore";
 import { useComposerDockMotion } from "./useComposerDockMotion";
 import { MOD } from "../../../platform/tauri/platform";
 import {
@@ -120,7 +120,7 @@ import {
   subscribeProjectChatBackground,
 } from "../../projects/model/projectChatBackground";
 import { useProjectBackgroundEffect } from "../../projects/ui/useProjectBackgroundEffect";
-import { monoChatBackground } from "../../monos/model/monoBackground";
+import { irgatChatBackground } from "../../irgats/model/irgatBackground";
 import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
 import {
   loadChatBackgroundPath,
@@ -143,23 +143,23 @@ export type SessionPaneProps = {
   inSplit: boolean;
   composerFocused: boolean;
   composerFocusToken?: number;
-  onShowMonoActivity?: (
+  onShowIrgatActivity?: (
     sessionId: string,
     turnId: string,
     blocks: Block[],
   ) => void;
-  monoActivityTurnId?: string;
-  /** Open a session a Mono's turn launched, in the Mono's sidebar. */
-  onOpenMonoSession?: (
+  irgatActivityTurnId?: string;
+  /** Open a session a Irgat's turn launched, in the Irgat's sidebar. */
+  onOpenIrgatSession?: (
     sessionId: string,
     turnId: string,
     blocks: Block[],
     launchedId: string,
   ) => void;
-  /** Live status of the sessions this Mono launched, by id. */
-  monoLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
-  /** The launched session open in the Mono's sidebar. */
-  openMonoSessionId?: string;
+  /** Live status of the sessions this Irgat launched, by id. */
+  irgatLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
+  /** The launched session open in the Irgat's sidebar. */
+  openIrgatSessionId?: string;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
   onFocus: (sessionId: string) => void;
@@ -361,11 +361,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onOpenFile,
   onOpenDiff,
   onCommitChanges,
-  onShowMonoActivity,
-  monoActivityTurnId,
-  onOpenMonoSession,
-  monoLaunchedSessions,
-  openMonoSessionId,
+  onShowIrgatActivity,
+  irgatActivityTurnId,
+  onOpenIrgatSession,
+  irgatLaunchedSessions,
+  openIrgatSessionId,
   onOpenPlan,
   onBuildPlan,
   onSecondOpinion,
@@ -396,14 +396,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [session.blocks, session.busy],
   );
   const messageDeliveries = useMemo(
-    () => monoMessageDeliveries(session),
+    () => irgatMessageDeliveries(session),
     [session.queuedMessages, session.queueStatus],
   );
   const recallLastTurnRef = useRef<(() => void) | null>(null);
   const remote = remoteSession;
-  // A Mono's chat is a running conversation; what was said stays said.
+  // A Irgat's chat is a running conversation; what was said stays said.
   const editLastTurnSupported =
-    !remote && !monoForSession(session.id) && canEditLastTurn(session);
+    !remote && !irgatForSession(session.id) && canEditLastTurn(session);
   const turnRecall = editLastTurnSupported ? lastTurnRecall(session) : null;
   const draftBlock = sessionDraftBlock(session);
   useSyncExternalStore(
@@ -422,12 +422,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     loadNewThreadBackgroundEffect,
   );
   // Renames, instructions and mascot picks re-render the agent's look.
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const mono = monoForSession(session.id);
-  const agent = mono ? monoLook(mono) : undefined;
-  // A Mono shows only its own background, never the project's or the app's.
-  const projectBackground = mono
-    ? monoChatBackground(mono.id)
+  useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const irgat = irgatForSession(session.id);
+  const agent = irgat ? irgatLook(irgat) : undefined;
+  // A Irgat shows only its own background, never the project's or the app's.
+  const projectBackground = irgat
+    ? irgatChatBackground(irgat.id)
     : loadProjectChatBackgroundSettings(projectKey(session.cwd));
   const projectBackgroundUrl = useProjectBackgroundEffect(
     projectBackground?.path ?? null,
@@ -530,9 +530,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const onJumpToBottomReady = useCallback((jump: () => void) => {
     jumpToBottomRef.current = jump;
   }, []);
-  const monoTranscript = useMonoTranscript(
+  const irgatTranscript = useIrgatTranscript(
     session,
-    !!monoForSession(session.id),
+    !!irgatForSession(session.id),
   );
   const revealBlockRef = useRef<((blockId: string) => boolean) | null>(null);
   const onRevealReady = useCallback((reveal: (blockId: string) => boolean) => {
@@ -557,13 +557,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     async (blockId: string | null, query?: string) => {
       if (navigateBlockRef.current?.(blockId, query)) return true;
       if (!blockId) return false;
-      if (!(await monoTranscript.reveal(blockId))) return false;
+      if (!(await irgatTranscript.reveal(blockId))) return false;
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve()),
       );
       return navigateBlockRef.current?.(blockId, query) ?? false;
     },
-    [monoTranscript.reveal],
+    [irgatTranscript.reveal],
   );
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
@@ -661,7 +661,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     remote ||
     !!session.inboxAsk ||
     !!session.worktreeRemoved ||
-    monoTranscript.viewingOlderPage ||
+    irgatTranscript.viewingOlderPage ||
     !!draftBlock;
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   // The agent's input always sits at the bottom, like a chat.
@@ -935,7 +935,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {remoteSessionLoading ? null : isEmpty ? (
               agent ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
-                  <MonoHeader agent={agent} greeting />
+                  <IrgatHeader agent={agent} greeting />
                 </div>
               ) : session.inboxAsk ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
@@ -973,27 +973,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   >
                     <AgentTranscript
                       blocks={
-                        agent && !monoTranscript.viewingOlderPage
-                          ? monoPendingTranscriptBlocks(
+                        agent && !irgatTranscript.viewingOlderPage
+                          ? irgatPendingTranscriptBlocks(
                               session,
-                              monoTranscript.blocks,
+                              irgatTranscript.blocks,
                             )
-                          : monoTranscript.blocks
+                          : irgatTranscript.blocks
                       }
-                      historicalBlockIds={monoTranscript.historicalBlockIds}
-                      initialTurns={agent ? MONO_PAGE_TURNS : undefined}
-                      pageSize={agent ? MONO_PAGE_TURNS : undefined}
-                      hasEarlier={monoTranscript.hasEarlier}
+                      historicalBlockIds={irgatTranscript.historicalBlockIds}
+                      initialTurns={agent ? IRGAT_PAGE_TURNS : undefined}
+                      pageSize={agent ? IRGAT_PAGE_TURNS : undefined}
+                      hasEarlier={irgatTranscript.hasEarlier}
                       loadEarlierOnScroll={!!agent}
                       onLoadEarlier={
-                        agent ? monoTranscript.loadEarlier : undefined
+                        agent ? irgatTranscript.loadEarlier : undefined
                       }
                       onReturnToLatest={
-                        monoTranscript.viewingOlderPage
-                          ? monoTranscript.latest
+                        irgatTranscript.viewingOlderPage
+                          ? irgatTranscript.latest
                           : undefined
                       }
-                      busy={!!session.busy && !monoTranscript.viewingOlderPage}
+                      busy={!!session.busy && !irgatTranscript.viewingOlderPage}
                       visible={visible}
                       cwd={workCwd}
                       agentName={agent?.name}
@@ -1010,16 +1010,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         agent ? () => onResumeQueue(session.id) : undefined
                       }
                       onShowWork={
-                        agent && onShowMonoActivity
+                        agent && onShowIrgatActivity
                           ? (turnId, blocks) =>
-                              onShowMonoActivity(session.id, turnId, blocks)
+                              onShowIrgatActivity(session.id, turnId, blocks)
                           : undefined
                       }
-                      activeWorkTurnId={monoActivityTurnId}
+                      activeWorkTurnId={irgatActivityTurnId}
                       onOpenSession={
-                        agent && onOpenMonoSession
+                        agent && onOpenIrgatSession
                           ? (turnId, blocks, launchedId) =>
-                              onOpenMonoSession(
+                              onOpenIrgatSession(
                                 session.id,
                                 turnId,
                                 blocks,
@@ -1027,9 +1027,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                               )
                           : undefined
                       }
-                      launchedSessions={monoLaunchedSessions}
-                      openSessionId={openMonoSessionId}
-                      // A Mono's turn keeps copy, save as note and the time.
+                      launchedSessions={irgatLaunchedSessions}
+                      openSessionId={openIrgatSessionId}
+                      // A Irgat's turn keeps copy, save as note and the time.
                       daySeparators={!!agent}
                       hideTurnMetrics={!!agent}
                       harness={session.harness}
@@ -1095,7 +1095,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onScrollerChange={setTranscriptScroller}
                       editingLastTurn={editingLastTurn}
                       onEditLastTurn={
-                        editLastTurnSupported && !monoTranscript.viewingOlderPage
+                        editLastTurnSupported && !irgatTranscript.viewingOlderPage
                           ? () => {
                               onFocus(session.id);
                               recallLastTurnRef.current?.();
@@ -1136,7 +1136,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     visible={visible}
                     focused={focused}
                     onNavigate={navigateBlock}
-                    onSearch={monoTranscript.search}
+                    onSearch={irgatTranscript.search}
                     side={
                       session.linkedWorkItemUpdateCard &&
                       session.linkedWorkItemUpdateCard.status !== "loading"
@@ -1145,7 +1145,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     }
                   />
                 ) : null}
-                {/* One mark per message would crowd a Mono's endless chat. */}
+                {/* One mark per message would crowd a Irgat's endless chat. */}
                 {agent ? null : (
                   <PromptOutline
                     blocks={session.blocks}
@@ -1158,8 +1158,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 <TranscriptJumpToBottom
                   visibility={jumpVisibility}
                   onJump={() => {
-                    if (monoTranscript.viewingOlderPage) {
-                      monoTranscript.latest();
+                    if (irgatTranscript.viewingOlderPage) {
+                      irgatTranscript.latest();
                       requestAnimationFrame(() => jumpToBottomRef.current?.());
                     } else jumpToBottomRef.current?.();
                   }}
@@ -1177,7 +1177,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {agent ? (
                 <>
                   <MessageQueue
-                    messages={visibleMonoCompletionMessages(session)}
+                    messages={visibleIrgatCompletionMessages(session)}
                     status={session.queueStatus}
                     sendingId={session.sendingQueuedMessageId}
                     onDelete={(messageId) =>
@@ -1196,7 +1196,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     />
                   ) : null}
                   {session.usageLimit ? (
-                    <MonoUsageLimitNotice
+                    <IrgatUsageLimitNotice
                       session={session}
                       onModelChange={(harness, model) =>
                         onModelChange(session.id, harness, model)
@@ -1213,7 +1213,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       }
                     />
                   ) : null}
-                  <MonoComposer
+                  <IrgatComposer
                     key={session.id}
                     sessionId={session.id}
                     name={agent.name}
@@ -1233,12 +1233,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onSubmit(session.id, text, attachments)
                     }
                     // The plan's usage, as the session footer shows it,
-                    // which a Mono in full view covers. Its account moves
+                    // which a Irgat in full view covers. Its account moves
                     // with the usage-limit notice, not here.
                     tools={
                       <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55">
                         <UsageChips
-                          providers={monoUsageProviders(session.harness)}
+                          providers={irgatUsageProviders(session.harness)}
                           session={{
                             id: session.id,
                             harness: session.harness,
@@ -1278,7 +1278,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                             onModelSettingsChange(session.id, settings)
                           }
                         />
-                        {/* A Mono is one long conversation; this is how full
+                        {/* A Irgat is one long conversation; this is how full
                             its current thread is. It rotates threads itself,
                             so there is nothing to compact here. */}
                         <div className="grid size-6.5 place-items-center rounded-md transition-colors hover:bg-content/8">
@@ -1312,8 +1312,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
 });
 
-/** The providers whose plan usage a Mono on `harness` shows by its composer. */
-function monoUsageProviders(harness: HarnessId): RateLimitProvider[] {
+/** The providers whose plan usage a Irgat on `harness` shows by its composer. */
+function irgatUsageProviders(harness: HarnessId): RateLimitProvider[] {
   return harness === "claude" ||
     harness === "codex" ||
     harness === "opencode" ||

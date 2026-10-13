@@ -342,7 +342,7 @@ describe("persisting a subagent's trail", () => {
 });
 
 describe("sanitizeSessionForPersist", () => {
-  it("persists accepted Mono launches on user turns and fingerprints their addition", () => {
+  it("persists accepted Irgat launches on user turns and fingerprints their addition", () => {
     const session = newSession("codex", "/repo");
     session.blocks = [{ id: "user", role: "user", text: "Review" }];
     const before = persistFingerprint(session);
@@ -354,17 +354,17 @@ describe("sanitizeSessionForPersist", () => {
       model: "gpt-6",
     };
     session.blocks = [
-      { ...session.blocks[0], monoSpawnedSessions: [launch] },
+      { ...session.blocks[0], irgatSpawnedSessions: [launch] },
       {
         id: "reply",
         role: "assistant",
         text: "Started",
-        monoSpawnedSessions: [launch],
+        irgatSpawnedSessions: [launch],
       },
     ];
     const saved = sanitizeSessionForPersist(session);
-    expect(saved.blocks[0].monoSpawnedSessions).toEqual([launch]);
-    expect(saved.blocks[1].monoSpawnedSessions).toBeUndefined();
+    expect(saved.blocks[0].irgatSpawnedSessions).toEqual([launch]);
+    expect(saved.blocks[1].irgatSpawnedSessions).toBeUndefined();
     expect(persistFingerprint(session)).not.toBe(before);
     expect(
       sanitizeSessionForPersist({
@@ -379,13 +379,13 @@ describe("sanitizeSessionForPersist", () => {
       "list notes",
       [],
       {
-        monocode: true,
+        irgat: true,
       },
     );
     expect(sanitizeSessionForPersist(submitted).blocks[0]).toMatchObject({
       role: "user",
       text: "list notes",
-      monocode: true,
+      irgat: true,
     });
   });
 
@@ -721,7 +721,7 @@ describe("sanitizeSessionForPersist", () => {
       {
         id: "i1",
         role: "system",
-        text: "Turn interrupted when MonoCode quit.",
+        text: "Turn interrupted when Irgat quit.",
         notice: "interrupt",
       },
       {

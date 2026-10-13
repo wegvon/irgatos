@@ -1,4 +1,4 @@
-import { isMonoSession } from "../../monos/model/mono";
+import { isIrgatSession } from "../../irgats/model/irgat";
 import type { Session } from "../model/session";
 import {
   injectSessionReferences,
@@ -59,7 +59,7 @@ export function isReferenceableSession(session: Session): boolean {
     !session.ephemeral &&
     !session.inboxAsk &&
     !session.orchestrationLeadId &&
-    !isMonoSession(session.id) &&
+    !isIrgatSession(session.id) &&
     sessionReferenceId(session.id) != null &&
     session.blocks.some((block) => block.role === "user" && !block.draft)
   );

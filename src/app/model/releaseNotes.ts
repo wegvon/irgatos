@@ -10,7 +10,7 @@ export type ReleaseNotesDocument = {
 };
 
 export function releaseNotesTitle(version: string): string {
-  return `What's new in MonoCode ${version}`;
+  return `What's new in Irgat ${version}`;
 }
 
 export function releaseNotesForVersion(

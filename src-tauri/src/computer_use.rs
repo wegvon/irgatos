@@ -31,7 +31,7 @@ pub struct ComputerUseStatus {
 
 /// The app bundle comes first: macOS ties Accessibility and Screen Recording
 /// grants to its stable `com.trycua.driver` identity, so they survive driver
-/// updates and MonoCode rebuilds.
+/// updates and Irgat rebuilds.
 fn candidates(home: Option<&Path>, from_shell: Option<PathBuf>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     if cfg!(target_os = "macos") {
@@ -174,7 +174,7 @@ pub async fn computer_use_disable_telemetry() -> Result<(), String> {
 }
 
 /// `permissions grant` launches CuaDriver.app so the prompts and the System
-/// Settings entries belong to the driver, not to MonoCode. It waits while the
+/// Settings entries belong to the driver, not to Irgat. It waits while the
 /// user answers them.
 #[tauri::command]
 pub async fn computer_use_grant_permissions() -> Result<ComputerUseStatus, String> {

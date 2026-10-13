@@ -490,7 +490,7 @@ function MessageList({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5 text-[11px] leading-4 text-content/45">
-                    <span className="font-mono">#{message.ordinal}</span>
+                    <span className="font-irgat">#{message.ordinal}</span>
                     <span>
                       {message.kind === "user"
                         ? "You"

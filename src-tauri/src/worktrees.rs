@@ -412,7 +412,7 @@ fn rename_branch(root: &Path, path: &Path, branch: &str) -> Result<Worktree, Str
         return Err("The main working copy cannot be renamed here".into());
     }
     let current = tree.branch.as_deref().ok_or("The worktree is detached")?;
-    if !current.starts_with("mc/") && !current.starts_with("monocode/") {
+    if !current.starts_with("mc/") && !current.starts_with("irgat/") {
         return Err("Only automatically created worktree branches can be renamed".into());
     }
     if current == branch {
@@ -785,7 +785,7 @@ mod tests {
     }
     fn repo() -> Repo {
         let dir =
-            std::env::temp_dir().join(format!("monocode-worktree-test-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("irgat-worktree-test-{}", uuid::Uuid::new_v4()));
         let root = dir.join("repo");
         std::fs::create_dir_all(&root).unwrap();
         git_checked(&root, &["init", "-b", "main"]).unwrap();

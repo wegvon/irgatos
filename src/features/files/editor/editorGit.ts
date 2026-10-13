@@ -1166,7 +1166,7 @@ const gitTheme = EditorView.theme({
     width: "100%",
     height: "100%",
     boxSizing: "border-box",
-    fontFamily: "var(--font-mono)",
+    fontFamily: "var(--font-irgat)",
     fontSize: "11px",
     fontWeight: "600",
     lineHeight: `${LINE_HEIGHT}px`,

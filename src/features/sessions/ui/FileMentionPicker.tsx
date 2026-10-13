@@ -134,11 +134,11 @@ export function FileMentionPicker({
                   {file.isDir ? "/" : null}
                 </span>
                 {note ? (
-                  <span className="shrink-0 font-mono text-[11px] text-content/40">
+                  <span className="shrink-0 font-irgat text-[11px] text-content/40">
                     {session ? "Session" : "Note"}
                   </span>
                 ) : dir ? (
-                  <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
+                  <span className="min-w-0 max-w-[45%] truncate font-irgat text-[11px] text-content/40">
                     <MatchText
                       text={dir}
                       positions={file.positions.filter((pos) => pos < slash)}

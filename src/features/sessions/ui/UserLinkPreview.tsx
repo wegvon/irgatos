@@ -341,7 +341,7 @@ function GithubWorkItemCard({
           {parsed.repo}
         </span>
         <span className="shrink-0 text-content/35">·</span>
-        <span className="shrink-0 font-mono tabular-nums text-content/50">
+        <span className="shrink-0 font-irgat tabular-nums text-content/50">
           #{parsed.number}
         </span>
         <span
@@ -398,7 +398,7 @@ function GithubWorkItemCard({
       {hasBranches ? (
         <div className="mt-2 flex min-w-0 items-center gap-1.5 rounded-md bg-content/[0.045] px-2 py-1.5 text-[10px] text-content/50">
           <GitCompare className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="min-w-0 truncate font-mono">
+          <span className="min-w-0 truncate font-irgat">
             {details.baseRefName} ← {details.headRefName}
           </span>
         </div>

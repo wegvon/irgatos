@@ -123,7 +123,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  localStorage.removeItem("monocode.showExcludedFiles");
+  localStorage.removeItem("irgat.showExcludedFiles");
   vi.clearAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();

@@ -49,7 +49,7 @@ export function DiffCommentComposer({
       >
         <div className="mb-1.5 flex items-center gap-2 px-0.5">
           <span
-            className="min-w-0 flex-1 truncate font-mono text-[11px] text-content/55"
+            className="min-w-0 flex-1 truncate font-irgat text-[11px] text-content/55"
             title={location}
           >
             {location}

@@ -1,4 +1,4 @@
-const KEY = "monocode.linkedSessionSeen";
+const KEY = "irgat.linkedSessionSeen";
 const MAX_ENTRIES = 500;
 
 type SeenMap = Record<string, number>;

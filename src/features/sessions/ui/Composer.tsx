@@ -666,7 +666,7 @@ export function Composer({
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
             ...skills.filter(
               (skill) =>
-                ![OPERATOR_COMMAND.name, "mono", "monocode"].includes(
+                ![OPERATOR_COMMAND.name, "irgat", "irgat"].includes(
                   skill.name,
                 ) &&
                 (skill.kind === "native" ||
@@ -2156,7 +2156,7 @@ export function Composer({
               onManage={() => {
                 mcpInsertAt.current = null;
                 setMcpPickerOpen(false);
-                window.dispatchEvent(new Event("monocode:open-mcp-settings"));
+                window.dispatchEvent(new Event("irgat:open-mcp-settings"));
               }}
               onDismiss={(reason) => {
                 mcpInsertAt.current = null;
@@ -2638,7 +2638,7 @@ export function Composer({
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">Operator</span>
                         <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
-                          Give this thread access to MonoCode
+                          Give this thread access to Irgat
                         </span>
                       </span>
                       {operatorActive ? (

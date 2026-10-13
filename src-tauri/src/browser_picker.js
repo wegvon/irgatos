@@ -2,7 +2,7 @@
 // script world, so the page's own scripts can't see or call it. The app reads
 // the result by evaluating `take()` in the same world; nothing is pushed.
 (() => {
-  const KEY = "__monocodePicker";
+  const KEY = "__irgatPicker";
   globalThis[KEY]?.stop();
   const root = document.documentElement;
   if (!root) return;
@@ -251,7 +251,7 @@
     };
   };
 
-  const host = document.createElement("monocode-picker");
+  const host = document.createElement("irgat-picker");
   const important = (el, styles) => {
     for (const [name, value] of Object.entries(styles))
       el.style.setProperty(name, value, "important");

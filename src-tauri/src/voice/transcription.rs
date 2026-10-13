@@ -58,7 +58,7 @@ pub fn transcribe(service: &Service, recording: Recording) -> Result<String, Str
         return Ok(String::new());
     }
     let wav = audio::wav(&samples, audio::UPLOAD_SAMPLE_RATE);
-    let boundary = format!("monocode-{}", uuid::Uuid::new_v4().simple());
+    let boundary = format!("irgat-{}", uuid::Uuid::new_v4().simple());
     let mut fields = vec![("model", service.model.trim()), ("response_format", "json")];
     if !service.language.trim().is_empty() {
         fields.push(("language", service.language.trim()));

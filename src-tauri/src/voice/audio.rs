@@ -10,7 +10,7 @@ const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
 const FLOOR_DB: f32 = -55.0;
 
 /// Transcription services cap uploads (OpenAI at 25 MB); ten minutes of
-/// 16 kHz mono 16-bit audio is about 19 MB.
+/// 16 kHz irgat 16-bit audio is about 19 MB.
 pub const RECORDING_LIMIT_SECONDS: usize = 600;
 
 /// Speech models are trained on 16 kHz audio, and it keeps uploads small.
@@ -80,7 +80,7 @@ pub fn resample(samples: &[f32], from: f64, to: f64) -> Vec<f32> {
         .collect()
 }
 
-/// A mono 16-bit PCM WAV file.
+/// A irgat 16-bit PCM WAV file.
 pub fn wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
     let data_len = (samples.len() * 2) as u32;
     let mut out = Vec::with_capacity(44 + data_len as usize);
@@ -157,12 +157,12 @@ mod tests {
     }
 
     #[test]
-    fn wav_writes_a_mono_pcm_header() {
+    fn wav_writes_a_irgat_pcm_header() {
         let bytes = wav(&[0.0, 1.0, -1.0, 2.0], 16_000);
         assert_eq!(&bytes[0..4], b"RIFF");
         assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().unwrap()), 36 + 8);
         assert_eq!(&bytes[8..16], b"WAVEfmt ");
-        assert_eq!(u16::from_le_bytes([bytes[22], bytes[23]]), 1, "mono");
+        assert_eq!(u16::from_le_bytes([bytes[22], bytes[23]]), 1, "irgat");
         assert_eq!(
             u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
             16_000

@@ -29,24 +29,24 @@ import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
 import { PixelMascot } from "./PixelMascot";
-import { MonoRailMascot } from "../../monos/ui/MonoRailMascot";
-import { MONO_STATUS_LABEL, type MonoStatus } from "../../monos/model/mono";
+import { IrgatRailMascot } from "../../irgats/ui/IrgatRailMascot";
+import { IRGAT_STATUS_LABEL, type IrgatStatus } from "../../irgats/model/irgat";
 
-/** A Mono the picker offers beside the projects. */
-export type PickerMono = {
+/** A Irgat the picker offers beside the projects. */
+export type PickerIrgat = {
   id: string;
   name: string;
   mascot: string;
   color: string;
-  status?: MonoStatus;
+  status?: IrgatStatus;
 };
 
-/** Monos listed above the projects; picking one opens it. */
-export type PickerMonos = {
-  items: readonly PickerMono[];
-  /** The Mono open in the main area; then no project is the current one. */
+/** Irgats listed above the projects; picking one opens it. */
+export type PickerIrgats = {
+  items: readonly PickerIrgat[];
+  /** The Irgat open in the main area; then no project is the current one. */
   activeId?: string;
-  onOpen: (monoId: string) => void;
+  onOpen: (irgatId: string) => void;
   onCreate?: () => void;
 };
 
@@ -72,8 +72,8 @@ type Props = {
   ) => void;
   /** Keeps the dropdown open while the project's context menu or its dialogs show. */
   projectMenuActive?: boolean;
-  /** Lists Monos first, for the compact rail where they have no row of their own. */
-  monos?: PickerMonos;
+  /** Lists Irgats first, for the compact rail where they have no row of their own. */
+  irgats?: PickerIrgats;
 };
 
 export function SearchableProjectPicker({
@@ -90,7 +90,7 @@ export function SearchableProjectPicker({
   onOpenProject,
   onProjectContextMenu,
   projectMenuActive = false,
-  monos,
+  irgats,
 }: Props) {
   const [open, setOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -114,7 +114,7 @@ export function SearchableProjectPicker({
     ...projects.filter((item) => sameProjectPath(item.path, cwd)),
     ...projects.filter((item) => !sameProjectPath(item.path, cwd)),
   ];
-  const activeMono = monos?.items.find((mono) => mono.id === monos.activeId);
+  const activeIrgat = irgats?.items.find((irgat) => irgat.id === irgats.activeId);
   const closePicker = () => setOpen(false);
   const openPicker = () => setOpen(true);
 
@@ -130,15 +130,15 @@ export function SearchableProjectPicker({
       <button
         type="button"
         title={
-          activeMono
-            ? `${activeMono.name}\n${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
+          activeIrgat
+            ? `${activeIrgat.name}\n${IRGAT_STATUS_LABEL[activeIrgat.status ?? "idle"]}`
             : inProject
               ? cwd
               : undefined
         }
         aria-label={
-          activeMono
-            ? `${action}, current mono ${activeMono.name}, ${MONO_STATUS_LABEL[activeMono.status ?? "idle"]}`
+          activeIrgat
+            ? `${action}, current irgat ${activeIrgat.name}, ${IRGAT_STATUS_LABEL[activeIrgat.status ?? "idle"]}`
             : inProject
               ? `${action}, current project ${label}`
               : "Choose project for note"
@@ -163,11 +163,11 @@ export function SearchableProjectPicker({
               : "text-content/50 hover:bg-content/5 hover:text-content"
         }${buttonClassName ? ` ${buttonClassName}` : ""}`}
       >
-        {activeMono ? (
-          <MonoRailMascot
-            name={activeMono.mascot}
-            color={activeMono.color}
-            status={activeMono.status}
+        {activeIrgat ? (
+          <IrgatRailMascot
+            name={activeIrgat.mascot}
+            color={activeIrgat.color}
+            status={activeIrgat.status}
             className={`${compact ? "size-4" : "size-3.5"} shrink-0`}
           />
         ) : !inProject ? null : logoPath ? (
@@ -188,7 +188,7 @@ export function SearchableProjectPicker({
         {compact ? null : (
           <>
             <span className="min-w-0 truncate font-medium text-content/90">
-              {activeMono?.name ?? label}
+              {activeIrgat?.name ?? label}
             </span>
             <ChevronDown
               className={`size-3 shrink-0 text-content/45 transition-transform ${
@@ -209,7 +209,7 @@ export function SearchableProjectPicker({
           onOpenProject={onOpenProject}
           onProjectContextMenu={onProjectContextMenu}
           projectMenuActive={projectMenuActive}
-          monos={monos}
+          irgats={irgats}
         />
       ) : null}
     </div>
@@ -222,7 +222,7 @@ type ProjectPickerPopoverProps = Pick<
   | "onOpenProject"
   | "onProjectContextMenu"
   | "projectMenuActive"
-  | "monos"
+  | "irgats"
 > & {
   anchor: PopoverAnchor;
   projects: readonly RecentProject[];
@@ -232,7 +232,7 @@ type ProjectPickerPopoverProps = Pick<
   emptyMessage?: string;
 };
 
-/** Shared searchable project menu for switching projects or adding them to a Mono. */
+/** Shared searchable project menu for switching projects or adding them to a Irgat. */
 export function ProjectPickerPopover({
   anchor,
   projects,
@@ -242,7 +242,7 @@ export function ProjectPickerPopover({
   onOpenProject,
   onProjectContextMenu,
   projectMenuActive = false,
-  monos,
+  irgats,
   label = "Project picker",
   emptyMessage = "No projects found",
 }: ProjectPickerPopoverProps) {
@@ -253,15 +253,15 @@ export function ProjectPickerPopover({
   const { groupLabels, groupColors, groupCustomColors, groupMascots } =
     useProjectAppearance();
   const groupLogos = useTabGroupLogos();
-  const activeMono = monos?.items.find((mono) => mono.id === monos.activeId);
-  // With a Mono open, no project is current: each one is a way back.
+  const activeIrgat = irgats?.items.find((irgat) => irgat.id === irgats.activeId);
+  // With a Irgat open, no project is current: each one is a way back.
   const isCurrent = (path: string) =>
-    !activeMono &&
+    !activeIrgat &&
     currentProject != null &&
     sameProjectPath(path, currentProject);
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredMonos = (monos?.items ?? []).filter((mono) =>
-    mono.name.toLocaleLowerCase().includes(normalizedQuery),
+  const filteredIrgats = (irgats?.items ?? []).filter((irgat) =>
+    irgat.name.toLocaleLowerCase().includes(normalizedQuery),
   );
   const filteredProjects = normalizedQuery
     ? projects.filter((item) => {
@@ -290,17 +290,17 @@ export function ProjectPickerPopover({
     if (!isCurrent(path)) onSelectProject(path);
   };
 
-  const pickMono = (monoId: string) => {
+  const pickIrgat = (irgatId: string) => {
     onDismiss();
-    monos?.onOpen(monoId);
+    irgats?.onOpen(irgatId);
   };
 
-  /** Keyboard rows: the Monos, then the projects. */
-  const rowCount = filteredMonos.length + filteredProjects.length;
+  /** Keyboard rows: the Irgats, then the projects. */
+  const rowCount = filteredIrgats.length + filteredProjects.length;
   const pickRow = (index: number) => {
-    if (index < filteredMonos.length) pickMono(filteredMonos[index].id);
+    if (index < filteredIrgats.length) pickIrgat(filteredIrgats[index].id);
     else {
-      const project = filteredProjects[index - filteredMonos.length];
+      const project = filteredProjects[index - filteredIrgats.length];
       if (project) pickProject(project.path);
     }
   };
@@ -318,7 +318,7 @@ export function ProjectPickerPopover({
         target instanceof HTMLInputElement
           ? active
           : Array.prototype.indexOf.call(rows, target);
-      const project = filteredProjects[index - filteredMonos.length];
+      const project = filteredProjects[index - filteredIrgats.length];
       const row = rows[index];
       if (!project || !row) return;
       event.preventDefault();
@@ -375,8 +375,8 @@ export function ProjectPickerPopover({
             setActive(0);
           }}
           placeholder={
-            monos?.items.length
-              ? "Search monos and projects..."
+            irgats?.items.length
+              ? "Search irgats and projects..."
               : "Search projects..."
           }
           className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none placeholder:text-content/35"
@@ -386,14 +386,14 @@ export function ProjectPickerPopover({
         ref={listRef}
         className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5"
       >
-        {filteredMonos.map((mono, index) => (
+        {filteredIrgats.map((irgat, index) => (
           <button
-            key={`mono:${mono.id}`}
+            key={`irgat:${irgat.id}`}
             type="button"
-            title={mono.name}
-            data-picker-mono={mono.id}
+            title={irgat.name}
+            data-picker-irgat={irgat.id}
             onMouseEnter={() => setActive(index)}
-            onClick={() => pickMono(mono.id)}
+            onClick={() => pickIrgat(irgat.id)}
             className={`flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left ${
               active === index
                 ? "bg-selection text-content"
@@ -401,26 +401,26 @@ export function ProjectPickerPopover({
             }`}
           >
             <span className="grid size-4 shrink-0 place-items-center">
-              {mono.id === monos?.activeId ? (
+              {irgat.id === irgats?.activeId ? (
                 <Check className="size-3.5" strokeWidth={2} />
               ) : (
                 <PixelMascot
-                  name={mono.mascot}
-                  color={mono.color}
+                  name={irgat.mascot}
+                  color={irgat.color}
                   still
                   className="size-4"
                 />
               )}
             </span>
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-              {mono.name}
+              {irgat.name}
             </span>
-            <span className="shrink-0 text-[11px] text-content/40">Mono</span>
+            <span className="shrink-0 text-[11px] text-content/40">Irgat</span>
           </button>
         ))}
         {filteredProjects.length > 0 ? (
           filteredProjects.map((item, projectIndex) => {
-            const index = filteredMonos.length + projectIndex;
+            const index = filteredIrgats.length + projectIndex;
             const current = isCurrent(item.path);
             const itemKey = projectKey(item.path);
             const itemSeed = projectName(item.path);
@@ -484,31 +484,31 @@ export function ProjectPickerPopover({
                 <span className="min-w-0 max-w-[calc(100%_-_36px)] shrink-0 truncate text-[13px] font-medium">
                   {itemLabel}
                 </span>
-                <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-content/40">
+                <span className="min-w-0 max-w-28 flex-1 truncate font-irgat text-[11px] text-content/40">
                   {prettyParent(item.path)}
                 </span>
               </button>
             );
           })
-        ) : filteredMonos.length ? null : (
+        ) : filteredIrgats.length ? null : (
           <p className="px-2.5 py-5 text-center text-[12px] text-content/45">
             {emptyMessage}
           </p>
         )}
       </div>
-      {onOpenProject || monos?.onCreate ? (
+      {onOpenProject || irgats?.onCreate ? (
         <div className="shrink-0 border-t border-stroke p-1.5">
-          {monos?.onCreate ? (
+          {irgats?.onCreate ? (
             <button
               type="button"
               onClick={() => {
                 onDismiss();
-                monos.onCreate?.();
+                irgats.onCreate?.();
               }}
               className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-content/75 hover:bg-content/8 hover:text-content"
             >
               <Plus className="size-4 shrink-0" strokeWidth={1.75} />
-              <span>New mono</span>
+              <span>New irgat</span>
             </button>
           ) : null}
           {onOpenProject ? (

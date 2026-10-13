@@ -148,15 +148,15 @@ const REVEAL_LABEL = IS_MAC
     : "Open Containing Folder";
 
 function fileLinkMenuItems(
-  canOpenInMonoCode: boolean,
+  canOpenInIrgat: boolean,
   canCopyRelativePath: boolean,
 ): ExplorerMenuItem[] {
   return [
     {
       kind: "item",
-      id: "open-monocode",
-      label: "Open in MonoCode",
-      disabled: !canOpenInMonoCode,
+      id: "open-irgat",
+      label: "Open in Irgat",
+      disabled: !canOpenInIrgat,
     },
     { kind: "item", id: "open-default", label: "Open in Default App" },
     { kind: "item", id: "reveal", label: REVEAL_LABEL },
@@ -327,7 +327,7 @@ function MarkdownCode({
       <code
         {...props}
         dir="ltr"
-        className={`inline-flex items-center gap-1 rounded-md bg-content/8 px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-mono text-[0.8em] text-content ${
+        className={`inline-flex items-center gap-1 rounded-md bg-content/8 px-1.5 min-h-6 max-w-full [overflow-wrap:anywhere] align-baseline font-irgat text-[0.8em] text-content ${
           open ? "cursor-pointer hover:text-sky-300 hover:underline" : ""
         } ${className ?? ""}`}
         role={open ? "link" : undefined}
@@ -635,7 +635,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     setFileMenu(null);
     setFileActionError(null);
 
-    if (id === "open-monocode") {
+    if (id === "open-irgat") {
       if (fileMenu.navigation) onOpenFile?.(path, fileMenu.navigation);
       else onOpenFile?.(path);
       return;
@@ -768,7 +768,7 @@ export const MarkdownSource = memo(function MarkdownSource({
       aria-label="Markdown source"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-[13px] leading-5 text-content/85">
+      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-irgat text-[13px] leading-5 text-content/85">
         <MarkdownSourceHighlight text={text} />
       </pre>
     </div>

@@ -249,7 +249,7 @@ function HarnessUpdateRow({
           </span>
         ) : (
           <>
-            <span className="shrink-0 font-mono text-[11px] text-content/50">
+            <span className="shrink-0 font-irgat text-[11px] text-content/50">
               {update.installed} → {update.latest}
             </span>
             <button

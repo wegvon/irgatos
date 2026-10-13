@@ -65,7 +65,7 @@ function conversation(turns: number, replyChars = 40): Block[] {
 describe("session reference tokens", () => {
   it("builds a readable label from the title and a short id", () => {
     expect(sessionReferenceId(SOURCE_ID)).toBe("3f2a9c1e");
-    expect(sessionReferenceId("mono-x")).toBeNull();
+    expect(sessionReferenceId("irgat-x")).toBeNull();
     expect(sessionReferenceSlug("claude · Fix the Login redirect!")).toBe(
       "claude-fix-the-login-redirect",
     );

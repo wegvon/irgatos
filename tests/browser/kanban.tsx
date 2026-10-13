@@ -15,7 +15,7 @@ import "../../src/styles/index.css";
 
 // The real board view over an in-memory copy of the Rust store, so pointer
 // drags run against real layout in Chromium and WebKit.
-const PROJECT = "/Users/demo/src/monocode";
+const PROJECT = "/Users/demo/src/irgat";
 const DAY = 86_400_000;
 const now = Date.now();
 

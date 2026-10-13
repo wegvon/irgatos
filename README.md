@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="public/monocode.png" alt="MonoCode" width="88" />
+  <img src="public/irgat.png" alt="Irgat" width="88" />
 </p>
 
-<h1 align="center">MonoCode</h1>
+<h1 align="center">Irgat</h1>
 
 <p align="center">
   <strong>A GUI for your coding agents.</strong>
 </p>
 
 <p align="center">
-  <img width="1680" height="1050" alt="MonoCode with agent sessions open side by side" src="https://github.com/user-attachments/assets/2cd4a6ec-eb1e-4b45-8627-a76442ea3874" />
+  <img width="1680" height="1050" alt="Irgat with agent sessions open side by side" src="https://github.com/user-attachments/assets/2cd4a6ec-eb1e-4b45-8627-a76442ea3874" />
 </p>
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, Pi, omp, fx, Hermes Agent, and Devin. If they’re installed and logged in, MonoCode can run them. Tabs are sessions. The composer is the input. MonoCode does not sell tokens.
+Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, Pi, omp, fx, Hermes Agent, and Devin. If they’re installed and logged in, Irgat can run them. Tabs are sessions. The composer is the input. Irgat does not sell tokens.
 
 ## Install
 
@@ -20,12 +20,12 @@ Install and sign in to at least one supported agent first. See [provider setup](
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [MonoCode.dmg](https://dl.usemono.dev/MonoCode.dmg) |
-| macOS, Intel | [MonoCode_x64.dmg](https://dl.usemono.dev/MonoCode_x64.dmg) |
-| Linux, x86_64 | [.deb, .rpm, or AppImage](https://github.com/hardbeat920/monocode/releases/latest) |
-| Windows, x86_64 | [Installer](https://github.com/hardbeat920/monocode/releases/latest) |
+| macOS, Apple Silicon | [Irgat.dmg](https://github.com/wegvon/monocode/releases/Irgat.dmg) |
+| macOS, Intel | [Irgat_x64.dmg](https://github.com/wegvon/monocode/releases/Irgat_x64.dmg) |
+| Linux, x86_64 | [.deb, .rpm, or AppImage](https://github.com/wegvon/monocode/releases/latest) |
+| Windows, x86_64 | [Installer](https://github.com/wegvon/monocode/releases/latest) |
 
-On macOS, open the DMG and drag MonoCode to Applications. On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
+On macOS, open the DMG and drag Irgat to Applications. On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
 
 ## Get started
 
@@ -36,9 +36,9 @@ Open a project folder, choose an agent, and send a message. Each tab is a sessio
 - Edit files and review changes in the app.
 - Start a message with `/operator` to let an agent open sessions and manage worktrees and notes.
 
-Monos are experimental agents that work across your projects. They keep a memory and can run scheduled tasks you set up with them.
+Irgats are experimental agents that work across your projects. They keep a memory and can run scheduled tasks you set up with them.
 
-MonoCode is still early. If something breaks, [report a bug](https://github.com/hardbeat920/monocode/issues).
+Irgat is still early. If something breaks, [report a bug](https://github.com/wegvon/monocode/issues).
 
 ## Guides
 
@@ -60,9 +60,9 @@ Small, focused contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md
 
 ## Contributors
 
-Thanks to everyone who contributes to MonoCode!
+Thanks to everyone who contributes to Irgat!
 
-[![MonoCode contributors](https://contrib.rocks/image?repo=hardbeat920/monocode)](https://github.com/hardbeat920/monocode/graphs/contributors)
+[![Irgat contributors](https://contrib.rocks/image?repo=wegvon/monocode)](https://github.com/wegvon/monocode/graphs/contributors)
 
 Contributor image by [contrib.rocks](https://contrib.rocks).
 

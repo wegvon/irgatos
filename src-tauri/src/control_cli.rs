@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-const USAGE: &str = r#"MonoCode local control — supervise this orchestration run from the lead agent.
+const USAGE: &str = r#"Irgat local control — supervise this orchestration run from the lead agent.
 
 Usage: {exe} control ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
@@ -56,7 +56,7 @@ for corrections -> review each task -> finish.
 
 When paused, list, get and wait still return the reason and recovery steps.
 Do not keep polling or retry mutations. Explain the pause and ask the user to
-click Resume in MonoCode. Resume continues interrupted workers in their
+click Resume in Irgat. Resume continues interrupted workers in their
 retained checkouts. A policy-blocked worker remains stopped until message,
 retry or cancel explicitly resolves it.
 
@@ -71,10 +71,10 @@ failed response reports the ID it used whenever the outcome is unknown — a
 timeout, say. Retry that exact call with --request-id ID; retrying a delegate
 under a fresh ID instead would queue a second worker.
 
-Tasks run inside the MonoCode app, not in this process. Exiting this CLI, or a
+Tasks run inside the Irgat app, not in this process. Exiting this CLI, or a
 failure here, never cancels a task that was already accepted.
 
-MonoCode sets MONOCODE_CONTROL_ENDPOINT and MONOCODE_CONTROL_TOKEN for the lead
+Irgat sets IRGAT_CONTROL_ENDPOINT and IRGAT_CONTROL_TOKEN for the lead
 agent's process only. They are already in your environment; never print them.
 "#;
 
@@ -116,13 +116,13 @@ const APP_ACTIONS: [&str; 32] = [
     "habits.remove",
     "chat.card",
 ];
-const APP_USAGE: &str = r#"MonoCode app access — use in a thread enabled by /operator.
+const APP_USAGE: &str = r#"Irgat app access — use in a thread enabled by /operator.
 
 Usage: {exe} app ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
-A Mono works on several projects: add "project":"<path or name>" to the
+A Irgat works on several projects: add "project":"<path or name>" to the
 sessions.*, worktrees.* and folders.* actions to choose which one. It may be
-left out when the Mono has a single project.
+left out when the Irgat has a single project.
 
 Actions:
   models.list    {}  Available providers, models, settings and permission modes.
@@ -136,10 +136,10 @@ Actions:
                   Submit a follow-up to an idle session in this project.
                   A busy session is rejected. Reuse --request-id on retries.
                   Optional notifyOnComplete:true asks for a completion report
-                  in the calling Mono's chat. It waits until that Mono is idle.
+                  in the calling Irgat's chat. It waits until that Irgat is idle.
   sessions.draft {"sessionId":"...","prompt":"..."}
                   Save an unsent draft in an idle project session. Existing
-                  drafts are preserved; send or remove one in MonoCode first.
+                  drafts are preserved; send or remove one in Irgat first.
                   Reuse --request-id on retries.
   sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
                   "effort":"high","reveal":false,
@@ -152,16 +152,16 @@ Actions:
                   session in this project, including one just created. Set
                   draft:true to save the prompt unsent; no agent turn runs.
                   Otherwise the turn is submitted.
-                  Submitted sessions notify the calling Mono by default when
-                  this turn completes, fails or is cancelled. The Mono reviews
+                  Submitted sessions notify the calling Irgat by default when
+                  this turn completes, fails or is cancelled. The Irgat reviews
                   it and reports back once idle. Set notifyOnComplete:false
                   when the user asks not to receive a report. Drafts do not
                   notify; notifyOnComplete:true cannot be combined with draft:true.
-                  Sessions monitored during the same Mono turn form one group:
+                  Sessions monitored during the same Irgat turn form one group:
                   their results arrive together after every session stops.
-                  The Mono reviews the whole group and gives one combined report.
+                  The Irgat reviews the whole group and gives one combined report.
                   Rejected launches or follow-ups return a CLI error without
-                  a later completion report. When a Mono successfully stops,
+                  a later completion report. When a Irgat successfully stops,
                   archives or deletes a monitored session, its pending report
                   for that session is dismissed; acknowledge the action in
                   the current reply. Other sessions' reports are kept.
@@ -181,7 +181,7 @@ Actions:
                   unchanged. Reuse --request-id on retries.
   sessions.archive {"sessionId":"..."}
                   Stop the session if running, save its conversation, and
-                  archive it. It can be restored from MonoCode's archive.
+                  archive it. It can be restored from Irgat's archive.
                   Open files, terminals and worktrees are kept.
                   Reuse --request-id on retries.
   sessions.delete {"sessionId":"..."}
@@ -189,7 +189,7 @@ Actions:
                   saved conversation. Open files, terminals and worktrees
                   are kept. Reuse --request-id on retries.
                   stop, archive and delete cannot target the calling session,
-                  Mono chats, habit runs or orchestration workers. Sessions
+                  Irgat chats, habit runs or orchestration workers. Sessions
                   must belong to the chosen project.
   worktrees.list {}  Working copies in this project, with paths and branches.
   worktrees.create {"branch":"feature/name","base":"HEAD","existing":false}
@@ -207,7 +207,7 @@ Actions:
                   to derive it from the body. Use {"id":"...","body":"..."}
                   to edit an existing note; title and tags are also optional.
                   Omitted fields stay unchanged. Reuse --request-id on retries.
-  artifacts.list {"limit":30,"offset":0}  Mono or habit only. Saved artifact titles.
+  artifacts.list {"limit":30,"offset":0}  Irgat or habit only. Saved artifact titles.
   artifacts.read {"id":"..."}  Full content of one artifact.
   artifacts.write {"kind":"document","title":"PR review",
                    "summary":"Merge queue and blockers",
@@ -218,13 +218,13 @@ Actions:
                   repeat the document body in chat. Returns metadata only.
                   To revise, pass {"id":"...","body":"<updated Markdown>"};
                   omitted title stays unchanged. Reuse --request-id on retries.
-  soul.read      {}  Mono's own conversation only. Current SOUL.md text and hash.
+  soul.read      {}  Irgat's own conversation only. Current SOUL.md text and hash.
   soul.update    {"text":"<complete Markdown>","expectedHash":"<hash from soul.read>"}
                   Update your standing instructions only when the user asks.
                   Preserve the other instructions. If the file changed since
                   soul.read, read it again and reapply the requested changes.
-                  Habit runs and other sessions cannot change a Mono's soul.
-  memory.read    {"topic":"releases"}  Mono only. Without topic:
+                  Habit runs and other sessions cannot change a Irgat's soul.
+  memory.read    {"topic":"releases"}  Irgat only. Without topic:
                   MEMORY.md, how much of it loads, and the topic names.
   memory.search  {"query":"release tags","since":"7d"}
                   Entries across MEMORY.md, topic notes and the archive that
@@ -238,7 +238,7 @@ Actions:
                   Strike the one entry containing find through and add fact.
   memory.remove  {"find":"text of the entry","topic":"..."}
                   Delete the one entry containing find, for a wrong entry.
-  habits.list    {}  Mono only. Your habits: what each does, when it runs
+  habits.list    {}  Irgat only. Your habits: what each does, when it runs
                   next, and how its last run went.
   habits.add     {"name":"Morning CI check","instructions":"...",
                   "schedule":{"kind":"weekdays","time":"09:00"}}
@@ -251,7 +251,7 @@ Actions:
                   "schedule":{...},"enabled":false}  Change or pause one.
   habits.run     {"id":"..."}  Run one within a minute, to try it out.
   habits.remove  {"id":"..."}
-  chat.card      Mono or habit only. Post a card to the Mono's chat:
+  chat.card      Irgat or habit only. Post a card to the Irgat's chat:
                   {"type":"pr","repo":"owner/repo","number":123,"note":"..."}
                   {"type":"session","sessionId":"...","note":"..."}
                   {"type":"choices","options":["First choice","Second choice"]}
@@ -261,7 +261,7 @@ Actions:
                   the user must start it before it is scheduled.
 
 The output is one JSON line: {"ok":true,"result":...} or {"ok":false,"error":"..."}.
-Use --input - to pass JSON on stdin. Never print MonoCode credentials.
+Use --input - to pass JSON on stdin. Never print Irgat credentials.
 Keep the same --request-id when retrying a call after an uncertain result.
 "#;
 
@@ -290,14 +290,14 @@ fn quoted(value: &str) -> String {
 pub fn help() -> String {
     let exe = std::env::current_exe()
         .map(|path| quoted(&path.to_string_lossy()))
-        .unwrap_or_else(|_| "monocode".into());
+        .unwrap_or_else(|_| "irgat".into());
     USAGE.replace("{exe}", &exe)
 }
 
 pub fn app_help() -> String {
     let exe = std::env::current_exe()
         .map(|path| quoted(&path.to_string_lossy()))
-        .unwrap_or_else(|_| "monocode".into());
+        .unwrap_or_else(|_| "irgat".into());
     APP_USAGE.replace("{exe}", &exe)
 }
 
@@ -390,34 +390,34 @@ fn sent(error: impl Into<String>) -> Failure {
 
 fn send(action: &str, input: &Value, request_id: &str, app_mode: bool) -> Result<Value, Failure> {
     let endpoint_key = if app_mode {
-        "MONOCODE_APP_ENDPOINT"
+        "IRGAT_APP_ENDPOINT"
     } else {
-        "MONOCODE_CONTROL_ENDPOINT"
+        "IRGAT_CONTROL_ENDPOINT"
     };
     let token_key = if app_mode {
-        "MONOCODE_APP_TOKEN"
+        "IRGAT_APP_TOKEN"
     } else {
-        "MONOCODE_CONTROL_TOKEN"
+        "IRGAT_CONTROL_TOKEN"
     };
     let endpoint = std::env::var(endpoint_key).map_err(|_| {
         unsent(if app_mode {
-            "No MonoCode app connection. Start this agent turn in MonoCode."
+            "No Irgat app connection. Start this agent turn in Irgat."
         } else {
-            "No MonoCode connection. Confirm the Orchestrator proposal in MonoCode first."
+            "No Irgat connection. Confirm the Orchestrator proposal in Irgat first."
         })
     })?;
     let token = std::env::var(token_key)
-        .map_err(|_| unsent("No MonoCode session credential. Start the agent from MonoCode."))?;
+        .map_err(|_| unsent("No Irgat session credential. Start the agent from Irgat."))?;
     let address: SocketAddr = endpoint
         .parse()
-        .map_err(|_| unsent("Invalid MonoCode endpoint"))?;
+        .map_err(|_| unsent("Invalid Irgat endpoint"))?;
     if !address.ip().is_loopback() {
-        return Err(unsent("MonoCode control only connects to localhost"));
+        return Err(unsent("Irgat control only connects to localhost"));
     }
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(3))
         .map_err(|error| {
             unsent(format!(
-                "Cannot connect to MonoCode at {address}: {error}. The app may have restarted, or this agent's sandbox may be blocking localhost."
+                "Cannot connect to Irgat at {address}: {error}. The app may have restarted, or this agent's sandbox may be blocking localhost."
             ))
         })?;
     stream
@@ -437,11 +437,11 @@ fn send(action: &str, input: &Value, request_id: &str, app_mode: bool) -> Result
     BufReader::new(stream)
         .take(max_response + 1)
         .read_line(&mut line)
-        .map_err(|e| sent(format!("No reply from MonoCode: {e}")))?;
+        .map_err(|e| sent(format!("No reply from Irgat: {e}")))?;
     if line.len() > max_response as usize {
-        return Err(sent("MonoCode response is too large"));
+        return Err(sent("Irgat response is too large"));
     }
-    serde_json::from_str(&line).map_err(|_| sent("MonoCode returned an invalid response"))
+    serde_json::from_str(&line).map_err(|_| sent("Irgat returned an invalid response"))
 }
 
 fn read_capped(mut source: impl Read) -> Result<String, String> {
@@ -612,18 +612,18 @@ mod tests {
     #[test]
     fn quotes_the_control_path_only_when_the_shell_needs_it() {
         assert_eq!(
-            quoted("/Applications/MonoCode.app/Contents/MacOS/monocode"),
-            "/Applications/MonoCode.app/Contents/MacOS/monocode"
+            quoted("/Applications/Irgat.app/Contents/MacOS/irgat"),
+            "/Applications/Irgat.app/Contents/MacOS/irgat"
         );
-        assert_eq!(quoted("/Users/a b/MonoCode"), "'/Users/a b/MonoCode'");
-        assert_eq!(quoted("C:\\Tools\\monocode.exe"), "C:\\Tools\\monocode.exe");
+        assert_eq!(quoted("/Users/a b/Irgat"), "'/Users/a b/Irgat'");
+        assert_eq!(quoted("C:\\Tools\\irgat.exe"), "C:\\Tools\\irgat.exe");
         assert_eq!(
-            quoted("C:\\Program Files\\MonoCode\\monocode.exe"),
-            "\"C:\\Program Files\\MonoCode\\monocode.exe\""
+            quoted("C:\\Program Files\\Irgat\\irgat.exe"),
+            "\"C:\\Program Files\\Irgat\\irgat.exe\""
         );
         // A backslash escapes in a POSIX shell, so bare would rewrite the path.
-        assert_eq!(quoted("/Users/a\\b/MonoCode"), "'/Users/a\\b/MonoCode'");
-        assert_eq!(quoted("/Users/it's/MonoCode"), r"'/Users/it'\''s/MonoCode'");
+        assert_eq!(quoted("/Users/a\\b/Irgat"), "'/Users/a\\b/Irgat'");
+        assert_eq!(quoted("/Users/it's/Irgat"), r"'/Users/it'\''s/Irgat'");
     }
     #[test]
     fn app_mode_exposes_only_app_actions_and_safe_request_ids() {

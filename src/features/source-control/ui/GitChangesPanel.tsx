@@ -84,7 +84,7 @@ const GIT_POLL_MS = 2000;
 
 function confirmNative(message: string, okLabel?: string): Promise<boolean> {
   return ask(message, {
-    title: "MonoCode",
+    title: "Irgat",
     kind: "warning",
     ...(okLabel ? { okLabel } : {}),
   });
@@ -603,7 +603,7 @@ function ChangedFiles({
   const confirmAmend = async () => {
     if (!amend || !index?.headPushed) return true;
     return confirmNative(
-      "Amend a commit that is already pushed? MonoCode cannot push the result. You will need a force push from the terminal.",
+      "Amend a commit that is already pushed? Irgat cannot push the result. You will need a force push from the terminal.",
       "Amend",
     );
   };
@@ -1556,7 +1556,7 @@ function ChangeRow({
           )}
         </div>
         <span
-          className={`w-3.5 shrink-0 text-right font-mono text-[11px] font-semibold ${statusColor(file.status)}`}
+          className={`w-3.5 shrink-0 text-right font-irgat text-[11px] font-semibold ${statusColor(file.status)}`}
         >
           {statusLetter(file.status)}
         </span>

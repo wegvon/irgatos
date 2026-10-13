@@ -88,7 +88,7 @@ fn init_with(
     open: impl FnOnce(PathBuf) -> Result<SessionStore, String>,
     manage: impl FnOnce(SessionStore),
 ) -> Result<(), String> {
-    let store = open(data_dir()?.join("monocode.db"))?;
+    let store = open(data_dir()?.join("irgat.db"))?;
     manage(store);
     Ok(())
 }
@@ -539,7 +539,7 @@ pub fn session_delete(
         .unwrap_or_default();
     image_paths.extend(persisted_paths);
     image_paths.extend(
-        crate::mono_transcript::generated_image_paths(&conn, &session_id)
+        crate::irgat_transcript::generated_image_paths(&conn, &session_id)
             .map_err(|e| e.to_string())?,
     );
     delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
@@ -1017,7 +1017,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::reminders::ensure_table(conn)?;
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
-    crate::mono_transcript::ensure_tables(conn)?;
+    crate::irgat_transcript::ensure_tables(conn)?;
     crate::kanban::ensure_tables(conn)?;
     Ok(())
 }
@@ -1362,8 +1362,8 @@ fn search_sessions_sql(include_archived: bool, cwd_scoped: bool) -> String {
                  OR CASE WHEN octet_length(blocks_json) <= ?2
                          THEN LOWER(blocks_json) LIKE LOWER(?1) ESCAPE '\\'
                          ELSE 0 END
-                 OR EXISTS(SELECT 1 FROM mono_blocks
-                           WHERE mono_blocks.session_id = sessions.id
+                 OR EXISTS(SELECT 1 FROM irgat_blocks
+                           WHERE irgat_blocks.session_id = sessions.id
                              AND search_text LIKE LOWER(?1) ESCAPE '\\'))",
     );
     if !include_archived {
@@ -1488,8 +1488,8 @@ fn search_sessions_with_connection(
                 String::from_utf8_lossy(value.as_bytes().map_err(|e| e.to_string())?).into_owned()
             }
         };
-        let blocks = if crate::mono_transcript::is_indexed(conn, &id).map_err(|e| e.to_string())? {
-            crate::mono_transcript::matching_blocks(
+        let blocks = if crate::irgat_transcript::is_indexed(conn, &id).map_err(|e| e.to_string())? {
+            crate::irgat_transcript::matching_blocks(
                 conn,
                 &id,
                 &needle,
@@ -2159,20 +2159,20 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     #[test]
-    fn search_keeps_older_mono_messages_available_after_conversion() {
+    fn search_keeps_older_irgat_messages_available_after_conversion() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
-        let mut mono = sample("mono", "/tmp/a", "Mono");
-        mono.blocks = json!([{ "id":"old", "role":"user", "text":"Archived needle" }, { "id":"answer", "role":"assistant", "text":"Done" }]);
-        upsert_session(&conn, &mono).unwrap();
-        crate::mono_transcript::migrate_transcript(&conn, "mono").unwrap();
+        let mut irgat = sample("irgat", "/tmp/a", "Irgat");
+        irgat.blocks = json!([{ "id":"old", "role":"user", "text":"Archived needle" }, { "id":"answer", "role":"assistant", "text":"Done" }]);
+        upsert_session(&conn, &irgat).unwrap();
+        crate::irgat_transcript::migrate_transcript(&conn, "irgat").unwrap();
         let result = search_sessions(
             &conn,
             &SessionSearchOptions {
                 query: "Archived needle".into(),
                 cwd: None,
                 include_archived: false,
-                search_owner: "mono-search".into(),
+                search_owner: "irgat-search".into(),
             },
         )
         .unwrap();
@@ -2183,14 +2183,14 @@ mod tests {
     #[test]
     fn startup_does_not_read_saved_transcripts() {
         let data_dir = std::env::temp_dir().join(format!(
-            "monocode-startup-transcripts-{}-{}",
+            "irgat-startup-transcripts-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
-        let path = data_dir.join("monocode.db");
+        let path = data_dir.join("irgat.db");
         {
             let store = SessionStore::open(path.clone()).unwrap();
             let conn = store.lock_conn().unwrap();
@@ -3096,7 +3096,7 @@ mod tests {
     #[test]
     fn upsert_snapshots_git_branch() {
         let dir = std::env::temp_dir().join(format!(
-            "monocode-session-git-{}-{}",
+            "irgat-session-git-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3301,7 +3301,7 @@ mod tests {
     #[test]
     fn migrate_creates_workspace_tables_when_versions_already_recorded() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-stale-migrations-{}-{}.db",
+            "irgat-stale-migrations-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3359,7 +3359,7 @@ mod tests {
     #[test]
     fn migrate_restores_the_covering_index_when_versions_already_recorded() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-stale-index-{}-{}.db",
+            "irgat-stale-index-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3429,7 +3429,7 @@ mod tests {
     #[test]
     fn session_search_uses_a_query_only_read_connection() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-session-read-conn-{}-{}.db",
+            "irgat-session-read-conn-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

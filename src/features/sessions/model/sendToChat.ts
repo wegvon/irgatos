@@ -1,6 +1,6 @@
 import type { Attachment } from "./session";
 
-export const SEND_TO_CHAT_EVENT = "monocode:send-to-chat";
+export const SEND_TO_CHAT_EVENT = "irgat:send-to-chat";
 
 export type ChatDelivery =
   | {

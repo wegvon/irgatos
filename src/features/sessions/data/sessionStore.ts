@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { isMonoSession } from "../../monos/model/mono";
-import { sanitizeMonoSpawnedSessions } from "../../monos/model/monoSpawnedSessions";
+import { isIrgatSession } from "../../irgats/model/irgat";
+import { sanitizeIrgatSpawnedSessions } from "../../irgats/model/irgatSpawnedSessions";
 import {
   isWeakToolTitle,
   titleFromToolInput,
@@ -80,7 +80,7 @@ export type SessionSummary = {
 
 type SessionRecord = {
   sidebarHidden?: boolean;
-  monoTranscript?: Session["monoTranscript"];
+  irgatTranscript?: Session["irgatTranscript"];
   orchestrationLeadId?: string;
   id: string;
   cwd: string;
@@ -136,8 +136,8 @@ export function shouldPersistSession(session: Session): boolean {
     !isRemoteProjectPath(session.cwd) &&
     session.cwd !== "~" &&
     (session.blocks.some((block) => block.role === "user") ||
-      (isMonoSession(session.id) &&
-        (session.blocks.length > 0 || !!session.monoTranscript)))
+      (isIrgatSession(session.id) &&
+        (session.blocks.length > 0 || !!session.irgatTranscript)))
   );
 }
 
@@ -189,11 +189,11 @@ function persistableMeta(
   };
 }
 
-function sanitizeMonoSessionCompletion(
+function sanitizeIrgatSessionCompletion(
   value: unknown,
-): Block["monoSessionCompletion"] {
+): Block["irgatSessionCompletion"] {
   if (!value || typeof value !== "object") return undefined;
-  const completion = value as NonNullable<Block["monoSessionCompletion"]>;
+  const completion = value as NonNullable<Block["irgatSessionCompletion"]>;
   if (
     typeof completion.sessionId !== "string" ||
     !isPersistableId(completion.sessionId) ||
@@ -254,8 +254,8 @@ function sanitizeQueuedMessages(value: unknown): QueuedMessage[] {
         })
       : [];
     const noteMeta = sanitizeNoteCard(message.noteCard);
-    const completion = sanitizeMonoSessionCompletion(
-      message.monoSessionCompletion,
+    const completion = sanitizeIrgatSessionCompletion(
+      message.irgatSessionCompletion,
     );
     const noteCard =
       noteMeta && typeof message.noteCard?.body === "string"
@@ -287,7 +287,7 @@ function sanitizeQueuedMessages(value: unknown): QueuedMessage[] {
         attachments,
         ...(noteCard ? { noteCard } : {}),
         ...(handoffCard ? { handoffCard } : {}),
-        ...(completion ? { monoSessionCompletion: completion } : {}),
+        ...(completion ? { irgatSessionCompletion: completion } : {}),
         ...(["default", "plan", "build", "orchestrate"].includes(
           message.intent ?? "",
         )
@@ -382,12 +382,12 @@ export async function upsertSession(
   if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
     return null;
   }
-  const mono = !!session.monoTranscript || isMonoSession(session.id);
-  const snapshot = mono
-    ? session.blocks.filter((block) => monoPersistedBlock(block) !== null)
+  const irgat = !!session.irgatTranscript || isIrgatSession(session.id);
+  const snapshot = irgat
+    ? session.blocks.filter((block) => irgatPersistedBlock(block) !== null)
     : session.blocks;
-  // Mono writes sanitize only the changed suffix inside the serialized queue.
-  const payload = mono
+  // Irgat writes sanitize only the changed suffix inside the serialized queue.
+  const payload = irgat
     ? persistableMeta(session)
     : sanitizeSessionForPersist(session);
   if (session.orchestrationLeadId) {
@@ -397,8 +397,8 @@ export async function upsertSession(
   }
   const summary = await enqueueSessionWrite(session.id, async () => {
     if (deletedSessionIds.has(session.id)) return null;
-    if (mono) {
-      const previous = monoSavedBlocks.get(session.id);
+    if (irgat) {
+      const previous = irgatSavedBlocks.get(session.id);
       let same = 0;
       if (previous) {
         while (
@@ -410,11 +410,11 @@ export async function upsertSession(
       }
       const changed =
         !previous || same !== previous.length || same !== snapshot.length;
-      const summary = await invoke<SessionSummary>("mono_session_upsert", {
+      const summary = await invoke<SessionSummary>("irgat_session_upsert", {
         session: {
           ...payload,
           blocks: changed
-            ? snapshot.slice(same).map((block) => monoPersistedBlock(block)!)
+            ? snapshot.slice(same).map((block) => irgatPersistedBlock(block)!)
             : [],
         },
         afterBlockId: same > 0 ? snapshot[same - 1].id : null,
@@ -422,12 +422,12 @@ export async function upsertSession(
           same === 0
             ? previous !== undefined
               ? (previous[0]?.id ?? null)
-              : (session.monoTranscript?.firstBlockId ?? null)
+              : (session.irgatTranscript?.firstBlockId ?? null)
             : null,
         blocksChanged: changed,
         appendOnly: previous?.length === 0,
       });
-      monoSavedBlocks.set(session.id, snapshot);
+      irgatSavedBlocks.set(session.id, snapshot);
       return summary;
     }
     return invoke<SessionSummary>("session_upsert", {
@@ -563,31 +563,31 @@ export function cancelSessionSearch(searchOwner: string): Promise<void> {
   return invoke<void>("cancel_session_search", { searchOwner });
 }
 
-const monoSavedBlocks = new Map<string, Block[]>();
-const monoBlockPayloads = new WeakMap<Block, Block | null>();
-function monoPersistedBlock(block: Block): Block | null {
-  if (monoBlockPayloads.has(block)) return monoBlockPayloads.get(block)!;
+const irgatSavedBlocks = new Map<string, Block[]>();
+const irgatBlockPayloads = new WeakMap<Block, Block | null>();
+function irgatPersistedBlock(block: Block): Block | null {
+  if (irgatBlockPayloads.has(block)) return irgatBlockPayloads.get(block)!;
   const payload = sanitizeBlock(block);
-  monoBlockPayloads.set(block, payload);
+  irgatBlockPayloads.set(block, payload);
   return payload;
 }
 
-export const MONO_PAGE_TURNS = 10;
-export type MonoTranscriptPage = {
+export const IRGAT_PAGE_TURNS = 10;
+export type IrgatTranscriptPage = {
   blocks: Block[];
   before: number | null;
   hasNewer: boolean;
 };
 
-export async function getMonoTranscriptPage(
+export async function getIrgatTranscriptPage(
   sessionId: string,
   options: {
     before?: number;
     beforeBlockId?: string;
     aroundBlockId?: string;
   } = {},
-): Promise<MonoTranscriptPage> {
-  const page = await invoke<MonoTranscriptPage>("mono_session_page", {
+): Promise<IrgatTranscriptPage> {
+  const page = await invoke<IrgatTranscriptPage>("irgat_session_page", {
     sessionId,
     before: options.before ?? null,
     beforeBlockId: options.beforeBlockId ?? null,
@@ -601,23 +601,23 @@ export async function getMonoTranscriptPage(
   };
 }
 
-export function findMonoTranscript(
+export function findIrgatTranscript(
   sessionId: string,
   query: string,
 ): Promise<string[]> {
-  return invoke("mono_session_find", { sessionId, query });
+  return invoke("irgat_session_find", { sessionId, query });
 }
 
 export async function getSession(sessionId: string): Promise<Session | null> {
   const record = await invoke<SessionRecord | null>(
-    isMonoSession(sessionId) ? "mono_session_get" : "session_get",
+    isIrgatSession(sessionId) ? "irgat_session_get" : "session_get",
     {
       sessionId,
     },
   );
   if (!record) return null;
   const session = recordToSession(record);
-  if (session.monoTranscript) monoSavedBlocks.set(sessionId, session.blocks);
+  if (session.irgatTranscript) irgatSavedBlocks.set(sessionId, session.blocks);
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
     if (toolIds.length) {
@@ -769,7 +769,7 @@ export async function deleteSession(
     await enqueueSessionWrite(sessionId, () =>
       invoke<void>("session_delete", { sessionId, imagePaths }),
     );
-    monoSavedBlocks.delete(sessionId);
+    irgatSavedBlocks.delete(sessionId);
     const tombstone = setTimeout(
       () => deletedSessionIds.delete(sessionId),
       60_000,
@@ -788,7 +788,7 @@ export async function discardDraftSessionRecord(
   await enqueueSessionWrite(sessionId, () =>
     invoke<void>("session_delete", { sessionId, imagePaths: [] }),
   );
-  monoSavedBlocks.delete(sessionId);
+  irgatSavedBlocks.delete(sessionId);
 }
 
 export async function setSessionArchived(
@@ -906,17 +906,17 @@ function sanitizeBlock(
   if (block.durationMs != null) next.durationMs = block.durationMs;
   if (
     (block.role === "assistant" || block.role === "approval") &&
-    typeof block.monoHabit?.id === "string" &&
-    block.monoHabit.id.trim() &&
-    typeof block.monoHabit.name === "string" &&
-    block.monoHabit.name.trim() &&
-    typeof block.monoHabit.at === "number" &&
-    Number.isFinite(block.monoHabit.at)
+    typeof block.irgatHabit?.id === "string" &&
+    block.irgatHabit.id.trim() &&
+    typeof block.irgatHabit.name === "string" &&
+    block.irgatHabit.name.trim() &&
+    typeof block.irgatHabit.at === "number" &&
+    Number.isFinite(block.irgatHabit.at)
   ) {
-    next.monoHabit = {
-      id: block.monoHabit.id,
-      name: block.monoHabit.name,
-      at: block.monoHabit.at,
+    next.irgatHabit = {
+      id: block.irgatHabit.id,
+      name: block.irgatHabit.name,
+      at: block.irgatHabit.at,
     };
   }
   if (block.role === "user" && typeof block.sentAt === "number")
@@ -924,7 +924,7 @@ function sanitizeBlock(
   const turnModel = sanitizeTurnModel(block.turnModel);
   if (block.role === "user" && turnModel) next.turnModel = turnModel;
   if (block.role === "user" && block.draft) next.draft = true;
-  if (block.role === "user" && block.monocode) next.monocode = true;
+  if (block.role === "user" && block.irgat) next.irgat = true;
   if (
     block.role === "user" &&
     (block.intent === "plan" || block.intent === "orchestrate")
@@ -951,12 +951,12 @@ function sanitizeBlock(
   // Without this the transcript would show the app's orchestration turns as
   // the user's own after a reload.
   if (block.role === "user" && block.internal) next.internal = true;
-  const completion = sanitizeMonoSessionCompletion(block.monoSessionCompletion);
+  const completion = sanitizeIrgatSessionCompletion(block.irgatSessionCompletion);
   if (block.role === "user" && block.internal && completion)
-    next.monoSessionCompletion = completion;
-  const spawned = sanitizeMonoSpawnedSessions(block.monoSpawnedSessions);
+    next.irgatSessionCompletion = completion;
+  const spawned = sanitizeIrgatSpawnedSessions(block.irgatSpawnedSessions);
   if (block.role === "user" && spawned.length)
-    next.monoSpawnedSessions = spawned;
+    next.irgatSpawnedSessions = spawned;
   const turnMetrics = sanitizeTurnMetrics(block.turnMetrics);
   if (block.role === "user" && turnMetrics) next.turnMetrics = turnMetrics;
   if (block.tool) next.tool = block.tool;
@@ -1442,7 +1442,7 @@ function recordToSession(record: SessionRecord): Session {
     ...(queuedMessages.length
       ? { queuedMessages, queueStatus: "paused" as const }
       : {}),
-    ...(record.monoTranscript ? { monoTranscript: record.monoTranscript } : {}),
+    ...(record.irgatTranscript ? { irgatTranscript: record.irgatTranscript } : {}),
     busy: false,
     orchestrationLeadId:
       record.orchestrationLeadId ??

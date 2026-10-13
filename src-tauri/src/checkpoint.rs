@@ -1482,7 +1482,7 @@ mod tests {
                 .as_nanos();
             let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir().join(format!(
-                "monocode-checkpoint-{label}-{}-{stamp}-{seq}",
+                "irgat-checkpoint-{label}-{}-{stamp}-{seq}",
                 std::process::id()
             ));
             match std::fs::create_dir(&dir) {
@@ -1497,10 +1497,10 @@ mod tests {
         Command::new("git")
             .args(args)
             .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "monocode")
-            .env("GIT_AUTHOR_EMAIL", "monocode@test")
-            .env("GIT_COMMITTER_NAME", "monocode")
-            .env("GIT_COMMITTER_EMAIL", "monocode@test")
+            .env("GIT_AUTHOR_NAME", "irgat")
+            .env("GIT_AUTHOR_EMAIL", "irgat@test")
+            .env("GIT_COMMITTER_NAME", "irgat")
+            .env("GIT_COMMITTER_EMAIL", "irgat@test")
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
@@ -1510,8 +1510,8 @@ mod tests {
         if !git(dir, &["init", "-b", "main"]) && !git(dir, &["init"]) {
             return false;
         }
-        let _ = git(dir, &["config", "user.email", "monocode@test"]);
-        let _ = git(dir, &["config", "user.name", "monocode"]);
+        let _ = git(dir, &["config", "user.email", "irgat@test"]);
+        let _ = git(dir, &["config", "user.name", "irgat"]);
         let _ = git(dir, &["config", "core.autocrlf", "false"]);
         for (name, contents) in files {
             let path = dir.join(name);
@@ -1918,8 +1918,8 @@ mod tests {
     }
 
     #[test]
-    fn mono_changes_in_two_repositories_can_be_kept_independently() {
-        let home = tmp("mono-multiple-repos");
+    fn irgat_changes_in_two_repositories_can_be_kept_independently() {
+        let home = tmp("irgat-multiple-repos");
         for name in ["a", "b"] {
             let repo = home.0.join(name);
             std::fs::create_dir(&repo).unwrap();
@@ -1931,23 +1931,23 @@ mod tests {
             .map(|path| home.0.join(path).to_string_lossy().into_owned())
             .collect();
         let (_root, store) = store();
-        store.begin_turn("mono", &cwd, "turn").unwrap();
-        store.prepare("mono", &cwd, &paths).unwrap();
+        store.begin_turn("irgat", &cwd, "turn").unwrap();
+        store.prepare("irgat", &cwd, &paths).unwrap();
         for path in &paths {
-            std::fs::write(path, "mono change\n").unwrap();
+            std::fs::write(path, "irgat change\n").unwrap();
         }
-        store.capture("mono", &cwd, &paths).unwrap();
-        store.finish_turn("mono", &cwd, "turn").unwrap();
+        store.capture("irgat", &cwd, &paths).unwrap();
+        store.finish_turn("irgat", &cwd, "turn").unwrap();
         assert_eq!(
-            relatives(&store.status("mono", &cwd).unwrap()),
+            relatives(&store.status("irgat", &cwd).unwrap()),
             vec!["a/file.txt", "b/file.txt"]
         );
-        store.keep("mono", &cwd, Some("a/file.txt")).unwrap();
+        store.keep("irgat", &cwd, Some("a/file.txt")).unwrap();
         assert_eq!(
-            relatives(&store.status("mono", &cwd).unwrap()),
+            relatives(&store.status("irgat", &cwd).unwrap()),
             vec!["b/file.txt"]
         );
-        assert_eq!(std::fs::read_to_string(&paths[1]).unwrap(), "mono change\n");
+        assert_eq!(std::fs::read_to_string(&paths[1]).unwrap(), "irgat change\n");
     }
 
     #[test]

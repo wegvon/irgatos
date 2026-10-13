@@ -55,7 +55,7 @@ import {
 const BROWSER_ID = "main";
 const MIN_WIDTH = 360;
 const DEFAULT_WIDTH = 560;
-const IMPORT_STORAGE_KEY = "monocode-browser-chrome-library";
+const IMPORT_STORAGE_KEY = "irgat-browser-chrome-library";
 /** Native views draw above the page, so they step aside for these. */
 const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"]';
 
@@ -784,12 +784,12 @@ export function BrowserPanel({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background-base px-8 text-center">
               <Globe className="size-6 text-content/30" strokeWidth={1.5} />
               <p className="text-[13px] text-content/75">
-                Browse without leaving MonoCode
+                Browse without leaving Irgat
               </p>
               <p className="max-w-80 text-[12px] leading-5 text-content/45">
                 Browser keeps site storage and normal sign-ins in its own
                 persistent store, so they stay available after restarting
-                MonoCode. Pages here cannot access your projects or agents.
+                Irgat. Pages here cannot access your projects or agents.
               </p>
               <button
                 type="button"
@@ -831,7 +831,7 @@ export function BrowserPanel({
               </div>
               <div className="min-w-0 flex-1 pt-0.5">
                 <p className="flex min-w-0 items-baseline gap-1.5 text-[12px]">
-                  <span className="truncate font-mono font-medium text-content">
+                  <span className="truncate font-irgat font-medium text-content">
                     {selectionName(capture.selection)}
                   </span>
                   <span className="shrink-0 text-content/45">
@@ -920,7 +920,7 @@ export function BrowserPanel({
             />
             <p className="min-w-0 flex-1 text-[12px] leading-4 text-content/75">
               <span className="block truncate">
-                Sent <span className="font-mono text-content">{sent.name}</span>{" "}
+                Sent <span className="font-irgat text-content">{sent.name}</span>{" "}
                 to <span className="text-content">{sent.title}</span>
               </span>
               <span className="block truncate text-[11px] text-content/45">

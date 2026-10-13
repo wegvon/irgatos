@@ -8,7 +8,7 @@ mod browser;
 mod browser_picker;
 mod chat_background;
 mod checkpoint;
-mod codex_mono_store;
+mod codex_irgat_store;
 mod computer_use;
 mod control;
 pub mod control_cli;
@@ -32,10 +32,10 @@ mod macos;
 mod macos_background;
 mod mcp;
 mod menu;
-mod mono;
+mod irgat;
 #[cfg(target_os = "macos")]
-mod mono_chat;
-mod mono_transcript;
+mod irgat_chat;
+mod irgat_transcript;
 mod notes;
 mod notifications;
 mod pasteboard;
@@ -64,7 +64,7 @@ mod windows;
 mod worktree_lifecycle;
 mod worktrees;
 
-// Phase 1 seam: spawn / kill harness children per MonoCode thread.
+// Phase 1 seam: spawn / kill harness children per Irgat thread.
 // Adapters own the protocol; this host only supervises processes.
 
 /// Project directory for new sessions — prefer cwd, else home.
@@ -277,7 +277,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 quick_composer::init(app.handle())?;
-                mono_chat::init(app.handle())?;
+                irgat_chat::init(app.handle())?;
                 macos::install_dock_menu(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
                     macos::install(&window);
@@ -379,8 +379,8 @@ pub fn run() {
             fs::git_pr_status,
             fs::git_pr_create,
             fs::git_github_status,
-            fs::github_monocode_star_status,
-            fs::github_star_monocode,
+            fs::github_irgat_star_status,
+            fs::github_star_irgat,
             fs::git_github_repo,
             fs::git_github_repositories,
             fs::git_github_work_item,
@@ -503,9 +503,9 @@ pub fn run() {
             harness::harness_resolve_antigravity,
             harness::harness_free_port,
             harness::harness_spawn,
-            codex_mono_store::codex_mono_store_prepare,
-            codex_mono_store::codex_mono_store_copy,
-            codex_mono_store::codex_mono_store_restore_agent_state,
+            codex_irgat_store::codex_irgat_store_prepare,
+            codex_irgat_store::codex_irgat_store_copy,
+            codex_irgat_store::codex_irgat_store_restore_agent_state,
             harness::harness_write,
             harness::harness_kill,
             harness::harness_kill_all,
@@ -536,10 +536,10 @@ pub fn run() {
             session_store::session_search,
             session_store::cancel_session_search,
             session_store::session_get,
-            mono_transcript::mono_session_get,
-            mono_transcript::mono_session_page,
-            mono_transcript::mono_session_upsert,
-            mono_transcript::mono_session_find,
+            irgat_transcript::irgat_session_get,
+            irgat_transcript::irgat_session_page,
+            irgat_transcript::irgat_session_upsert,
+            irgat_transcript::irgat_session_find,
             session_store::session_delete,
             session_store::session_set_archived,
             session_store::session_set_pinned,
@@ -573,9 +573,9 @@ pub fn run() {
             kanban::kanban_card_link_session,
             kanban::kanban_session_status,
             kanban::kanban_session_links,
-            mono::mono_load,
-            mono::mono_read,
-            mono::mono_save,
+            irgat::irgat_load,
+            irgat::irgat_read,
+            irgat::irgat_save,
             checkpoint::session_checkpoint_ensure,
             checkpoint::session_checkpoint_begin_turn,
             checkpoint::session_checkpoint_finish_turn,
@@ -630,27 +630,27 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             quick_composer::git_popup::quick_composer_dismiss,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_sync,
+            irgat_chat::irgat_chat_sync,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_publish,
+            irgat_chat::irgat_chat_publish,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_state,
+            irgat_chat::irgat_chat_state,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_ready,
+            irgat_chat::irgat_chat_ready,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_action,
+            irgat_chat::irgat_chat_action,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_take,
+            irgat_chat::irgat_chat_take,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_accept,
+            irgat_chat::irgat_chat_accept,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_reply,
+            irgat_chat::irgat_chat_reply,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_keep_alive,
+            irgat_chat::irgat_chat_keep_alive,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_chat_switch,
+            irgat_chat::irgat_chat_switch,
             #[cfg(target_os = "macos")]
-            mono_chat::mono_menu_bar_set_visible,
+            irgat_chat::irgat_menu_bar_set_visible,
             window_transfer::stage_window_transfer,
             window_transfer::take_window_transfer,
             chat_background::save_chat_background,
@@ -662,7 +662,7 @@ pub fn run() {
             project_logo::forget_logo_file,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building MonoCode");
+        .expect("error while building Irgat");
 
     app.run(|handle, event| match event {
         #[cfg(target_os = "macos")]
@@ -698,7 +698,7 @@ pub fn run() {
                 .any(|window| window.label() != label);
             control::window_closed(handle, &label);
             #[cfg(target_os = "macos")]
-            mono_chat::window_closed(handle, &label);
+            irgat_chat::window_closed(handle, &label);
             if !other_window {
                 reap_harness_children(handle);
             }

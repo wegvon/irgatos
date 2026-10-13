@@ -61,7 +61,7 @@ test("a refused permission explains itself and links to System Settings", async 
   });
   await page.getByRole("button", { name: "Dictate" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText("Speech recognition is off for MonoCode.");
+  await expect(alert).toContainText("Speech recognition is off for Irgat.");
   await expect(
     alert.getByRole("button", { name: "Open System Settings" }),
   ).toBeVisible();

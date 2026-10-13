@@ -140,7 +140,7 @@ export function CardSessionSection({
             </div>
           ) : view.state === "interrupted" ? (
             <p className="text-[12px] text-content/50">
-              It was still working when MonoCode last closed. Open it to pick up where it stopped.
+              It was still working when Irgat last closed. Open it to pick up where it stopped.
             </p>
           ) : null}
         </>

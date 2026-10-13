@@ -38,7 +38,7 @@ export function reloadActionHint(mod = MOD, shift = SHIFT) {
 }
 
 const ACTIONS: Action[] = [
-  { id: "reload", label: "Reload MonoCode", hint: reloadActionHint() },
+  { id: "reload", label: "Reload Irgat", hint: reloadActionHint() },
 ];
 
 type Props = {
@@ -353,7 +353,7 @@ function ActionList({
               />
             </span>
             {action.hint ? (
-              <kbd className="ml-auto shrink-0 rounded border border-content/10 bg-content/5 px-1.5 py-0.5 font-mono text-[10px] text-content/50">
+              <kbd className="ml-auto shrink-0 rounded border border-content/10 bg-content/5 px-1.5 py-0.5 font-irgat text-[10px] text-content/50">
                 {action.hint}
               </kbd>
             ) : null}
@@ -447,7 +447,7 @@ function FileList({
               />
             </span>
             {dir ? (
-              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
+              <span className="min-w-0 max-w-[45%] truncate font-irgat text-[11px] text-content/40">
                 <MatchText
                   text={dir}
                   positions={file.positions.filter((pos) => pos < slash)}
