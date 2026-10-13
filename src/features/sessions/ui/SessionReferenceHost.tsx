@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { Modal } from "../../../shared/ui/Modal";
 import { Search } from "../../../shared/ui/icons";
 import { peekLiveSessions } from "../data/sessionReferenceDirectory";
@@ -93,6 +99,11 @@ function SendToSessionDialog({
     [candidates, query],
   );
   useEffect(() => setActive(0), [query]);
+  const search = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => search.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const label = source
     ? sessionReferenceLabel(source, message ? [message.ordinal] : null)
@@ -131,12 +142,14 @@ function SendToSessionDialog({
     >
       <div data-send-to-session-dialog className="px-4 pt-2 pb-4">
         {message ? (
-          <p className="mb-2 line-clamp-2 rounded-md bg-content/5 px-2.5 py-1.5 text-[12px] text-content/70">
-            <span className="mr-1.5 font-mono text-[11px] text-content/45">
+          <div className="mb-2 rounded-md bg-content/5 px-2.5 py-1.5 text-[12px] leading-[18px] text-content/70">
+            <p className="line-clamp-2">
+              {message.text.replace(/\s+/g, " ").trim()}
+            </p>
+            <p className="mt-0.5 font-mono text-[11px] text-content/45">
               {formatTokenEstimate(message.text.length)}
-            </span>
-            {message.text.replace(/\s+/g, " ").trim()}
-          </p>
+            </p>
+          </div>
         ) : null}
         <label className="flex items-center gap-2 rounded-md border border-content/10 bg-content/4 px-2.5 py-1.5 focus-within:border-content/25">
           <Search
@@ -144,7 +157,7 @@ function SendToSessionDialog({
             strokeWidth={1.75}
           />
           <input
-            autoFocus
+            ref={search}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
