@@ -75,14 +75,6 @@ export function CommitPushButton({
   const [phase, setPhase] = useState<CommitPushPhase | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const runningRef = useRef(false);
-  const mountedRef = useRef(true);
-
-  useEffect(
-    () => () => {
-      mountedRef.current = false;
-    },
-    [],
-  );
 
   useEffect(() => {
     if (result?.kind !== "success") return;
@@ -99,13 +91,10 @@ export function CommitPushButton({
     setResult(null);
     setBusy(COMMIT_PUSH_BUSY);
     try {
-      const outcome = await runCommitPush(api, cwd, request, (next) => {
-        if (mountedRef.current) setPhase(next);
-      });
+      const outcome = await runCommitPush(api, cwd, request, setPhase);
       if (!outcome) return;
       if (outcome.commit) onCommitted(outcome.commit);
       if (outcome.ok) onPushed();
-      if (!mountedRef.current) return;
       setResult(
         outcome.ok
           ? { kind: "success", text: successText(outcome) }
@@ -116,7 +105,7 @@ export function CommitPushButton({
       );
     } finally {
       runningRef.current = false;
-      if (mountedRef.current) setPhase(null);
+      setPhase(null);
       setBusy(null);
       onSettled();
     }
@@ -145,7 +134,7 @@ export function CommitPushButton({
         ) : (
           <CloudUpload className="size-3.5 shrink-0" strokeWidth={1.75} />
         )}
-        <span className="min-w-0 truncate">
+        <span className="shrink-0">
           {running ? `${phaseLabel(phase)}…` : "Commit & Push"}
         </span>
         {!running && target ? (
@@ -192,12 +181,10 @@ export function CommitPushButton({
       {result?.kind === "success" ? (
         <p
           role="status"
-          className="flex min-w-0 items-center gap-1.5 px-0.5 text-[11px] text-content/60"
+          className="flex min-w-0 items-start gap-1.5 px-0.5 text-[11px] leading-4 text-content/60"
         >
           <CheckCircle className="size-3.5 shrink-0 text-emerald-400" strokeWidth={1.75} />
-          <span className="min-w-0 truncate" title={result.text}>
-            {result.text}
-          </span>
+          <span className="min-w-0 break-words">{result.text}</span>
         </p>
       ) : null}
       {result?.kind === "failure" ? (
@@ -252,7 +239,7 @@ function CommitPushFailureCard({
         </button>
       </div>
       {failure.detail ? (
-        <pre className="max-h-32 overflow-auto rounded bg-background-base/70 p-1.5 font-mono text-[10.5px] leading-4 whitespace-pre-wrap text-content/80 select-text">
+        <pre className="max-h-24 overflow-auto rounded bg-background-base/70 p-1.5 font-mono text-[10.5px] leading-4 whitespace-pre-wrap text-content/80 select-text">
           {failure.detail}
         </pre>
       ) : null}

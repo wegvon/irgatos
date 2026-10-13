@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,7 +27,7 @@ const onSettled = vi.fn();
 function render() {
   act(() => {
     root.render(
-      createElement(CommitPushButton, {
+      createElement(StrictMode, null, createElement(CommitPushButton, {
         cwd: "/repo",
         message: "Ship it",
         target: "origin/main",
@@ -39,7 +39,7 @@ function render() {
         onCommitted,
         onPushed,
         onSettled,
-      }),
+      })),
     );
   });
 }

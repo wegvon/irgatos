@@ -230,7 +230,7 @@ export function describeCommitPushFailure(
         title: "Nothing to commit",
         body:
           error.ahead > 0
-            ? `The working tree is clean, but ${plural(error.ahead, "commit")} haven’t been pushed.`
+            ? `The working tree is clean, but ${plural(error.ahead, "commit")} ${error.ahead === 1 ? "hasn’t" : "haven’t"} been pushed.`
             : "The working tree is clean.",
         actions:
           error.ahead > 0
