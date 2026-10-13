@@ -812,6 +812,10 @@ const LinkedWorkItemPanel = lazySurface(async () => {
   const module = await import("../features/inbox/ui/InboxView");
   return { default: module.LinkedWorkItemPanel };
 });
+const BrowserPanel = lazySurface(async () => {
+  const module = await import("../features/browser/ui/BrowserPanel");
+  return { default: module.BrowserPanel };
+});
 const NotesView = lazySurface(
   async () => {
     const module = await import("../features/notes/ui/NotesView");
@@ -1207,6 +1211,13 @@ function Workspace({
   const [searchViewOpen, setSearchViewOpen] = useState(false);
   const [searchViewFocusToken, setSearchViewFocusToken] = useState(0);
   const [inboxViewOpen, setInboxViewOpen] = useState(false);
+  // Mounted on first open so the page survives hiding the panel.
+  const [browserMounted, setBrowserMounted] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const onToggleBrowser = useCallback(() => {
+    setBrowserMounted(true);
+    setBrowserOpen((open) => !open);
+  }, []);
   const [linkedWorkItemPanels, setLinkedWorkItemPanels] = useState<
     ReadonlyMap<string, LinkedWorkItemPanelState>
   >(() => new Map());
@@ -13196,6 +13207,20 @@ function Workspace({
                           }
                         />
                       ))}
+                      {browserMounted ? (
+                        <BrowserPanel
+                          visible={
+                            browserOpen &&
+                            !searchViewOpen &&
+                            !settingsOpen &&
+                            !inboxViewOpen &&
+                            !notesViewOpen &&
+                            !automationsViewOpen &&
+                            !monoViewId
+                          }
+                          onClose={() => setBrowserOpen(false)}
+                        />
+                      ) : null}
                     </main>
                   </div>
                   {monoCovers ? monoOverviewPanel : null}
@@ -13352,6 +13377,8 @@ function Workspace({
                     !!currentProjectDock &&
                     currentProjectDock.pane.files.length > 0
                   }
+                  browserOpen={browserOpen}
+                  onToggleBrowser={onToggleBrowser}
                 />
               )}
             </div>

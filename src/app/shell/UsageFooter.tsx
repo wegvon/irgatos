@@ -1,4 +1,4 @@
-import { RefreshCw, Terminal } from "../../shared/ui/icons";
+import { Globe, RefreshCw, Terminal } from "../../shared/ui/icons";
 import {
   useCallback,
   useEffect,
@@ -75,6 +75,8 @@ export function UsageFooter({
   onNewTerminal,
   onShowTerminal,
   projectTerminalActive = false,
+  browserOpen = false,
+  onToggleBrowser,
   onSelectAccount,
   onManageAccounts,
 }: {
@@ -87,6 +89,8 @@ export function UsageFooter({
   onNewTerminal?: () => void;
   onShowTerminal?: () => void;
   projectTerminalActive?: boolean;
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
   onSelectAccount?: (
     provider: ProviderAccountProvider,
     accountId: string,
@@ -133,8 +137,25 @@ export function UsageFooter({
           ) : null
         }
       />
-      {showTerminals || showTerminalButton ? (
+      {showTerminals || showTerminalButton || onToggleBrowser ? (
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {onToggleBrowser ? (
+            <button
+              type="button"
+              className={`inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
+                browserOpen
+                  ? "text-accent"
+                  : "text-content/40 hover:text-content"
+              }`}
+              aria-label={browserOpen ? "Hide Browser" : "Show Browser"}
+              aria-pressed={browserOpen}
+              title={browserOpen ? "Hide Browser" : "Show Browser"}
+              onClick={onToggleBrowser}
+            >
+              <Globe className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <span>Browser</span>
+            </button>
+          ) : null}
           {showTerminals ? (
             <RunningTerminalChip
               terminals={terminals}

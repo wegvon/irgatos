@@ -40,4 +40,18 @@ describe("UsageFooter terminal control", () => {
     expect(markup).toContain(">Terminal</span>");
     expect(markup.match(/<button/g)).toHaveLength(1);
   });
+
+  it("shows the browser toggle with its open state", () => {
+    const markup = renderToStaticMarkup(
+      createElement(UsageFooter, {
+        providers: [],
+        browserOpen: true,
+        onToggleBrowser: vi.fn(),
+      }),
+    );
+
+    expect(markup).toContain(">Browser</span>");
+    expect(markup).toContain('aria-label="Hide Browser"');
+    expect(markup).toContain('aria-pressed="true"');
+  });
 });
