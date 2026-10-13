@@ -332,19 +332,24 @@ pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
     {
         tauri::async_runtime::spawn_blocking(move || {
             chrome_profiles()
-                .map(|profiles| {
-                    profiles
+                .map_err(|_| {
+                    String::from(
+                        "Chrome profiles could not be read. You can still sign in in Browser.",
+                    )
+                })
+                .and_then(|profiles| {
+                    if profiles.is_empty() {
+                        return Err(String::from(
+                            "No Chrome profiles are accessible. Grant MonoCode Full Disk Access in System Settings > Privacy & Security, then restart MonoCode.",
+                        ));
+                    }
+                    Ok(profiles
                         .into_iter()
                         .map(|profile| ChromeProfile {
                             id: profile.profile.profile_id.to_string(),
                             name: profile.profile.display_name,
                         })
-                        .collect()
-                })
-                .map_err(|_| {
-                    String::from(
-                        "Chrome profiles could not be read. You can still sign in in Browser.",
-                    )
+                        .collect())
                 })
         })
         .await
