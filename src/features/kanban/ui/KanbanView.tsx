@@ -318,9 +318,24 @@ function KanbanBoardContent({
     [onOpenSession, pushNotice],
   );
 
+  const announcementTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (announcementTimer.current !== null) {
+        window.clearTimeout(announcementTimer.current);
+      }
+    },
+    [],
+  );
   const announce = (text: string) => {
+    if (announcementTimer.current !== null) {
+      window.clearTimeout(announcementTimer.current);
+    }
     setAnnouncement("");
-    window.setTimeout(() => setAnnouncement(text), 30);
+    announcementTimer.current = window.setTimeout(() => {
+      announcementTimer.current = null;
+      setAnnouncement(text);
+    }, 30);
   };
 
   const shownColumns = useMemo(
