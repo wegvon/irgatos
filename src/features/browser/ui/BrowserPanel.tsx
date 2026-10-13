@@ -271,7 +271,8 @@ export function BrowserPanel({
   useEffect(() => {
     if (!started) return;
     const slot = slotRef.current;
-    if (!slot || !visible) {
+    // The native view draws above the DOM, so it steps aside for the import dialog.
+    if (!slot || !visible || importOpen) {
       shown.current = null;
       void setBrowserBounds(BROWSER_ID, null).catch(() => undefined);
       return;
@@ -303,7 +304,7 @@ export function BrowserPanel({
       shown.current = null;
       void setBrowserBounds(BROWSER_ID, null).catch(() => undefined);
     };
-  }, [started, visible]);
+  }, [importOpen, started, visible]);
 
   useEffect(() => {
     if (visible && !started) inputRef.current?.focus();
@@ -395,8 +396,8 @@ export function BrowserPanel({
   }, [captureSelection, picking, stopPicking]);
 
   useEffect(() => {
-    if (!visible && picking) stopPicking();
-  }, [picking, stopPicking, visible]);
+    if ((!visible || importOpen) && picking) stopPicking();
+  }, [importOpen, picking, stopPicking, visible]);
 
   useEffect(
     () => () => {
@@ -801,8 +802,8 @@ export function BrowserPanel({
               </button>
               <p className="max-w-80 text-[11px] leading-4 text-content/40">
                 Some sites&apos; passkey sign-ins are unavailable in this
-                embedded browser. Use Open in Default Browser if a site asks
-                for a passkey.
+                embedded browser. Use Open in Default Browser if a site asks for
+                a passkey.
               </p>
             </div>
           )}

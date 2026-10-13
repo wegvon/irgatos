@@ -507,6 +507,57 @@ it("imports only after the user selects a Chrome profile", async () => {
   }
 });
 
+it("hides the page and ends selection while the Chrome import dialog is open", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(BrowserPanel, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    await openPage(container);
+    mockPicker([{ state: "active" }]);
+    act(() => pickerButton(container).click());
+    await flush();
+    vi.mocked(invoke).mockClear();
+
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[title="Import a Chrome profile"]',
+        )!
+        .click(),
+    );
+    await flush();
+
+    expect(
+      container.querySelector('[aria-labelledby="chrome-import-title"]'),
+    ).not.toBeNull();
+    expect(invoke).toHaveBeenCalledWith("browser_set_bounds", {
+      id: "main",
+      bounds: null,
+    });
+    expect(invoke).toHaveBeenCalledWith("browser_picker_stop", { id: "main" });
+
+    vi.mocked(invoke).mockClear();
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Cancel")!
+        .click(),
+    );
+    await flush();
+    expect(invoke).toHaveBeenCalledWith("browser_set_bounds", {
+      id: "main",
+      bounds: expect.objectContaining({ width: 560, height: 760 }),
+    });
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("explains persistent sessions and the passkey fallback before browsing", () => {
   const container = document.createElement("div");
   document.body.append(container);
