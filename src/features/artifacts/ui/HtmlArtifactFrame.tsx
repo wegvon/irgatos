@@ -44,7 +44,7 @@ function readTheme(): FrameTheme {
   probe.remove();
   const style = getComputedStyle(root);
   vars["--font-sans"] = style.getPropertyValue("--font-sans").trim();
-  vars["--font-irgat"] = style.getPropertyValue("--font-irgat").trim();
+  vars["--font-mono"] = style.getPropertyValue("--font-mono").trim();
   vars["--radius"] = "10px";
   return {
     scheme: root.classList.contains("theme-light") ? "light" : "dark",

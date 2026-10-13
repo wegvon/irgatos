@@ -26,7 +26,7 @@ function editorThemeStyles(dark: boolean) {
     ".cm-scroller": {
       overflow: "auto",
       overscrollBehavior: "none",
-      fontFamily: "var(--font-irgat)",
+      fontFamily: "var(--font-mono)",
       lineHeight: "1.6",
     },
     ".cm-content": {
@@ -101,7 +101,7 @@ function editorThemeStyles(dark: boolean) {
       backgroundColor: "var(--color-background-base)",
     },
     ".cm-tooltip-autocomplete > ul": {
-      fontFamily: "var(--font-irgat)",
+      fontFamily: "var(--font-mono)",
       fontSize: "12px",
       maxHeight: "240px",
     },

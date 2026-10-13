@@ -1008,7 +1008,7 @@ function AgentTranscriptComponent({
   return (
     <div
       ref={setScroller}
-      className={`agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-irgat text-[13px] leading-5${bottomAligned ? " irgat-transcript-fades scrollbar-none" : ""}`}
+      className={`agent-transcript h-full overflow-y-auto overscroll-none [overflow-anchor:none] font-mono text-[13px] leading-5${bottomAligned ? " irgat-transcript-fades scrollbar-none" : ""}`}
     >
       <TranscriptContent bottomAligned={bottomAligned}>
         {onReturnToLatest ? (
@@ -2715,7 +2715,7 @@ function UserMessageBlock({
                     CI instructions and failure details included with this
                     request.
                   </p>
-                  <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-content/5 p-2.5 font-irgat text-[11px] leading-relaxed whitespace-pre-wrap break-words text-content/70">
+                  <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-content/5 p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words text-content/70">
                     {block.ciContext}
                   </pre>
                 </details>
@@ -3984,7 +3984,7 @@ function SubagentPanel({
             {report ? (
               <div className="zen-phase-step py-1">
                 {failed ? (
-                  <pre className="min-w-0 whitespace-pre-wrap break-words font-irgat text-[12px] leading-5 text-red-400/80">
+                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-[12px] leading-5 text-red-400/80">
                     {report}
                   </pre>
                 ) : (
@@ -4490,7 +4490,7 @@ function ActivityToolRow({
       ) : null}
       {errorOpen && errorDetail ? (
         <pre
-          className={`min-w-0 whitespace-pre-wrap break-words py-1 font-irgat text-[12px] leading-5 text-red-400/80 ${bare ? "" : "pl-5"}`}
+          className={`min-w-0 whitespace-pre-wrap break-words py-1 font-mono text-[12px] leading-5 text-red-400/80 ${bare ? "" : "pl-5"}`}
         >
           {errorDetail}
         </pre>
@@ -4533,7 +4533,7 @@ function IrgatCallRow({
         {verb}
       </span>
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-content/6 px-1 font-irgat text-[13px] ${state === "rejected" ? "text-red-400" : "text-content/70"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-content/6 px-1 font-mono text-[13px] ${state === "rejected" ? "text-red-400" : "text-content/70"}`}
         title={command}
       >
         <IrgatMark className="size-3.5" />
@@ -4564,12 +4564,12 @@ function IrgatCallRow({
         <div className="flex min-w-0 items-center gap-1.5 py-1">{summary}</div>
       )}
       {errorOpen && hasError ? (
-        <pre className="min-w-0 whitespace-pre-wrap break-words py-1 pl-5 font-irgat text-[12px] leading-5 text-red-400/80">
+        <pre className="min-w-0 whitespace-pre-wrap break-words py-1 pl-5 font-mono text-[12px] leading-5 text-red-400/80">
           {output}
         </pre>
       ) : null}
       {pendingApproval ? (
-        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-irgat text-[12px] leading-5 text-content/70">
+        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-[12px] leading-5 text-content/70">
           {call.command}
         </pre>
       ) : null}
@@ -4790,7 +4790,7 @@ function ToolCall({
         </div>
       )}
       {open && expandable ? (
-        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-irgat text-[12px] leading-5 text-content/55">
+        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-[12px] leading-5 text-content/55">
           {expanded}
         </pre>
       ) : null}
@@ -4826,7 +4826,7 @@ function ToolCallSummary({
   if (!action || !target) {
     return (
       <span
-        className={`min-w-0 flex-1 truncate font-irgat text-[13px] ${
+        className={`min-w-0 flex-1 truncate font-mono text-[13px] ${
           failed ? "text-red-400" : chip ? "text-content/65" : "text-content/80"
         }`}
         title={label}
@@ -4854,7 +4854,7 @@ function ToolCallSummary({
       : "text-content/85";
 
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-irgat text-[13px]">
+    <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-[13px]">
       <span className={`shrink-0 font-sans text-sm ${actionTone}`}>
         {action}
       </span>

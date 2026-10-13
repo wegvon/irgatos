@@ -146,7 +146,7 @@ function SendToSessionDialog({
             <p className="line-clamp-2">
               {message.text.replace(/\s+/g, " ").trim()}
             </p>
-            <p className="mt-0.5 font-irgat text-[11px] text-content/45">
+            <p className="mt-0.5 font-mono text-[11px] text-content/45">
               {formatTokenEstimate(message.text.length)}
             </p>
           </div>

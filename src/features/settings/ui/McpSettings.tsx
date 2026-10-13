@@ -257,7 +257,7 @@ function AddServerModal({
             onChange={(event) => setConfig(event.target.value)}
             rows={7}
             spellCheck={false}
-            className="mt-1 block w-full rounded-md border border-stroke bg-background-base px-2 py-1.5 font-irgat text-xs text-content"
+            className="mt-1 block w-full rounded-md border border-stroke bg-background-base px-2 py-1.5 font-mono text-xs text-content"
             placeholder={
               '{"mcpServers":{"my-server":{"command":"npx","args":["-y","example-mcp"]}}}'
             }

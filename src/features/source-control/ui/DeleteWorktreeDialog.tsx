@@ -97,7 +97,7 @@ export function DeleteWorktreeDialog({
         <div className="rounded-lg border border-content/10 bg-content/5 p-3">
           <p className="flex items-start gap-2.5 text-[12px] text-content/55">
             <Folder className="mt-px size-3.5 shrink-0 text-content/35" />
-            <span className="min-w-0 flex-1 break-all font-irgat">
+            <span className="min-w-0 flex-1 break-all font-mono">
               {prettyCwd(tree.path)}
             </span>
           </p>

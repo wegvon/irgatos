@@ -799,7 +799,7 @@ function InboxCommitStop({
           <span className="min-w-0 flex-1 truncate text-content/70 group-hover:text-content group-disabled:text-content/70">
             {commit.messageHeadline}
           </span>
-          <span className="shrink-0 font-irgat text-[11px] text-content/35 group-hover:text-content/60">
+          <span className="shrink-0 font-mono text-[11px] text-content/35 group-hover:text-content/60">
             {commit.oid.slice(0, 7)}
           </span>
         </button>

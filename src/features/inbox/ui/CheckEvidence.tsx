@@ -140,7 +140,7 @@ function CheckAnnotation({
       ) : null}
       {excerpt.length ? (
         <div
-          className="overflow-x-auto py-2 font-irgat text-[11px] leading-5"
+          className="overflow-x-auto py-2 font-mono text-[11px] leading-5"
           aria-label={`Source at ${headOid}`}
         >
           {excerpt.map((line, index) => (
@@ -168,7 +168,7 @@ function CheckAnnotation({
             {messageTitle}
           </p>
           {messageLines.length ? (
-            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-irgat text-[11px] leading-relaxed text-content/65">
+            <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-content/65">
               {messageLines.join("\n")}
             </pre>
           ) : null}

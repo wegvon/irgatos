@@ -190,7 +190,7 @@ export function TranscriptFind({
         />
         <span
           aria-live="polite"
-          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-irgat text-[11px] tabular-nums text-content/50"
+          className="min-w-[10ch] shrink-0 whitespace-nowrap text-right font-mono text-[11px] tabular-nums text-content/50"
         >
           {searching
             ? "Searching…"

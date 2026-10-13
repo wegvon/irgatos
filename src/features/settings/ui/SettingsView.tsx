@@ -2237,7 +2237,7 @@ function UpdateRow({
       label={
         <span className="flex items-baseline gap-2">
           Version
-          <span className="font-irgat text-[12px] text-content/45">
+          <span className="font-mono text-[12px] text-content/45">
             {snapshot.currentVersion}
           </span>
         </span>
@@ -3034,7 +3034,7 @@ function ShortcutEditor({
           onFocus={beginRecording}
           onClick={beginRecording}
           onBlur={() => setRecording(false)}
-          className={`h-6 w-28 shrink-0 truncate rounded-md border bg-transparent px-1.5 py-0 font-irgat text-[11px] leading-none outline-none focus:border-accent ${
+          className={`h-6 w-28 shrink-0 truncate rounded-md border bg-transparent px-1.5 py-0 font-mono text-[11px] leading-none outline-none focus:border-accent ${
             busy ? "opacity-50" : ""
           } ${
             display === null
@@ -3218,7 +3218,7 @@ function KeybindingsPage() {
                   onSave={save}
                 />
               )}
-              <span className="w-28 shrink-0 font-irgat text-[11px] text-content/40">
+              <span className="w-28 shrink-0 font-mono text-[11px] text-content/40">
                 {row.when}
               </span>
             </div>
@@ -3449,7 +3449,7 @@ function ProviderBinaryControl({
                 disabled={working}
                 autoFocus
                 onChange={(event) => setDraft(event.target.value)}
-                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-irgat text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
+                className="mt-1.5 h-8 w-full rounded-md border border-content/10 bg-content/[0.04] px-2 font-mono text-[11px] text-content outline-none placeholder:font-sans placeholder:text-content/35 focus:border-accent/45 disabled:opacity-50"
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 Enter the absolute path to the CLI executable. Changes apply
@@ -3490,7 +3490,7 @@ function ProviderBinaryControl({
           ) : (
             <>
               <div className="mt-2 rounded-md border border-content/10 bg-content/[0.03] px-2.5 py-2">
-                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-irgat text-[10px] text-content/65">
+                <span className="block max-h-12 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] text-content/65">
                   {inspection?.path ??
                     (error
                       ? "CLI could not be resolved"

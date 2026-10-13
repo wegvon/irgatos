@@ -438,7 +438,7 @@ function WorkspaceModePicker({
                   <span className="block truncate text-[13px]">
                     {tree.branch ?? `Detached ${tree.head.slice(0, 7)}`}
                   </span>
-                  <span className="block truncate font-irgat text-[10px] text-content/40">
+                  <span className="block truncate font-mono text-[10px] text-content/40">
                     {prettyCwd(tree.path)}
                   </span>
                 </span>

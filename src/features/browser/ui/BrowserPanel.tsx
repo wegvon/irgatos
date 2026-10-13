@@ -664,9 +664,19 @@ export function BrowserPanel({
                 browser panel. Chrome is not changed.
               </p>
               {profilesError ? (
-                <p role="alert" className="mt-3 text-xs text-red-400">
-                  {profilesError}
-                </p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p role="alert" className="text-xs text-red-400">
+                    {profilesError}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={importing}
+                    onClick={openChromeImport}
+                    className="shrink-0 rounded px-2 py-1 text-xs text-content/70 hover:bg-content/10 disabled:opacity-50"
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : profiles.length === 0 ? (
                 <p className="mt-3 text-xs text-content/55">
                   Looking for Chrome profiles…
@@ -831,7 +841,7 @@ export function BrowserPanel({
               </div>
               <div className="min-w-0 flex-1 pt-0.5">
                 <p className="flex min-w-0 items-baseline gap-1.5 text-[12px]">
-                  <span className="truncate font-irgat font-medium text-content">
+                  <span className="truncate font-mono font-medium text-content">
                     {selectionName(capture.selection)}
                   </span>
                   <span className="shrink-0 text-content/45">
@@ -920,7 +930,7 @@ export function BrowserPanel({
             />
             <p className="min-w-0 flex-1 text-[12px] leading-4 text-content/75">
               <span className="block truncate">
-                Sent <span className="font-irgat text-content">{sent.name}</span>{" "}
+                Sent <span className="font-mono text-content">{sent.name}</span>{" "}
                 to <span className="text-content">{sent.title}</span>
               </span>
               <span className="block truncate text-[11px] text-content/45">

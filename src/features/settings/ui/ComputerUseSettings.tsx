@@ -347,7 +347,7 @@ export function ComputerUseSettings({
             so the grants survive driver updates and Irgat rebuilds.
           </p>
           <div className="flex items-center gap-2 rounded-md border border-content/10 bg-background-base px-2 py-1.5">
-            <code className="min-w-0 flex-1 truncate font-irgat text-[11px] text-content/80">
+            <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-content/80">
               {CUA_DRIVER_INSTALL_COMMAND}
             </code>
             <SecondaryButton
@@ -386,7 +386,7 @@ export function ComputerUseSettings({
             <p className="rounded-md border border-amber-400/30 bg-amber-400/10 p-2 text-[12px] text-amber-300">
               This driver is not running from CuaDriver.app, so macOS
               permissions may reset when it changes. Reinstall with{" "}
-              <code className="font-irgat text-[11px]">
+              <code className="font-mono text-[11px]">
                 {CUA_DRIVER_INSTALL_COMMAND}
               </code>
               .

@@ -258,7 +258,7 @@ export function CreateSkillForm({
         aria-label="Skill name"
         disabled={busy}
         onChange={(e) => setName(e.target.value)}
-        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-content/40 ${monospace ? "font-irgat" : "font-sans"}`}
+        className={`mb-2 w-full rounded-md bg-content/10 px-2 py-1.5 text-[13px] text-content outline-none placeholder:text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
       />
       <div className="mb-2 flex gap-1">
         <ScopeButton
@@ -334,7 +334,7 @@ function ScopeButton({
     >
       <span className="text-[12px]">{label}</span>
       <span
-        className={`truncate text-[10px] text-content/40 ${monospace ? "font-irgat" : "font-sans"}`}
+        className={`truncate text-[10px] text-content/40 ${monospace ? "font-mono" : "font-sans"}`}
       >
         {hint}
       </span>

@@ -685,7 +685,7 @@ function RunningTerminalChip({
         }}
       >
         <TerminalLiveMark />
-        <span className="truncate font-irgat text-[10px] tabular-nums">
+        <span className="truncate font-mono text-[10px] tabular-nums">
           {label}
         </span>
       </button>

@@ -196,7 +196,7 @@ export function InboxPrChangesGlance({
                   className="flex w-full min-w-0 items-center gap-2 bg-content/2 px-3 py-1.5 text-left hover:bg-content/5"
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
-                  <span className="flex min-w-0 flex-1 font-irgat text-[12px]">
+                  <span className="flex min-w-0 flex-1 font-mono text-[12px]">
                     <span className="min-w-0 truncate text-content/40">
                       {dir}
                     </span>

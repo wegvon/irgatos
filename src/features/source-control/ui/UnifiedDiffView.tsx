@@ -398,7 +398,7 @@ const FileSection = memo(function FileSection({
           />
           <FileTypeIcon name={name} isDir={false} size={16} />
           <span
-            className="min-w-0 flex-1 truncate font-irgat text-[12px] text-content/85"
+            className="min-w-0 flex-1 truncate font-mono text-[12px] text-content/85"
             title={file.label}
           >
             {file.label}
@@ -894,7 +894,7 @@ function FoldBar({
       <button
         type="button"
         onClick={() => onReveal("all")}
-        className="min-w-0 flex-1 py-1 text-left font-irgat text-[11px] text-content/45 hover:text-content/70"
+        className="min-w-0 flex-1 py-1 text-left font-mono text-[11px] text-content/45 hover:text-content/70"
       >
         {hidden} unmodified {hidden === 1 ? "line" : "lines"}
       </button>
@@ -926,7 +926,7 @@ const DiffLineRow = memo(function DiffLineRow({
         style={{ height: UNIFIED_HUNK_PX }}
       >
         {lane === "code" ? (
-          <span className="px-3 font-irgat text-[11px] leading-none text-content/40">
+          <span className="px-3 font-mono text-[11px] leading-none text-content/40">
             {line.text}
           </span>
         ) : null}
@@ -960,7 +960,7 @@ const DiffLineRow = memo(function DiffLineRow({
           />
         ) : null}
         <span
-          className={`relative block w-full pr-2 text-right font-irgat text-[11px] leading-none tabular-nums ${gutterText}`}
+          className={`relative block w-full pr-2 text-right font-mono text-[11px] leading-none tabular-nums ${gutterText}`}
         >
           {number ?? ""}
         </span>
@@ -1006,7 +1006,7 @@ const DiffLineRow = memo(function DiffLineRow({
       {/* Width is counted in minWidthCh. select-none keeps the glyph and the
           screen-reader cue out of copied code. */}
       <span
-        className={`w-7 shrink-0 select-none pl-3 font-irgat text-[12px] leading-none font-semibold ${gutterText}`}
+        className={`w-7 shrink-0 select-none pl-3 font-mono text-[12px] leading-none font-semibold ${gutterText}`}
       >
         <span aria-hidden="true">{added ? "+" : deleted ? "−" : ""}</span>
         {added || deleted ? (
@@ -1014,7 +1014,7 @@ const DiffLineRow = memo(function DiffLineRow({
         ) : null}
       </span>
       <span
-        className={`whitespace-pre pr-3 font-irgat text-[12px] leading-none text-content/80 ${
+        className={`whitespace-pre pr-3 font-mono text-[12px] leading-none text-content/80 ${
           line.kind === "context" ? "opacity-70" : ""
         }`}
       >

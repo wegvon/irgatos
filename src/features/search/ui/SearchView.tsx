@@ -583,7 +583,7 @@ function ResultList({
             </span>
             <span className="min-w-0 flex-1 truncate">{row.title}</span>
             {row.meta ? (
-              <span className="min-w-0 max-w-[45%] truncate font-irgat text-[11px] text-content/40">
+              <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
                 {row.meta}
               </span>
             ) : null}

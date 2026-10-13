@@ -117,7 +117,7 @@ function terminalFont(): string {
   const fromCss = getComputedStyle(document.documentElement)
     .getPropertyValue("--font-terminal")
     .trim();
-  return fromCss || "ui-monospace, SFIrgat-Regular, Menlo, Monaco, monospace";
+  return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
 }
 
 /**

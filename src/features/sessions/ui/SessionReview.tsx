@@ -341,7 +341,7 @@ function FileRow({
       className="flex h-8 w-full min-w-0 items-center gap-2 px-3 text-left text-content/65 hover:bg-content/5 hover:text-content"
     >
       <FileTypeIcon name={name} isDir={false} size={15} />
-      <span className="min-w-0 flex-1 truncate font-irgat text-[12px]">
+      <span className="min-w-0 flex-1 truncate font-mono text-[12px]">
         {file.relative}
       </span>
       <DiffCounts file={file} />

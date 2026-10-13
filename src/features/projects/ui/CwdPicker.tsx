@@ -233,7 +233,7 @@ export function CwdPicker({
         {children ?? (
           <>
             <ProjectLogoIcon path={projectLogoPath} fallbackStrokeWidth={1.5} />
-            <span className="truncate font-irgat text-[12px]">{label}</span>
+            <span className="truncate font-mono text-[12px]">{label}</span>
           </>
         )}
         {chevron ? (
@@ -271,7 +271,7 @@ export function CwdPicker({
                   <p className="truncate text-[13px] text-content">
                     {renderProjectLabel?.(cwd) ?? basename(cwd)}
                   </p>
-                  <p className="truncate font-irgat text-[11px]">
+                  <p className="truncate font-mono text-[11px]">
                     {prettyParent(cwd)}
                   </p>
                 </div>
@@ -309,7 +309,7 @@ export function CwdPicker({
                     <span className="min-w-0 truncate text-[13px]">
                       {renderProjectLabel?.(item.path) ?? basename(item.path)}
                     </span>
-                    <span className="max-w-28 shrink-0 truncate font-irgat text-[11px] text-content/45">
+                    <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
                       {prettyParent(item.path)}
                     </span>
                   </button>
@@ -365,7 +365,7 @@ export function CwdPicker({
                 }`}
               >
                 <span className="text-[13px]">New terminal</span>
-                <span className="shrink-0 font-irgat text-[11px] text-content/45">
+                <span className="shrink-0 font-mono text-[11px] text-content/45">
                   {MOD}`
                 </span>
               </button>
@@ -401,7 +401,7 @@ export function CwdPicker({
               <span className="min-w-0 truncate text-[13px]">
                 {renderProjectLabel?.(item.path) ?? basename(item.path)}
               </span>
-              <span className="max-w-28 shrink-0 truncate font-irgat text-[11px] text-content/45">
+              <span className="max-w-28 shrink-0 truncate font-mono text-[11px] text-content/45">
                 {prettyParent(item.path)}
               </span>
             </button>

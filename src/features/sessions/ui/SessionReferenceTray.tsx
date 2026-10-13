@@ -115,7 +115,7 @@ export function SessionReferenceTray({
                 </span>
                 <span className="shrink-0 text-content/45">{scope}</span>
                 {plan.status === "ok" ? (
-                  <span className="shrink-0 font-irgat text-[11px] text-content/50">
+                  <span className="shrink-0 font-mono text-[11px] text-content/50">
                     {formatTokenEstimate(plan.includedChars).replace(
                       " tokens",
                       "",

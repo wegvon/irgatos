@@ -227,7 +227,7 @@ const lintTheme = EditorView.theme({
     borderBottomColor: "#f87171",
   },
   ".cm-tooltip-lint .cm-diagnostic": {
-    fontFamily: "var(--font-irgat)",
+    fontFamily: "var(--font-mono)",
     fontSize: "12px",
     padding: "4px 8px",
     marginLeft: "0",
