@@ -3,7 +3,6 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
-import { revealPath } from "../../../platform/tauri/fs";
 import { Modal } from "../../../shared/ui/Modal";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import {
@@ -224,27 +223,33 @@ export function ComputerUseSettings({
     void check();
   }
 
-  async function turnOff(server: McpConnection) {
-    if (server.provider !== "claude") {
-      void revealPath(server.configPath).catch((cause) =>
-        setError(String(cause)),
-      );
-      return;
-    }
+  async function turnOff(
+    server: McpConnection & { provider: ComputerUseProvider },
+  ) {
     if (
-      !(await ask(`Remove ${COMPUTER_USE_SERVER} from Claude Code?`, {
-        title: "Turn off computer use",
-      }))
+      !(await ask(
+        `Remove ${COMPUTER_USE_SERVER} from ${MCP_PROVIDER_LABELS[server.provider]}?`,
+        { title: "Turn off computer use" },
+      ))
     )
       return;
-    setBusy("claude");
+    setBusy(server.provider);
     setError("");
     try {
-      await invoke("claude_mcp_remove", {
-        cwd,
-        name: server.name,
-        scope: server.scope,
-      });
+      if (server.provider === "claude") {
+        await invoke("claude_mcp_remove", {
+          cwd,
+          name: server.name,
+          scope: server.scope,
+        });
+      } else {
+        await invoke("mcp_remove", {
+          cwd,
+          provider: server.provider,
+          name: server.name,
+          configPath: server.configPath,
+        });
+      }
       await onChanged();
     } catch (cause) {
       setError(String(cause));
@@ -502,7 +507,7 @@ export function ComputerUseSettings({
                         disabled={busy !== null}
                         onClick={() => void turnOff(server)}
                       >
-                        {provider === "claude" ? "Turn off" : "Show config"}
+                        Turn off
                       </SecondaryButton>
                     </>
                   ) : (
@@ -514,9 +519,7 @@ export function ComputerUseSettings({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] text-content/45">
-              {active.some((server) => server.provider !== "claude")
-                ? `To turn it off elsewhere, remove the ${COMPUTER_USE_SERVER} entry from that config.`
-                : "Applies to all projects for each CLI you choose."}
+              Applies to all projects for each CLI you choose.
             </p>
             <SecondaryButton
               disabled={pending.length === 0 || busy !== null || loading}

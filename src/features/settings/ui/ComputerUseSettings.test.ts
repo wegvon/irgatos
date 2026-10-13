@@ -200,3 +200,46 @@ it("shows where it is active and turns it off for Claude Code", async () => {
   });
   expect(onChanged).toHaveBeenCalled();
 });
+
+it("turns it off for the other CLIs through the discovered config file", async () => {
+  await render({ ...installed, telemetryEnabled: false }, [
+    {
+      provider: "codex",
+      name: "cua-driver",
+      scope: "user",
+      configPath: "/home/.codex/config.toml",
+      transport: "stdio",
+    },
+    {
+      provider: "cursor",
+      name: "cua-driver",
+      scope: "user",
+      configPath: "/home/.cursor/mcp.json",
+      transport: "stdio",
+    },
+  ]);
+  expect(container.textContent).not.toContain("Show config");
+  const [codex, cursor] = [...container.querySelectorAll("button")].filter(
+    (element) => element.textContent === "Turn off",
+  );
+
+  ask.mockResolvedValueOnce(false);
+  await act(async () => codex.click());
+  expect(invoke).not.toHaveBeenCalledWith("mcp_remove", expect.anything());
+
+  await act(async () => codex.click());
+  await act(async () => cursor.click());
+  expect(invoke).toHaveBeenCalledWith("mcp_remove", {
+    cwd: "/repo",
+    provider: "codex",
+    name: "cua-driver",
+    configPath: "/home/.codex/config.toml",
+  });
+  expect(invoke).toHaveBeenCalledWith("mcp_remove", {
+    cwd: "/repo",
+    provider: "cursor",
+    name: "cua-driver",
+    configPath: "/home/.cursor/mcp.json",
+  });
+  expect(onChanged).toHaveBeenCalledTimes(2);
+});

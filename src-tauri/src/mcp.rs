@@ -148,6 +148,104 @@ pub async fn mcp_add(
     .map_err(|e| e.to_string())?
 }
 
+/// Removes only an entry that discovery reports for this project, so the
+/// file path never comes from the webview unchecked.
+#[tauri::command]
+pub async fn mcp_remove(
+    host: State<'_, crate::harness::HarnessHost>,
+    cwd: String,
+    provider: String,
+    name: String,
+    config_path: String,
+) -> Result<(), String> {
+    let binary_path = host.runtime_binary_path(&provider);
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = dirs_home().ok_or("Home directory not found")?;
+        let project = expand_home(&cwd);
+        if !project.is_dir() {
+            return Err("Project directory does not exist".into());
+        }
+        let codex_home = std::env::var_os("CODEX_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(&home).join(".codex"));
+        let opencode_config = std::env::var_os("OPENCODE_CONFIG").map(PathBuf::from);
+        let connections = discover(
+            Path::new(&home),
+            &project,
+            Some(&codex_home),
+            &claude_desktop_config(Path::new(&home)),
+            opencode_config.as_deref(),
+        );
+        remove_discovered_server(
+            &connections,
+            &provider,
+            &name,
+            Path::new(&config_path),
+            &codex_home.join("config.toml"),
+            || crate::harness::remove_mcp_via_cli(&provider, &cwd, &name, binary_path.as_deref()),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn remove_discovered_server(
+    connections: &[McpConnection],
+    provider: &str,
+    name: &str,
+    config_path: &Path,
+    codex_user_config: &Path,
+    remove_via_cli: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let found = connections
+        .iter()
+        .find(|connection| {
+            connection.provider == provider
+                && connection.name == name
+                && Path::new(&connection.config_path) == config_path
+        })
+        .ok_or("Server is not configured in that file")?;
+    match provider {
+        "cursor" | "opencode" => remove_json_server(config_path, provider, name),
+        "codex" if found.scope == "user" && config_path == codex_user_config => remove_via_cli(),
+        "codex" => Err("Codex CLI removes user-scoped servers only".into()),
+        _ => Err("Unsupported MCP provider".into()),
+    }
+}
+
+fn remove_json_server(path: &Path, provider: &str, name: &str) -> Result<(), String> {
+    if !path.is_file() {
+        return Err("Config file not found".into());
+    }
+    let key = if provider == "opencode" {
+        "mcp"
+    } else {
+        "mcpServers"
+    };
+    write_json_config(path, |root| {
+        let servers = root
+            .get_mut(key)
+            .ok_or_else(|| format!("{name} is not configured in this file"))?;
+        // Mirrors discovery: OpenCode 2.x nests the map under mcp.servers.
+        let nested = provider == "opencode"
+            && servers
+                .get("servers")
+                .and_then(Value::as_object)
+                .is_some_and(|nested| nested.values().all(Value::is_object));
+        let servers = if nested {
+            &mut servers["servers"]
+        } else {
+            servers
+        };
+        servers
+            .as_object_mut()
+            .and_then(|servers| servers.remove(name))
+            .filter(Value::is_object)
+            .map(|_| ())
+            .ok_or_else(|| format!("{name} is not configured in this file"))
+    })
+}
+
 fn opencode_config_path(
     home: &Path,
     project: &Path,
@@ -1026,6 +1124,100 @@ mod tests {
         assert_eq!(value["mcpServers"]["existing"]["command"], "node");
         assert_eq!(value["mcpServers"]["new"]["command"], "npx");
         assert!(write_json_server(&path, "new", serde_json::json!({"command":"npx"})).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn removes_only_the_named_discovered_entry() {
+        let root =
+            std::env::temp_dir().join(format!("monocode-mcp-remove-{}", uuid::Uuid::new_v4()));
+        let home = root.join("home");
+        let project = home.join("repo");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        let cursor = home.join(".cursor/mcp.json");
+        std::fs::create_dir_all(cursor.parent().unwrap()).unwrap();
+        std::fs::write(
+            &cursor,
+            r#"{"otherSetting":true,"mcpServers":{"cua-driver":{"command":"cua-driver","args":["mcp"]},"docs":{"command":"node"}}}"#,
+        )
+        .unwrap();
+        let opencode_one = home.join(".config/opencode/opencode.json");
+        std::fs::create_dir_all(opencode_one.parent().unwrap()).unwrap();
+        std::fs::write(
+            &opencode_one,
+            r#"{"mcp":{"cua-driver":{"type":"local","command":["cua-driver","mcp"]},"docs":{"type":"local","command":["node"]}}}"#,
+        )
+        .unwrap();
+        let opencode_two = project.join("opencode.json");
+        std::fs::write(
+            &opencode_two,
+            r#"{"mcp":{"timeout":{"startup":5000},"servers":{"cua-driver":{"type":"local","command":["cua-driver","mcp"]}}}}"#,
+        )
+        .unwrap();
+        let codex = home.join(".codex/config.toml");
+        std::fs::create_dir_all(codex.parent().unwrap()).unwrap();
+        std::fs::write(
+            &codex,
+            "[mcp_servers.cua-driver]\ncommand = \"cua-driver\"\n",
+        )
+        .unwrap();
+        let project_codex = project.join(".codex/config.toml");
+        std::fs::create_dir_all(project_codex.parent().unwrap()).unwrap();
+        std::fs::write(
+            &project_codex,
+            "[mcp_servers.cua-driver]\ncommand = \"cua-driver\"\n",
+        )
+        .unwrap();
+        let unrelated = root.join("elsewhere.json");
+        std::fs::write(
+            &unrelated,
+            r#"{"mcpServers":{"cua-driver":{"command":"x"}}}"#,
+        )
+        .unwrap();
+
+        let connections = discover(
+            &home,
+            &project,
+            None,
+            &home.join("claude_desktop_config.json"),
+            None,
+        );
+        let remove =
+            |provider: &str, path: &Path| {
+                remove_discovered_server(&connections, provider, "cua-driver", path, &codex, || {
+                    Ok(())
+                })
+            };
+
+        remove("cursor", &cursor).unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(&cursor).unwrap()).unwrap();
+        assert_eq!(value["otherSetting"], true);
+        assert!(value["mcpServers"].get("cua-driver").is_none());
+        assert_eq!(value["mcpServers"]["docs"]["command"], "node");
+
+        remove("opencode", &opencode_one).unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(&opencode_one).unwrap()).unwrap();
+        assert!(value["mcp"].get("cua-driver").is_none());
+        assert!(value["mcp"].get("docs").is_some());
+
+        remove("opencode", &opencode_two).unwrap();
+        let value: Value = serde_json::from_slice(&std::fs::read(&opencode_two).unwrap()).unwrap();
+        assert_eq!(value["mcp"]["timeout"]["startup"], 5000);
+        assert!(value["mcp"]["servers"].get("cua-driver").is_none());
+
+        let mut cli_called = false;
+        remove_discovered_server(&connections, "codex", "cua-driver", &codex, &codex, || {
+            cli_called = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(cli_called);
+        assert!(remove("codex", &project_codex).is_err());
+        assert!(remove("cursor", &unrelated).is_err());
+        assert!(remove("claude_desktop", &cursor).is_err());
+        assert!(remove("cursor", &cursor).is_err());
+        let raw = std::fs::read_to_string(&unrelated).unwrap();
+        assert!(raw.contains("cua-driver"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

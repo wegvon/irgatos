@@ -585,6 +585,28 @@ pub(crate) fn add_mcp_via_cli(
     Ok(())
 }
 
+pub(crate) fn remove_mcp_via_cli(
+    provider: &str,
+    cwd: &str,
+    name: &str,
+    binary_path: Option<&str>,
+) -> Result<(), String> {
+    if provider != "codex" {
+        return Err("Unsupported MCP provider".into());
+    }
+    if !valid_mcp_name(name) {
+        return Err("Invalid MCP server name".into());
+    }
+    let binary = resolve_mcp_binary(provider, binary_path)?;
+    mcp_command(
+        binary,
+        vec!["mcp".into(), "remove".into(), name.into()],
+        cwd.to_owned(),
+        Duration::from_secs(30),
+    )?;
+    Ok(())
+}
+
 pub(crate) fn opencode_major_version(cwd: &str, binary_path: Option<&str>) -> Result<u32, String> {
     let binary = resolve_mcp_binary("opencode", binary_path)?;
     let version = mcp_command(
@@ -3531,6 +3553,29 @@ mod tests {
             )
             .unwrap();
         }
+        assert_eq!(
+            remove_mcp_via_cli(
+                "codex",
+                &cwd,
+                "docs",
+                paths.get("codex").map(String::as_str)
+            ),
+            Ok(())
+        );
+        assert!(remove_mcp_via_cli(
+            "claude",
+            &cwd,
+            "docs",
+            paths.get("claude").map(String::as_str)
+        )
+        .is_err());
+        assert!(remove_mcp_via_cli(
+            "codex",
+            &cwd,
+            "../docs",
+            paths.get("codex").map(String::as_str)
+        )
+        .is_err());
         assert_eq!(
             opencode_major_version(&cwd, paths.get("opencode").map(String::as_str)),
             Ok(2)

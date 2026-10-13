@@ -487,6 +487,7 @@ pub fn run() {
             harness::claude_mcp_list,
             mcp::mcp_discover,
             mcp::mcp_add,
+            mcp::mcp_remove,
             computer_use::computer_use_status,
             computer_use::computer_use_disable_telemetry,
             computer_use::computer_use_grant_permissions,
