@@ -854,7 +854,7 @@ fn write_dev_bundle_icons(app: &Path, app_name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Must match `CFBundleIdentifier` in the generated dev bundle plist and tauri.conf.json.
+/// Must match `identifier` in tauri.conf.json.
 #[cfg(debug_assertions)]
 /// Compiled from Tauri's `productName` by build.rs. Do not replace this with
 /// the current brand: the generated dev bundle must follow future renames.
@@ -862,9 +862,7 @@ const DEV_BUNDLE_DEFAULT_NAME: &str = env!("TAURI_PRODUCT_NAME");
 #[cfg(debug_assertions)]
 const DEV_BUNDLE_NAME_ENV: &str = "IRGAT_DEV_APP_NAME";
 #[cfg(debug_assertions)]
-// Keep the established identifier until the dedicated identity-migration
-// release moves the existing application data to a new Irgat location.
-const DEV_BUNDLE_ID: &str = "com.monocode.desktop";
+const DEV_BUNDLE_ID: &str = "com.irgatos.desktop";
 #[cfg(debug_assertions)]
 const DEV_ICNS: &[u8] = include_bytes!("../icons/icon.icns");
 #[cfg(debug_assertions)]
@@ -915,6 +913,7 @@ fn escape_plist_text(value: &str) -> String {
 #[cfg(debug_assertions)]
 fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
     let app_name = escape_plist_text(app_name);
+    let bundle_id = DEV_BUNDLE_ID;
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -931,7 +930,7 @@ fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
 	<key>CFBundleIconName</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.monocode.desktop</string>
+	<string>{bundle_id}</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
@@ -999,8 +998,8 @@ mod tests {
     #[test]
     fn sanitized_dev_bundle_name_accepts_single_component() {
         assert_eq!(
-            sanitized_dev_bundle_name("  Irgat Dev  "),
-            Some("Irgat Dev".into())
+            sanitized_dev_bundle_name("  Irgatos Dev  "),
+            Some("Irgatos Dev".into())
         );
     }
 
@@ -1014,8 +1013,8 @@ mod tests {
     #[test]
     fn bundle_name_from_app_path_reads_existing_bundle_name() {
         assert_eq!(
-            bundle_name_from_app_path(Path::new("/tmp/Irgat Dev.app")),
-            Some("Irgat Dev".into())
+            bundle_name_from_app_path(Path::new("/tmp/Irgatos Dev.app")),
+            Some("Irgatos Dev".into())
         );
     }
 
@@ -1035,11 +1034,11 @@ mod tests {
 
     #[test]
     fn dev_bundle_plist_uses_the_provided_app_name() {
-        let plist = String::from_utf8(dev_bundle_plist("Irgat Dev")).unwrap();
-        assert!(plist.contains("<string>Irgat Dev</string>"));
-        assert!(!plist.contains("<string>Irgat</string>"));
-        assert!(plist.contains("Irgat Dev listens while you dictate"));
-        assert!(plist.contains("Irgat Dev turns what you say into text"));
+        let plist = String::from_utf8(dev_bundle_plist("Irgatos Dev")).unwrap();
+        assert!(plist.contains("<string>Irgatos Dev</string>"));
+        assert!(!plist.contains("<string>Irgatos</string>"));
+        assert!(plist.contains("Irgatos Dev listens while you dictate"));
+        assert!(plist.contains("Irgatos Dev turns what you say into text"));
     }
 
     #[test]
@@ -1051,7 +1050,7 @@ mod tests {
     /// and `tauri dev` runs from this generated bundle, not `Info.plist`.
     #[test]
     fn dev_bundle_plist_declares_voice_usage() {
-        let plist = String::from_utf8(dev_bundle_plist("Irgat")).unwrap();
+        let plist = String::from_utf8(dev_bundle_plist("Irgatos")).unwrap();
         assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
         assert!(plist.contains("<key>NSSpeechRecognitionUsageDescription</key>"));
     }

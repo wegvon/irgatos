@@ -881,7 +881,7 @@ function GeneralPage({
     <>
       <Group
         title="Alerts"
-        description="How Irgat reaches you while you are looking somewhere else."
+        description="How Irgatos reaches you while you are looking somewhere else."
       >
         <Row
           id="sounds"
@@ -897,7 +897,7 @@ function GeneralPage({
         <Row
           id="notifications"
           label="Notifications"
-          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while Irgat is in the background. Click the notification to open that session."
+          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while Irgatos is in the background. Click the notification to open that session."
         >
           {notificationsEnabled && notificationPermission === "denied" ? (
             <NotificationsBlocked />
@@ -956,7 +956,7 @@ function GeneralPage({
           <Row
             id="quick-composer"
             label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to Irgat. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
+            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to Irgatos. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
           >
             {quickComposerError ? (
               <span className="text-[12px] text-content/45">
@@ -1271,7 +1271,7 @@ function VoicePage() {
       return;
     }
     setPreviewing(true);
-    void speak("This is how Irgat reads an agent's reply in voice mode.", {
+    void speak("This is how Irgatos reads an agent's reply in voice mode.", {
       voice: voice.speechVoice,
       rate: voice.speechRate,
     })
@@ -1556,7 +1556,7 @@ function VoicePage() {
         </Row>
         <Row
           label="API key"
-          description="Stored in Irgat's app data, readable only by you. A local server usually needs none."
+          description="Stored in Irgatos's app data, readable only by you. A local server usually needs none."
         >
           {status?.cloudKey ? (
             <>
@@ -1732,7 +1732,7 @@ function GithubSettings() {
   }, [checkStatus]);
 
   const description = status?.connected
-    ? "GitHub CLI is installed and authenticated. Irgat uses it for GitHub inbox items."
+    ? "GitHub CLI is installed and authenticated. Irgatos uses it for GitHub inbox items."
     : status?.installed
       ? "Run gh auth login in a terminal, complete the sign-in flow, then check again."
       : "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then check again.";
@@ -2231,7 +2231,7 @@ function UpdateRow({
               ? (snapshot.error ?? "Update check failed.")
               : snapshot.packageManaged
                 ? packageManagerHint(snapshot.packageManaged)
-                : "Irgat updates itself from the release feed.";
+                : "Irgatos updates itself from the release feed.";
 
   return (
     <Row
@@ -2643,7 +2643,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         description={
           glassDisabled
             ? "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved."
-            : "How much of the desktop shows through Irgat. Blur costs more to composite the higher it goes."
+            : "How much of the desktop shows through Irgatos. Blur costs more to composite the higher it goes."
         }
       >
         <Row
@@ -3455,7 +3455,7 @@ function ProviderBinaryControl({
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 Enter the absolute path to the CLI executable. Changes apply
-                after restarting Irgat.
+                after restarting Irgatos.
               </p>
               {error ? (
                 <span
@@ -3716,8 +3716,8 @@ function ProvidersPage({
         }
         description={
           project
-            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for Irgat.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for Irgat and apply to every project."
+            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for Irgatos.`
+            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for Irgatos and apply to every project."
         }
       >
         {HARNESSES.map((harness) => {

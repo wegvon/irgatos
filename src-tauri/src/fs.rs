@@ -162,7 +162,7 @@ pub struct OmpAssistantText {
     concat: String,
 }
 
-/// Recover displayed OMP custom messages that older Irgat builds omitted
+/// Recover displayed OMP custom messages that older Irgatos builds omitted
 /// from their persisted transcript. The provider id is already stored with the
 /// session; matching the original JSONL keeps the repair deterministic instead
 /// of guessing from neighbouring reasoning text.
@@ -1301,7 +1301,7 @@ fn git_github_status_for() -> GitHubStatus {
     }
 }
 
-/// Whether the active GitHub CLI account has starred the Irgat repository.
+/// Whether the active GitHub CLI account has starred the Irgatos repository.
 #[tauri::command]
 pub async fn github_irgat_star_status() -> Result<GitHubStarStatus, String> {
     tauri::async_runtime::spawn_blocking(github_irgat_star_status_for)
@@ -1326,7 +1326,7 @@ fn github_star_status_from_result(result: Result<String, String>) -> GitHubStarS
     }
 }
 
-/// Star the Irgat repository for the active GitHub CLI account.
+/// Star the Irgatos repository for the active GitHub CLI account.
 #[tauri::command]
 pub async fn github_star_irgat() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
@@ -2817,7 +2817,7 @@ fn with_signing_hint(error: String) -> String {
         return error;
     }
     format!(
-        "{error}\n\nGit couldn't sign this commit. Irgat runs git without a terminal, \
+        "{error}\n\nGit couldn't sign this commit. Irgatos runs git without a terminal, \
          so your signer needs a GUI passphrase prompt (e.g. pinentry-mac) or an unlocked agent."
     )
 }
@@ -7033,7 +7033,7 @@ mod tests {
                 return false;
             }
         }
-        git(dir, &["config", "user.name", "Irgat"])
+        git(dir, &["config", "user.name", "Irgatos"])
             && git(dir, &["config", "user.email", "irgat@test"])
             && git(dir, &["config", "commit.gpgsign", "false"])
             && git(dir, &["config", "core.autocrlf", "false"])
@@ -7072,7 +7072,7 @@ mod tests {
         Command::new("git")
             .args([
                 "-c",
-                "user.name=Irgat",
+                "user.name=Irgatos",
                 "-c",
                 "user.email=irgat@test",
                 "-c",
@@ -7080,9 +7080,9 @@ mod tests {
             ])
             .args(args)
             .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "Irgat")
+            .env("GIT_AUTHOR_NAME", "Irgatos")
             .env("GIT_AUTHOR_EMAIL", "irgat@test")
-            .env("GIT_COMMITTER_NAME", "Irgat")
+            .env("GIT_COMMITTER_NAME", "Irgatos")
             .env("GIT_COMMITTER_EMAIL", "irgat@test")
             .status()
             .map(|status| status.success())
@@ -8223,7 +8223,7 @@ mod tests {
                 .status()
                 .map(|status| !status.success())
                 .unwrap_or(true)
-            || !git(&b.0, &["config", "user.name", "Irgat"])
+            || !git(&b.0, &["config", "user.name", "Irgatos"])
             || !git(&b.0, &["config", "user.email", "irgat@test"])
             || !git(&b.0, &["config", "commit.gpgsign", "false"])
             || !git(&b.0, &["config", "core.autocrlf", "false"])

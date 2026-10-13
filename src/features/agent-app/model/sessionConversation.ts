@@ -65,8 +65,8 @@ export function sessionConversationPage(
       user: capped(
         user.irgatSessionCompletion
           ? user.irgatSessionCompletion.sessionCount
-            ? `Irgat: results from ${user.irgatSessionCompletion.sessionCount} sessions`
-            : `Irgat: session ${user.irgatSessionCompletion.status}: ${user.irgatSessionCompletion.title}`
+            ? `Irgatos: results from ${user.irgatSessionCompletion.sessionCount} sessions`
+            : `Irgatos: session ${user.irgatSessionCompletion.status}: ${user.irgatSessionCompletion.title}`
           : operatorUserPrompt(user),
         maxChars,
       ),

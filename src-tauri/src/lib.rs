@@ -66,7 +66,7 @@ mod windows;
 mod worktree_lifecycle;
 mod worktrees;
 
-// Phase 1 seam: spawn / kill harness children per Irgat thread.
+// Phase 1 seam: spawn / kill harness children per Irgatos thread.
 // Adapters own the protocol; this host only supervises processes.
 
 /// Project directory for new sessions — prefer cwd, else home.
@@ -238,6 +238,9 @@ fn should_request_quit(code: Option<i32>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    for note in legacy_data::import_identifier_folders(&legacy_data::identifier_roots()) {
+        eprintln!("irgat: {note}");
+    }
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
     #[cfg(windows)]
@@ -670,7 +673,7 @@ pub fn run() {
             project_logo::forget_logo_file,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Irgat");
+        .expect("error while building Irgatos");
 
     app.run(|handle, event| match event {
         #[cfg(target_os = "macos")]

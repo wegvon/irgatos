@@ -53,6 +53,104 @@ pub(crate) enum DatabaseImport {
     AlreadyMerged,
 }
 
+/// Bundle identifier the app shipped under before it became Irgatos.
+pub(crate) const LEGACY_IDENTIFIER: &str = "com.monocode.desktop";
+/// Bundle identifier of this build; must match `identifier` in `tauri.conf.json`.
+pub(crate) const IDENTIFIER: &str = "com.irgatos.desktop";
+
+/// The OS keys the app's folders (data, config, cache, WebKit/WebView2 storage)
+/// by bundle identifier, so a new identifier would start from empty folders.
+/// Copies each `<root>/<legacy id>` to `<root>/<new id>` and each
+/// `<root>/<legacy id>.plist` to `<root>/<new id>.plist`. It must run before
+/// the app or its webview creates the new folders.
+///
+/// Like the rest of this module it only copies: the legacy folder stays in
+/// place, a new folder that already has files keeps them, and a marker inside
+/// the new folder stops the import from repeating.
+pub(crate) fn import_identifier_folders(roots: &[PathBuf]) -> Vec<String> {
+    let mut notes = Vec::new();
+    for root in roots {
+        match import_identifier_folder(root, LEGACY_IDENTIFIER, IDENTIFIER) {
+            Ok(true) => notes.push(format!(
+                "imported {LEGACY_IDENTIFIER} from {}",
+                root.display()
+            )),
+            Ok(false) => {}
+            Err(e) => eprintln!(
+                "irgat: could not import {LEGACY_IDENTIFIER} from {}: {e}",
+                root.display()
+            ),
+        }
+        let from = root.join(format!("{LEGACY_IDENTIFIER}.plist"));
+        let to = root.join(format!("{IDENTIFIER}.plist"));
+        if from.is_file() && to.symlink_metadata().is_err() {
+            if let Err(e) = std::fs::copy(&from, &to) {
+                eprintln!("irgat: could not copy {}: {e}", from.display());
+            }
+        }
+    }
+    notes
+}
+
+fn import_identifier_folder(root: &Path, legacy: &str, current: &str) -> Result<bool, String> {
+    let from = root.join(legacy);
+    let to = root.join(current);
+    let marker = to.join(format!(".imported-from-{legacy}"));
+    if !from.is_dir() || marker.exists() {
+        return Ok(false);
+    }
+    if to.exists() {
+        copy_missing(&from, &to).map_err(|e| e.to_string())?;
+    } else {
+        let staging = root.join(format!("{current}.importing"));
+        if staging.exists() {
+            std::fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+        }
+        copy_missing(&from, &staging).map_err(|e| e.to_string())?;
+        std::fs::rename(&staging, &to).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&marker, b"").map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Folders that hold per-identifier app state on this OS.
+pub(crate) fn identifier_roots() -> Vec<PathBuf> {
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+    };
+    let mut roots = Vec::new();
+    #[cfg(target_os = "macos")]
+    if let Some(home) = var("HOME") {
+        let library = home.join("Library");
+        for name in [
+            "Application Support",
+            "Caches",
+            "WebKit",
+            "HTTPStorages",
+            "Preferences",
+        ] {
+            roots.push(library.join(name));
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Some(home) = var("HOME") {
+        for (xdg, fallback) in [
+            ("XDG_DATA_HOME", ".local/share"),
+            ("XDG_CONFIG_HOME", ".config"),
+            ("XDG_CACHE_HOME", ".cache"),
+        ] {
+            roots.push(var(xdg).unwrap_or_else(|| home.join(fallback)));
+        }
+    }
+    #[cfg(windows)]
+    for name in ["APPDATA", "LOCALAPPDATA"] {
+        roots.extend(var(name));
+    }
+    roots
+}
+
 /// Imports everything under `data_dir`. A failure is reported and skipped so
 /// the app still starts; the legacy files are left where they were.
 pub(crate) fn import_legacy_data(data_dir: &Path) -> Vec<String> {
@@ -661,5 +759,71 @@ mod tests {
         .unwrap();
         let notes = import_legacy_data(&dir);
         assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn identifier_folder_is_copied_when_the_new_one_is_absent() {
+        let root = scratch("id-absent");
+        let old = root.join(LEGACY_IDENTIFIER);
+        std::fs::create_dir_all(old.join("WebsiteData")).unwrap();
+        std::fs::write(old.join("WebsiteData/ls.db"), b"keys").unwrap();
+        std::fs::write(root.join(format!("{LEGACY_IDENTIFIER}.plist")), b"prefs").unwrap();
+
+        let notes = import_identifier_folders(std::slice::from_ref(&root));
+
+        assert_eq!(notes.len(), 1);
+        let new = root.join(IDENTIFIER);
+        assert_eq!(
+            std::fs::read(new.join("WebsiteData/ls.db")).unwrap(),
+            b"keys"
+        );
+        assert_eq!(
+            std::fs::read(root.join(format!("{IDENTIFIER}.plist"))).unwrap(),
+            b"prefs"
+        );
+        assert_eq!(
+            std::fs::read(old.join("WebsiteData/ls.db")).unwrap(),
+            b"keys"
+        );
+        assert!(!root.join(format!("{IDENTIFIER}.importing")).exists());
+    }
+
+    #[test]
+    fn identifier_folders_present_in_both_places_keep_the_new_files_and_import_once() {
+        let root = scratch("id-both");
+        let old = root.join(LEGACY_IDENTIFIER);
+        let new = root.join(IDENTIFIER);
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(old.join("settings.json"), b"old").unwrap();
+        std::fs::write(old.join("only-old.txt"), b"old").unwrap();
+        std::fs::write(new.join("settings.json"), b"new").unwrap();
+        std::fs::write(root.join(format!("{LEGACY_IDENTIFIER}.plist")), b"old").unwrap();
+        std::fs::write(root.join(format!("{IDENTIFIER}.plist")), b"new").unwrap();
+
+        assert_eq!(
+            import_identifier_folders(std::slice::from_ref(&root)).len(),
+            1
+        );
+
+        assert_eq!(std::fs::read(new.join("settings.json")).unwrap(), b"new");
+        assert_eq!(std::fs::read(new.join("only-old.txt")).unwrap(), b"old");
+        assert_eq!(
+            std::fs::read(root.join(format!("{IDENTIFIER}.plist"))).unwrap(),
+            b"new"
+        );
+        assert_eq!(std::fs::read(old.join("settings.json")).unwrap(), b"old");
+
+        std::fs::write(old.join("later.txt"), b"later").unwrap();
+        assert!(import_identifier_folders(&[root]).is_empty());
+        assert!(!new.join("later.txt").exists());
+    }
+
+    #[test]
+    fn nothing_happens_without_a_legacy_identifier_folder() {
+        let root = scratch("id-none");
+        assert!(import_identifier_folders(std::slice::from_ref(&root)).is_empty());
+        assert!(!root.join(IDENTIFIER).exists());
+        assert!(import_identifier_folders(&[root.join("missing")]).is_empty());
     }
 }

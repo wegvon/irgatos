@@ -10,7 +10,7 @@ FORCE_UPGRADE=${IRGAT_HOST_FORCE_UPGRADE:-0}
 HOST_PORT=${IRGAT_HOST_PORT:-3774}
 
 if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
-  case "$(uname -s)" in Darwin) OS=darwin ;; Linux) OS=linux ;; *) echo 'Irgat Host supports Linux and macOS.' >&2; exit 1 ;; esac
+  case "$(uname -s)" in Darwin) OS=darwin ;; Linux) OS=linux ;; *) echo 'Irgatos Host supports Linux and macOS.' >&2; exit 1 ;; esac
   case "$(uname -m)" in arm64|aarch64) ARCH=arm64 ;; x86_64|amd64) ARCH=x64 ;; *) echo 'Unsupported host architecture.' >&2; exit 1 ;; esac
   FILE="irgat-host-$OS-$ARCH.tar.gz"
   mkdir -p "$BASE/runtime" "$BASE/bin"
@@ -27,7 +27,7 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
     fi
   }
   if ! download "$RELEASE/$FILE" "$TMP/$FILE" || ! download "$RELEASE/$FILE.sha256" "$TMP/checksum"; then
-    echo "The Irgat Host package for version $VERSION is unavailable. Install a Irgat release that includes host packages." >&2; exit 1
+    echo "The Irgatos Host package for version $VERSION is unavailable. Install an Irgatos release that includes host packages." >&2; exit 1
   fi
   EXPECTED=$(awk 'NR == 1 {print $1}' "$TMP/checksum")
   case "$EXPECTED" in *[!0-9a-f]*|'') echo 'Invalid host package checksum.' >&2; exit 1 ;; esac
@@ -39,10 +39,10 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   else
     echo 'Install shasum or sha256sum on this host and reconnect.' >&2; exit 1
   fi
-  [ "$EXPECTED" = "$ACTUAL" ] || { echo 'Irgat Host package checksum mismatch.' >&2; exit 1; }
+  [ "$EXPECTED" = "$ACTUAL" ] || { echo 'Irgatos Host package checksum mismatch.' >&2; exit 1; }
   mkdir "$TMP/unpacked"
   tar -xzf "$TMP/$FILE" -C "$TMP/unpacked"
-  [ "$("$TMP/unpacked/irgat-host" --version)" = "$VERSION" ] || { echo 'Irgat Host version mismatch.' >&2; exit 1; }
+  [ "$("$TMP/unpacked/irgat-host" --version)" = "$VERSION" ] || { echo 'Irgatos Host version mismatch.' >&2; exit 1; }
   DEST="$BASE/runtime/$VERSION-$OS-$ARCH-$(basename "$TMP")"
   # Concurrent installations never replace a directory used by a running host.
   mv "$TMP/unpacked" "$DEST"

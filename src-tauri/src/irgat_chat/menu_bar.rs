@@ -48,7 +48,7 @@ pub(super) const ACTIONS: [Action; 2] = [
     },
     Action {
         id: "irgat-chat-quit",
-        title: "Quit Irgat",
+        title: "Quit Irgatos",
         symbol: "power",
         destructive: true,
     },

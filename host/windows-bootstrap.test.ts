@@ -76,7 +76,7 @@ async function install(badChecksum: boolean) {
     badChecksum ? "bad.downloads" : "downloads",
   );
   const overrides = `
-function Download-Irgat([string] $Url, [string] $Destination) {
+function Download-Irgatos([string] $Url, [string] $Destination) {
   $source = if ($Url.EndsWith('.sha256')) { ${psQuote(checksum)} } else { ${psQuote(archive)} }
   Copy-Item -LiteralPath $source -Destination $Destination
   Add-Content -LiteralPath ${psQuote(downloads)} -Value 'download'

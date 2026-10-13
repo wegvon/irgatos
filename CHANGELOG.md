@@ -1298,7 +1298,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Linear personal API keys stay on this Mac: written to the app data folder (`~/Library/Application Support/com.irgat.desktop/linear-token`) with owner-only permissions (`0600`). They are sent only to Linear's API to list and read issues, never to Irgat servers, and never placed in the agent prompt. Disconnect deletes the file. GitHub uses the `gh` login already on the machine; Irgat does not store a GitHub token.
+- Linear personal API keys stay on this Mac: written to the app data folder (`~/Library/Application Support/com.irgatos.desktop/linear-token`) with owner-only permissions (`0600`). They are sent only to Linear's API to list and read issues, never to Irgatos servers, and never placed in the agent prompt. Disconnect deletes the file. GitHub uses the `gh` login already on the machine; Irgatos does not store a GitHub token.
 
 ## [0.1.11] - 2026-08-27
 

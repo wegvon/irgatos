@@ -794,12 +794,12 @@ export function BrowserPanel({
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background-base px-8 text-center">
               <Globe className="size-6 text-content/30" strokeWidth={1.5} />
               <p className="text-[13px] text-content/75">
-                Browse without leaving Irgat
+                Browse without leaving Irgatos
               </p>
               <p className="max-w-80 text-[12px] leading-5 text-content/45">
                 Browser keeps site storage and normal sign-ins in its own
                 persistent store, so they stay available after restarting
-                Irgat. Pages here cannot access your projects or agents.
+                Irgatos. Pages here cannot access your projects or agents.
               </p>
               <button
                 type="button"

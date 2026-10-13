@@ -115,7 +115,7 @@ export function useProjectIndex(root: string | undefined): {
 }
 
 function confirmNative(message: string): Promise<boolean> {
-  return ask(message, { title: "Irgat", kind: "warning" });
+  return ask(message, { title: "Irgatos", kind: "warning" });
 }
 
 function fail(error: unknown) {
@@ -242,7 +242,7 @@ export function IrgatProjectCommit({
         ? `Delete untracked file ${name}?`
         : `Discard changes in ${name}? This cannot be undone.`,
       {
-        title: "Irgat",
+        title: "Irgatos",
         kind: "warning",
         okLabel: untracked ? "Delete" : "Discard",
       },

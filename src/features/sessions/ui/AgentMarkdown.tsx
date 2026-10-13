@@ -148,15 +148,15 @@ const REVEAL_LABEL = IS_MAC
     : "Open Containing Folder";
 
 function fileLinkMenuItems(
-  canOpenInIrgat: boolean,
+  canOpenInIrgatos: boolean,
   canCopyRelativePath: boolean,
 ): ExplorerMenuItem[] {
   return [
     {
       kind: "item",
       id: "open-irgat",
-      label: "Open in Irgat",
-      disabled: !canOpenInIrgat,
+      label: "Open in Irgatos",
+      disabled: !canOpenInIrgatos,
     },
     { kind: "item", id: "open-default", label: "Open in Default App" },
     { kind: "item", id: "reveal", label: REVEAL_LABEL },

@@ -125,7 +125,7 @@ describe("OMP native commands", () => {
     expect(mocks.releaseBridge).toHaveBeenCalledOnce();
   });
 
-  it("preserves metadata from all command origins and escapes reserved Irgat commands", () => {
+  it("preserves metadata from all command origins and escapes reserved Irgatos commands", () => {
     expect(
       ompCommandsFromRpcData({
         commands: [

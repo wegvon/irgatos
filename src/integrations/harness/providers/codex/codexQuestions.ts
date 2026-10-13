@@ -64,7 +64,7 @@ export function codexQuestions(params: unknown): UserQuestion[] {
   // secure credential-entry surface. Never send secret questions to it.
   if (raw.some((question) => asRecord(question)?.isSecret === true)) {
     throw new Error(
-      "Codex requested secret input. Irgat cannot collect secret answers securely.",
+      "Codex requested secret input. Irgatos cannot collect secret answers securely.",
     );
   }
   const questions = questionsFromUnknown({

@@ -275,12 +275,12 @@ export function githubStatus(): Promise<GithubStatus> {
   return invoke<GithubStatus>("git_github_status");
 }
 
-/** Whether the active GitHub CLI account has starred Irgat. */
+/** Whether the active GitHub CLI account has starred Irgatos. */
 export function githubIrgatStarStatus(): Promise<GithubStarStatus> {
   return invoke<GithubStarStatus>("github_irgat_star_status");
 }
 
-/** Star Irgat for the active GitHub CLI account. */
+/** Star Irgatos for the active GitHub CLI account. */
 export function starIrgatOnGithub(): Promise<void> {
   return invoke<void>("github_star_irgat");
 }

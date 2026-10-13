@@ -1166,7 +1166,7 @@ function SidebarComponent({
               {
                 kind: "item" as const,
                 id: "copy-irgat-session-id",
-                label: "Irgat session ID",
+                label: "Irgatos session ID",
               },
             ],
           },

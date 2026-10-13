@@ -96,7 +96,7 @@ export function windowsTaskScript(
   return `
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $sid = $identity.User.Value
-$name = "Irgat Host-$sid"
+$name = "Irgatos Host-$sid"
 $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
 if ($null -eq $task) {
   [IO.File]::WriteAllText(${psQuote(runnerPath)}, ${psQuote(runner)}, [Text.UTF8Encoding]::new($false))
@@ -104,13 +104,13 @@ if ($null -eq $task) {
   $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $sid
   $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
-  Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Trigger $trigger -Settings $settings -Description 'Irgat remote agent host for this user' | Out-Null
+  Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Trigger $trigger -Settings $settings -Description 'Irgatos remote agent host for this user' | Out-Null
 } else {
   $taskSid = [string] $task.Principal.UserId
   if ($taskSid -notmatch '^S-1-') {
     $taskSid = ([Security.Principal.NTAccount]::new($taskSid)).Translate([Security.Principal.SecurityIdentifier]).Value
   }
-  if ($taskSid -ne $sid) { throw 'The existing Irgat task belongs to a different user.' }
+  if ($taskSid -ne $sid) { throw 'The existing Irgatos task belongs to a different user.' }
 }
 Start-ScheduledTask -TaskName $name
 `;
@@ -121,7 +121,7 @@ Start-ScheduledTask -TaskName $name
 export function windowsUninstallScript(): string {
   return `
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$name = "Irgat Host-$sid"
+$name = "Irgatos Host-$sid"
 if ($null -ne (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue)) {
   Unregister-ScheduledTask -TaskName $name -Confirm:$false
 }

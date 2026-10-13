@@ -397,9 +397,9 @@ describe("confirming reload", () => {
   it("allows reload after unsaved changes are confirmed", async () => {
     await expect(confirmReload(true)).resolves.toBe(true);
     expect(ask).toHaveBeenCalledWith(
-      "Reload Irgat and discard unsaved changes?",
+      "Reload Irgatos and discard unsaved changes?",
       {
-        title: "Irgat",
+        title: "Irgatos",
         kind: "warning",
         okLabel: "Reload",
       },

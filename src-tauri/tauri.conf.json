@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MonoCode",
+  "productName": "Irgatos",
   "version": "0.13.0",
-  "identifier": "com.monocode.desktop",
+  "identifier": "com.irgatos.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MonoCode",
+        "title": "Irgatos",
         "width": 1280,
         "height": 800,
         "minWidth": 800,

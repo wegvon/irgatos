@@ -512,10 +512,10 @@ fn build(
 
     #[cfg(target_os = "macos")]
     {
-        let quit = MenuItemBuilder::with_id("quit", "Quit Irgat")
+        let quit = MenuItemBuilder::with_id("quit", "Quit Irgatos")
             .accelerator("CmdOrCtrl+Q")
             .build(app)?;
-        let app_menu = SubmenuBuilder::new(app, "Irgat")
+        let app_menu = SubmenuBuilder::new(app, "Irgatos")
             .about(Some(AboutMetadata::default()))
             .separator()
             .item(&open_settings)
@@ -533,7 +533,7 @@ fn build(
             .minimize()
             .maximize()
             .build()?;
-        let website = MenuItemBuilder::with_id("help_website", "Irgat Website").build(app)?;
+        let website = MenuItemBuilder::with_id("help_website", "Irgatos Website").build(app)?;
         let github = MenuItemBuilder::with_id("help_github", "View on GitHub").build(app)?;
         let report_bug = MenuItemBuilder::with_id("help_report_bug", "Report a Bug…").build(app)?;
         let request_feature =

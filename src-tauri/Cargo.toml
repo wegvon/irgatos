@@ -2,7 +2,7 @@
 name = "irgat"
 version.workspace = true
 edition.workspace = true
-description = "Irgat — one UI for every agent harness"
+description = "Irgatos — one UI for every agent harness"
 authors = ["Nick"]
 repository = "https://github.com/wegvon/monocode"
 homepage = "https://github.com/wegvon/monocode"

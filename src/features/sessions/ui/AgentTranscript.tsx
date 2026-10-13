@@ -4503,7 +4503,7 @@ function IrgatMark({ className = "size-4" }: { className?: string }) {
   return <img src="/irgat.png" alt="" className={`shrink-0 ${className}`} />;
 }
 
-/** Irgat commands read like the other activity rows; failures expose their output. */
+/** Irgatos commands read like the other activity rows; failures expose their output. */
 function IrgatCallRow({
   block,
   call,
@@ -4554,7 +4554,7 @@ function IrgatCallRow({
         <button
           type="button"
           aria-expanded={errorOpen}
-          aria-label={`${errorOpen ? "Hide" : "Show"} error details for Irgat: ${call.label}`}
+          aria-label={`${errorOpen ? "Hide" : "Show"} error details for Irgatos: ${call.label}`}
           onClick={() => setErrorOpen((value) => !value)}
           className="flex w-full min-w-0 items-center gap-1.5 py-1 text-left"
         >

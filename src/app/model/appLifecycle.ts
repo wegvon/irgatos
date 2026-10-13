@@ -167,7 +167,7 @@ export async function askQuitConfirmation(
     quitDialogOpen = true;
     try {
       confirmed = await ask(quitWhileBusyMessage(inFlight), {
-        title: "Irgat",
+        title: "Irgatos",
         kind: "warning",
         okLabel: "Quit",
       });
@@ -359,8 +359,8 @@ export async function confirmReload(
   hasUnsavedFiles: boolean,
 ): Promise<boolean> {
   if (!hasUnsavedFiles) return true;
-  return ask("Reload Irgat and discard unsaved changes?", {
-    title: "Irgat",
+  return ask("Reload Irgatos and discard unsaved changes?", {
+    title: "Irgatos",
     kind: "warning",
     okLabel: "Reload",
   });
@@ -468,7 +468,7 @@ async function confirmAndCloseWindow(
     if (refs.length > 0) {
       const ok = await ask(
         "Close this window and stop its running chats? Other windows will stay open.",
-        { title: "Irgat", kind: "warning", okLabel: "Close window" },
+        { title: "Irgatos", kind: "warning", okLabel: "Close window" },
       );
       if (!ok) return;
     }

@@ -56,9 +56,9 @@ describe("AgentTranscript collapsed work", () => {
     expect(legacy).not.toContain("/irgat");
   });
 
-  it("shows Irgat CLI actions instead of their long shell commands", () => {
+  it("shows Irgatos CLI actions instead of their long shell commands", () => {
     const command =
-      "/repo/target/debug/Irgat.app/Contents/MacOS/irgat";
+      "/repo/target/debug/Irgatos.app/Contents/MacOS/irgat";
     const markup = render(
       [
         { id: "user", role: "user", text: "/irgat list my notes" },
@@ -77,7 +77,7 @@ describe("AgentTranscript collapsed work", () => {
       ],
       true,
     );
-    expect(markup).toContain("Using Irgat");
+    expect(markup).toContain("Using Irgatos");
     expect(markup).toContain('data-irgat-tool-call="--help"');
     expect(markup).toContain('data-irgat-tool-call="notes.list"');
     expect(markup).toContain("irgat app --help");
@@ -85,10 +85,10 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain("Ran");
     expect(markup).toContain("Running");
     expect(markup).not.toContain("Contents/MacOS/irgat");
-    expect(markup).not.toContain("Show error details for Irgat");
+    expect(markup).not.toContain("Show error details for Irgatos");
   });
 
-  it("shows the full command before approving a Irgat CLI call", () => {
+  it("shows the full command before approving an Irgatos CLI call", () => {
     const command = "irgat app sessions.send --json '{\"prompt\":\"private-marker\"}'";
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
@@ -131,7 +131,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(compound).toContain("Allow</button>");
   });
 
-  it("keeps a failed Irgat call compact until its error is opened", () => {
+  it("keeps a failed Irgatos call compact until its error is opened", () => {
     const markup = render([
       { id: "user", role: "user", text: "/irgat list notes" },
       {
@@ -144,7 +144,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).toContain('data-irgat-tool-call="notes.list"');
     expect(markup).toContain("Ran");
     expect(markup).toContain("irgat app notes.list");
-    expect(markup).toContain("Show error details for Irgat: List notes");
+    expect(markup).toContain("Show error details for Irgatos: List notes");
     expect(markup).not.toContain("Connection refused");
   });
 
@@ -985,7 +985,7 @@ describe("worker assignment prompts", () => {
             id: "u1",
             role: "user",
             internal: true,
-            text: "Review the current branch against main.\n\n<irgat_assignment>\nYou are a worker managed by a Irgat lead. Your assigned write scope is: src/App.tsx.\n</irgat_assignment>",
+            text: "Review the current branch against main.\n\n<irgat_assignment>\nYou are a worker managed by an Irgatos lead. Your assigned write scope is: src/App.tsx.\n</irgat_assignment>",
           },
           { id: "a1", role: "assistant", text: "Looking now" },
         ],
@@ -994,6 +994,6 @@ describe("worker assignment prompts", () => {
     expect(markup).toContain("Review the current branch against main.");
     expect(markup).toContain("Looking now");
     expect(markup).not.toContain("irgat_assignment");
-    expect(markup).not.toContain("You are a worker managed by a Irgat lead");
+    expect(markup).not.toContain("You are a worker managed by an Irgatos lead");
   });
 });

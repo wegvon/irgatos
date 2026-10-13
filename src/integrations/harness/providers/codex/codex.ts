@@ -661,7 +661,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     await rpc.request("initialize", {
       clientInfo: {
         name: "irgat",
-        title: "Irgat",
+        title: "Irgatos",
         version: "0.1.0",
       },
       capabilities: {
@@ -1437,7 +1437,7 @@ async function handleServerRequest(
       if (!live.cancelled && !live.muteUpdates)
         live.onEvent({
           type: "status",
-          text: "This MCP server requested a form or browser sign-in that Irgat does not support yet. Complete it in the server's own interface.",
+          text: "This MCP server requested a form or browser sign-in that Irgatos does not support yet. Complete it in the server's own interface.",
         });
       await live.rpc.respond(id, {
         action: "cancel",

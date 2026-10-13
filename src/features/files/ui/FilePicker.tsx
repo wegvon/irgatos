@@ -38,7 +38,7 @@ export function reloadActionHint(mod = MOD, shift = SHIFT) {
 }
 
 const ACTIONS: Action[] = [
-  { id: "reload", label: "Reload Irgat", hint: reloadActionHint() },
+  { id: "reload", label: "Reload Irgatos", hint: reloadActionHint() },
 ];
 
 type Props = {

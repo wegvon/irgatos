@@ -73,10 +73,10 @@ describe("tool error disclosure", () => {
   });
 });
 
-describe("Irgat CLI disclosure", () => {
+describe("Irgatos CLI disclosure", () => {
   it("shows a compact row without a disclosure for a successful call", () => {
     const command =
-      "/repo/target/debug/Irgat.app/Contents/MacOS/irgat app notes.list";
+      "/repo/target/debug/Irgatos.app/Contents/MacOS/irgat app notes.list";
     const blocks: Block[] = [
       { id: "user", role: "user", text: "/irgat list notes" },
       {
@@ -121,7 +121,7 @@ describe("Irgat CLI disclosure", () => {
     );
 
     const trigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Show error details for Irgat: List notes"]',
+      'button[aria-label="Show error details for Irgatos: List notes"]',
     );
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toContain("Connection refused");

@@ -116,7 +116,7 @@ async function prepare(
       "codex",
     );
     await request("initialize", {
-      clientInfo: { name: "irgat", title: "Irgat", version: "0.1.0" },
+      clientInfo: { name: "irgat", title: "Irgatos", version: "0.1.0" },
       capabilities: { experimentalApi: true },
     });
     await rpc.notify("initialized", undefined);

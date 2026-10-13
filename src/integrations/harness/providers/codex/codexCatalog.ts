@@ -85,7 +85,7 @@ export async function discoverCodexModels(
           {
             clientInfo: {
               name: "irgat",
-              title: "Irgat",
+              title: "Irgatos",
               version: "0.1.0",
             },
             capabilities: { experimentalApi: true },

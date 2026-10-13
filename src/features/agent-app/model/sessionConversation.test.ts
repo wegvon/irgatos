@@ -32,8 +32,8 @@ describe("sessionConversationPage", () => {
       expect(page.turns[0].assistant?.text).toBe("It uses a queue.");
       expect(page.turns[1].user.text).toBe(
         sessionCount
-          ? "Irgat: results from 3 sessions"
-          : "Irgat: session completed: API fix",
+          ? "Irgatos: results from 3 sessions"
+          : "Irgatos: session completed: API fix",
       );
       expect(page.turns[1].assistant?.text).toBe("The API fix passed tests.");
       expect(JSON.stringify(page)).not.toContain("Hidden app instructions");

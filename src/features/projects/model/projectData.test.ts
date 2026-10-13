@@ -55,7 +55,7 @@ describe("rebaseProjectData", () => {
 
     saveProjectGroups([{ id: "personal", name: "Personal", collapsed: false }]);
     setProjectGroupAssignment(from, "personal");
-    saveTabGroupLabel(oldKey, "My Irgat");
+    saveTabGroupLabel(oldKey, "My Irgatos");
     saveProjectSidebarTab(from, "changes");
     saveProjectChatBackgroundSettings(oldKey, {
       path: "/images/background.png",
@@ -75,7 +75,7 @@ describe("rebaseProjectData", () => {
 
     rebaseProjectData(from, to);
 
-    expect(loadTabGroupLabels()).toEqual({ [newKey]: "My Irgat" });
+    expect(loadTabGroupLabels()).toEqual({ [newKey]: "My Irgatos" });
     expect(loadProjectGroupAssignments()).toEqual({ [to]: "personal" });
     expect(loadProjectChatBackgroundSettings(oldKey)).toBeNull();
     expect(loadProjectChatBackgroundSettings(newKey)?.path).toBe(

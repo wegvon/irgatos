@@ -637,7 +637,7 @@ mod tests {
         write_skill(
             &project.0.join(".agents/skills"),
             "ship",
-            "---\nname: ship\ndescription: Irgat ship\n---\n",
+            "---\nname: ship\ndescription: Irgatos ship\n---\n",
         );
         write_skill(
             &project.0.join(".claude/skills"),
@@ -657,7 +657,7 @@ mod tests {
 
         let skills = list_skills_from(&project.0, Some(&home.0), None);
         let ship = skills.iter().find(|s| s.name == "ship").unwrap();
-        assert_eq!(ship.description, "Irgat ship");
+        assert_eq!(ship.description, "Irgatos ship");
         assert_eq!(ship.source, "agents");
         assert_eq!(ship.scope, "project");
 

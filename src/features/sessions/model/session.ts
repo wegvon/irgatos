@@ -330,7 +330,7 @@ export type Block = {
   providerTurnId?: string;
   /** User turn saved to the session but not submitted to the harness yet. */
   draft?: boolean;
-  /** This user turn activated Irgat app access for its thread. */
+  /** This user turn activated Irgatos app access for its thread. */
   irgat?: boolean;
   /** The Plan or Orchestrator mode this user turn was sent in. */
   intent?: Extract<TurnIntent, "plan" | "orchestrate">;

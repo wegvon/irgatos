@@ -119,7 +119,7 @@ describe("file picker command mode", () => {
     expect(
       dialog.querySelector('[role="listbox"][aria-label="Commands"]'),
     ).not.toBeNull();
-    expect(dialog.textContent).toContain("Reload Irgat");
+    expect(dialog.textContent).toContain("Reload Irgatos");
     expect(dialog.textContent).toContain(reloadActionHint());
     expect(rankProjectFiles).not.toHaveBeenCalled();
   });
@@ -138,7 +138,7 @@ describe("file picker command mode", () => {
     rankProjectFiles.mockClear();
     inputText(input, ">");
     expect(dialog.getAttribute("aria-label")).toBe("Command Palette");
-    expect(dialog.textContent).toContain("Reload Irgat");
+    expect(dialog.textContent).toContain("Reload Irgatos");
     expect(rankProjectFiles).not.toHaveBeenCalled();
 
     inputText(input, "App");
@@ -157,7 +157,7 @@ describe("file picker command mode", () => {
     inputText(input, "> ri");
     const reload = [
       ...dialog.querySelectorAll<HTMLButtonElement>("button"),
-    ].find((button) => button.textContent?.includes("Reload Irgat"))!;
+    ].find((button) => button.textContent?.includes("Reload Irgatos"))!;
     expect(reload).not.toBeUndefined();
     expect(reload.querySelectorAll(".text-accent")).toHaveLength(2);
 

@@ -116,7 +116,7 @@ it("says how to keep memory and update the soul only at the user's request", () 
     ],
   };
   const full = irgatContext(look, files(), { soul: true, memory: true });
-  expect(full).toContain("You are Skull, a Irgat in Irgat");
+  expect(full).toContain("You are Skull, a Irgat in Irgatos");
   expect(full).toContain("these 2 projects (irgat and site)");
   expect(full).toContain("- site: /code/site");
   expect(full).toContain("Be brief.");

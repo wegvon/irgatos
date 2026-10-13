@@ -130,7 +130,7 @@ export function assertSupportedOpenCodeVersion(
 ): OpenCodeApiGeneration {
   if (!version) {
     throw new Error(
-      `Unable to determine OpenCode version. Irgat requires v${MINIMUM_OPENCODE_VERSION} or newer.`,
+      `Unable to determine OpenCode version. Irgatos requires v${MINIMUM_OPENCODE_VERSION} or newer.`,
     );
   }
   const generation = openCodeApiGeneration(version);
@@ -147,7 +147,7 @@ export function assertSupportedOpenCodeVersion(
     );
   }
   throw new Error(
-    `OpenCode v${version} is not supported. Irgat supports OpenCode v1 and v2.`,
+    `OpenCode v${version} is not supported. Irgatos supports OpenCode v1 and v2.`,
   );
 }
 

@@ -30,8 +30,11 @@ const EVENT: &str = "inline-browser";
 /// persist apart from the app UI's default store (macOS 14+; older systems
 /// fall back to the default store).
 #[cfg(target_os = "macos")]
-// This namespace is part of Browser's persisted WebKit data. Keep it stable so
-// existing imported sign-ins remain available after the Irgat rebrand.
+// An opaque 16-byte namespace (WebKit reads it as a UUID), not a display name.
+// Keep it pinned: changing it would orphan the cookies and imported sign-ins
+// already stored under it, and the bundle-identifier folder import in
+// `legacy_data` carries that store to the new identifier only because the id
+// is unchanged.
 const DATA_STORE_ID: [u8; 16] = *b"monocode-browser";
 
 thread_local! {
@@ -153,7 +156,7 @@ fn allowed_url(value: &str, app_origin: Option<&Url>) -> Result<Url, String> {
     if url.host_str().is_some_and(is_app_host)
         || app_origin.is_some_and(|origin| origin.origin() == url.origin())
     {
-        return Err("Irgat's own pages can't be opened in the browser".into());
+        return Err("Irgatos's own pages can't be opened in the browser".into());
     }
     Ok(url)
 }
@@ -373,7 +376,7 @@ fn chrome_profiles_access_error() -> String {
                 .map(std::path::Path::to_path_buf)
         })
         .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "the Irgat app bundle".into());
+        .unwrap_or_else(|| "the Irgatos app bundle".into());
     format!(
         "No Chrome profiles are accessible. In System Settings > Privacy & Security > Full Disk Access, add and enable {app}. Then return here and choose Try again."
     )

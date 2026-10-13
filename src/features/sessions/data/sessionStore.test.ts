@@ -721,7 +721,7 @@ describe("sanitizeSessionForPersist", () => {
       {
         id: "i1",
         role: "system",
-        text: "Turn interrupted when Irgat quit.",
+        text: "Turn interrupted when Irgatos quit.",
         notice: "interrupt",
       },
       {

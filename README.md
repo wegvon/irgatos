@@ -1,18 +1,18 @@
 <p align="center">
-  <img src="public/irgat.png" alt="Irgat" width="88" />
+  <img src="public/irgat.png" alt="Irgatos" width="88" />
 </p>
 
-<h1 align="center">Irgat</h1>
+<h1 align="center">Irgatos</h1>
 
 <p align="center">
   <strong>A GUI for your coding agents.</strong>
 </p>
 
 <p align="center">
-  <img width="1680" height="1050" alt="Irgat with agent sessions open side by side" src="https://github.com/user-attachments/assets/2cd4a6ec-eb1e-4b45-8627-a76442ea3874" />
+  <img width="1680" height="1050" alt="Irgatos with agent sessions open side by side" src="https://github.com/user-attachments/assets/2cd4a6ec-eb1e-4b45-8627-a76442ea3874" />
 </p>
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, Pi, omp, fx, Hermes Agent, and Devin. If they’re installed and logged in, Irgat can run them. Tabs are sessions. The composer is the input. Irgat does not sell tokens.
+Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, Pi, omp, fx, Hermes Agent, and Devin. If they’re installed and logged in, Irgatos can run them. Tabs are sessions. The composer is the input. Irgatos does not sell tokens.
 
 ## Install
 
@@ -20,12 +20,12 @@ Install and sign in to at least one supported agent first. See [provider setup](
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [Irgat.dmg](https://github.com/wegvon/monocode/releases/Irgat.dmg) |
-| macOS, Intel | [Irgat_x64.dmg](https://github.com/wegvon/monocode/releases/Irgat_x64.dmg) |
+| macOS, Apple Silicon | [Irgatos.dmg](https://github.com/wegvon/monocode/releases/Irgatos.dmg) |
+| macOS, Intel | [Irgatos_x64.dmg](https://github.com/wegvon/monocode/releases/Irgatos_x64.dmg) |
 | Linux, x86_64 | [.deb, .rpm, or AppImage](https://github.com/wegvon/monocode/releases/latest) |
 | Windows, x86_64 | [Installer](https://github.com/wegvon/monocode/releases/latest) |
 
-On macOS, open the DMG and drag Irgat to Applications. On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
+On macOS, open the DMG and drag Irgatos to Applications. On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
 
 ## Get started
 
@@ -38,7 +38,7 @@ Open a project folder, choose an agent, and send a message. Each tab is a sessio
 
 Irgats are experimental agents that work across your projects. They keep a memory and can run scheduled tasks you set up with them.
 
-Irgat is still early. If something breaks, [report a bug](https://github.com/wegvon/monocode/issues).
+Irgatos is still early. If something breaks, [report a bug](https://github.com/wegvon/monocode/issues).
 
 ## Guides
 
@@ -60,9 +60,9 @@ Small, focused contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md
 
 ## Contributors
 
-Thanks to everyone who contributes to Irgat!
+Thanks to everyone who contributes to Irgatos!
 
-[![Irgat contributors](https://contrib.rocks/image?repo=wegvon/monocode)](https://github.com/wegvon/monocode/graphs/contributors)
+[![Irgatos contributors](https://contrib.rocks/image?repo=wegvon/monocode)](https://github.com/wegvon/monocode/graphs/contributors)
 
 Contributor image by [contrib.rocks](https://contrib.rocks).
 

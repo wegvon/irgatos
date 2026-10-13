@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-const USAGE: &str = r#"Irgat local control — supervise this orchestration run from the lead agent.
+const USAGE: &str = r#"Irgatos local control — supervise this orchestration run from the lead agent.
 
 Usage: {exe} control ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
@@ -56,7 +56,7 @@ for corrections -> review each task -> finish.
 
 When paused, list, get and wait still return the reason and recovery steps.
 Do not keep polling or retry mutations. Explain the pause and ask the user to
-click Resume in Irgat. Resume continues interrupted workers in their
+click Resume in Irgatos. Resume continues interrupted workers in their
 retained checkouts. A policy-blocked worker remains stopped until message,
 retry or cancel explicitly resolves it.
 
@@ -71,10 +71,10 @@ failed response reports the ID it used whenever the outcome is unknown — a
 timeout, say. Retry that exact call with --request-id ID; retrying a delegate
 under a fresh ID instead would queue a second worker.
 
-Tasks run inside the Irgat app, not in this process. Exiting this CLI, or a
+Tasks run inside the Irgatos app, not in this process. Exiting this CLI, or a
 failure here, never cancels a task that was already accepted.
 
-Irgat sets IRGAT_CONTROL_ENDPOINT and IRGAT_CONTROL_TOKEN for the lead
+Irgatos sets IRGAT_CONTROL_ENDPOINT and IRGAT_CONTROL_TOKEN for the lead
 agent's process only. They are already in your environment; never print them.
 "#;
 
@@ -116,7 +116,7 @@ const APP_ACTIONS: [&str; 32] = [
     "habits.remove",
     "chat.card",
 ];
-const APP_USAGE: &str = r#"Irgat app access — use in a thread enabled by /operator.
+const APP_USAGE: &str = r#"Irgatos app access — use in a thread enabled by /operator.
 
 Usage: {exe} app ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
@@ -139,7 +139,7 @@ Actions:
                   in the calling Irgat's chat. It waits until that Irgat is idle.
   sessions.draft {"sessionId":"...","prompt":"..."}
                   Save an unsent draft in an idle project session. Existing
-                  drafts are preserved; send or remove one in Irgat first.
+                  drafts are preserved; send or remove one in Irgatos first.
                   Reuse --request-id on retries.
   sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
                   "effort":"high","reveal":false,
@@ -181,7 +181,7 @@ Actions:
                   unchanged. Reuse --request-id on retries.
   sessions.archive {"sessionId":"..."}
                   Stop the session if running, save its conversation, and
-                  archive it. It can be restored from Irgat's archive.
+                  archive it. It can be restored from Irgatos's archive.
                   Open files, terminals and worktrees are kept.
                   Reuse --request-id on retries.
   sessions.delete {"sessionId":"..."}
@@ -261,7 +261,7 @@ Actions:
                   the user must start it before it is scheduled.
 
 The output is one JSON line: {"ok":true,"result":...} or {"ok":false,"error":"..."}.
-Use --input - to pass JSON on stdin. Never print Irgat credentials.
+Use --input - to pass JSON on stdin. Never print Irgatos credentials.
 Keep the same --request-id when retrying a call after an uncertain result.
 "#;
 
@@ -401,23 +401,23 @@ fn send(action: &str, input: &Value, request_id: &str, app_mode: bool) -> Result
     };
     let endpoint = std::env::var(endpoint_key).map_err(|_| {
         unsent(if app_mode {
-            "No Irgat app connection. Start this agent turn in Irgat."
+            "No Irgatos app connection. Start this agent turn in Irgatos."
         } else {
-            "No Irgat connection. Confirm the Orchestrator proposal in Irgat first."
+            "No Irgatos connection. Confirm the Orchestrator proposal in Irgatos first."
         })
     })?;
     let token = std::env::var(token_key)
-        .map_err(|_| unsent("No Irgat session credential. Start the agent from Irgat."))?;
+        .map_err(|_| unsent("No Irgatos session credential. Start the agent from Irgatos."))?;
     let address: SocketAddr = endpoint
         .parse()
-        .map_err(|_| unsent("Invalid Irgat endpoint"))?;
+        .map_err(|_| unsent("Invalid Irgatos endpoint"))?;
     if !address.ip().is_loopback() {
-        return Err(unsent("Irgat control only connects to localhost"));
+        return Err(unsent("Irgatos control only connects to localhost"));
     }
     let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(3))
         .map_err(|error| {
             unsent(format!(
-                "Cannot connect to Irgat at {address}: {error}. The app may have restarted, or this agent's sandbox may be blocking localhost."
+                "Cannot connect to Irgatos at {address}: {error}. The app may have restarted, or this agent's sandbox may be blocking localhost."
             ))
         })?;
     stream
@@ -437,11 +437,11 @@ fn send(action: &str, input: &Value, request_id: &str, app_mode: bool) -> Result
     BufReader::new(stream)
         .take(max_response + 1)
         .read_line(&mut line)
-        .map_err(|e| sent(format!("No reply from Irgat: {e}")))?;
+        .map_err(|e| sent(format!("No reply from Irgatos: {e}")))?;
     if line.len() > max_response as usize {
-        return Err(sent("Irgat response is too large"));
+        return Err(sent("Irgatos response is too large"));
     }
-    serde_json::from_str(&line).map_err(|_| sent("Irgat returned an invalid response"))
+    serde_json::from_str(&line).map_err(|_| sent("Irgatos returned an invalid response"))
 }
 
 fn read_capped(mut source: impl Read) -> Result<String, String> {
@@ -612,18 +612,18 @@ mod tests {
     #[test]
     fn quotes_the_control_path_only_when_the_shell_needs_it() {
         assert_eq!(
-            quoted("/Applications/Irgat.app/Contents/MacOS/irgat"),
-            "/Applications/Irgat.app/Contents/MacOS/irgat"
+            quoted("/Applications/Irgatos.app/Contents/MacOS/irgat"),
+            "/Applications/Irgatos.app/Contents/MacOS/irgat"
         );
-        assert_eq!(quoted("/Users/a b/Irgat"), "'/Users/a b/Irgat'");
+        assert_eq!(quoted("/Users/a b/Irgatos"), "'/Users/a b/Irgatos'");
         assert_eq!(quoted("C:\\Tools\\irgat.exe"), "C:\\Tools\\irgat.exe");
         assert_eq!(
-            quoted("C:\\Program Files\\Irgat\\irgat.exe"),
-            "\"C:\\Program Files\\Irgat\\irgat.exe\""
+            quoted("C:\\Program Files\\Irgatos\\irgat.exe"),
+            "\"C:\\Program Files\\Irgatos\\irgat.exe\""
         );
         // A backslash escapes in a POSIX shell, so bare would rewrite the path.
-        assert_eq!(quoted("/Users/a\\b/Irgat"), "'/Users/a\\b/Irgat'");
-        assert_eq!(quoted("/Users/it's/Irgat"), r"'/Users/it'\''s/Irgat'");
+        assert_eq!(quoted("/Users/a\\b/Irgatos"), "'/Users/a\\b/Irgatos'");
+        assert_eq!(quoted("/Users/it's/Irgatos"), r"'/Users/it'\''s/Irgatos'");
     }
     #[test]
     fn app_mode_exposes_only_app_actions_and_safe_request_ids() {

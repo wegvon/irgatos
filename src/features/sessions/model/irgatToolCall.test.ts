@@ -11,7 +11,7 @@ describe("Irgat CLI tool calls", () => {
     expect(
       irgatCodeToolCall(
         shell(
-          "/repo/target/debug/Irgat.app/Contents/MacOS/irgat app notes.list --json '{}'",
+          "/repo/target/debug/Irgatos.app/Contents/MacOS/irgat app notes.list --json '{}'",
         ),
       )?.label,
     ).toBe("List notes");
@@ -125,13 +125,13 @@ describe("Irgat CLI tool calls", () => {
     ).toBe("irgat app sessions.send --json '{\"prompt\":\"a; b\"}'");
   });
 
-  it("names a group only when all its tool calls use Irgat", () => {
+  it("names a group only when all its tool calls use Irgatos", () => {
     const calls = [
       shell("irgat app --help"),
       shell("irgat app notes.list"),
     ];
-    expect(irgatCodeWorkSummary(calls, true)).toBe("Using Irgat");
-    expect(irgatCodeWorkSummary(calls, false)).toBe("Used Irgat");
+    expect(irgatCodeWorkSummary(calls, true)).toBe("Using Irgatos");
+    expect(irgatCodeWorkSummary(calls, false)).toBe("Used Irgatos");
     expect(
       irgatCodeWorkSummary([...calls, shell("git status")], true),
     ).toBeUndefined();

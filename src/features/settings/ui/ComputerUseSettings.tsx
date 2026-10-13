@@ -90,7 +90,7 @@ function EnableModal({
           </li>
           <li>
             macOS asks you to grant Accessibility and Screen Recording to
-            CuaDriver, not to Irgat.
+            CuaDriver, not to Irgatos.
           </li>
         </ul>
         <label className="flex items-start gap-2 text-[13px] text-content">
@@ -344,7 +344,7 @@ export function ComputerUseSettings({
           <p className="text-[12px] text-content/65">
             Cua Driver is not installed. Install the standalone CuaDriver app:
             macOS ties Accessibility and Screen Recording to its own identity,
-            so the grants survive driver updates and Irgat rebuilds.
+            so the grants survive driver updates and Irgatos rebuilds.
           </p>
           <div className="flex items-center gap-2 rounded-md border border-content/10 bg-background-base px-2 py-1.5">
             <code className="min-w-0 flex-1 truncate font-mono text-[11px] text-content/80">
@@ -436,7 +436,7 @@ export function ComputerUseSettings({
                       : "Grant in CuaDriver…"}
                   </SecondaryButton>
                   <span className="text-[11px] text-content/45">
-                    Opens CuaDriver so the prompts name it, not Irgat.
+                    Opens CuaDriver so the prompts name it, not Irgatos.
                   </span>
                 </div>
               ) : null}

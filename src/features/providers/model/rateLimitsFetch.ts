@@ -415,7 +415,7 @@ async function runCodexAccountRequest<T>(
           {
             clientInfo: {
               name: "irgat",
-              title: "Irgat",
+              title: "Irgatos",
               version: "0.1.0",
             },
             capabilities: { experimentalApi: true },

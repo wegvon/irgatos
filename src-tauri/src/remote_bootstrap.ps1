@@ -7,7 +7,7 @@ $forceUpgrade = $env:IRGAT_HOST_FORCE_UPGRADE -eq '1'
 $hostPort = if ($env:IRGAT_HOST_PORT) { [int] $env:IRGAT_HOST_PORT } else { 3774 }
 @@ACL@@
 
-function Download-Irgat([string] $Url, [string] $Destination) {
+function Download-Irgatos([string] $Url, [string] $Destination) {
   Add-Type -AssemblyName System.Net.Http
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $handler = New-Object Net.Http.HttpClientHandler
@@ -55,7 +55,7 @@ try {
     switch ($arch.ToUpperInvariant()) {
       'AMD64' { $target = 'win32-x64' }
       'ARM64' { $target = 'win32-arm64' }
-      default { throw 'Irgat Host requires x64 or ARM64 Windows.' }
+      default { throw 'Irgatos Host requires x64 or ARM64 Windows.' }
     }
     $filename = "irgat-host-$target.zip"
     $runtimeRoot = Join-Path $base 'runtime'
@@ -65,16 +65,16 @@ try {
     $archive = Join-Path $temporary $filename
     $checksum = Join-Path $temporary 'checksum'
     try {
-      Download-Irgat "$release/$filename" $archive
-      Download-Irgat "$release/$filename.sha256" $checksum
+      Download-Irgatos "$release/$filename" $archive
+      Download-Irgatos "$release/$filename.sha256" $checksum
     } catch { throw "The Windows host package for version $version could not be downloaded. Install a release with host packages. $($_.Exception.Message)" }
     $expected = ((Get-Content -LiteralPath $checksum -Raw).Trim() -split '\s+')[0]
     if ($expected -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid host package checksum.' }
-    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Irgat Host package checksum mismatch.' }
+    if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Irgatos Host package checksum mismatch.' }
     $unpacked = Join-Path $temporary 'unpacked'
     Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
     $actual = & (Join-Path $unpacked 'node.exe') (Join-Path $unpacked 'host.mjs') --version
-    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'Irgat Host version mismatch.' }
+    if ($LASTEXITCODE -ne 0 -or $actual -ne $version) { throw 'Irgatos Host version mismatch.' }
     $runtime = Join-Path $runtimeRoot ("$version-$target-" + [Guid]::NewGuid().ToString('N'))
     Move-Item -LiteralPath $unpacked -Destination $runtime
     $bin = Join-Path $base 'bin'

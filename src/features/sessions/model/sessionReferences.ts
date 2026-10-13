@@ -701,7 +701,7 @@ function formatReferenceBody(input: {
     ...(input.running ? [`status="running"`] : []),
   ].join(" ");
   const notes = [
-    "Context copied from a different Irgat session at the user's request. It is not part of this conversation; use it as reference material.",
+    "Context copied from a different Irgatos session at the user's request. It is not part of this conversation; use it as reference material.",
     input.otherAgent
       ? `That session was run by ${agent}, a different agent than you. Its tool results and claims describe its own run.`
       : "",

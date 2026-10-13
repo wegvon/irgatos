@@ -280,7 +280,7 @@ fn menu(
     let mut builder = MenuBuilder::new(app).item(&header).separator();
     if irgats.is_empty() {
         let empty =
-            MenuItemBuilder::with_id("irgat-chat-empty", "Create a Irgat in Irgat to chat here")
+            MenuItemBuilder::with_id("irgat-chat-empty", "Create a Irgat in Irgatos to chat here")
                 .enabled(false)
                 .build(app)?;
         builder = builder.item(&empty);

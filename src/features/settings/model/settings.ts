@@ -57,7 +57,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "app",
     label: "General",
     description:
-      "The build you are running, how Irgat reaches you, and the panels it shows.",
+      "The build you are running, how Irgatos reaches you, and the panels it shows.",
     keywords: "version update sounds notifications notes rail",
   },
   {
@@ -98,7 +98,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Voice",
     description:
-      "Dictate into the composer, talk to agents hands-free, and how Irgat turns speech into text.",
+      "Dictate into the composer, talk to agents hands-free, and how Irgatos turns speech into text.",
     keywords:
       "voice dictation dictate speech microphone mic transcription whisper speak talk",
   },
@@ -107,7 +107,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Providers",
     description:
-      "Provider accounts, agent CLIs Irgat can drive, and the model new sessions start with.",
+      "Provider accounts, agent CLIs Irgatos can drive, and the model new sessions start with.",
     keywords:
       "account sign in login model harness claude codex gemini cli default hooks",
   },

@@ -6,7 +6,7 @@ export const OPERATOR_COMMAND: BuiltinSkill = {
   name: "operator",
   invocation: "operator",
   description:
-    "Give this thread access to Irgat sessions, folders, and notes.",
+    "Give this thread access to Irgatos sessions, folders, and notes.",
   scope: "builtin",
   source: "irgat",
 };
@@ -41,7 +41,7 @@ export function operatorUserPrompt(block: Block): string {
   if (!legacy) return block.text;
   return (
     block.text.slice(legacy[0].length).trim() ||
-    "Explain what you can do in Irgat with the app CLI."
+    "Explain what you can do in Irgatos with the app CLI."
   );
 }
 

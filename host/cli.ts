@@ -76,7 +76,7 @@ async function main() {
     return;
   }
   if (command === "help" || command === "--help") {
-    console.log(`Irgat Host (experimental; Node 24+; Windows/Linux/macOS)
+    console.log(`Irgatos Host (experimental; Node 24+; Windows/Linux/macOS)
   serve                 Run in foreground on 127.0.0.1
   start                 Run detached from this terminal
   service install       Install/start the persistent user service
@@ -300,7 +300,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       void stop();
     });
     console.log(
-      `Irgat Host ${store.environmentId} listening on 127.0.0.1:${port}`,
+      `Irgatos Host ${store.environmentId} listening on 127.0.0.1:${port}`,
     );
     console.log(
       `Providers: ${available.join(", ") || "none found; install and authenticate a supported provider on this host"}`,

@@ -210,8 +210,8 @@ export function FloatingIrgatChat({ onShown }: { onShown: () => void }) {
           ) : null}
           <button
             type="button"
-            aria-label="Open in Irgat"
-            title="Open in Irgat"
+            aria-label="Open in Irgatos"
+            title="Open in Irgatos"
             disabled={loading}
             className={BUTTON}
             onClick={() => void action({ kind: "reveal" })}
@@ -479,7 +479,7 @@ function FloatingConversation({
             className="text-accent hover:underline"
             onClick={() => void action({ kind: "reveal" })}
           >
-            Change model in Irgat
+            Change model in Irgatos
           </button>
         </div>
       ) : null}
@@ -597,8 +597,8 @@ function ArtifactSheet({
           ) : null}
           <button
             type="button"
-            aria-label="Open in Irgat"
-            title="Open in Irgat"
+            aria-label="Open in Irgatos"
+            title="Open in Irgatos"
             className={BUTTON}
             onClick={() => void action({ kind: "openArtifact", id })}
           >

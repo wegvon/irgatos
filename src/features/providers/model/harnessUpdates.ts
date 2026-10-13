@@ -7,7 +7,7 @@ import {
 } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
 
 /**
- * Harnesses with an npm version feed and a self-updater Irgat can run.
+ * Harnesses with an npm version feed and a self-updater Irgatos can run.
  */
 export const UPDATABLE_HARNESSES: ReadonlySet<HarnessId> = new Set([
   "claude",

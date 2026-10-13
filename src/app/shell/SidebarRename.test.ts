@@ -642,13 +642,13 @@ describe("sidebar session IDs", () => {
     const irgatMenu = openCopyIdMenu("session-2");
     const copyIrgatId = Array.from(
       irgatMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "Irgat session ID")!;
+    ).find((item) => item.textContent === "Irgatos session ID")!;
     expect(copyIrgatId.disabled).toBe(false);
     await act(async () => copyIrgatId.click());
     expect(copyText).toHaveBeenNthCalledWith(2, "session-2");
   });
 
-  it("keeps the Irgat ID available before the harness supplies an ID", async () => {
+  it("keeps the Irgatos ID available before the harness supplies an ID", async () => {
     act(() => render());
     const copyMenu = openCopyIdMenu("session-1");
     const copyHarnessId = Array.from(
@@ -656,7 +656,7 @@ describe("sidebar session IDs", () => {
     ).find((item) => item.textContent === "Harness session ID")!;
     const copyIrgatId = Array.from(
       copyMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "Irgat session ID")!;
+    ).find((item) => item.textContent === "Irgatos session ID")!;
     expect(copyHarnessId.disabled).toBe(true);
     expect(copyIrgatId.disabled).toBe(false);
     await act(async () => copyIrgatId.click());

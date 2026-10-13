@@ -80,7 +80,7 @@ pub(super) fn privacy_usage_descriptions() -> Result<(), String> {
             .is_some_and(|value| !value.trim().is_empty());
         if !present {
             return Err(format!(
-                "Voice input is unavailable because this app bundle is missing {key}. Quit Irgat, rebuild the app, and try again."
+                "Voice input is unavailable because this app bundle is missing {key}. Quit Irgatos, rebuild the app, and try again."
             ));
         }
     }
@@ -199,10 +199,10 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
 
     match microphone_permission() {
         Permission::Granted => {}
-        Permission::Prompt => return Err("Irgat needs microphone access first".into()),
+        Permission::Prompt => return Err("Irgatos needs microphone access first".into()),
         _ => {
             return Err(
-                "Microphone access is off for Irgat. Turn it on in System Settings › Privacy & Security › Microphone".into(),
+                "Microphone access is off for Irgatos. Turn it on in System Settings › Privacy & Security › Microphone".into(),
             )
         }
     }
@@ -299,9 +299,9 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
 fn recognize(options: &StartOptions, sink: Sink) -> Result<Recognition, String> {
     match speech_permission() {
         Permission::Granted => {}
-        Permission::Prompt => return Err("Irgat needs speech recognition access first".into()),
+        Permission::Prompt => return Err("Irgatos needs speech recognition access first".into()),
         _ => return Err(
-            "Speech recognition is off for Irgat. Turn it on in System Settings › Privacy & Security › Speech Recognition".into(),
+            "Speech recognition is off for Irgatos. Turn it on in System Settings › Privacy & Security › Speech Recognition".into(),
         ),
     }
     let recognizer = recognizer(&options.locale).ok_or(

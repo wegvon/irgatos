@@ -85,7 +85,7 @@ const GIT_POLL_MS = 2000;
 
 function confirmNative(message: string, okLabel?: string): Promise<boolean> {
   return ask(message, {
-    title: "Irgat",
+    title: "Irgatos",
     kind: "warning",
     ...(okLabel ? { okLabel } : {}),
   });
@@ -604,7 +604,7 @@ function ChangedFiles({
   const confirmAmend = async () => {
     if (!amend || !index?.headPushed) return true;
     return confirmNative(
-      "Amend a commit that is already pushed? Irgat cannot push the result. You will need a force push from the terminal.",
+      "Amend a commit that is already pushed? Irgatos cannot push the result. You will need a force push from the terminal.",
       "Amend",
     );
   };

@@ -356,7 +356,7 @@ export function formatExtraUsageBalance(dollars: number): string {
   return `$${dollars.toFixed(2)}`;
 }
 
-/** Devin reports remaining quota; Irgat meters show the share used. */
+/** Devin reports remaining quota; Irgatos meters show the share used. */
 export function parseDevinUsage(usage: DevinUsage): ProviderRateLimits {
   const window = (
     remaining: number | null | undefined,

@@ -49,8 +49,8 @@ export async function packageManagedInstall(): Promise<PackageManagedInstall | n
 
 export function packageManagerHint(kind: PackageManagedInstall): string {
   return kind === "deb"
-    ? `Download one .deb from ${RELEASES_URL} and run: sudo apt install ./Irgat_X.Y.Z_amd64.deb\nReplace the file name with the one you downloaded.`
-    : `Download one .rpm from ${RELEASES_URL} and run: sudo dnf install ./Irgat-X.Y.Z-1.x86_64.rpm\nReplace the file name with the one you downloaded.`;
+    ? `Download one .deb from ${RELEASES_URL} and run: sudo apt install ./Irgatos_X.Y.Z_amd64.deb\nReplace the file name with the one you downloaded.`
+    : `Download one .rpm from ${RELEASES_URL} and run: sudo dnf install ./Irgatos-X.Y.Z-1.x86_64.rpm\nReplace the file name with the one you downloaded.`;
 }
 
 function isTargetMissingError(error: unknown): boolean {
@@ -102,7 +102,7 @@ export async function runUpdateFlow(
     onProgress?.(idle);
     if (manual) {
       await message(packageManagerHint(managed), {
-        title: "Irgat",
+        title: "Irgatos",
       });
     }
     return idle;
@@ -115,7 +115,7 @@ export async function runUpdateFlow(
       const current: UpdaterSnapshot = { phase: "current", currentVersion };
       onProgress?.(current);
       if (manual) {
-        await message("You're on the latest version.", { title: "Irgat" });
+        await message("You're on the latest version.", { title: "Irgatos" });
       }
       return current;
     }
@@ -134,7 +134,7 @@ export async function runUpdateFlow(
     const notes = update.body?.trim();
     const detail = notes ? `\n\n${notes}` : "";
     const yes = await ask(
-      `Irgat ${update.version} is available (you have ${currentVersion}).${detail}\n\nInstall now?`,
+      `Irgatos ${update.version} is available (you have ${currentVersion}).${detail}\n\nInstall now?`,
       { title: "Update available", kind: "info" },
     );
     if (!yes) return available;
@@ -148,7 +148,7 @@ export async function runUpdateFlow(
       if (manual) {
         await message(
           `Automatic updates aren't configured for this build.\n\nDownload releases at ${RELEASES_URL}`,
-          { title: "Irgat" },
+          { title: "Irgatos" },
         );
       }
       return idle;
@@ -162,7 +162,7 @@ export async function runUpdateFlow(
       if (manual) {
         await message(
           `Automatic updates aren't available for this install yet.\n\nDownload releases at ${RELEASES_URL}`,
-          { title: "Irgat" },
+          { title: "Irgatos" },
         );
       }
       return idle;
@@ -173,7 +173,7 @@ export async function runUpdateFlow(
     onProgress?.(failed);
     if (manual) {
       await message(`Couldn't check for updates.\n\n${error}`, {
-        title: "Irgat",
+        title: "Irgatos",
       });
     }
     return failed;
@@ -240,7 +240,7 @@ export async function installPendingUpdate(
       error,
     };
     onProgress?.(failed);
-    await message(`Couldn't install the update.\n\n${error}`, { title: "Irgat" });
+    await message(`Couldn't install the update.\n\n${error}`, { title: "Irgatos" });
     return failed;
   }
 }

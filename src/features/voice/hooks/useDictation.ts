@@ -90,13 +90,13 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
     }
     if (status.microphone !== "granted") {
       return fail({
-        message: "Microphone access is off for Irgat.",
+        message: "Microphone access is off for Irgatos.",
         pane: "microphone",
       });
     }
     if (apple && status.speech !== "granted") {
       return fail({
-        message: "Speech recognition is off for Irgat.",
+        message: "Speech recognition is off for Irgatos.",
         pane: "speech",
       });
     }

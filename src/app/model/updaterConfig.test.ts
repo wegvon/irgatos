@@ -51,7 +51,7 @@ describe("updater", () => {
     });
     expect(message).toHaveBeenCalledWith(
       expect.stringContaining("https://github.com/wegvon/monocode/releases/latest"),
-      { title: "Irgat" },
+      { title: "Irgatos" },
     );
   });
 
@@ -71,7 +71,7 @@ describe("updater", () => {
     expect(hint).toContain("https://github.com/wegvon/monocode/releases/latest");
     expect(hint).not.toMatch(/[*<>]/);
     expect(hint).toContain("Replace the file name");
-    expect(hint).toContain(kind === "deb" ? "sudo apt install ./Irgat_X.Y.Z_amd64.deb" : "sudo dnf install ./Irgat-X.Y.Z-1.x86_64.rpm");
+    expect(hint).toContain(kind === "deb" ? "sudo apt install ./Irgatos_X.Y.Z_amd64.deb" : "sudo dnf install ./Irgatos-X.Y.Z-1.x86_64.rpm");
   });
 
   it.each([
@@ -88,7 +88,7 @@ describe("updater", () => {
     });
     expect(check).not.toHaveBeenCalled();
     expect(message).toHaveBeenCalledWith(expect.stringContaining(hint), {
-      title: "Irgat",
+      title: "Irgatos",
     });
   });
 
@@ -124,7 +124,7 @@ describe("updater", () => {
     });
     expect(message).toHaveBeenCalledWith(
       expect.stringContaining("aren't available for this install yet"),
-      { title: "Irgat" },
+      { title: "Irgatos" },
     );
   });
 });

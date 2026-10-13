@@ -80,7 +80,7 @@ it("unregisters only this user's Windows task", async () => {
     platform: "win32",
     powershell: async (script) => scripts.push(script),
   });
-  expect(scripts[0]).toContain('"Irgat Host-$sid"');
+  expect(scripts[0]).toContain('"Irgatos Host-$sid"');
   expect(scripts[0]).toContain("Unregister-ScheduledTask");
   expect(scripts[0]).not.toMatch(/Remove-Item|\.irgat-host/);
 });

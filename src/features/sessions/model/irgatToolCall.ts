@@ -116,7 +116,7 @@ export function irgatCodeToolCall(block: Block): IrgatToolCall | undefined {
   return { action, label: ACTION_LABELS[action], command };
 }
 
-/** A group of only Irgat calls can be named for the app, not the shell. */
+/** A group of only Irgatos calls can be named for the app, not the shell. */
 export function irgatCodeWorkSummary(
   steps: Block[],
   live: boolean,
@@ -130,5 +130,5 @@ export function irgatCodeWorkSummary(
   if (calls.length === 0 || calls.some((block) => !irgatCodeToolCall(block))) {
     return undefined;
   }
-  return live ? "Using Irgat" : "Used Irgat";
+  return live ? "Using Irgatos" : "Used Irgatos";
 }

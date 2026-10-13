@@ -23,7 +23,7 @@ function setup() {
     }),
     load: vi.fn(async (id: string) => saved.get(id) ?? null),
     enable: vi.fn(
-      async () => "/Applications/Irgat.app/Contents/MacOS/irgat",
+      async () => "/Applications/Irgatos.app/Contents/MacOS/irgat",
     ),
     disable: vi.fn(async () => {}),
     scopes: vi.fn(async (cwd: string, files: string[]) =>
@@ -1220,19 +1220,19 @@ describe("local orchestration", () => {
   });
   it("quotes the control path only when the shell needs it", () => {
     expect(
-      shellPath("/Applications/Irgat.app/Contents/MacOS/irgat"),
-    ).toBe("/Applications/Irgat.app/Contents/MacOS/irgat");
-    expect(shellPath("/Users/a b/Irgat")).toBe("'/Users/a b/Irgat'");
-    expect(shellPath("C:/Program Files/Irgat/irgat.exe")).toBe(
-      '"C:/Program Files/Irgat/irgat.exe"',
+      shellPath("/Applications/Irgatos.app/Contents/MacOS/irgat"),
+    ).toBe("/Applications/Irgatos.app/Contents/MacOS/irgat");
+    expect(shellPath("/Users/a b/Irgatos")).toBe("'/Users/a b/Irgatos'");
+    expect(shellPath("C:/Program Files/Irgatos/irgat.exe")).toBe(
+      '"C:/Program Files/Irgatos/irgat.exe"',
     );
     expect(shellPath("C:\\Tools\\irgat.exe")).toBe(
       "C:\\Tools\\irgat.exe",
     );
     // A backslash escapes in a POSIX shell, so bare would rewrite the path.
-    expect(shellPath("/Users/a\\b/Irgat")).toBe("'/Users/a\\b/Irgat'");
-    expect(shellPath("/Users/it's/Irgat")).toBe(
-      "'/Users/it'\\''s/Irgat'",
+    expect(shellPath("/Users/a\\b/Irgatos")).toBe("'/Users/a\\b/Irgatos'");
+    expect(shellPath("/Users/it's/Irgatos")).toBe(
+      "'/Users/it'\\''s/Irgatos'",
     );
   });
   it("treats an action named after an Object member as unknown", async () => {
