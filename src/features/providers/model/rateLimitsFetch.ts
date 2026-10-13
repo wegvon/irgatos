@@ -296,7 +296,7 @@ export async function fetchCodexRateLimits(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (
-      /not signed in|chatgpt authentication required|not authenticated/i.test(
+      /not signed in|not logged in|authentication required|not authenticated/i.test(
         message,
       )
     ) {

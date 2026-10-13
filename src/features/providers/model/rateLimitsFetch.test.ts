@@ -5,6 +5,7 @@ const child = vi.hoisted(() => ({
   maxLive: 0,
   spawned: [] as string[],
   installed: new Set(["claude", "codex", "cursor", "opencode"]),
+  codexError: null as string | null,
 }));
 
 function resolver(name: string) {
@@ -56,6 +57,7 @@ vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
     }
     async request(method: string) {
       if (method !== "account/rateLimits/read") return {};
+      if (child.codexError) throw new Error(child.codexError);
       await new Promise((resolve) => setTimeout(resolve, 5));
       return {
         rateLimits: {
@@ -173,6 +175,18 @@ describe("unavailable reasons", () => {
     expect((await fetchClaudeRateLimits()).reason).toBe("not-signed-in");
     child.installed.delete("claude");
     expect((await fetchClaudeRateLimits()).reason).toBe("not-installed");
+  });
+
+  it("reads a signed-out Codex app-server as not signed in", async () => {
+    child.codexError =
+      "codex account authentication required to read rate limits";
+    try {
+      const limits = await fetchCodexRateLimits("default");
+      expect(limits.status).toBe("unavailable");
+      expect(limits.reason).toBe("not-signed-in");
+    } finally {
+      child.codexError = null;
+    }
   });
 
   it("treats OpenCode without a Go subscription as unsupported", async () => {
