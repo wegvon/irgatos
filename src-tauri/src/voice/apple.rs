@@ -109,6 +109,13 @@ pub(super) fn speech_permission() -> Permission {
 /// The handler runs on an arbitrary queue once the user answers.
 pub(super) fn request_microphone() -> mpsc::Receiver<()> {
     let (tx, rx) = mpsc::channel();
+    // Keep this guard at the TCC call site as well as the command boundary:
+    // future callers cannot accidentally turn a missing plist key into an
+    // unrecoverable macOS abort.
+    if privacy_usage_descriptions().is_err() {
+        let _ = tx.send(());
+        return rx;
+    }
     let Some(audio) = (unsafe { AVMediaTypeAudio }) else {
         let _ = tx.send(());
         return rx;
@@ -122,6 +129,10 @@ pub(super) fn request_microphone() -> mpsc::Receiver<()> {
 
 pub(super) fn request_speech() -> mpsc::Receiver<()> {
     let (tx, rx) = mpsc::channel();
+    if privacy_usage_descriptions().is_err() {
+        let _ = tx.send(());
+        return rx;
+    }
     let handler = RcBlock::new(move |_status: SFSpeechRecognizerAuthorizationStatus| {
         let _ = tx.send(());
     });
@@ -164,6 +175,7 @@ fn recognizer(locale: &str) -> Option<Retained<SFSpeechRecognizer>> {
 }
 
 pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
+    privacy_usage_descriptions()?;
     if let Some(previous) = ACTIVE.with(|slot| slot.borrow_mut().take()) {
         abort(previous);
     }
