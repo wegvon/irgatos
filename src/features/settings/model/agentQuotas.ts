@@ -178,6 +178,8 @@ export function quotaFacts(limits: ProviderRateLimits): string[] {
       facts.push(
         `On-demand ${formatDollars(cursor.onDemandUsed)} of ${formatDollars(cursor.onDemandLimit)}`,
       );
+    } else if (cursor.onDemandUsed != null && cursor.onDemandUsed > 0) {
+      facts.push(`On-demand ${formatDollars(cursor.onDemandUsed)} used`);
     }
   }
   if (limits.extraUsageBalance != null) {

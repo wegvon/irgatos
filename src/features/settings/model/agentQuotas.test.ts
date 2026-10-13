@@ -134,6 +134,15 @@ describe("quotaMeters", () => {
     ]);
   });
 
+  it("shows on-demand spend without a limit only when there is some", () => {
+    expect(
+      quotaFacts(parseCursorUsage({ planPercentUsed: 5, onDemandUsedCents: 0 })),
+    ).toEqual([]);
+    expect(
+      quotaFacts(parseCursorUsage({ planPercentUsed: 5, onDemandUsedCents: 731 })),
+    ).toEqual(["On-demand $7.31 used"]);
+  });
+
   it("omits Cursor figures it did not receive", () => {
     const limits = parseCursorUsage({ planPercentUsed: 5 });
     expect(quotaMeters(limits)[0]?.resetsAt).toBeNull();
@@ -166,9 +175,13 @@ describe("quotaStateMessage", () => {
       quotaStateMessage(
         "cursor",
         "unsupported",
-        unavailableRateLimits("cursor", "Update it with `agent update`.", "unsupported"),
+        unavailableRateLimits(
+          "cursor",
+          "Cursor reports plan usage only for `agent login` sign-ins, not API keys.",
+          "unsupported",
+        ),
       ),
-    ).toMatch(/agent update/);
+    ).toMatch(/not API keys/);
     expect(
       quotaStateMessage("claude", "ok", parseClaudeOAuthUsage(claudeBody)),
     ).toBeNull();
