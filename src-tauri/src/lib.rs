@@ -4,6 +4,7 @@ mod account_identity;
 mod artifacts;
 mod automations;
 mod azure_devops;
+mod browser;
 mod chat_background;
 mod checkpoint;
 mod codex_mono_store;
@@ -411,6 +412,10 @@ pub fn run() {
             jira::jira_issue_thread,
             jira::jira_issue_comment,
             link_preview::fetch_link_preview,
+            browser::browser_open,
+            browser::browser_set_bounds,
+            browser::browser_action,
+            browser::browser_close,
             fs::git_branches,
             fs::git_checkout,
             fs::git_create_branch,
@@ -647,6 +652,7 @@ pub fn run() {
             ..
         } => {
             window::forget_quit_window(handle, &label);
+            browser::window_closed(&label);
             let other_window = window::workspace_windows(handle)
                 .iter()
                 .any(|window| window.label() != label);
