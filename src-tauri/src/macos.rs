@@ -811,7 +811,9 @@ fn write_dev_bundle_icons(app: &Path, app_name: &str) -> Result<(), String> {
 
 /// Must match `CFBundleIdentifier` in the generated dev bundle plist and tauri.conf.json.
 #[cfg(debug_assertions)]
-const DEV_BUNDLE_DEFAULT_NAME: &str = "Irgat";
+/// Compiled from Tauri's `productName` by build.rs. Do not replace this with
+/// the current brand: the generated dev bundle must follow future renames.
+const DEV_BUNDLE_DEFAULT_NAME: &str = env!("TAURI_PRODUCT_NAME");
 #[cfg(debug_assertions)]
 const DEV_BUNDLE_NAME_ENV: &str = "IRGAT_DEV_APP_NAME";
 #[cfg(debug_assertions)]
@@ -900,9 +902,9 @@ fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Irgat listens while you dictate a message or talk to an agent in voice mode.</string>
+	<string>{app_name} listens while you dictate a message or talk to an agent in voice mode.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Irgat turns what you say into text for the message composer, on this Mac when the language is installed.</string>
+	<string>{app_name} turns what you say into text for the message composer, on this Mac when the language is installed.</string>
 </dict>
 </plist>
 "#
@@ -984,6 +986,13 @@ mod tests {
         let plist = String::from_utf8(dev_bundle_plist("Irgat Dev")).unwrap();
         assert!(plist.contains("<string>Irgat Dev</string>"));
         assert!(!plist.contains("<string>Irgat</string>"));
+        assert!(plist.contains("Irgat Dev listens while you dictate"));
+        assert!(plist.contains("Irgat Dev turns what you say into text"));
+    }
+
+    #[test]
+    fn dev_bundle_default_name_is_compiled_from_tauri_product_name() {
+        assert_eq!(DEV_BUNDLE_DEFAULT_NAME, env!("TAURI_PRODUCT_NAME"));
     }
 
     /// The Speech framework terminates an app that asks without these keys,
