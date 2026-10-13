@@ -60,8 +60,6 @@ it("forwards Cursor text deltas without duplicating snapshots", async () => {
 
   await waitFor(() => !!outbound("initialize"), "initialize");
   reply("initialize", {});
-  await waitFor(() => !!outbound("authenticate"), "authenticate");
-  reply("authenticate", {});
   await waitFor(() => !!outbound("session/new"), "session/new");
   reply("session/new", {
     sessionId: "cursor_text",
