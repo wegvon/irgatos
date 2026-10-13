@@ -660,6 +660,8 @@ import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock
 import { lazySurface } from "../shared/ui/lazySurface";
 import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
+import { publishLiveSessions } from "../features/sessions/data/sessionReferenceDirectory";
+import { SessionReferenceHost } from "../features/sessions/ui/SessionReferenceHost";
 import type { SettingsAnchor } from "../features/settings/ui/SettingsView";
 import {
   OPEN_CONNECTIONS_EVENT,
@@ -4949,6 +4951,16 @@ function Workspace({
     },
     [ensureOpenSession, onSelectHistorySession],
   );
+
+  const openReferencedSession = useCallback(
+    async (sessionId: string, blockId?: string) => {
+      if (blockId) requestTranscriptJump(sessionId, blockId);
+      await openReminderSession(sessionId);
+    },
+    [openReminderSession],
+  );
+
+  useEffect(() => publishLiveSessions(sessions), [sessions]);
 
   const ensureReminderSessionsSaved = useCallback(
     async (ids: readonly string[]) => {
@@ -13249,6 +13261,7 @@ function Workspace({
                   onOpenProject={onSelectProject}
                 />
               ) : null}
+              <SessionReferenceHost onOpenSession={openReferencedSession} />
               <div className="hidden" aria-hidden>
                 {sessions
                   .filter((session) => session.inboxAsk)

@@ -44,6 +44,7 @@ import { PlanPreview } from "./PlanPreview";
 import { OrchestrationPreview } from "../../orchestration/ui/OrchestrationPreview";
 import { TaskListPreview } from "./TaskListPreview";
 import { HandoffButton, SecondOpinionButton } from "./SecondOpinionButton";
+import { SendToSessionButton } from "./SendToSessionButton";
 import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { ArtifactCard } from "../../artifacts/ui/ArtifactCard";
@@ -1617,6 +1618,12 @@ function AgentTranscriptComponent({
                       : turn,
                   )}
                   onSaveNote={onSaveNote}
+                  sendBlockId={
+                    turn.find(
+                      (block) =>
+                        block.role === "assistant" && block.text.trim(),
+                    )?.id
+                  }
                   onShowWork={
                     inlineWork && onShowWork
                       ? () => onShowWork(turnId, turn)
@@ -1815,6 +1822,7 @@ function TurnDuration({
   onSecondOpinion,
   onHandoff,
   revealOnHover = false,
+  sendBlockId,
 }: {
   elapsedMs: number | null;
   label?: string;
@@ -1835,6 +1843,8 @@ function TurnDuration({
   onHandoff?: (target: ModelTarget) => void;
   /** Sit in the gap under the turn and show on hover, as a sent message's do. */
   revealOnHover?: boolean;
+  /** A block of this reply, for sending it to another session. */
+  sendBlockId?: string;
 }) {
   const label =
     completionLabel ?? formatWorkingDuration(elapsedMs, modelName, true);
@@ -1857,6 +1867,7 @@ function TurnDuration({
             {onSaveNote ? (
               <SaveNoteButton text={output} onSave={onSaveNote} />
             ) : null}
+            <SendToSessionButton blockId={sendBlockId} />
           </>
         ) : (
           <Check className="size-3.5" strokeWidth={1.75} />
@@ -2780,6 +2791,9 @@ function UserMessageBlock({
             ) : null}
             {text && onSaveNote ? (
               <SaveNoteButton text={text} onSave={onSaveNote} />
+            ) : null}
+            {text && !block.draft ? (
+              <SendToSessionButton blockId={block.id} />
             ) : null}
             {messageAt != null ? (
               <time
