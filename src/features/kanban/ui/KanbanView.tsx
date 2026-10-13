@@ -318,7 +318,7 @@ function KanbanBoardContent({
     [onOpenSession, pushNotice],
   );
 
-  const announcementTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const announcementTimer = useRef<number | null>(null);
   useEffect(
     () => () => {
       if (announcementTimer.current !== null) {
