@@ -8442,7 +8442,7 @@ mod tests {
             split_github_repo(" wegvon/monocode ").unwrap(),
             ("wegvon".into(), "monocode".into())
         );
-        assert!(split_github_repo("irgat").is_err());
+        assert!(split_github_repo("monocode").is_err());
         assert!(split_github_repo("acme/web extra").is_err());
     }
 
