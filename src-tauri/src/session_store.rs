@@ -304,6 +304,32 @@ pub fn session_list_linked(store: State<'_, SessionStore>) -> Result<Vec<Session
     list_linked(&conn).map_err(|e| e.to_string())
 }
 
+const MAX_RECENT_SESSIONS: usize = 500;
+
+/// Chats across every project, newest first, for cross-session references.
+/// With `id_prefix`, archived chats are included so an existing reference to
+/// one still resolves.
+#[tauri::command(async)]
+pub fn session_list_recent(
+    store: State<'_, SessionStore>,
+    limit: Option<usize>,
+    id_prefix: Option<String>,
+) -> Result<Vec<SessionSummary>, String> {
+    let prefix = id_prefix.filter(|prefix| !prefix.is_empty());
+    if let Some(prefix) = &prefix {
+        if prefix.len() > 64
+            || !prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return Err("Invalid session id prefix".into());
+        }
+    }
+    let limit = limit.unwrap_or(200).clamp(1, MAX_RECENT_SESSIONS);
+    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+    list_recent(&conn, limit, prefix.as_deref()).map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn session_get(
     store: State<'_, SessionStore>,
@@ -1727,6 +1753,55 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
     rows.collect()
 }
 
+fn list_recent(
+    conn: &Connection,
+    limit: usize,
+    id_prefix: Option<&str>,
+) -> rusqlite::Result<Vec<SessionSummary>> {
+    let mut statement = conn.prepare(
+        "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
+                created_at, updated_at, branch, archived, pinned,
+                linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
+                automation_id, sidebar_hidden
+         FROM sessions
+         WHERE has_user_message = 1
+           AND (?1 IS NULL OR substr(lower(id), 1, length(?1)) = lower(?1))
+           AND (?1 IS NOT NULL OR (archived = 0 AND sidebar_hidden = 0))
+           AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
+           AND id NOT IN (SELECT session_id FROM orchestration_workers)
+         ORDER BY updated_at DESC, id ASC
+         LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![id_prefix, limit as i64], |row| {
+        Ok(SessionSummary {
+            sidebar_hidden: row.get::<_, i64>(17)? != 0,
+            id: row.get(0)?,
+            orchestration_lead_id: None,
+            orchestration: None,
+            cwd: row.get(1)?,
+            harness: row.get(2)?,
+            model: row.get(3)?,
+            runtime_mode: row.get(4)?,
+            title: row.get(5)?,
+            provider_session_id: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            branch: nonempty(row.get(9)?),
+            worktree_cwd: row.get(13)?,
+            worktree_removed: row.get::<_, i64>(14)? != 0,
+            repo: None,
+            additions: 0,
+            deletions: 0,
+            archived: row.get::<_, i64>(10)? != 0,
+            pinned: row.get::<_, i64>(11)? != 0,
+            draft: row.get::<_, i64>(15)? != 0,
+            linked_work_item: optional_json(row.get(12)?),
+            automation_id: nonempty(row.get(16)?),
+        })
+    })?;
+    rows.collect()
+}
+
 /// Mirrors the sidebar's notion of a listable session: a transcript that the
 /// user has actually said something in.
 fn has_user_block(blocks: &Value) -> bool {
@@ -2604,6 +2679,43 @@ mod tests {
         assert!(rows.iter().any(|row| row.id == "s1"));
         assert!(rows.iter().any(|row| row.id == "s2"));
         assert!(rows.iter().all(|row| row.linked_work_item.is_some()));
+    }
+
+    #[test]
+    fn list_recent_spans_projects_newest_first() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        upsert_session(&conn, &sample("a1b2c3d4-old", "/tmp/a", "Old")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        upsert_session(&conn, &sample("e5f6a7b8-new", "/tmp/b", "New")).unwrap();
+        let mut empty = sample("c0ffee00-empty", "/tmp/a", "Empty");
+        empty.blocks = json!([]);
+        upsert_session(&conn, &empty).unwrap();
+        upsert_session(&conn, &sample("dead0000-archived", "/tmp/a", "Archived")).unwrap();
+        set_archived(&conn, "dead0000-archived", true).unwrap();
+
+        let rows = list_recent(&conn, 10, None).unwrap();
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, vec!["e5f6a7b8-new", "a1b2c3d4-old"]);
+
+        let limited = list_recent(&conn, 1, None).unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].id, "e5f6a7b8-new");
+    }
+
+    #[test]
+    fn list_recent_by_prefix_still_finds_archived_chats() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        upsert_session(&conn, &sample("dead0000-archived", "/tmp/a", "Archived")).unwrap();
+        upsert_session(&conn, &sample("beef0000-other", "/tmp/a", "Other")).unwrap();
+        set_archived(&conn, "dead0000-archived", true).unwrap();
+
+        let rows = list_recent(&conn, 10, Some("DEAD0000")).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "dead0000-archived");
+        assert!(rows[0].archived);
+        assert!(list_recent(&conn, 10, Some("0000")).unwrap().is_empty());
     }
 
     #[test]

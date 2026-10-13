@@ -506,6 +506,18 @@ export async function listLinkedSessions(): Promise<SessionSummary[]> {
   return rows.map(normalizeSummary);
 }
 
+/** Chats across every project, newest first; `idPrefix` also finds archived ones. */
+export async function listRecentSessions(
+  limit = 200,
+  idPrefix?: string,
+): Promise<SessionSummary[]> {
+  const rows = await invoke<SessionSummary[]>("session_list_recent", {
+    limit,
+    idPrefix: idPrefix ?? null,
+  });
+  return Array.isArray(rows) ? rows.map(normalizeSummary) : [];
+}
+
 export type SessionSearchHit = {
   kind: "conversation" | "message";
   sessionId: string;
