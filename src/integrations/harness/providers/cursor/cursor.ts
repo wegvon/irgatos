@@ -317,9 +317,6 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       clientCapabilities: CLIENT_CAPABILITIES,
       clientInfo: { name: "monocode", version: "0.1.0" },
     });
-    await acp
-      .request("authenticate", { methodId: "cursor_login" })
-      .catch(() => undefined);
 
     let setup: SessionSetupResult | undefined;
     let acpSessionId: string | undefined;
@@ -394,10 +391,21 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
+    const failure = cursorStartupError(error);
+    acp.close(failure);
     await stopCursorSession(input.sessionId);
-    throw error;
+    throw failure;
   }
+}
+
+function cursorStartupError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/authentication required|cursor_login|agent login/i.test(message)) {
+    return new Error(
+      "Cursor CLI is not signed in. Run `agent login` in Terminal, complete the browser sign-in, then retry this prompt. MonoCode will reuse the CLI's existing login.",
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
 }
 
 async function applyModelSelection(

@@ -46,6 +46,10 @@ function reply(id: number, result: unknown) {
   onLine!(JSON.stringify({ jsonrpc: "2.0", id, result }));
 }
 
+function replyError(id: number, message: string) {
+  onLine!(JSON.stringify({ jsonrpc: "2.0", id, error: { code: -32000, message } }));
+}
+
 function notify(method: string, params: unknown) {
   onLine!(JSON.stringify({ jsonrpc: "2.0", method, params }));
 }
@@ -84,9 +88,6 @@ async function startTurn(sessionId: string) {
   await waitFor(() => !!outboundRequest("initialize"), "initialize");
   reply(outboundRequest("initialize")!.id as number, {});
 
-  await waitFor(() => !!outboundRequest("authenticate"), "authenticate");
-  reply(outboundRequest("authenticate")!.id as number, {});
-
   await waitFor(() => !!outboundRequest("session/new"), "session/new");
   reply(outboundRequest("session/new")!.id as number, {
     sessionId: "cursor_1",
@@ -103,6 +104,29 @@ async function startTurn(sessionId: string) {
   const promptId = outboundRequest("session/prompt")!.id as number;
   return { events, promptId, turn };
 }
+
+it("does not trigger Cursor's browser login flow for an unauthenticated CLI", async () => {
+  const turn = sendCursorTurn({
+    sessionId: "cursor-login",
+    cwd: "/repo",
+    model: "cursor:composer-2.5",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    text: "hello",
+    attachments: [],
+    onEvent: vi.fn(),
+  });
+
+  await waitFor(() => !!outboundRequest("initialize"), "initialize");
+  reply(outboundRequest("initialize")!.id as number, {});
+  await waitFor(() => !!outboundRequest("session/new"), "session/new");
+  replyError(outboundRequest("session/new")!.id as number, "Authentication required");
+
+  await expect(turn).rejects.toThrow(
+    "Cursor CLI is not signed in. Run `agent login` in Terminal",
+  );
+  expect(parse().some((message) => message.method === "authenticate")).toBe(false);
+});
 
 function emitAgentStart() {
   notify("session/update", {
