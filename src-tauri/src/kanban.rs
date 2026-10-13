@@ -13,6 +13,14 @@ const LABEL_MAX: usize = 32;
 const LABELS_MAX: usize = 3;
 const COLUMNS_MAX: usize = 24;
 const PROJECT_MAX: usize = 4096;
+const SESSION_STATUSES: [&str; 6] = [
+    "running",
+    "needs-input",
+    "finished",
+    "failed",
+    "stopped",
+    "draft",
+];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +52,34 @@ pub struct KanbanCard {
     pub labels: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub session: Option<KanbanCardSession>,
+}
+
+/// The agent session a card is linked to. `status` is the last state the app
+/// saw, so a card can show it before the session is loaded again.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KanbanCardSession {
+    pub id: String,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub harness: Option<String>,
+    /// False until the session has been saved, or after it was deleted.
+    #[serde(default)]
+    pub saved: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KanbanSessionLink {
+    pub session_id: String,
+    pub card_id: String,
+    pub project: String,
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,7 +128,28 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE INDEX IF NOT EXISTS kanban_cards_column
            ON kanban_cards (column_id, position);",
+    )?;
+    ensure_card_column(conn, "session_id", "TEXT")?;
+    ensure_card_column(conn, "session_status", "TEXT")?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS kanban_cards_session
+           ON kanban_cards (session_id) WHERE session_id IS NOT NULL;",
     )
+}
+
+fn ensure_card_column(conn: &Connection, column: &str, decl: &str) -> rusqlite::Result<()> {
+    let present: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('kanban_cards') WHERE name = ?1",
+        [column],
+        |row| row.get(0),
+    )?;
+    if present == 0 {
+        conn.execute(
+            &format!("ALTER TABLE kanban_cards ADD COLUMN {column} {decl}"),
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -235,6 +292,41 @@ pub fn kanban_column_restore(
     restore_column(&mut conn, &board_id, &column, index)?;
     notify_column(&app, &conn, &column.id);
     Ok(())
+}
+
+#[tauri::command(async)]
+pub fn kanban_card_link_session(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    id: String,
+    session_id: Option<String>,
+) -> Result<KanbanCard, String> {
+    let conn = store.lock_conn()?;
+    let card = link_session(&conn, &id, session_id.as_deref(), now_millis())?;
+    notify_column(&app, &conn, &card.column_id);
+    Ok(card)
+}
+
+#[tauri::command(async)]
+pub fn kanban_session_status(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    session_id: String,
+    status: String,
+) -> Result<(), String> {
+    let conn = store.lock_conn()?;
+    for project in record_session_status(&conn, &session_id, &status)? {
+        notify(&app, Some(project));
+    }
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn kanban_session_links(
+    store: State<'_, SessionStore>,
+) -> Result<Vec<KanbanSessionLink>, String> {
+    let conn = store.lock_conn()?;
+    session_links(&conn)
 }
 
 fn notify(app: &AppHandle, project: Option<String>) {
@@ -411,8 +503,7 @@ fn read_columns(conn: &Connection, board_id: &str) -> rusqlite::Result<Vec<Kanba
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut statement = conn.prepare(&format!(
-        "SELECT {CARD_COLUMNS} FROM kanban_cards
-         WHERE column_id = ?1 ORDER BY position, created_at, id"
+        "{CARD_SELECT} WHERE k.column_id = ?1 ORDER BY k.position, k.created_at, k.id"
     ))?;
     for column in &mut columns {
         column.cards = statement
@@ -422,10 +513,14 @@ fn read_columns(conn: &Connection, board_id: &str) -> rusqlite::Result<Vec<Kanba
     Ok(columns)
 }
 
-const CARD_COLUMNS: &str = "id, column_id, title, notes, labels_json, created_at, updated_at";
+const CARD_SELECT: &str = "SELECT k.id, k.column_id, k.title, k.notes, k.labels_json,
+       k.created_at, k.updated_at, k.session_id, k.session_status,
+       s.title, s.harness, s.id IS NOT NULL
+     FROM kanban_cards k LEFT JOIN sessions s ON s.id = k.session_id";
 
 fn read_card(row: &rusqlite::Row<'_>) -> rusqlite::Result<KanbanCard> {
     let labels_json: String = row.get(4)?;
+    let session_id: Option<String> = row.get(7)?;
     Ok(KanbanCard {
         id: row.get(0)?,
         column_id: row.get(1)?,
@@ -434,18 +529,24 @@ fn read_card(row: &rusqlite::Row<'_>) -> rusqlite::Result<KanbanCard> {
         labels: serde_json::from_str(&labels_json).unwrap_or_default(),
         created_at: row.get(5)?,
         updated_at: row.get(6)?,
+        session: match session_id {
+            Some(id) => Some(KanbanCardSession {
+                id,
+                status: row.get(8)?,
+                title: row.get(9)?,
+                harness: row.get(10)?,
+                saved: row.get(11)?,
+            }),
+            None => None,
+        },
     })
 }
 
 fn get_card(conn: &Connection, id: &str) -> Result<KanbanCard, String> {
-    conn.query_row(
-        &format!("SELECT {CARD_COLUMNS} FROM kanban_cards WHERE id = ?1"),
-        [id],
-        read_card,
-    )
-    .optional()
-    .map_err(sql)?
-    .ok_or_else(|| "This card no longer exists.".to_string())
+    conn.query_row(&format!("{CARD_SELECT} WHERE k.id = ?1"), [id], read_card)
+        .optional()
+        .map_err(sql)?
+        .ok_or_else(|| "This card no longer exists.".to_string())
 }
 
 fn card_ids(conn: &Connection, column_id: &str, excluding: &str) -> rusqlite::Result<Vec<String>> {
@@ -599,9 +700,13 @@ fn insert_card_row(conn: &Connection, card: &KanbanCard) -> Result<(), String> {
     let title = normalize_card_title(&card.title);
     let notes = normalize_notes(&card.notes)?;
     let labels = normalize_labels(&card.labels);
+    let session = card.session.as_ref();
+    if let Some(session) = session {
+        validate_id(&session.id, "session")?;
+    }
     conn.execute(
-        "INSERT INTO kanban_cards (id, column_id, title, notes, labels_json, position, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, -1, ?6, ?7)",
+        "INSERT INTO kanban_cards (id, column_id, title, notes, labels_json, position, created_at, updated_at, session_id, session_status)
+         VALUES (?1, ?2, ?3, ?4, ?5, -1, ?6, ?7, ?8, ?9)",
         params![
             card.id,
             card.column_id,
@@ -609,11 +714,139 @@ fn insert_card_row(conn: &Connection, card: &KanbanCard) -> Result<(), String> {
             notes,
             labels_json(&labels)?,
             card.created_at,
-            card.updated_at
+            card.updated_at,
+            session.map(|session| session.id.as_str()),
+            session
+                .and_then(|session| session.status.as_deref())
+                .filter(|status| SESSION_STATUSES.contains(status)),
         ],
     )
     .map_err(sql)?;
     Ok(())
+}
+
+/// Link `id` to a session, or clear the link with `None`. The status starts
+/// from the saved transcript so a card linked to an old session reads right.
+pub(crate) fn link_session(
+    conn: &Connection,
+    id: &str,
+    session_id: Option<&str>,
+    now: i64,
+) -> Result<KanbanCard, String> {
+    validate_id(id, "card")?;
+    let existing = get_card(conn, id)?;
+    let Some(session_id) = session_id else {
+        if existing.session.is_some() {
+            conn.execute(
+                "UPDATE kanban_cards SET session_id = NULL, session_status = NULL, updated_at = ?1
+                 WHERE id = ?2",
+                params![now, id],
+            )
+            .map_err(sql)?;
+        }
+        return get_card(conn, id);
+    };
+    validate_id(session_id, "session")?;
+    if existing.session.as_ref().map(|session| session.id.as_str()) == Some(session_id) {
+        return Ok(existing);
+    }
+    let blocks: Option<String> = conn
+        .query_row(
+            "SELECT blocks_json FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql)?;
+    let status = blocks.as_deref().map_or("draft", status_from_blocks);
+    conn.execute(
+        "UPDATE kanban_cards SET session_id = ?1, session_status = ?2, updated_at = ?3
+         WHERE id = ?4",
+        params![session_id, status, now, id],
+    )
+    .map_err(sql)?;
+    get_card(conn, id)
+}
+
+/// The settled state of a saved transcript: whether its last sent turn ended
+/// in an error, was stopped, or finished.
+pub(crate) fn status_from_blocks(blocks_json: &str) -> &'static str {
+    let blocks: Vec<serde_json::Value> = serde_json::from_str(blocks_json).unwrap_or_default();
+    let is_sent_user = |block: &serde_json::Value| {
+        block.get("role").and_then(serde_json::Value::as_str) == Some("user")
+            && block.get("draft").and_then(serde_json::Value::as_bool) != Some(true)
+    };
+    let Some(last_turn) = blocks.iter().rposition(is_sent_user) else {
+        return "draft";
+    };
+    let mut status = "finished";
+    for block in &blocks[last_turn + 1..] {
+        if block.get("role").and_then(serde_json::Value::as_str) != Some("system") {
+            continue;
+        }
+        match block.get("notice").and_then(serde_json::Value::as_str) {
+            Some("error") => status = "failed",
+            Some("interrupt") => status = "stopped",
+            _ => {}
+        }
+    }
+    status
+}
+
+/// Store the latest status for every card linked to `session_id`, returning the
+/// projects whose boards changed.
+pub(crate) fn record_session_status(
+    conn: &Connection,
+    session_id: &str,
+    status: &str,
+) -> Result<Vec<String>, String> {
+    validate_id(session_id, "session")?;
+    if !SESSION_STATUSES.contains(&status) {
+        return Err(format!("Unknown session status: {status}"));
+    }
+    let projects = conn
+        .prepare(
+            "SELECT DISTINCT b.project FROM kanban_cards k
+             JOIN kanban_columns c ON c.id = k.column_id
+             JOIN kanban_boards b ON b.id = c.board_id
+             WHERE k.session_id = ?1 AND IFNULL(k.session_status, '') != ?2",
+        )
+        .map_err(sql)?
+        .query_map(params![session_id, status], |row| row.get(0))
+        .map_err(sql)?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(sql)?;
+    if !projects.is_empty() {
+        conn.execute(
+            "UPDATE kanban_cards SET session_status = ?1
+             WHERE session_id = ?2 AND IFNULL(session_status, '') != ?1",
+            params![status, session_id],
+        )
+        .map_err(sql)?;
+    }
+    Ok(projects)
+}
+
+pub(crate) fn session_links(conn: &Connection) -> Result<Vec<KanbanSessionLink>, String> {
+    conn.prepare(
+        "SELECT k.session_id, k.id, b.project, k.session_status FROM kanban_cards k
+         JOIN kanban_columns c ON c.id = k.column_id
+         JOIN kanban_boards b ON b.id = c.board_id
+         WHERE k.session_id IS NOT NULL
+         ORDER BY b.project, c.position, k.position",
+    )
+    .map_err(sql)?
+    .query_map([], |row| {
+        Ok(KanbanSessionLink {
+            session_id: row.get(0)?,
+            card_id: row.get(1)?,
+            project: row.get(2)?,
+            status: row.get(3)?,
+        })
+    })
+    .map_err(sql)?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(sql)
 }
 
 fn column_ids(conn: &Connection, board_id: &str, excluding: &str) -> rusqlite::Result<Vec<String>> {
@@ -1034,5 +1267,207 @@ mod tests {
             assert_eq!(titles(&board.columns[1]), vec!["Kept"]);
         }
         std::fs::remove_dir_all(path).unwrap();
+    }
+
+    fn save_session(conn: &Connection, id: &str, title: &str, blocks: serde_json::Value) {
+        conn.execute(
+            "INSERT INTO sessions (id, cwd, harness, model, runtime_mode, title, blocks_json, created_at, updated_at)
+             VALUES (?1, '/work/app', 'claude', 'default', 'default', ?2, ?3, 1, 1)",
+            params![id, title, blocks.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn status_comes_from_the_last_sent_turn() {
+        let turn = |extra: serde_json::Value| {
+            let mut blocks = vec![
+                serde_json::json!({ "id": "u0", "role": "user", "text": "first" }),
+                serde_json::json!({ "id": "e0", "role": "system", "notice": "error", "text": "old" }),
+                serde_json::json!({ "id": "u1", "role": "user", "text": "again" }),
+            ];
+            if !extra.is_null() {
+                blocks.push(extra);
+            }
+            serde_json::Value::Array(blocks).to_string()
+        };
+        assert_eq!(status_from_blocks("[]"), "draft");
+        assert_eq!(
+            status_from_blocks(
+                &serde_json::json!([{ "id": "d", "role": "user", "draft": true }]).to_string()
+            ),
+            "draft"
+        );
+        assert_eq!(
+            status_from_blocks(&turn(serde_json::Value::Null)),
+            "finished"
+        );
+        assert_eq!(
+            status_from_blocks(&turn(
+                serde_json::json!({ "id": "e1", "role": "system", "notice": "error" })
+            )),
+            "failed"
+        );
+        assert_eq!(
+            status_from_blocks(&turn(
+                serde_json::json!({ "id": "i1", "role": "system", "notice": "interrupt" })
+            )),
+            "stopped"
+        );
+        assert_eq!(status_from_blocks("not json"), "draft");
+    }
+
+    #[test]
+    fn cards_link_to_sessions_and_read_their_titles() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        create_card(
+            &mut conn,
+            &board.columns[0].id,
+            &input("a", "Fix login"),
+            None,
+            1,
+        )
+        .unwrap();
+        save_session(
+            &conn,
+            "s1",
+            "Login redirect",
+            serde_json::json!([
+                { "id": "u", "role": "user", "text": "fix it" },
+                { "id": "e", "role": "system", "notice": "error", "text": "boom" }
+            ]),
+        );
+
+        let linked = link_session(&conn, "a", Some("s1"), 5).unwrap();
+        assert_eq!(
+            linked.session,
+            Some(KanbanCardSession {
+                id: "s1".into(),
+                status: Some("failed".into()),
+                title: Some("Login redirect".into()),
+                harness: Some("claude".into()),
+                saved: true,
+            })
+        );
+        assert_eq!(linked.updated_at, 5);
+
+        let draft = link_session(&conn, "a", Some("unsaved"), 6).unwrap();
+        let session = draft.session.unwrap();
+        assert_eq!(session.status.as_deref(), Some("draft"));
+        assert!(!session.saved);
+        assert_eq!(session.title, None);
+
+        let cleared = link_session(&conn, "a", None, 7).unwrap();
+        assert_eq!(cleared.session, None);
+        assert!(link_session(&conn, "a", Some("bad id!"), 8).is_err());
+        assert!(link_session(&conn, "missing", Some("s1"), 8).is_err());
+    }
+
+    #[test]
+    fn session_status_updates_every_linked_card_once() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let app = load_board(&mut conn, "/work/app").unwrap();
+        let api = load_board(&mut conn, "/work/api").unwrap();
+        create_card(&mut conn, &app.columns[0].id, &input("a", "One"), None, 1).unwrap();
+        create_card(&mut conn, &api.columns[0].id, &input("b", "Two"), None, 1).unwrap();
+        create_card(&mut conn, &api.columns[1].id, &input("c", "Other"), None, 1).unwrap();
+        link_session(&conn, "a", Some("s1"), 2).unwrap();
+        link_session(&conn, "b", Some("s1"), 2).unwrap();
+        link_session(&conn, "c", Some("s2"), 2).unwrap();
+
+        let mut changed = record_session_status(&conn, "s1", "running").unwrap();
+        changed.sort();
+        assert_eq!(changed, vec!["/work/api", "/work/app"]);
+        assert!(record_session_status(&conn, "s1", "running")
+            .unwrap()
+            .is_empty());
+        assert!(record_session_status(&conn, "s1", "exploded").is_err());
+        assert_eq!(
+            get_card(&conn, "a")
+                .unwrap()
+                .session
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("running")
+        );
+        assert_eq!(get_card(&conn, "a").unwrap().updated_at, 2);
+        assert_eq!(
+            get_card(&conn, "c")
+                .unwrap()
+                .session
+                .unwrap()
+                .status
+                .as_deref(),
+            Some("draft")
+        );
+
+        let links = session_links(&conn).unwrap();
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| (
+                    link.session_id.as_str(),
+                    link.card_id.as_str(),
+                    link.project.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("s1", "b", "/work/api"),
+                ("s2", "c", "/work/api"),
+                ("s1", "a", "/work/app")
+            ]
+        );
+    }
+
+    #[test]
+    fn restoring_a_card_or_column_keeps_its_session() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        let column = board.columns[0].id.clone();
+        create_card(&mut conn, &column, &input("a", "Linked"), None, 1).unwrap();
+        let card = link_session(&conn, "a", Some("s1"), 2).unwrap();
+        record_session_status(&conn, "s1", "finished").unwrap();
+        let card = KanbanCard {
+            session: get_card(&conn, "a").unwrap().session,
+            ..card
+        };
+        delete_card(&mut conn, "a").unwrap();
+        let restored = restore_card(&mut conn, &card, 0).unwrap();
+        assert_eq!(restored.session, card.session);
+
+        let full = load_board(&mut conn, "/work/app").unwrap().columns[0].clone();
+        delete_column(&mut conn, &column).unwrap();
+        restore_column(&mut conn, &board.id, &full, 0).unwrap();
+        let again = get_card(&conn, "a").unwrap();
+        assert_eq!(again.session.unwrap().status.as_deref(), Some("finished"));
+    }
+
+    #[test]
+    fn an_existing_board_table_gains_the_session_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE kanban_cards (
+               id TEXT PRIMARY KEY, column_id TEXT NOT NULL, title TEXT NOT NULL,
+               notes TEXT NOT NULL DEFAULT '', labels_json TEXT NOT NULL DEFAULT '[]',
+               position INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+             );
+             INSERT INTO kanban_cards VALUES ('a', 'col', 'Old', '', '[]', 0, 1, 1);",
+        )
+        .unwrap();
+        ensure_tables(&conn).unwrap();
+        ensure_tables(&conn).unwrap();
+        let session: Option<String> = conn
+            .query_row(
+                "SELECT session_id FROM kanban_cards WHERE id = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(session, None);
     }
 }

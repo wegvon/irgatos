@@ -98,3 +98,27 @@ test("a board with many cards scrolls inside each column", async ({ page }) => {
   const documentHeight = await page.evaluate(() => document.documentElement.scrollHeight);
   expect(documentHeight).toBeLessThanOrEqual(800);
 });
+
+test("shows linked session state and links a session from the card", async ({ page }) => {
+  await page.goto("/tests/browser/kanban.html");
+  const chipState = (cardId: string) =>
+    page.locator(`[data-kanban-card="${cardId}"] [data-card-session-state]`);
+  await expect(chipState("card-0")).toHaveAttribute("data-card-session-state", "finished");
+  await expect(chipState("card-2")).toHaveAttribute("data-card-session-state", "failed");
+  await expect(chipState("card-5")).toHaveAttribute("data-card-session-state", "running");
+  await expect(chipState("card-6")).toHaveAttribute("data-card-session-state", "needs-input");
+
+  await chipState("card-2").click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { kanbanSessionEvents: () => string[] }).kanbanSessionEvents()))
+    .toEqual(["open:s-usage"]);
+  await expect(page.locator("[data-card-session]")).toHaveCount(0);
+
+  await page.locator('[data-kanban-card="card-1"]').click();
+  const section = page.locator("[data-card-session]");
+  await expect(section).toContainText("Start an agent on this card");
+  await section.getByRole("button", { name: /^Link existing session/ }).click();
+  await page.getByRole("option", { name: /Copy button for note code blocks/ }).click();
+  await expect(section).toContainText("Copy button for note code blocks");
+  await expect(chipState("card-1")).toHaveAttribute("data-card-session-state", "finished");
+});

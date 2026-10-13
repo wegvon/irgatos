@@ -79,6 +79,18 @@ beforeEach(() => {
       return { ...input, columnId: args.columnId, createdAt: 2, updatedAt: 2 };
     }
     if (command.startsWith("kanban_card_restore")) return args.card;
+    if (command === "kanban_card_link_session") {
+      const found = board.columns.flatMap((column) => column.cards).find((item) => item.id === args.id)!;
+      return {
+        ...found,
+        session: args.sessionId
+          ? { id: args.sessionId, status: "finished", title: "Picked session", harness: "codex", saved: true }
+          : null,
+      };
+    }
+    if (command === "session_list_by_project") {
+      return [{ id: "s9", cwd: PROJECT, harness: "codex", title: "Picked session", updatedAt: 5 }];
+    }
     if (command.startsWith("kanban_")) return null;
     if (command.startsWith("plugin:event|")) return 1;
     throw new Error(`Unexpected command: ${command}`);
@@ -96,9 +108,18 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render(cwd = PROJECT) {
+type ViewProps = Partial<Parameters<typeof KanbanView>[0]>;
+
+async function render(cwd = PROJECT, props: ViewProps = {}) {
   await act(async () =>
-    root.render(createElement(KanbanView, { cwd, recents: [{ path: PROJECT, openedAt: 1 }], onClose: () => {} })),
+    root.render(
+      createElement(KanbanView, {
+        cwd,
+        recents: [{ path: PROJECT, openedAt: 1 }],
+        onClose: () => {},
+        ...props,
+      }),
+    ),
   );
   await act(async () => {});
 }
@@ -287,6 +308,80 @@ it("offers a retry when the board can't be read", async () => {
   expect(container.textContent).toContain("This board couldn't be opened");
   expect(container.textContent).toContain("database is locked");
   expect(button("Try again")).toBeTruthy();
+});
+
+function sessionState(cardId: string) {
+  return cardElement(cardId)
+    .querySelector("[data-card-session-state]")
+    ?.getAttribute("data-card-session-state");
+}
+
+it("shows each card's session state and opens the session from its chip", async () => {
+  const [first, second] = board.columns[0]!.cards;
+  first!.session = { id: "s1", status: "failed", title: "Fix flaky test", harness: "claude", saved: true };
+  second!.session = { id: "s2", status: "running", saved: true };
+  board.columns[1]!.cards[0]!.session = { id: "s3", status: "finished", saved: true };
+  const opened: string[] = [];
+  await render(PROJECT, {
+    liveSessions: new Map([["s3", { status: "running", title: "Ship board", harness: "codex" }]]),
+    onOpenSession: (sessionId) => {
+      opened.push(sessionId);
+    },
+  });
+  expect(sessionState("c1")).toBe("failed");
+  expect(sessionState("c2")).toBe("interrupted");
+  expect(sessionState("c3")).toBe("running");
+
+  await act(async () => cardElement("c1").querySelector<HTMLButtonElement>("button[data-no-drag]")!.click());
+  expect(opened).toEqual(["s1"]);
+  expect(document.querySelector("[data-card-session]")).toBeNull();
+});
+
+it("says so when a linked session can't be opened", async () => {
+  board.columns[0]!.cards[0]!.session = { id: "s1", status: "finished", saved: true };
+  await render(PROJECT, {
+    onOpenSession: async () => {
+      throw new Error("This conversation is no longer available.");
+    },
+  });
+  await act(async () => cardElement("c1").querySelector<HTMLButtonElement>("button[data-no-drag]")!.click());
+  expect(container.querySelector("[data-kanban-toast='error']")?.textContent).toContain(
+    "This conversation is no longer available.",
+  );
+});
+
+it("starts a session from the card dialog", async () => {
+  const started: [string, string][] = [];
+  await render(PROJECT, { onStartSession: (item, project) => started.push([item.id, project]) });
+  await act(async () => cardElement("c1").click());
+  expect(document.querySelector("[data-card-session]")?.textContent).toContain(
+    "Start an agent on this card",
+  );
+  await act(async () => button("Start session")!.click());
+  expect(started).toEqual([["c1", PROJECT]]);
+  expect(document.querySelector("[data-card-session]")).toBeNull();
+});
+
+it("unlinks a session from the card dialog", async () => {
+  board.columns[1]!.cards[0]!.session = { id: "s3", status: "stopped", title: "Ship it", saved: true };
+  await render(PROJECT, { onOpenSession: () => {} });
+  await act(async () => cardElement("c3").click());
+  const section = document.querySelector("[data-card-session]")!;
+  expect(section.textContent).toContain("Ship it");
+  expect(section.querySelector("[data-card-session-state]")?.textContent).toBe("Stopped");
+
+  await act(async () => button("Unlink session")!.click());
+  expect(writes("kanban_card_link_session")).toEqual([{ id: "c3", sessionId: null }]);
+  expect(document.querySelector("[data-card-session]")?.textContent).toContain(
+    "Start an agent on this card",
+  );
+  expect(sessionState("c3")).toBeUndefined();
+});
+
+it("focuses and highlights the card a session points to", async () => {
+  await render(PROJECT, { focusRequest: { project: PROJECT, cardId: "c3", token: 1 } });
+  expect(document.activeElement).toBe(cardElement("c3"));
+  expect(cardElement("c3").dataset.kanbanHighlighted).toBe("true");
 });
 
 it("keeps label colours stable", () => {

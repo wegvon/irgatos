@@ -22,6 +22,32 @@ export type KanbanCard = {
   labels: string[];
   createdAt: number;
   updatedAt: number;
+  session?: KanbanCardSession | null;
+};
+
+/** Last state the app saw for a stored session; live sessions report their own. */
+export type StoredSessionStatus =
+  | "running"
+  | "needs-input"
+  | "finished"
+  | "failed"
+  | "stopped"
+  | "draft";
+
+export type KanbanCardSession = {
+  id: string;
+  status?: StoredSessionStatus | null;
+  title?: string | null;
+  harness?: string | null;
+  /** False until the session has been saved, or once it was deleted. */
+  saved: boolean;
+};
+
+export type KanbanSessionLink = {
+  sessionId: string;
+  cardId: string;
+  project: string;
+  status?: StoredSessionStatus | null;
 };
 
 export type KanbanColumn = {
@@ -209,6 +235,28 @@ export function restoreKanbanColumn(
   return enqueueKanbanWrite(() =>
     invoke<void>("kanban_column_restore", { boardId, column, index }),
   );
+}
+
+export function linkKanbanSession(
+  id: string,
+  sessionId: string | null,
+): Promise<KanbanCard> {
+  return enqueueKanbanWrite(() =>
+    invoke<KanbanCard>("kanban_card_link_session", { id, sessionId }),
+  );
+}
+
+export function recordKanbanSessionStatus(
+  sessionId: string,
+  status: StoredSessionStatus,
+): Promise<void> {
+  return enqueueKanbanWrite(() =>
+    invoke<void>("kanban_session_status", { sessionId, status }),
+  );
+}
+
+export function loadKanbanSessionLinks(): Promise<KanbanSessionLink[]> {
+  return invoke<KanbanSessionLink[]>("kanban_session_links");
 }
 
 /** Mirrors the store's label rules so chips render as they will be saved. */

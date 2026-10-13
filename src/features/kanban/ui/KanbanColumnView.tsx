@@ -19,6 +19,7 @@ type Props = {
   filtering: boolean;
   drag: CardDrag | null;
   liftedId: string | null;
+  highlightId?: string | null;
   tabbableId: string | null;
   hintId: string;
   editing: boolean;
@@ -44,6 +45,7 @@ export function KanbanColumnView({
   filtering,
   drag,
   liftedId,
+  highlightId,
   tabbableId,
   hintId,
   editing,
@@ -131,6 +133,7 @@ export function KanbanColumnView({
               card={card}
               tabbable={card.id === tabbableId}
               lifted={card.id === liftedId}
+              highlighted={card.id === highlightId}
               hintId={hintId}
               accessory={cardAccessory?.(card)}
               onPointerDown={(event) =>

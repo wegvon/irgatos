@@ -54,6 +54,7 @@ import {
   deleteKanbanCard,
   deleteKanbanColumn,
   kanbanProject,
+  linkKanbanSession,
   loadKanbanBoard,
   moveKanbanCard,
   moveKanbanColumn,
@@ -70,7 +71,9 @@ import {
   type KanbanCardInput,
   type KanbanColumn,
 } from "../model/kanban";
+import type { LiveCardSession } from "../model/cardSession";
 import { CardDialog } from "./CardDialog";
+import { CardSessionSection, SessionChip } from "./CardSession";
 import { KanbanCardItem } from "./KanbanCardItem";
 import { KanbanColumnView } from "./KanbanColumnView";
 import { useCardDrag } from "./useCardDrag";
@@ -79,11 +82,23 @@ import { columnDropSide, useColumnDrag } from "./useColumnDrag";
 export const MAX_KANBAN_COLUMNS = 24;
 const UNDO_MS = 8000;
 
-type Props = {
+export type KanbanFocusRequest = { project: string; cardId: string; token: number };
+
+type SessionProps = {
+  /** Loaded sessions linked from cards, keyed by session id. */
+  liveSessions?: ReadonlyMap<string, LiveCardSession>;
+  onStartSession?: (card: KanbanCard, project: string) => void;
+  /** Rejects when the session can't be opened; the board says so and stays put. */
+  onOpenSession?: (sessionId: string) => void | Promise<void>;
+};
+
+type Props = SessionProps & {
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
   recents: RecentProject[];
+  /** Opens the board on a project with one card focused. */
+  focusRequest?: KanbanFocusRequest | null;
   onClose: () => void;
   onToggleSidebar?: () => void;
 };
@@ -93,14 +108,19 @@ export function KanbanView({
   compactRail = false,
   cwd,
   recents,
+  focusRequest,
   onClose,
   onToggleSidebar,
+  ...sessionProps
 }: Props) {
-  const [project, setProject] = useState(cwd ?? "");
+  const [project, setProject] = useState(focusRequest?.project ?? cwd ?? "");
   const [query, setQuery] = useState("");
   useEffect(() => {
-    if (cwd) setProject(cwd);
-  }, [cwd]);
+    if (cwd && !focusRequest) setProject(cwd);
+  }, [cwd, focusRequest]);
+  useEffect(() => {
+    if (focusRequest) setProject(focusRequest.project);
+  }, [focusRequest]);
   useEffect(() => setQuery(""), [project]);
   const hasProject = looksLikeProject(project);
 
@@ -167,6 +187,12 @@ export function KanbanView({
           project={project}
           query={query}
           onClearQuery={() => setQuery("")}
+          focus={
+            focusRequest && kanbanProject(focusRequest.project) === kanbanProject(project)
+              ? focusRequest
+              : null
+          }
+          {...sessionProps}
         />
       ) : (
         <BoardMessage
@@ -186,13 +212,22 @@ type Notice = NoticeInput & { id: number };
 
 type Lift = { cardId: string; before: KanbanBoard };
 
-type ContentProps = {
+type ContentProps = SessionProps & {
   project: string;
   query: string;
   onClearQuery: () => void;
+  focus: KanbanFocusRequest | null;
 };
 
-function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
+function KanbanBoardContent({
+  project,
+  query,
+  onClearQuery,
+  focus,
+  liveSessions,
+  onStartSession,
+  onOpenSession,
+}: ContentProps) {
   const [board, setBoard] = useState<KanbanBoard | null>(() => peekKanbanBoard(project));
   const [loading, setLoading] = useState(() => peekKanbanBoard(project) === null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -206,6 +241,8 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
   const [menu, setMenu] = useState<{ columnId: string; anchor: HTMLElement } | null>(null);
   const [confirmColumn, setConfirmColumn] = useState<KanbanColumn | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const handledFocus = useRef<number | null>(null);
   const hintId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef(board);
@@ -269,6 +306,18 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
     [pushNotice, refresh],
   );
 
+  const openSession = useMemo(
+    () =>
+      onOpenSession
+        ? (sessionId: string) => {
+            Promise.resolve(onOpenSession(sessionId)).catch((reason: unknown) => {
+              pushNotice({ kind: "error", text: `Couldn't open that session. ${errorText(reason)}` });
+            });
+          }
+        : undefined,
+    [onOpenSession, pushNotice],
+  );
+
   const announce = (text: string) => {
     setAnnouncement("");
     window.setTimeout(() => setAnnouncement(text), 30);
@@ -307,6 +356,20 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
     element.focus();
     element.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   });
+
+  useEffect(() => {
+    if (!focus || !board || handledFocus.current === focus.token) return;
+    if (!findCard(board, focus.cardId)) {
+      if (!loading) handledFocus.current = focus.token;
+      return;
+    }
+    handledFocus.current = focus.token;
+    onClearQuery();
+    focusCard(focus.cardId);
+    setHighlightId(focus.cardId);
+    const timer = window.setTimeout(() => setHighlightId(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [board, focus, focusCard, loading, onClearQuery]);
 
   const positionText = (current: KanbanBoard, cardId: string) => {
     const found = findCard(current, cardId);
@@ -383,6 +446,28 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
       },
     });
     announce(`Deleted ${found.card.title}. Press ${IS_MAC ? "Command" : "Control"} Z to undo.`);
+  };
+
+  const linkCard = (cardId: string, session: { id: string; title: string } | null) => {
+    const current = boardRef.current;
+    const found = current ? findCard(current, cardId) : null;
+    if (!current || !found) return;
+    commit(
+      replaceCardInBoard(current, {
+        ...found.card,
+        updatedAt: Date.now(),
+        session: session
+          ? { id: session.id, title: session.title, status: null, saved: true }
+          : null,
+      }),
+    );
+    persist(
+      linkKanbanSession(cardId, session?.id ?? null).then((saved) => {
+        const latest = boardRef.current;
+        if (latest && findCard(latest, cardId)) commit(replaceCardInBoard(latest, saved));
+      }),
+    );
+    announce(session ? `Linked ${session.title}` : "Unlinked the session");
   };
 
   const addColumn = (title: string) => {
@@ -715,7 +800,15 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
                 filtering={filtering}
                 drag={cardDrag.drag}
                 liftedId={liftedId}
+                highlightId={highlightId}
                 tabbableId={tabbableId}
+                cardAccessory={(card) => (
+                  <SessionChip
+                    card={card}
+                    live={card.session ? liveSessions?.get(card.session.id) : undefined}
+                    onOpen={openSession}
+                  />
+                )}
                 hintId={hintId}
                 editing={renaming === column.id}
                 composing={composing === column.id}
@@ -848,7 +941,33 @@ function KanbanBoardContent({ project, query, onClearQuery }: ContentProps) {
             setOpenCardId(null);
             pendingFocus.current = cardId;
           }}
-        />
+        >
+          <CardSessionSection
+            card={openCard.card}
+            project={project}
+            live={
+              openCard.card.session ? liveSessions?.get(openCard.card.session.id) : undefined
+            }
+            onStart={
+              onStartSession
+                ? () => {
+                    const card = openCard.card;
+                    setOpenCardId(null);
+                    onStartSession(card, project);
+                  }
+                : undefined
+            }
+            onOpen={
+              openSession
+                ? (sessionId) => {
+                    setOpenCardId(null);
+                    openSession(sessionId);
+                  }
+                : undefined
+            }
+            onLink={(session) => linkCard(openCard.card.id, session)}
+          />
+        </CardDialog>
       ) : null}
       <BoardToast notice={notice} onUndo={runUndo} onDismiss={() => setNotice(null)} />
     </div>

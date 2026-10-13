@@ -142,6 +142,18 @@ import {
 import { UsageFooter } from "./shell/UsageFooter";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
+import { useKanbanSessions } from "../features/kanban/hooks/useKanbanSessions";
+import {
+  cardTitleFromText,
+  createKanbanCard,
+  createKanbanColumn,
+  DEFAULT_KANBAN_COLUMNS,
+  kanbanProject,
+  linkKanbanSession,
+  loadKanbanBoard,
+  type KanbanCard,
+} from "../features/kanban/model/kanban";
+import type { KanbanFocusRequest } from "../features/kanban/ui/KanbanView";
 import {
   loadProjectRailOpen,
   loadSessionSidebarOpen,
@@ -1246,6 +1258,12 @@ function Workspace({
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
   const [kanbanViewOpen, setKanbanViewOpen] = useState(false);
+  const [kanbanFocus, setKanbanFocus] = useState<KanbanFocusRequest | null>(
+    null,
+  );
+  const kanbanSessions = useKanbanSessions(sessions);
+  const kanbanLinksRef = useRef(kanbanSessions.links);
+  kanbanLinksRef.current = kanbanSessions.links;
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
   );
@@ -11704,6 +11722,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanFocus(null);
       setKanbanViewOpen(true);
     });
   }, []);
@@ -11711,6 +11730,86 @@ function Workspace({
   const onLeaveKanban = useCallback(() => {
     setKanbanViewOpen(false);
   }, []);
+
+  const onStartCardSession = useCallback(
+    (card: KanbanCard, project: string) => {
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setSettingsOpen(false);
+      setFilePickerOpen(false);
+      const notes = card.notes.trim();
+      const session = {
+        ...newDefaultSession(project, sessionDefaults?.runtimeMode),
+        title: card.title,
+        composerSeed: notes ? `${card.title}\n\n${notes}` : card.title,
+      };
+      const tab = newTab(session.id);
+      setSidebarTab("sessions", project);
+      setProjectCwd(project);
+      setRecents(rememberProject(project));
+      setSessions((prev) => [...prev, session]);
+      appendTab(tab, project);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
+      linkKanbanSession(card.id, session.id).catch(console.error);
+    },
+    [appendTab, sessionDefaults?.runtimeMode],
+  );
+
+  const onSessionBoard = useCallback(
+    async (sessionId: string) => {
+      const showCard = (project: string, cardId: string) => {
+        workspaceNavigation.cancel();
+        startTransition(() => {
+          setFilePickerOpen(false);
+          setSettingsOpen(false);
+          setSearchViewOpen(false);
+          setInboxViewOpen(false);
+          setNotesViewOpen(false);
+          setAutomationsViewOpen(false);
+          setKanbanFocus({ project, cardId, token: Date.now() });
+          setKanbanViewOpen(true);
+        });
+      };
+      const link = kanbanLinksRef.current.get(sessionId);
+      if (link) {
+        showCard(link.project, link.cardId);
+        return;
+      }
+      const session =
+        sessionsRef.current.find((item) => item.id === sessionId) ??
+        sidebarHistory.find((item) => item.id === sessionId);
+      if (!session) return;
+      const project = kanbanProject(session.cwd);
+      try {
+        const board = await loadKanbanBoard(project);
+        const column =
+          board.columns[0] ??
+          (await createKanbanColumn(
+            board.id,
+            crypto.randomUUID(),
+            DEFAULT_KANBAN_COLUMNS[0],
+          ));
+        const card = await createKanbanCard(column.id, {
+          id: crypto.randomUUID(),
+          title: cardTitleFromText(session.title) || "Untitled session",
+          notes: "",
+          labels: [],
+        });
+        await linkKanbanSession(card.id, sessionId);
+        // The board view opens from the cached copy, which must hold the new card.
+        await loadKanbanBoard(project);
+        showCard(project, card.id);
+      } catch (error) {
+        console.error(error);
+        showCard(project, "");
+      }
+    },
+    [sidebarHistory],
+  );
 
   const onOpenAutomationSession = useCallback(
     async (sessionId: string) => {
@@ -13000,6 +13099,8 @@ function Workspace({
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
               onOpenKanban={onOpenKanban}
+              onSessionBoard={onSessionBoard}
+              boardSessionIds={kanbanSessions.linkedIds}
               onGoToFile={onGoToFile}
               searchActive={searchViewOpen}
               inboxActive={inboxViewOpen}
@@ -13407,6 +13508,10 @@ function Workspace({
                   compactRail={compactRailActive}
                   cwd={projectCwd}
                   recents={recents}
+                  focusRequest={kanbanFocus}
+                  liveSessions={kanbanSessions.live}
+                  onStartSession={onStartCardSession}
+                  onOpenSession={onOpenAutomationSession}
                   onClose={onLeaveKanban}
                   onToggleSidebar={onToggleSidebar}
                 />

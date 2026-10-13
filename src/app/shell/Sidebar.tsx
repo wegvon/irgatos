@@ -323,6 +323,10 @@ type Props = {
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
   onOpenKanban?: () => void;
+  /** Opens the session's board card, filing one first when it has none. */
+  onSessionBoard?: (sessionId: string) => void | Promise<void>;
+  /** Sessions that already have a card on some board. */
+  boardSessionIds?: ReadonlySet<string>;
   onGoToFile?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
@@ -421,6 +425,8 @@ function SidebarComponent({
   onOpenNotes,
   onOpenAutomations,
   onOpenKanban,
+  onSessionBoard,
+  boardSessionIds,
   onGoToFile,
   searchActive = false,
   inboxActive = false,
@@ -1177,6 +1183,17 @@ function SidebarComponent({
           },
         ]
       : []),
+    ...(!multipleMenuSessions && onSessionBoard && sessionMenu
+      ? [
+          {
+            kind: "item" as const,
+            id: "board",
+            label: boardSessionIds?.has(sessionMenu.sessionId)
+              ? "Show on board"
+              : "Add to board",
+          },
+        ]
+      : []),
     {
       kind: "item",
       id: "reminder",
@@ -1317,6 +1334,10 @@ function SidebarComponent({
     }
     if (id === "link-work-item") {
       setLinkingSession(menuSessions[0] ?? null);
+      return;
+    }
+    if (id === "board") {
+      void onSessionBoard?.(sessionId);
       return;
     }
     if (id === "folder-new") {
