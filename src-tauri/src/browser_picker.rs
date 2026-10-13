@@ -6,7 +6,7 @@
 //! its result by evaluating `take()` there. Everything it returns came from an
 //! untrusted page, so the payload is size-bounded, parsed strictly and clipped.
 
-use std::{cell::RefCell, collections::HashSet, sync::mpsc, time::Duration};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::mpsc, time::Duration};
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -34,8 +34,10 @@ const NATIVE_TIMEOUT: Duration = Duration::from_secs(5);
 type ViewKey = (String, String);
 
 thread_local! {
-    // Views with selection mode on. Polls for any other view read nothing.
-    static ACTIVE: RefCell<HashSet<ViewKey>> = RefCell::default();
+    // Views with selection mode on, each holding its picker's script world.
+    // WebKit discards a named world, and everything the picker kept in it,
+    // once nothing holds it. Polls for any other view read nothing.
+    static ACTIVE: RefCell<HashMap<ViewKey, Rc<platform::World>>> = RefCell::default();
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -400,19 +402,23 @@ fn with_view<T>(
     VIEWS.with(|views| task(views.borrow().get(key).ok_or("The browser is closed")?))
 }
 
-fn is_active(key: &ViewKey) -> bool {
-    ACTIVE.with(|active| active.borrow().contains(key))
+fn active_world(key: &ViewKey) -> Option<Rc<platform::World>> {
+    ACTIVE.with(|active| active.borrow().get(key).cloned())
 }
 
-fn set_active(key: &ViewKey, on: bool) {
-    ACTIVE.with(|active| {
-        let mut active = active.borrow_mut();
-        if on {
-            active.insert(key.clone());
-        } else {
-            active.remove(key);
-        }
-    });
+fn deactivate(key: &ViewKey) -> Option<Rc<platform::World>> {
+    ACTIVE.with(|active| active.borrow_mut().remove(key))
+}
+
+/// End selection mode and take the picker off the page. The world is kept
+/// until the page has run the stop.
+fn stop(key: &ViewKey) {
+    if let Some(world) = deactivate(key) {
+        let held = world.clone();
+        let _ = with_view(key, |view| {
+            world.evaluate(view, STOP_JS, move |_| drop(held))
+        });
+    }
 }
 
 async fn wait<T: Send + 'static>(rx: mpsc::Receiver<Result<T, String>>) -> Result<T, String> {
@@ -425,9 +431,9 @@ async fn wait<T: Send + 'static>(rx: mpsc::Receiver<Result<T, String>>) -> Resul
 /// Turn the page's reply to a poll into the panel's answer. Runs on the main
 /// thread, from the evaluation's completion.
 fn settle(key: &ViewKey, raw: Option<String>) -> Result<PickerPoll, String> {
-    if !is_active(key) {
+    let Some(world) = active_world(key) else {
         return Ok(PickerPoll::Cancelled);
-    }
+    };
     let reply = match raw {
         Some(raw) => parse_reply(&raw),
         // The page navigated or hadn't finished loading; arm it again below.
@@ -436,23 +442,22 @@ fn settle(key: &ViewKey, raw: Option<String>) -> Result<PickerPoll, String> {
     match reply {
         Ok(PageReply::Active) => Ok(PickerPoll::Active),
         Ok(PageReply::Missing) => {
-            with_view(key, |view| platform::evaluate(view, PICKER_JS, |_| {}))?;
+            with_view(key, |view| world.evaluate(view, PICKER_JS, |_| {}))?;
             Ok(PickerPoll::Active)
         }
         Ok(PageReply::Cancelled) => {
-            set_active(key, false);
+            deactivate(key);
             Ok(PickerPoll::Cancelled)
         }
         Ok(PageReply::Picked { selection }) => {
-            set_active(key, false);
+            deactivate(key);
             let url = with_view(key, |view| view.url().map_err(|e| e.to_string()))?;
             Ok(PickerPoll::Picked {
                 selection: Box::new(selection.sanitized(url)?),
             })
         }
         Err(error) => {
-            set_active(key, false);
-            let _ = with_view(key, |view| platform::evaluate(view, STOP_JS, |_| {}));
+            stop(key);
             Err(error)
         }
     }
@@ -464,12 +469,13 @@ fn settle(key: &ViewKey, raw: Option<String>) -> Result<PickerPoll, String> {
 pub async fn browser_picker_start(window: WebviewWindow, id: String) -> Result<(), String> {
     on_main(window, move |window| {
         let key = view_key(&window, &id);
-        with_view(&key, |view| {
-            platform::evaluate(view, PICKER_JS, |_| {})?;
+        let world = with_view(&key, |view| {
+            let world = Rc::new(platform::World::new(view)?);
+            world.evaluate(view, PICKER_JS, |_| {})?;
             let _ = view.focus();
-            Ok(())
+            Ok(world)
         })?;
-        set_active(&key, true);
+        ACTIVE.with(|active| active.borrow_mut().insert(key, world));
         Ok(())
     })
     .await
@@ -478,11 +484,7 @@ pub async fn browser_picker_start(window: WebviewWindow, id: String) -> Result<(
 #[tauri::command]
 pub async fn browser_picker_stop(window: WebviewWindow, id: String) -> Result<(), String> {
     on_main(window, move |window| {
-        let key = view_key(&window, &id);
-        if is_active(&key) {
-            set_active(&key, false);
-            let _ = with_view(&key, |view| platform::evaluate(view, STOP_JS, |_| {}));
-        }
+        stop(&view_key(&window, &id));
         Ok(())
     })
     .await
@@ -495,13 +497,13 @@ pub async fn browser_picker_poll(window: WebviewWindow, id: String) -> Result<Pi
     let app_view = window.clone();
     let rx = on_main(window, move |window| {
         let key = view_key(&window, &id);
-        if !is_active(&key) {
+        let Some(world) = active_world(&key) else {
             return Ok(None);
-        }
+        };
         let (tx, rx) = mpsc::channel();
         let settle_key = key.clone();
         with_view(&key, move |view| {
-            platform::evaluate(view, POLL_JS, move |raw| {
+            world.evaluate(view, POLL_JS, move |raw| {
                 let _ = tx.send(settle(&settle_key, raw));
             })
         })?;
@@ -550,7 +552,7 @@ mod platform {
     use std::cell::Cell;
 
     use block2::RcBlock;
-    use objc2::{runtime::AnyObject, MainThreadMarker};
+    use objc2::{rc::Retained, runtime::AnyObject, MainThreadMarker};
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
     use objc2_foundation::{NSDictionary, NSError, NSString};
     use objc2_web_kit::WKContentWorld;
@@ -558,34 +560,46 @@ mod platform {
 
     use super::{decode_png, Rgba, WORLD};
 
-    /// Evaluate `script` in the picker's content world; `done` gets its string
-    /// result, or `None` when it threw or returned something else.
-    pub fn evaluate(
-        view: &WebView,
-        script: &str,
-        done: impl FnOnce(Option<String>) + 'static,
-    ) -> Result<(), String> {
-        let mtm = MainThreadMarker::new().ok_or("The browser must be used on the main thread")?;
-        let world = unsafe { WKContentWorld::worldWithName(&NSString::from_str(WORLD), mtm) };
-        let done = Cell::new(Some(done));
-        let handler = RcBlock::new(move |result: *mut AnyObject, _: *mut NSError| {
-            let text = unsafe { result.as_ref() }
-                .and_then(|value| value.downcast_ref::<NSString>())
-                .map(|value| value.to_string());
-            if let Some(done) = done.take() {
-                done(text);
-            }
-        });
-        unsafe {
-            view.webview()
-                .evaluateJavaScript_inFrame_inContentWorld_completionHandler(
-                    &NSString::from_str(script),
-                    None,
-                    &world,
-                    Some(&handler),
-                );
+    /// The picker's content world, alive for as long as this is.
+    pub struct World(Retained<WKContentWorld>);
+
+    impl World {
+        pub fn new(_: &WebView) -> Result<Self, String> {
+            let mtm =
+                MainThreadMarker::new().ok_or("The browser must be used on the main thread")?;
+            Ok(Self(unsafe {
+                WKContentWorld::worldWithName(&NSString::from_str(WORLD), mtm)
+            }))
         }
-        Ok(())
+
+        /// Evaluate `script` in this world; `done` gets its string result, or
+        /// `None` when it threw or returned something else.
+        pub fn evaluate(
+            &self,
+            view: &WebView,
+            script: &str,
+            done: impl FnOnce(Option<String>) + 'static,
+        ) -> Result<(), String> {
+            let done = Cell::new(Some(done));
+            let handler = RcBlock::new(move |result: *mut AnyObject, _: *mut NSError| {
+                let text = unsafe { result.as_ref() }
+                    .and_then(|value| value.downcast_ref::<NSString>())
+                    .map(|value| value.to_string());
+                if let Some(done) = done.take() {
+                    done(text);
+                }
+            });
+            unsafe {
+                view.webview()
+                    .evaluateJavaScript_inFrame_inContentWorld_completionHandler(
+                        &NSString::from_str(script),
+                        None,
+                        &self.0,
+                        Some(&handler),
+                    );
+            }
+            Ok(())
+        }
     }
 
     /// Snapshot the visible page at the screen's pixel density.
@@ -625,33 +639,70 @@ mod platform {
 #[cfg(target_os = "linux")]
 mod platform {
     use javascriptcore::ValueExt;
-    use webkit2gtk::{gio::Cancellable, SnapshotOptions, SnapshotRegion, WebViewExt};
+    use webkit2gtk::{
+        gio::Cancellable, SnapshotOptions, SnapshotRegion, UserContentInjectedFrames,
+        UserContentManager, UserContentManagerExt, UserScript, UserScriptInjectionTime, WebViewExt,
+    };
     use wry::{WebView, WebViewExtUnix};
 
     use super::{Rgba, WORLD};
 
-    /// Evaluate `script` in the picker's script world; `done` gets its string
-    /// result, or `None` when it threw or returned something else.
-    pub fn evaluate(
-        view: &WebView,
-        script: &str,
-        done: impl FnOnce(Option<String>) + 'static,
-    ) -> Result<(), String> {
-        view.webview().evaluate_javascript(
-            script,
-            Some(WORLD),
-            None,
-            None::<&Cancellable>,
-            move |result| {
-                done(
-                    result
-                        .ok()
-                        .filter(|value| value.is_string())
-                        .map(|value| value.to_str().to_string()),
-                )
-            },
-        );
-        Ok(())
+    /// The picker's script world, alive for as long as this is. WebKitGTK
+    /// only keeps a named world while something registered in it exists, so
+    /// this registers an empty script there.
+    pub struct World {
+        manager: UserContentManager,
+        script: UserScript,
+    }
+
+    impl World {
+        pub fn new(view: &WebView) -> Result<Self, String> {
+            let manager = view
+                .webview()
+                .user_content_manager()
+                .ok_or("The browser can't run the picker")?;
+            let script = UserScript::for_world(
+                "",
+                UserContentInjectedFrames::TopFrame,
+                UserScriptInjectionTime::End,
+                WORLD,
+                &[],
+                &[],
+            );
+            manager.add_script(&script);
+            Ok(Self { manager, script })
+        }
+
+        /// Evaluate `script` in this world; `done` gets its string result, or
+        /// `None` when it threw or returned something else.
+        pub fn evaluate(
+            &self,
+            view: &WebView,
+            script: &str,
+            done: impl FnOnce(Option<String>) + 'static,
+        ) -> Result<(), String> {
+            view.webview().evaluate_javascript(
+                script,
+                Some(WORLD),
+                None,
+                None::<&Cancellable>,
+                move |result| {
+                    done(
+                        result
+                            .ok()
+                            .filter(|value| value.is_string())
+                            .map(|value| value.to_str().to_string()),
+                    )
+                },
+            );
+            Ok(())
+        }
+    }
+
+    impl Drop for World {
+        fn drop(&mut self) {
+            self.manager.remove_script(&self.script);
+        }
     }
 
     /// Snapshot the visible page at the screen's pixel density.
@@ -716,12 +767,21 @@ mod platform {
 
     const UNSUPPORTED: &str = "Selecting page content isn't available on this system yet";
 
-    pub fn evaluate(
-        _: &WebView,
-        _: &str,
-        _: impl FnOnce(Option<String>) + 'static,
-    ) -> Result<(), String> {
-        Err(UNSUPPORTED.into())
+    pub struct World;
+
+    impl World {
+        pub fn new(_: &WebView) -> Result<Self, String> {
+            Err(UNSUPPORTED.into())
+        }
+
+        pub fn evaluate(
+            &self,
+            _: &WebView,
+            _: &str,
+            _: impl FnOnce(Option<String>) + 'static,
+        ) -> Result<(), String> {
+            Err(UNSUPPORTED.into())
+        }
     }
 
     pub fn snapshot(

@@ -87,7 +87,9 @@
   const CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"];
 
   const clip = (value, limit) => {
-    const text = String(value ?? "").replace(/\s+/g, " ").trim();
+    const text = String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
     return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
   };
   const round = (n) => Math.round(n);
@@ -141,7 +143,10 @@
     for (const [name, defaults] of STYLES) {
       if (names && !names.includes(name)) continue;
       if (CONTAINER_ONLY.has(name) && !container) continue;
-      if (["top", "right", "bottom", "left", "z-index"].includes(name) && !positioned)
+      if (
+        ["top", "right", "bottom", "left", "z-index"].includes(name) &&
+        !positioned
+      )
         continue;
       if (name === "border-color" && !bordered) continue;
       const value = clip(styleValue(style, name), 160);
@@ -179,11 +184,17 @@
         const classes = [...node.classList]
           .filter((c) => /^[A-Za-z_-][\w-]*$/.test(c) && c.length <= 40)
           .slice(0, 2);
-        if (classes.length) part += classes.map((c) => `.${CSS.escape(c)}`).join("");
+        if (classes.length)
+          part += classes.map((c) => `.${CSS.escape(c)}`).join("");
         const parent = node.parentElement;
+        if (classes.length && unique([part, ...parts].join(" > ")))
+          return [part, ...parts].join(" > ");
         if (parent) {
-          const same = [...parent.children].filter((c) => c.localName === node.localName);
-          if (same.length > 1) part += `:nth-of-type(${same.indexOf(node) + 1})`;
+          const same = [...parent.children].filter(
+            (c) => c.localName === node.localName,
+          );
+          if (same.length > 1)
+            part += `:nth-of-type(${same.indexOf(node) + 1})`;
         }
         parts.unshift(part);
         if (unique(parts.join(" > "))) return parts.join(" > ");
@@ -322,7 +333,14 @@
     const top = Math.max(0, Math.min(drag.y, pointer.y));
     const right = Math.min(innerWidth, Math.max(drag.x, pointer.x));
     const bottom = Math.min(innerHeight, Math.max(drag.y, pointer.y));
-    return { left, top, right, bottom, width: right - left, height: bottom - top };
+    return {
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+    };
   };
 
   const regionElements = (rect) => {
@@ -374,11 +392,15 @@
   const pick = (selection) =>
     finish({
       state: "picked",
-      selection: { title: clip(document.title, 200), viewport: viewport(), ...selection },
+      selection: {
+        title: clip(document.title, 200),
+        viewport: viewport(),
+        ...selection,
+      },
     });
 
   const onKey = (event) => {
-    if (event.key !== "Escape") return;
+    if (event.key !== "Escape" || !event.isTrusted) return;
     event.preventDefault();
     event.stopPropagation();
     finished = true;
@@ -393,24 +415,33 @@
     event.stopPropagation();
   };
 
-  host.addEventListener("pointermove", (event) => {
+  // Page scripts can see the overlay and dispatch events at it; only the
+  // user's own input may move or make a selection.
+  const fromUser = (event) => {
     swallow(event);
+    return event.isTrusted;
+  };
+
+  host.addEventListener("pointermove", (event) => {
+    if (!fromUser(event)) return;
     pointer = { x: event.clientX, y: event.clientY };
-    if (drag && !drag.active && Math.hypot(pointer.x - drag.x, pointer.y - drag.y) > DRAG_THRESHOLD)
+    if (
+      drag &&
+      !drag.active &&
+      Math.hypot(pointer.x - drag.x, pointer.y - drag.y) > DRAG_THRESHOLD
+    )
       drag.active = true;
     if (drag?.active) show(regionRect(), "Region", true);
     else hover();
   });
   host.addEventListener("pointerdown", (event) => {
-    swallow(event);
-    if (event.button !== 0) return;
+    if (!fromUser(event) || event.button !== 0) return;
     pointer = { x: event.clientX, y: event.clientY };
     drag = { x: pointer.x, y: pointer.y, active: false };
     host.setPointerCapture?.(event.pointerId);
   });
   host.addEventListener("pointerup", (event) => {
-    swallow(event);
-    if (!drag) return;
+    if (!fromUser(event) || !drag) return;
     pointer = { x: event.clientX, y: event.clientY };
     const region = drag.active ? regionRect() : null;
     drag = null;
@@ -433,7 +464,14 @@
       elements: [],
     });
   });
-  for (const type of ["click", "dblclick", "mousedown", "mouseup", "contextmenu", "auxclick"])
+  for (const type of [
+    "click",
+    "dblclick",
+    "mousedown",
+    "mouseup",
+    "contextmenu",
+    "auxclick",
+  ])
     host.addEventListener(type, swallow);
   host.addEventListener("pointerleave", () => {
     if (!drag?.active) hide();

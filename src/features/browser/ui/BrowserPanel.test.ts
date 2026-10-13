@@ -368,6 +368,48 @@ it("cancels selection mode with Escape", async () => {
   }
 });
 
+it("keeps the page's size unchanged until the screenshot is taken", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let finishCapture: (image: string) => void = () => undefined;
+  try {
+    act(() =>
+      root.render(
+        createElement(BrowserPanel, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    await openPage(container);
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "browser_picker_poll")
+        return { state: "picked", selection: picked };
+      if (command === "browser_capture")
+        return new Promise<string>((resolve) => (finishCapture = resolve));
+      return undefined;
+    });
+    act(() => pickerButton(container).click());
+    await flush();
+    await wait(300);
+
+    expect(invoke).toHaveBeenCalledWith("browser_capture", expect.anything());
+    expect(container.textContent).toContain(
+      "Taking a screenshot of the selection",
+    );
+    expect(
+      container.querySelector('form[aria-label="Send selection to agent"]'),
+    ).toBeNull();
+
+    await act(async () => finishCapture("iVBORw0KGgo="));
+    expect(container.textContent).not.toContain("Taking a screenshot");
+    expect(
+      container.querySelector('form[aria-label="Send selection to agent"]'),
+    ).not.toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("keeps the selection when no chat is open to take it", async () => {
   const container = document.createElement("div");
   document.body.append(container);

@@ -742,25 +742,42 @@ export function BrowserPanel({
             {error ?? notice}
           </div>
         ) : null}
-        {picking ? (
+        {/* Stays up until the screenshot is taken: changing the page's size
+            before then can move what was selected. */}
+        {picking || capture?.capturing ? (
           <div
             role="status"
-            className="flex shrink-0 items-center gap-2 border-b border-stroke bg-accent/10 px-3 py-1.5 text-[11px] text-content/75"
+            className="flex h-7 shrink-0 items-center gap-2 border-b border-stroke bg-accent/10 px-3 text-[11px] text-content/75"
           >
-            <CursorMagicSelection
-              className="size-3.5 shrink-0 text-accent"
-              strokeWidth={1.75}
-            />
-            <span className="min-w-0 flex-1">
-              Click an element or drag across an area to send it to the agent.
-            </span>
-            <button
-              type="button"
-              onClick={stopPicking}
-              className="shrink-0 rounded px-1.5 py-0.5 text-content/60 hover:bg-content/10 hover:text-content"
-            >
-              Cancel <span className="text-content/40">Esc</span>
-            </button>
+            {picking ? (
+              <>
+                <CursorMagicSelection
+                  className="size-3.5 shrink-0 text-accent"
+                  strokeWidth={1.75}
+                />
+                <span className="min-w-0 flex-1">
+                  Click an element or drag across an area to send it to the
+                  agent.
+                </span>
+                <button
+                  type="button"
+                  onClick={stopPicking}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-content/60 hover:bg-content/10 hover:text-content"
+                >
+                  Cancel <span className="text-content/40">Esc</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <LoaderCircle
+                  className="size-3.5 shrink-0 animate-spin text-accent"
+                  strokeWidth={1.75}
+                />
+                <span className="min-w-0 flex-1">
+                  Taking a screenshot of the selection…
+                </span>
+              </>
+            )}
           </div>
         ) : null}
         <div ref={slotRef} className="relative min-h-0 flex-1 bg-white">
@@ -790,7 +807,7 @@ export function BrowserPanel({
             </div>
           )}
         </div>
-        {capture ? (
+        {capture && !capture.capturing ? (
           <form
             aria-label="Send selection to agent"
             className="shrink-0 border-t border-stroke p-2.5"
@@ -806,12 +823,6 @@ export function BrowserPanel({
                     src={`data:image/png;base64,${capture.image}`}
                     alt={`Screenshot of ${selectionName(capture.selection)}`}
                     className="max-h-full max-w-full object-contain"
-                  />
-                ) : capture.capturing ? (
-                  <LoaderCircle
-                    className="size-4 animate-spin text-content/40"
-                    strokeWidth={1.75}
-                    aria-label="Taking screenshot"
                   />
                 ) : (
                   <span className="text-[10px] text-content/40">
@@ -833,9 +844,7 @@ export function BrowserPanel({
                     displayAddress(capture.selection.url)}
                 </p>
                 <p className="truncate text-[11px] text-content/45">
-                  {capture.capturing
-                    ? "Taking screenshot…"
-                    : `Sends ${selectionSummary(capture.selection, !!capture.image)}`}
+                  Sends {selectionSummary(capture.selection, !!capture.image)}
                 </p>
               </div>
               <button
@@ -884,7 +893,7 @@ export function BrowserPanel({
                 </span>
                 <button
                   type="submit"
-                  disabled={capture.capturing || sending}
+                  disabled={sending}
                   className="inline-flex h-7 items-center gap-1.5 rounded-md bg-content px-2.5 text-[12px] font-medium text-background-base hover:opacity-80 disabled:cursor-default disabled:opacity-40"
                 >
                   <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
