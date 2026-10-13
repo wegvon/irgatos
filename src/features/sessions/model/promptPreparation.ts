@@ -7,6 +7,7 @@ import {
   type SkillCatalogContext,
 } from "../../skills/model/skills";
 import { nativeCommandPrompt } from "../../../integrations/harness/core/nativeCommands";
+import { applySessionReferencesToTurn } from "../data/sessionReferenceDirectory";
 
 export async function preparePrompt(
   text: string,
@@ -17,5 +18,6 @@ export async function preparePrompt(
     return nativeCommandPrompt(context.harness, text);
   const withFiles = await applyFileMentionsToTurn(text, context.cwd);
   const withNotes = await applyNotesToTurn(withFiles);
-  return applySkillsToTurn(withNotes, context);
+  const withSkills = await applySkillsToTurn(withNotes, context);
+  return applySessionReferencesToTurn(text, withSkills, context);
 }
