@@ -72,7 +72,11 @@ pub(super) fn privacy_usage_descriptions() -> Result<(), String> {
         let key_string = NSString::from_str(key);
         let present = bundle
             .objectForInfoDictionaryKey(&key_string)
-            .and_then(|value| value.downcast_ref::<NSString>().map(|value| value.to_string()))
+            .and_then(|value| {
+                value
+                    .downcast_ref::<NSString>()
+                    .map(|value| value.to_string())
+            })
             .is_some_and(|value| !value.trim().is_empty());
         if !present {
             return Err(format!(
