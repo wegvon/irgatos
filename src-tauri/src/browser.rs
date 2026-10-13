@@ -22,7 +22,7 @@ use wry::{
 #[cfg(target_os = "macos")]
 use cookie::{Cookie, SameSite};
 #[cfg(target_os = "macos")]
-use rookie_cookies::{chrome_profiles, read, Cookie as ChromeCookie, ReadRequest};
+use rookie_cookies::{chrome_profiles, enums::Cookie as ChromeCookie, read, ReadRequest};
 
 const EVENT: &str = "inline-browser";
 
@@ -342,12 +342,14 @@ pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
                         .collect()
                 })
                 .map_err(|_| {
-                    "Chrome profiles could not be read. You can still sign in in Browser.".into()
+                    String::from(
+                        "Chrome profiles could not be read. You can still sign in in Browser.",
+                    )
                 })
         })
         .await
         .map_err(|_| {
-            "Chrome profiles could not be read. You can still sign in in Browser.".into()
+            String::from("Chrome profiles could not be read. You can still sign in in Browser.")
         })?
     }
     #[cfg(not(target_os = "macos"))]
