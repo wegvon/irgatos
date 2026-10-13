@@ -609,6 +609,7 @@ describe("settings navigation", () => {
       "chat",
       "voice",
       "providers",
+      "usage",
       "mcp",
       "skills",
       "irgats",

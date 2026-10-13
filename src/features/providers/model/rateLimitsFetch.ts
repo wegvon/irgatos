@@ -4,23 +4,30 @@ import {
   errorRateLimits,
   parseClaudeOAuthUsage,
   parseCodexRateLimits,
+  parseCursorUsage,
   parseDevinUsage,
   parseOpencodeGoUsage,
   unavailableRateLimits,
+  type CursorUsage,
   type DevinUsage,
   type ProviderRateLimits,
+  type RateLimitUnavailableReason,
 } from "./rateLimits";
 import type { ProviderAccountIdentity } from "./providerAccountIdentity";
 import {
   inspectHarnessBinary,
   killChild,
+  resolveClaudeBinary,
   resolveCodexBinary,
+  resolveCursorBinary,
+  resolveOpenCodeBinary,
   spawnChild,
   unwatchChild,
   watchChild,
 } from "../../../integrations/harness/core/child";
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 import { JsonRpcClient } from "../../../integrations/harness/core/jsonRpc";
+import { runtimeProviderBinaryPath } from "./providerBinaryPaths";
 
 const USAGE_CHILD_ID = "irgat-codex-usage";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -67,6 +74,7 @@ export async function fetchOpencodeGoRateLimits(): Promise<ProviderRateLimits> {
     return unavailableRateLimits(
       "opencode",
       result.error?.trim() || "OpenCode Go not connected",
+      await reasonUnlessMissing(resolveOpenCodeBinary, "unsupported"),
     );
   }
   return errorRateLimits(
@@ -99,7 +107,7 @@ export async function fetchDevinRateLimits(): Promise<ProviderRateLimits> {
     const inspected = await inspectHarnessBinary("devin");
     cliVersion = /\d+(?:\.\d+)+/.exec(inspected.version ?? "")?.[0];
   } catch {
-    return unavailableRateLimits("devin", "Devin CLI not found");
+    return unavailableRateLimits("devin", "Devin CLI not found", "not-installed");
   }
   if (!cliVersion) return errorRateLimits("devin", "Devin CLI version unknown");
   let result: DevinUsageFetch;
@@ -121,12 +129,92 @@ export async function fetchDevinRateLimits(): Promise<ProviderRateLimits> {
   }
   if (result.status === "unavailable") {
     devinIdentity = null;
-    return unavailableRateLimits("devin", result.error?.trim() || "Devin not signed in");
+    return unavailableRateLimits(
+      "devin",
+      result.error?.trim() || "Devin not signed in",
+      "not-signed-in",
+    );
   }
   // A rejected key means that account is no longer signed in; a network
   // failure keeps the identity beside the last usage snapshot.
   if (result.httpStatus === 401 || result.httpStatus === 403) devinIdentity = null;
   return errorRateLimits("devin", result.error?.trim() || "Devin usage unavailable");
+}
+
+/** `fallback`, or `not-installed` when the provider's CLI cannot be found. */
+async function reasonUnlessMissing(
+  resolve: () => Promise<unknown>,
+  fallback: RateLimitUnavailableReason,
+): Promise<RateLimitUnavailableReason> {
+  try {
+    await resolve();
+    return fallback;
+  } catch {
+    return "not-installed";
+  }
+}
+
+type CursorUsageFetch = {
+  status: "ok" | "error" | "unavailable" | string;
+  reason?: string | null;
+  httpStatus?: number | null;
+  usage?: CursorUsage | null;
+  error?: string | null;
+};
+
+const UNAVAILABLE_REASONS: readonly RateLimitUnavailableReason[] = [
+  "not-installed",
+  "not-signed-in",
+  "unsupported",
+];
+
+/** Map a host usage result onto the shared snapshot; unknown shapes fail closed. */
+export function cursorRateLimitsFromFetch(
+  result: CursorUsageFetch,
+): ProviderRateLimits {
+  if (result.status === "ok" && result.usage) {
+    const parsed = parseCursorUsage(result.usage);
+    if (parsed.monthly) return parsed;
+    return errorRateLimits("cursor", "Cursor usage response was unexpected");
+  }
+  if (result.status === "unavailable") {
+    const reason = UNAVAILABLE_REASONS.find((value) => value === result.reason);
+    return unavailableRateLimits(
+      "cursor",
+      result.error?.trim() || "Cursor usage unavailable",
+      reason ?? null,
+    );
+  }
+  return errorRateLimits(
+    "cursor",
+    result.error?.trim() || "Cursor usage unavailable",
+  );
+}
+
+/**
+ * Cursor's plan usage for the billing cycle. The host asks the signed-in
+ * Cursor CLI for its session and reads Cursor's dashboard with it.
+ */
+export async function fetchCursorRateLimits(): Promise<ProviderRateLimits> {
+  let command: string;
+  try {
+    command = (await resolveCursorBinary()).path;
+  } catch {
+    return unavailableRateLimits("cursor", "Cursor CLI not found", "not-installed");
+  }
+  try {
+    return cursorRateLimitsFromFetch(
+      await invoke<CursorUsageFetch>("fetch_cursor_usage", {
+        command,
+        binaryPath: runtimeProviderBinaryPath("cursor") ?? null,
+      }),
+    );
+  } catch (error) {
+    return errorRateLimits(
+      "cursor",
+      error instanceof Error ? error.message : "Cursor usage unavailable",
+    );
+  }
 }
 
 export type CodexRateLimitResetOutcome =
@@ -158,6 +246,7 @@ export async function fetchClaudeRateLimits(
       return unavailableRateLimits(
         "claude",
         result.error?.trim() || "Claude not signed in",
+        await reasonUnlessMissing(resolveClaudeBinary, "not-signed-in"),
       );
     }
     return errorRateLimits(
@@ -179,7 +268,7 @@ export async function fetchCodexRateLimits(
   try {
     path = (await resolveCodexBinary()).path;
   } catch {
-    return unavailableRateLimits("codex", "Codex CLI not found");
+    return unavailableRateLimits("codex", "Codex CLI not found", "not-installed");
   }
 
   const cwd = await homeDir();
@@ -197,7 +286,11 @@ export async function fetchCodexRateLimits(
     }
     const rec = asRecord(result);
     if (rec && !parsed.session && !parsed.weekly) {
-      return unavailableRateLimits("codex", "No Codex usage data");
+      return unavailableRateLimits(
+        "codex",
+        "Codex reports limits only for ChatGPT sign-ins",
+        "unsupported",
+      );
     }
     return parsed;
   } catch (error) {
@@ -207,10 +300,18 @@ export async function fetchCodexRateLimits(
         message,
       )
     ) {
-      return unavailableRateLimits("codex", "Codex not signed in");
+      return unavailableRateLimits(
+        "codex",
+        "Codex not signed in",
+        "not-signed-in",
+      );
     }
     if (/ENOENT|not found|could not run/i.test(message)) {
-      return unavailableRateLimits("codex", "Codex CLI not found");
+      return unavailableRateLimits(
+        "codex",
+        "Codex CLI not found",
+        "not-installed",
+      );
     }
     return errorRateLimits("codex", message);
   }

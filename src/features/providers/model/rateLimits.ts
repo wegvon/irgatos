@@ -1,6 +1,11 @@
 import { asRecord } from "../../../integrations/harness/providers/codex/codexProtocol";
 
-export type RateLimitProvider = "claude" | "codex" | "opencode" | "devin";
+export type RateLimitProvider =
+  "claude" | "codex" | "opencode" | "devin" | "cursor";
+
+/** Why a provider has no usage to show, when it is not an error. */
+export type RateLimitUnavailableReason =
+  "not-installed" | "not-signed-in" | "unsupported";
 
 export type RateLimitStatus =
   "idle" | "fetching" | "ok" | "error" | "unavailable";
@@ -39,6 +44,10 @@ export type ProviderRateLimits = {
   resetCredits: RateLimitResetCredits | null;
   /** Devin-only extra (overage) usage balance in US dollars; negative once billed. */
   extraUsageBalance?: number | null;
+  /** Cursor-only spend and plan detail for the billing cycle. */
+  cursor?: CursorPlanUsage | null;
+  /** Set with `status: "unavailable"` when the cause is known. */
+  reason?: RateLimitUnavailableReason | null;
   updatedAt: number;
   error: string | null;
   status: RateLimitStatus;
@@ -96,6 +105,7 @@ export function fetchingRateLimits(
 export function unavailableRateLimits(
   provider: RateLimitProvider,
   error: string,
+  reason: RateLimitUnavailableReason | null = null,
 ): ProviderRateLimits {
   return {
     provider,
@@ -106,6 +116,7 @@ export function unavailableRateLimits(
     updatedAt: Date.now(),
     error,
     status: "unavailable",
+    reason,
   };
 }
 
@@ -369,6 +380,75 @@ export function parseDevinUsage(usage: DevinUsage): ProviderRateLimits {
       usage.extraUsageBalanceMicros == null || !Number.isFinite(usage.extraUsageBalanceMicros)
         ? null
         : usage.extraUsageBalanceMicros / 1_000_000,
+    updatedAt: Date.now(),
+    error: null,
+    status: "ok",
+  };
+}
+
+/** What the `fetch_cursor_usage` command reads from Cursor's dashboard. */
+export type CursorUsage = {
+  plan?: string | null;
+  planPercentUsed: number;
+  autoPercentUsed?: number | null;
+  apiPercentUsed?: number | null;
+  includedUsedCents?: number | null;
+  includedLimitCents?: number | null;
+  onDemandUsedCents?: number | null;
+  onDemandLimitCents?: number | null;
+  billingCycleStartMs?: number | null;
+  billingCycleEndMs?: number | null;
+};
+
+export type CursorPlanUsage = {
+  plan: string | null;
+  autoPercentUsed: number | null;
+  apiPercentUsed: number | null;
+  /** US dollars, as Cursor bills them. */
+  includedUsed: number | null;
+  includedLimit: number | null;
+  onDemandUsed: number | null;
+  onDemandLimit: number | null;
+};
+
+/**
+ * Cursor meters one billing cycle. Its length comes from the cycle Cursor
+ * reports, falling back to a month only when the start is missing.
+ */
+export function parseCursorUsage(usage: CursorUsage): ProviderRateLimits {
+  const start = parseResetTimestamp(usage.billingCycleStartMs);
+  const end = parseResetTimestamp(usage.billingCycleEndMs);
+  const windowMinutes =
+    start != null && end != null && end > start
+      ? Math.round((end - start) / 60_000)
+      : MONTHLY_WINDOW_MINUTES;
+  const finite = (value: number | null | undefined) =>
+    value != null && Number.isFinite(value) ? value : null;
+  const dollars = (cents: number | null | undefined) => {
+    const value = finite(cents);
+    return value == null ? null : value / 100;
+  };
+  return {
+    provider: "cursor",
+    session: null,
+    weekly: null,
+    monthly: Number.isFinite(usage.planPercentUsed)
+      ? {
+          usedPercent: clampUsedPercent(usage.planPercentUsed),
+          windowMinutes,
+          resetsAt: end,
+        }
+      : null,
+    resetCredits: null,
+    cursor: {
+      plan: usage.plan?.trim() || null,
+      autoPercentUsed: finite(usage.autoPercentUsed),
+      apiPercentUsed: finite(usage.apiPercentUsed),
+      includedUsed: dollars(usage.includedUsedCents),
+      includedLimit: dollars(usage.includedLimitCents),
+      onDemandUsed: dollars(usage.onDemandUsedCents),
+      onDemandLimit: dollars(usage.onDemandLimitCents),
+    },
     updatedAt: Date.now(),
     error: null,
     status: "ok",

@@ -25,6 +25,7 @@ export type SettingsSectionId =
   | "chat"
   | "voice"
   | "providers"
+  | "usage"
   | "mcp"
   | "skills"
   | "irgats"
@@ -109,6 +110,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Provider accounts, agent CLIs Irgat can drive, and the model new sessions start with.",
     keywords:
       "account sign in login model harness claude codex gemini cli default hooks",
+  },
+  {
+    id: "usage",
+    group: "agents",
+    label: "Usage",
+    description:
+      "Plan limits and what is left for each agent CLI, read from the CLIs you are signed in to.",
+    keywords:
+      "quota limit usage plan tier rate reset billing claude codex cursor opencode devin",
   },
   {
     id: "mcp",
@@ -489,6 +499,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Provider accounts",
     keywords:
       "account sign in login rename remove delete credentials profile usage limit quota exhausted",
+  },
+  {
+    id: "agent-usage",
+    section: "usage",
+    label: "Agent plan limits",
+    keywords:
+      "quota limit usage plan tier rate reset billing cycle claude codex cursor opencode devin",
   },
   {
     id: "show-remaining-usage",

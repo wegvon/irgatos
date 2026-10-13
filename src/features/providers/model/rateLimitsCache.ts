@@ -9,6 +9,7 @@ import {
 import {
   fetchClaudeRateLimits,
   fetchCodexRateLimits,
+  fetchCursorRateLimits,
   fetchDevinRateLimits,
   fetchOpencodeGoRateLimits,
 } from "./rateLimitsFetch";
@@ -18,6 +19,26 @@ const pending = new Map<string, Promise<ProviderRateLimits>>();
 const queuedRefreshes = new Map<string, Promise<ProviderRateLimits>>();
 const listeners = new Set<() => void>();
 let allSnapshots: Record<string, ProviderRateLimits> = {};
+
+/** Probes that outlive this resolve to an error instead of a stuck spinner. */
+export const RATE_LIMIT_PROBE_TIMEOUT_MS = 45_000;
+
+export function withProbeTimeout(
+  provider: RateLimitProvider,
+  probe: Promise<ProviderRateLimits>,
+  ms = RATE_LIMIT_PROBE_TIMEOUT_MS,
+): Promise<ProviderRateLimits> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<ProviderRateLimits>((resolve) => {
+    timer = setTimeout(
+      () => resolve(errorRateLimits(provider, "Usage check timed out")),
+      ms,
+    );
+  });
+  return Promise.race([probe, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 function keyFor(provider: RateLimitProvider, accountId: string): string {
   return `${provider}:${accountId}`;
@@ -50,6 +71,7 @@ const idle: Record<RateLimitProvider, ProviderRateLimits> = {
   codex: idleRateLimits("codex"),
   opencode: idleRateLimits("opencode"),
   devin: idleRateLimits("devin"),
+  cursor: idleRateLimits("cursor"),
 };
 
 export function useCachedRateLimits(
@@ -96,14 +118,18 @@ export function loadRateLimits(
   publish(key, fetchingRateLimits(provider, cached));
   const run = (async () => {
     try {
-      const result =
+      const result = await withProbeTimeout(
+        provider,
         provider === "claude"
-          ? await fetchClaudeRateLimits(accountId)
+          ? fetchClaudeRateLimits(accountId)
           : provider === "codex"
-            ? await fetchCodexRateLimits(accountId)
+            ? fetchCodexRateLimits(accountId)
             : provider === "devin"
-              ? await fetchDevinRateLimits()
-              : await fetchOpencodeGoRateLimits();
+              ? fetchDevinRateLimits()
+              : provider === "cursor"
+                ? fetchCursorRateLimits()
+                : fetchOpencodeGoRateLimits(),
+      );
       publish(key, result);
       return result;
     } catch (error) {

@@ -13,6 +13,7 @@ mod computer_use;
 mod control;
 pub mod control_cli;
 mod cursor_store;
+mod cursor_usage;
 mod devin_config;
 mod devin_usage;
 mod external_editor;
@@ -522,6 +523,7 @@ pub fn run() {
             rate_limits::fetch_claude_usage,
             rate_limits::fetch_opencode_go_usage,
             devin_usage::fetch_devin_usage,
+            cursor_usage::fetch_cursor_usage,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
