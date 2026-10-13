@@ -224,3 +224,22 @@ it("imports only after the user selects a Chrome profile", async () => {
     container.remove();
   }
 });
+
+it("explains persistent sessions and the passkey fallback before browsing", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(BrowserPanel, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    expect(container.textContent).toContain("persistent store");
+    expect(container.textContent).toContain("Open in Default Browser");
+    expect(container.textContent).toContain("passkey");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
