@@ -210,9 +210,10 @@ impl PageSelection {
     fn sanitized(self, url: String) -> Result<Self, String> {
         let invalid = || "The page sent an invalid selection".to_string();
         let Size { width, height } = self.viewport;
-        if !(width.is_finite() && height.is_finite())
-            || !(1.0..=MAX_VIEWPORT).contains(&width)
-            || !(1.0..=MAX_VIEWPORT).contains(&height)
+        if !(width.is_finite()
+            && height.is_finite()
+            && (1.0..=MAX_VIEWPORT).contains(&width)
+            && (1.0..=MAX_VIEWPORT).contains(&height))
         {
             return Err(invalid());
         }
