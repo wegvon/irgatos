@@ -22,6 +22,7 @@ mod harness_updates;
 mod inbox_media;
 mod jira;
 mod jsonc;
+mod kanban;
 mod linear;
 mod link_preview;
 #[cfg(target_os = "macos")]
@@ -553,6 +554,17 @@ pub fn run() {
             notes::notes_delete,
             notes::notes_save_image,
             notes::notes_image_path,
+            kanban::kanban_board,
+            kanban::kanban_card_create,
+            kanban::kanban_card_update,
+            kanban::kanban_card_move,
+            kanban::kanban_card_delete,
+            kanban::kanban_card_restore,
+            kanban::kanban_column_create,
+            kanban::kanban_column_rename,
+            kanban::kanban_column_move,
+            kanban::kanban_column_delete,
+            kanban::kanban_column_restore,
             mono::mono_load,
             mono::mono_read,
             mono::mono_save,
