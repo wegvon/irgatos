@@ -112,32 +112,48 @@ pub(super) fn request_microphone() -> mpsc::Receiver<()> {
     // Keep this guard at the TCC call site as well as the command boundary:
     // future callers cannot accidentally turn a missing plist key into an
     // unrecoverable macOS abort.
-    if privacy_usage_descriptions().is_err() {
-        let _ = tx.send(());
-        return rx;
-    }
     let Some(audio) = (unsafe { AVMediaTypeAudio }) else {
         let _ = tx.send(());
         return rx;
     };
+    let prompt_tx = tx.clone();
     let handler = RcBlock::new(move |_granted: Bool| {
-        let _ = tx.send(());
+        let _ = prompt_tx.send(());
     });
-    unsafe { AVCaptureDevice::requestAccessForMediaType_completionHandler(audio, &handler) };
+    if guarded_tcc_request(|| unsafe {
+        AVCaptureDevice::requestAccessForMediaType_completionHandler(audio, &handler)
+    })
+    .is_err()
+    {
+        let _ = tx.send(());
+    }
     rx
 }
 
 pub(super) fn request_speech() -> mpsc::Receiver<()> {
     let (tx, rx) = mpsc::channel();
-    if privacy_usage_descriptions().is_err() {
-        let _ = tx.send(());
-        return rx;
-    }
+    let prompt_tx = tx.clone();
     let handler = RcBlock::new(move |_status: SFSpeechRecognizerAuthorizationStatus| {
-        let _ = tx.send(());
+        let _ = prompt_tx.send(());
     });
-    unsafe { SFSpeechRecognizer::requestAuthorization(&handler) };
+    if guarded_tcc_request(|| unsafe { SFSpeechRecognizer::requestAuthorization(&handler) })
+        .is_err()
+    {
+        let _ = tx.send(());
+    }
     rx
+}
+
+fn guarded_tcc_request<T>(request: impl FnOnce() -> T) -> Result<T, String> {
+    guarded_tcc_request_with(privacy_usage_descriptions, request)
+}
+
+fn guarded_tcc_request_with<T>(
+    usage_descriptions: impl FnOnce() -> Result<(), String>,
+    request: impl FnOnce() -> T,
+) -> Result<T, String> {
+    usage_descriptions()?;
+    Ok(request())
 }
 
 #[derive(Default)]
@@ -500,5 +516,27 @@ fn first_channel(buffer: &AVAudioPCMBuffer) -> Vec<f32> {
         let frames = buffer.frameLength() as usize;
         let stride = buffer.stride().max(1);
         (0..frames).map(|frame| *data.add(frame * stride)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    use super::guarded_tcc_request_with;
+
+    #[test]
+    fn missing_usage_description_blocks_tcc_request() {
+        let requested = Cell::new(false);
+        let result = guarded_tcc_request_with(
+            || Err("missing NSSpeechRecognitionUsageDescription".into()),
+            || requested.set(true),
+        );
+
+        assert!(result.is_err());
+        assert!(
+            !requested.get(),
+            "the TCC authorization call must not run without both usage descriptions"
+        );
     }
 }
