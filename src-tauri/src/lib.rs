@@ -5,6 +5,7 @@ mod artifacts;
 mod automations;
 mod azure_devops;
 mod browser;
+mod browser_picker;
 mod chat_background;
 mod checkpoint;
 mod codex_mono_store;
@@ -415,6 +416,10 @@ pub fn run() {
             browser::browser_prepare,
             browser::browser_chrome_profiles,
             browser::browser_import_chrome_profile,
+            browser_picker::browser_picker_start,
+            browser_picker::browser_picker_stop,
+            browser_picker::browser_picker_poll,
+            browser_picker::browser_capture,
             browser::browser_open,
             browser::browser_set_bounds,
             browser::browser_action,

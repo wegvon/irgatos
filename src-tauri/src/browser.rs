@@ -34,7 +34,7 @@ const DATA_STORE_ID: [u8; 16] = *b"monocode-browser";
 
 thread_local! {
     // Wry views must be created, used and dropped on the main thread.
-    static VIEWS: RefCell<HashMap<(String, String), WebView>> = RefCell::default();
+    pub(crate) static VIEWS: RefCell<HashMap<(String, String), WebView>> = RefCell::default();
     #[cfg(not(target_os = "macos"))]
     static CONTEXT: RefCell<Option<wry::WebContext>> = const { RefCell::new(None) };
 }
@@ -169,7 +169,7 @@ fn window_size(window: &WebviewWindow) -> Result<(u32, u32), String> {
     Ok((size.width, size.height))
 }
 
-async fn on_main<T: Send + 'static>(
+pub(crate) async fn on_main<T: Send + 'static>(
     window: WebviewWindow,
     task: impl FnOnce(WebviewWindow) -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {

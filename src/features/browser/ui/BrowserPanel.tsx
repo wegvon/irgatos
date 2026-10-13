@@ -4,9 +4,13 @@ import { IconButton } from "../../../app/shell/TitleBar";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import {
   ArrowLeft,
+  CheckCircle,
   ChevronRight,
+  CursorMagicSelection,
   ExternalLink,
   Globe,
+  LoaderCircle,
+  MessageSquarePlus,
   RefreshCw,
   X,
 } from "../../../shared/ui/icons";
@@ -25,7 +29,28 @@ import {
   type BrowserHistoryEntry,
   type ChromeProfile,
 } from "../../../platform/tauri/browser";
+import {
+  capturePage,
+  pollPicker,
+  startPicker,
+  stopPicker,
+  type PageSelection,
+} from "../../../platform/tauri/browserPicker";
+import { MOD } from "../../../platform/tauri/platform";
+import {
+  attachmentsFromFiles,
+  revokeAttachment,
+} from "../../sessions/model/attachments";
+import { requestSendToChat } from "../../sessions/model/sendToChat";
 import { displayAddress, resolveAddress } from "../model/browserAddress";
+import {
+  captureRect,
+  screenshotFile,
+  selectionName,
+  selectionPrompt,
+  selectionSize,
+  selectionSummary,
+} from "../model/pageSelection";
 
 const BROWSER_ID = "main";
 const MIN_WIDTH = 360;
@@ -34,7 +59,25 @@ const IMPORT_STORAGE_KEY = "monocode-browser-chrome-library";
 /** Native views draw above the page, so they step aside for these. */
 const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"]';
 
+/** How often selection mode asks the page whether the user has picked. */
+const PICK_POLL_MS = 120;
+const SENT_NOTICE_MS = 6000;
+
 let rememberedWidth = DEFAULT_WIDTH;
+
+type Capture = {
+  selection: PageSelection;
+  /** Base64 PNG; null while capturing or when the snapshot failed. */
+  image: string | null;
+  capturing: boolean;
+};
+
+type Sent = {
+  name: string;
+  title: string;
+  image: string | null;
+  summary: string;
+};
 
 function intersects(a: DOMRect, b: DOMRect) {
   return (
@@ -122,6 +165,11 @@ export function BrowserPanel({
   const [profilesError, setProfilesError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [library, setLibrary] = useState<ImportedLibrary>(readImportedLibrary);
+  const [picking, setPicking] = useState(false);
+  const [capture, setCapture] = useState<Capture | null>(null);
+  const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<Sent | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -267,6 +315,148 @@ export function BrowserPanel({
     void browserAction(BROWSER_ID, action).catch((reason: unknown) =>
       setError(message(reason)),
     );
+  };
+
+  const stopPicking = useCallback(() => {
+    setPicking(false);
+    void stopPicker(BROWSER_ID).catch(() => undefined);
+  }, []);
+
+  const startPicking = async () => {
+    if (!started || picking) return;
+    setError(null);
+    setNotice(null);
+    setSent(null);
+    setCapture(null);
+    try {
+      await startPicker(BROWSER_ID);
+      setPicking(true);
+    } catch (reason) {
+      setError(message(reason));
+    }
+  };
+
+  const captureSelection = useCallback(async (selection: PageSelection) => {
+    setNote("");
+    setCapture({ selection, image: null, capturing: true });
+    let image: string | null = null;
+    try {
+      image = await capturePage(
+        BROWSER_ID,
+        captureRect(selection),
+        selection.viewport.width,
+      );
+    } catch (reason) {
+      setNotice(
+        `The screenshot couldn't be taken: ${message(reason)}. The element details can still be sent.`,
+      );
+    }
+    setCapture((current) =>
+      current?.selection === selection
+        ? { selection, image, capturing: false }
+        : current,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!picking) return;
+    let cancelled = false;
+    let timer = 0;
+    const tick = async () => {
+      try {
+        const result = await pollPicker(BROWSER_ID);
+        if (cancelled) return;
+        if (result.state === "active") {
+          timer = window.setTimeout(tick, PICK_POLL_MS);
+          return;
+        }
+        setPicking(false);
+        if (result.state === "picked") void captureSelection(result.selection);
+      } catch (reason) {
+        if (cancelled) return;
+        setPicking(false);
+        setError(message(reason));
+      }
+    };
+    timer = window.setTimeout(tick, PICK_POLL_MS);
+    // Escape reaches the page while it has focus, and the app otherwise.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      stopPicking();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [captureSelection, picking, stopPicking]);
+
+  useEffect(() => {
+    if (!visible && picking) stopPicking();
+  }, [picking, stopPicking, visible]);
+
+  useEffect(
+    () => () => {
+      void stopPicker(BROWSER_ID).catch(() => undefined);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!sent) return;
+    const timer = window.setTimeout(() => setSent(null), SENT_NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [sent]);
+
+  const discardCapture = () => {
+    setCapture(null);
+    setNote("");
+    setNotice(null);
+  };
+
+  const sendCapture = async () => {
+    if (!capture || capture.capturing || sending) return;
+    const { selection, image } = capture;
+    setSending(true);
+    setError(null);
+    try {
+      const attachments = image
+        ? await attachmentsFromFiles([screenshotFile(image, selection)])
+        : [];
+      const screenshot = attachments.length > 0;
+      const delivery = requestSendToChat(
+        selectionPrompt(selection, note, { screenshot }),
+        attachments,
+      );
+      if (delivery?.status !== "sent") {
+        attachments.forEach(revokeAttachment);
+        setError(
+          delivery
+            ? `${delivery.title} can't take a message right now. Try again in a moment.`
+            : "Open an agent chat to send this selection to.",
+        );
+        return;
+      }
+      setSent({
+        name: selectionName(selection),
+        title: delivery.title,
+        image,
+        summary: selectionSummary(
+          selection,
+          screenshot && delivery.droppedAttachments === 0,
+        ),
+      });
+      setCapture(null);
+      setNote("");
+      setNotice(null);
+    } catch (reason) {
+      setError(message(reason));
+    } finally {
+      setSending(false);
+    }
   };
 
   const submit = () => {
@@ -421,6 +611,16 @@ export function BrowserPanel({
             Import
           </button>
           <IconButton
+            label={
+              picking ? "Cancel Selection (Esc)" : "Select Part of the Page"
+            }
+            active={picking}
+            disabled={!started}
+            onClick={() => (picking ? stopPicking() : void startPicking())}
+          >
+            <CursorMagicSelection className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+          <IconButton
             label="Open in Default Browser"
             disabled={!url}
             onClick={() => {
@@ -542,6 +742,27 @@ export function BrowserPanel({
             {error ?? notice}
           </div>
         ) : null}
+        {picking ? (
+          <div
+            role="status"
+            className="flex shrink-0 items-center gap-2 border-b border-stroke bg-accent/10 px-3 py-1.5 text-[11px] text-content/75"
+          >
+            <CursorMagicSelection
+              className="size-3.5 shrink-0 text-accent"
+              strokeWidth={1.75}
+            />
+            <span className="min-w-0 flex-1">
+              Click an element or drag across an area to send it to the agent.
+            </span>
+            <button
+              type="button"
+              onClick={stopPicking}
+              className="shrink-0 rounded px-1.5 py-0.5 text-content/60 hover:bg-content/10 hover:text-content"
+            >
+              Cancel <span className="text-content/40">Esc</span>
+            </button>
+          </div>
+        ) : null}
         <div ref={slotRef} className="relative min-h-0 flex-1 bg-white">
           {started ? null : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background-base px-8 text-center">
@@ -569,6 +790,146 @@ export function BrowserPanel({
             </div>
           )}
         </div>
+        {capture ? (
+          <form
+            aria-label="Send selection to agent"
+            className="shrink-0 border-t border-stroke p-2.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void sendCapture();
+            }}
+          >
+            <div className="mb-2 flex items-start gap-2.5">
+              <div className="grid h-14 w-20 shrink-0 place-items-center overflow-hidden rounded-md border border-stroke bg-content/[0.04]">
+                {capture.image ? (
+                  <img
+                    src={`data:image/png;base64,${capture.image}`}
+                    alt={`Screenshot of ${selectionName(capture.selection)}`}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : capture.capturing ? (
+                  <LoaderCircle
+                    className="size-4 animate-spin text-content/40"
+                    strokeWidth={1.75}
+                    aria-label="Taking screenshot"
+                  />
+                ) : (
+                  <span className="text-[10px] text-content/40">
+                    No screenshot
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1 pt-0.5">
+                <p className="flex min-w-0 items-baseline gap-1.5 text-[12px]">
+                  <span className="truncate font-mono font-medium text-content">
+                    {selectionName(capture.selection)}
+                  </span>
+                  <span className="shrink-0 text-content/45">
+                    {selectionSize(capture.selection)}
+                  </span>
+                </p>
+                <p className="truncate text-[11px] text-content/45">
+                  {capture.selection.title ||
+                    displayAddress(capture.selection.url)}
+                </p>
+                <p className="truncate text-[11px] text-content/45">
+                  {capture.capturing
+                    ? "Taking screenshot…"
+                    : `Sends ${selectionSummary(capture.selection, !!capture.image)}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                title="Discard Selection"
+                aria-label="Discard Selection"
+                onClick={discardCapture}
+                className="grid size-5 shrink-0 place-items-center rounded text-content/45 hover:bg-content/10 hover:text-content"
+              >
+                <X className="size-3" strokeWidth={1.75} />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              rows={2}
+              value={note}
+              aria-label="Note for the agent"
+              placeholder="Add a note for the agent (optional)"
+              onChange={(event) => setNote(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  discardCapture();
+                } else if (
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey)
+                ) {
+                  event.preventDefault();
+                  void sendCapture();
+                }
+              }}
+              className="max-h-32 min-h-14 w-full resize-y rounded-lg border border-content/10 bg-background-base/70 px-2.5 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 focus:border-content/20"
+            />
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => void startPicking()}
+                className="rounded px-1.5 py-0.5 text-[11px] text-content/55 hover:bg-content/10 hover:text-content"
+              >
+                Select again
+              </button>
+              <span className="flex items-center gap-2.5">
+                <span className="text-[10px] text-content/35">
+                  {MOD}↩ to send
+                </span>
+                <button
+                  type="submit"
+                  disabled={capture.capturing || sending}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md bg-content px-2.5 text-[12px] font-medium text-background-base hover:opacity-80 disabled:cursor-default disabled:opacity-40"
+                >
+                  <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
+                  Send to agent
+                </button>
+              </span>
+            </div>
+          </form>
+        ) : null}
+        {sent ? (
+          <div
+            role="status"
+            className="flex shrink-0 items-center gap-2.5 border-t border-stroke px-3 py-2"
+          >
+            {sent.image ? (
+              <img
+                src={`data:image/png;base64,${sent.image}`}
+                alt=""
+                className="h-8 w-12 shrink-0 rounded border border-stroke object-cover object-top"
+              />
+            ) : null}
+            <CheckCircle
+              className="size-3.5 shrink-0 text-emerald-500"
+              strokeWidth={1.75}
+            />
+            <p className="min-w-0 flex-1 text-[12px] leading-4 text-content/75">
+              <span className="block truncate">
+                Sent <span className="font-mono text-content">{sent.name}</span>{" "}
+                to <span className="text-content">{sent.title}</span>
+              </span>
+              <span className="block truncate text-[11px] text-content/45">
+                {sent.summary}
+              </span>
+            </p>
+            <button
+              type="button"
+              title="Dismiss"
+              aria-label="Dismiss"
+              onClick={() => setSent(null)}
+              className="grid size-5 shrink-0 place-items-center rounded text-content/45 hover:bg-content/10 hover:text-content"
+            >
+              <X className="size-3" strokeWidth={1.75} />
+            </button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );

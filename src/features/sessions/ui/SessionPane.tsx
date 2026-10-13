@@ -32,6 +32,12 @@ import {
   type RecentProject,
 } from "../../projects/model/recents";
 import {
+  acceptSendToChat,
+  SEND_TO_CHAT_EVENT,
+  type SendToChatRequest,
+} from "../model/sendToChat";
+import {
+  harnessSupportsAttachments,
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionWorkCwd,
@@ -630,6 +636,24 @@ const LocalSessionPane = memo(function LocalSessionPane({
     window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
     return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
   }, [addSelectionToChat, addToChatTarget]);
+  const attachmentsSupported =
+    (!remote || !!remoteFeatures?.attachments) &&
+    harnessSupportsAttachments(session.harness);
+  useEffect(() => {
+    if (!addToChatTarget) return;
+    const onSend = (event: Event) => {
+      const request = (event as CustomEvent<SendToChatRequest>).detail;
+      if (!request?.text) return;
+      acceptSendToChat(request, {
+        sessionId: session.id,
+        title,
+        attachmentsSupported,
+        submit: (text, attachments) => onSubmit(session.id, text, attachments),
+      });
+    };
+    window.addEventListener(SEND_TO_CHAT_EVENT, onSend);
+    return () => window.removeEventListener(SEND_TO_CHAT_EVENT, onSend);
+  }, [addToChatTarget, attachmentsSupported, onSubmit, session.id, title]);
   const workCwd = sessionWorkCwd(session);
   const reviewHidden =
     remote ||
