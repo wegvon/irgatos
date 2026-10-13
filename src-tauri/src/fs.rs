@@ -8269,22 +8269,22 @@ mod tests {
     fn pr_head_filter_qualifies_branch_with_repo_owner() {
         assert_eq!(
             github_pr_head_filter("wegvon/monocode", "main").as_deref(),
-            Some("hardbeat920:main")
+            Some("wegvon:main")
         );
     }
 
     #[test]
     fn parse_github_repositories_includes_a_forks_parent() {
         let json = r#"{
-            "nameWithOwner": "EricRasputin/irgat-eric",
+            "nameWithOwner": "EricRasputin/monocode-eric",
             "parent": {
-                "name": "irgat",
-                "owner": { "login": "hardbeat920" }
+                "name": "monocode",
+                "owner": { "login": "wegvon" }
             }
         }"#;
         assert_eq!(
             parse_github_repositories(json).unwrap(),
-            vec!["EricRasputin/irgat-eric", "wegvon/monocode"]
+            vec!["EricRasputin/monocode-eric", "wegvon/monocode"]
         );
     }
 
@@ -8438,7 +8438,7 @@ mod tests {
     fn split_github_repo_reads_owner_and_name() {
         assert_eq!(
             split_github_repo(" wegvon/monocode ").unwrap(),
-            ("hardbeat920".into(), "irgat".into())
+            ("wegvon".into(), "monocode".into())
         );
         assert!(split_github_repo("irgat").is_err());
         assert!(split_github_repo("acme/web extra").is_err());
