@@ -666,7 +666,7 @@ export function Composer({
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
             ...skills.filter(
               (skill) =>
-                ![OPERATOR_COMMAND.name, "irgat", "irgat"].includes(
+                ![OPERATOR_COMMAND.name, "irgat", "mono", "monocode"].includes(
                   skill.name,
                 ) &&
                 (skill.kind === "native" ||

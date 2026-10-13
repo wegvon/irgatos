@@ -13,6 +13,15 @@ describe("Operator composer command", () => {
     expect(OPERATOR_COMMAND.kind).toBe("builtin");
   });
 
+  it("still consumes the spellings used before the rename", () => {
+    for (const alias of ["/mono", "/monocode"]) {
+      expect(consumeOperatorCommand(`${alias} list notes`)).toEqual({
+        text: "list notes",
+        matched: true,
+      });
+    }
+  });
+
   it("consumes only a leading standalone command", () => {
     expect(consumeOperatorCommand("/operator list my notes")).toEqual({
       text: "list my notes",
@@ -30,7 +39,7 @@ describe("Operator composer command", () => {
       text: "Explain /operator",
       matched: false,
     });
-    for (const alias of ["/irgat", "/irgat"]) {
+    for (const alias of ["/irgat", "/mono", "/monocode"]) {
       expect(consumeOperatorCommand(`${alias} list notes`)).toEqual({
         text: "list notes",
         matched: true,

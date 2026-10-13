@@ -262,10 +262,10 @@ export function completeOrchestrationProposal(
   try {
     if (error) throw new Error(error);
     const tagged = response.match(
-      /<irgat_proposal>\s*([\s\S]*?)\s*<\/irgat_proposal>/,
+      /<(monocode|irgat)_proposal>\s*([\s\S]*?)\s*<\/\1_proposal>/,
     );
     const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
-    const raw = (tagged?.[1] ?? fenced?.[1] ?? response).trim();
+    const raw = (tagged?.[2] ?? fenced?.[1] ?? response).trim();
     const input = record(JSON.parse(raw));
     return {
       ...draft,

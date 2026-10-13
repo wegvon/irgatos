@@ -168,6 +168,14 @@ describe("orchestration proposals", () => {
     expect(result.settings).toEqual(draft.settings);
     expect(result.author).toEqual(draft.author);
   });
+  it("reads a proposal a lead wrote under the old tag name", () => {
+    const result = completeOrchestrationProposal(
+      draft,
+      `<monocode_proposal>${JSON.stringify({ ...payload, settings: { choices: [] } })}</monocode_proposal>`,
+    );
+    expect(result.status).toBe("ready");
+    expect(result.tasks).toEqual(payload.tasks);
+  });
   it("validates discovered paths against the proposal's concrete worktree", () => {
     const worktreeDraft = {
       ...draft,

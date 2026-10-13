@@ -29,6 +29,7 @@ mod irgat_transcript;
 mod jira;
 mod jsonc;
 mod kanban;
+mod legacy_data;
 mod linear;
 mod link_preview;
 #[cfg(target_os = "macos")]

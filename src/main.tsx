@@ -1,3 +1,4 @@
+import "./shared/lib/legacyStorageBoot";
 import React, { useLayoutEffect } from "react";
 import ReactDOM from "react-dom/client";
 // TEMPORARY: remove with src/debugIrgatScroll.ts.

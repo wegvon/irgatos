@@ -128,6 +128,11 @@ describe("worker assignment prompts", () => {
       "Git finalization remains the lead's responsibility",
     );
     expect(visibleUserPrompt(sent)).toBe("Review the branch.");
+    expect(
+      visibleUserPrompt(
+        "Review the branch.\n\n<monocode_assignment>\nYou are a worker.\n</monocode_assignment>",
+      ),
+    ).toBe("Review the branch.");
   });
 });
 

@@ -88,7 +88,9 @@ fn init_with(
     open: impl FnOnce(PathBuf) -> Result<SessionStore, String>,
     manage: impl FnOnce(SessionStore),
 ) -> Result<(), String> {
-    let store = open(data_dir()?.join("irgat.db"))?;
+    let dir = data_dir()?;
+    crate::legacy_data::import_legacy_data(&dir);
+    let store = open(dir.join(crate::legacy_data::DB_FILE))?;
     manage(store);
     Ok(())
 }
