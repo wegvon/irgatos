@@ -6,6 +6,7 @@ import {
   MCP_PROVIDER_LABELS,
   type McpConnection,
 } from "../../settings/model/mcp";
+import { isComputerUseServer } from "../../settings/model/computerUse";
 import { mcpPickerServers } from "../model/mcpPicker";
 import type { HarnessId } from "../model/session";
 
@@ -186,13 +187,15 @@ export function McpServerPicker({
                   </span>
                 </span>
                 <span
-                  className={`max-w-[40%] shrink-0 truncate text-[11px] ${server.availability === "authentication" ? "text-amber-400" : "text-content/45"}`}
+                  className={`max-w-[40%] shrink-0 truncate text-[11px] ${server.availability === "authentication" || (server.availability === "available" && isComputerUseServer(server)) ? "text-amber-400" : "text-content/45"}`}
                 >
                   {server.availability === "authentication"
                     ? "Needs authentication"
                     : server.availability === "unavailable"
                       ? server.detail
-                      : "Available"}
+                      : isComputerUseServer(server)
+                        ? "Controls your desktop"
+                        : "Available"}
                 </span>
               </button>
             );

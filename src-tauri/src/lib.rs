@@ -9,6 +9,7 @@ mod browser_picker;
 mod chat_background;
 mod checkpoint;
 mod codex_mono_store;
+mod computer_use;
 mod control;
 pub mod control_cli;
 mod cursor_store;
@@ -486,6 +487,9 @@ pub fn run() {
             harness::claude_mcp_list,
             mcp::mcp_discover,
             mcp::mcp_add,
+            computer_use::computer_use_status,
+            computer_use::computer_use_disable_telemetry,
+            computer_use::computer_use_grant_permissions,
             harness::claude_mcp_add,
             harness::claude_mcp_remove,
             harness::mcp_provider_login,

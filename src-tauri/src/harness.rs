@@ -2770,7 +2770,7 @@ fn is_cursor_agent(path: &Path) -> bool {
 ///
 /// Reads the cached PATH rather than spawning a shell per lookup: six
 /// resolvers each asking `command -v` meant six shell startups per probe.
-fn which_via_login_shell(name: &str) -> Option<PathBuf> {
+pub(crate) fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     which_in_path(&gui_search_path(), name)
 }
 
@@ -2783,7 +2783,7 @@ fn which_in_path(path: &str, name: &str) -> Option<PathBuf> {
     })
 }
 
-fn first_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+pub(crate) fn first_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
     candidates.into_iter().find_map(existing_binary)
 }
 
