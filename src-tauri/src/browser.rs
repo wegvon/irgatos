@@ -645,7 +645,7 @@ fn read_history(profile_path: &Path) -> Result<Vec<BrowserHistoryEntry>, String>
         let rows = statement
             .query_map([MAX_IMPORTED_HISTORY as i64], |row| {
                 let url: String = row.get(0)?;
-                let title: String = row.get(1)?;
+                let title: Option<String> = row.get(1)?;
                 let last_visited: i64 = row.get(2)?;
                 Ok((url, title, last_visited))
             })
@@ -655,6 +655,7 @@ fn read_history(profile_path: &Path) -> Result<Vec<BrowserHistoryEntry>, String>
             let (url, title, last_visited) = row.map_err(|_| import_error())?;
             if let Ok(url) = Url::parse(&url) {
                 if matches!(url.scheme(), "http" | "https") {
+                    let title = title.unwrap_or_default();
                     history.push(BrowserHistoryEntry {
                         title: if title.trim().is_empty() {
                             url.as_str().to_owned()
