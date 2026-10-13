@@ -42,7 +42,9 @@ use objc2_app_kit::{
     NSUserInterfaceItemIdentification, NSView, NSVisualEffectBlendingMode, NSVisualEffectMaterial,
     NSVisualEffectState, NSVisualEffectView, NSWindow, NSWindowOrderingMode,
 };
-use objc2_foundation::{NSDictionary, NSEdgeInsets, NSNumber, NSSize, NSString, NSUserDefaults};
+use objc2_foundation::{
+    NSBundle, NSDictionary, NSEdgeInsets, NSNumber, NSSize, NSString, NSUserDefaults,
+};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 
@@ -755,6 +757,7 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
     // Resources now invalidates the code signature and is too late for TCC,
     // which reads bundle metadata at launch.
     if existing_bundle_root_from_exe(&exe).is_some() {
+        log_loaded_dev_bundle_privacy_usage();
         return Ok(());
     }
     let app_name = dev_bundle_name_from_env(DEV_BUNDLE_DEFAULT_NAME);
@@ -815,6 +818,26 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
         .args(std::env::args_os().skip(1))
         .exec();
     Err(err.to_string())
+}
+
+#[cfg(debug_assertions)]
+fn log_loaded_dev_bundle_privacy_usage() {
+    let bundle = NSBundle::mainBundle();
+    let description = |key: &str| {
+        bundle
+            .objectForInfoDictionaryKey(&NSString::from_str(key))
+            .and_then(|value| {
+                value
+                    .downcast_ref::<NSString>()
+                    .map(|value| value.to_string())
+            })
+            .unwrap_or_else(|| "<missing>".into())
+    };
+    eprintln!(
+        "irgat: loaded bundle privacy usage: microphone={:?}; speech={:?}",
+        description("NSMicrophoneUsageDescription"),
+        description("NSSpeechRecognitionUsageDescription"),
+    );
 }
 
 #[cfg(debug_assertions)]
