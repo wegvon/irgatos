@@ -13401,6 +13401,7 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
+                            !kanbanViewOpen &&
                             !monoViewId
                           }
                           onClose={() => setBrowserOpen(false)}
