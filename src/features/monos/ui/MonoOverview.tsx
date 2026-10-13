@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
   Clock,
+  DashboardSquare,
   File,
   FileDiff,
   ListFilter,
@@ -10,16 +11,21 @@ import {
   Search,
 } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { artifactLabel, type ArtifactCard } from "../../artifacts/artifacts";
+import type { ArtifactCard } from "../../artifacts/artifacts";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { MonoSpawnedSession, Session } from "../../sessions/model/session";
 import type { MonoLook, MonoState } from "../model/mono";
 import { HABITS_MAX } from "../model/monoHabits";
+import {
+  INITIAL_OVERVIEW_LIMITS,
+  showMoreInSection,
+} from "../model/overviewSections";
 import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
-import { habitActions, HabitsList, useHabits } from "./MonoHabits";
+import { habitActions, HabitsList, useHabitsLoad } from "./MonoHabits";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
-import { ArtifactIcon } from "../../artifacts/ui/ArtifactCard";
+import { DocumentRow } from "./DocumentRow";
+import { MonoOverviewAll } from "./MonoOverviewAll";
 import {
   LaunchedSessionPage,
   MonoSessionList,
@@ -38,9 +44,11 @@ import { MonoSidebar, MonoSidebarHeader } from "./MonoSidebar";
 import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { MonoChangesView, type MonoChangesRequest } from "./MonoChangesView";
 
-export type MonoOverviewTab = "sessions" | "habits" | "documents" | "changes";
+export type MonoOverviewTab =
+  "all" | "sessions" | "habits" | "documents" | "changes";
 
 const TABS: { id: MonoOverviewTab; label: string; icon: typeof Clock }[] = [
+  { id: "all", label: "All", icon: DashboardSquare },
   { id: "sessions", label: "Sessions", icon: MessageMultiple },
   { id: "documents", label: "Documents", icon: File },
   { id: "habits", label: "Habits", icon: Clock },
@@ -93,7 +101,8 @@ type Props = {
 
 /**
  * The Mono's work at a glance: the sessions it started, its habits and the
- * documents it wrote. Who it is and how it works live in its settings.
+ * documents it wrote, together on All or each on its own tab. Who it is and
+ * how it works live in its settings.
  */
 export function MonoOverview({
   open,
@@ -120,13 +129,15 @@ export function MonoOverview({
   windowControls,
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
-  const habits = useHabits(monoId, state.status);
+  const habitsLoad = useHabitsLoad(monoId, state.status);
+  const habits = habitsLoad.habits;
   const actions = habitActions(monoId);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<SessionSidebarFilters>(
     DEFAULT_SESSION_SIDEBAR_FILTERS,
   );
+  const [limits, setLimits] = useState(INITIAL_OVERVIEW_LIMITS);
   // Once opened, the changes stay mounted so a commit draft survives a look
   // at another tab.
   const [changesVisited, setChangesVisited] = useState(tab === "changes");
@@ -136,6 +147,7 @@ export function MonoOverview({
     setRoutes([]);
     setQuery("");
     setFilters(DEFAULT_SESSION_SIDEBAR_FILTERS);
+    setLimits(INITIAL_OVERVIEW_LIMITS);
   }, [monoId]);
   const push = (route: Route) => setRoutes((current) => [...current, route]);
   const back = () => setRoutes((current) => current.slice(0, -1));
@@ -208,6 +220,7 @@ export function MonoOverview({
 
   const habitsFull = !habits || habits.length >= HABITS_MAX;
   const counts: Record<MonoOverviewTab, number | undefined> = {
+    all: undefined,
     sessions: launches.length,
     habits: habits?.length,
     documents: documents.length,
@@ -287,7 +300,29 @@ export function MonoOverview({
           className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 py-2"
           data-mono-overview={tab === "changes" ? undefined : tab}
         >
-          {tab === "sessions" ? (
+          {tab === "all" ? (
+            <MonoOverviewAll
+              agent={agent}
+              launches={launches}
+              sessions={sessions}
+              history={history}
+              documents={documents}
+              habits={habits}
+              habitsError={habitsLoad.error}
+              onRetryHabits={habitsLoad.retry}
+              habitActions={actions}
+              changes={changes ? changes.totals : undefined}
+              limits={limits}
+              onShowMore={(section) =>
+                setLimits((current) => showMoreInSection(current, section))
+              }
+              onOpenSession={onOpenSession}
+              onOpenDocument={onOpenDocument}
+              onOpenHabit={(id) => push({ kind: "habit", id })}
+              onNewHabit={() => push({ kind: "new-habit" })}
+              onOpenTab={onTabChange}
+            />
+          ) : tab === "sessions" ? (
             launches.length ? (
               // Cards carry their own inset; this lines their icons up with
               // the tabs above, as the habit and document rows do.
@@ -489,40 +524,5 @@ function OverviewTabs({
         );
       })}
     </div>
-  );
-}
-
-/** A document it wrote, laid out like a habit; opens in the reader. */
-function DocumentRow({
-  card,
-  onOpen,
-}: {
-  card: ArtifactCard;
-  onOpen: (id: string) => void;
-}) {
-  const label = artifactLabel(card.kind);
-  return (
-    <button
-      type="button"
-      data-mono-document={card.id}
-      aria-label={`Open ${label.toLowerCase()} ${card.title}`}
-      onClick={() => onOpen(card.id)}
-      className="flex w-full min-w-0 items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-content/5"
-    >
-      <span
-        aria-hidden
-        className="grid size-7 shrink-0 place-items-center rounded-md bg-content/6 text-content/60"
-      >
-        <ArtifactIcon kind={card.kind} className="size-3.5" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-[12px] leading-5 text-content/85">
-          {card.title}
-        </span>
-        <span className="truncate text-[11px] leading-4 text-content/40">
-          {card.summary || label}
-        </span>
-      </span>
-    </button>
   );
 }

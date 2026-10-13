@@ -105,16 +105,17 @@ it("names only the open tab, with its count, and switches tabs", async () => {
   const labels = tabs().map((tab) =>
     tab.querySelector("[data-tab-label]")!.getAttribute("data-tab-label"),
   );
-  expect(labels).toEqual(["open", "closed", "closed", "closed"]);
+  expect(labels).toEqual(["closed", "open", "closed", "closed", "closed"]);
   expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
+    "All",
     "Sessions",
     "Documents",
     "Habits",
     "Changes",
   ]);
-  expect(tabs()[0].textContent).toBe("Sessions2");
-  expect(tabs()[0].getAttribute("aria-selected")).toBe("true");
-  act(() => tabs()[1].click());
+  expect(tabs()[1].textContent).toBe("Sessions2");
+  expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
+  act(() => tabs()[2].click());
   expect(onTabChange).toHaveBeenCalledWith("documents");
 });
 
@@ -130,7 +131,7 @@ const changes = (totals: unknown) => ({
 
 it("always offers a Changes tab and keeps its view mounted once opened", async () => {
   await render("sessions", vi.fn(), changes(null));
-  expect(tabs()[3].getAttribute("aria-label")).toBe("Changes");
+  expect(tabs()[4].getAttribute("aria-label")).toBe("Changes");
   expect(container.querySelector("[data-changes-view]")).toBeNull();
   const onTabChange = vi.fn();
   await render(
@@ -138,11 +139,11 @@ it("always offers a Changes tab and keeps its view mounted once opened", async (
     onTabChange,
     changes({ files: 3, additions: 12, deletions: 4 }),
   );
-  expect(tabs()[3].textContent).toBe("Changes3");
+  expect(tabs()[4].textContent).toBe("Changes3");
   expect(container.querySelector("[data-changes-view]")).not.toBeNull();
   // Another tab keeps the view mounted, hidden, so a commit draft survives.
   await render("sessions", onTabChange, changes(null));
-  expect(tabs()[3].getAttribute("aria-label")).toBe("Changes");
+  expect(tabs()[4].getAttribute("aria-label")).toBe("Changes");
   expect(
     container.querySelector("[data-changes-view]")!.closest("[hidden]"),
   ).not.toBeNull();
@@ -150,20 +151,20 @@ it("always offers a Changes tab and keeps its view mounted once opened", async (
 
 it("dots the folded Changes icon while there are changes", async () => {
   await render("sessions", vi.fn(), changes(null));
-  expect(tabs()[3].querySelector("[data-changes-dot]")).toBeNull();
+  expect(tabs()[4].querySelector("[data-changes-dot]")).toBeNull();
   await render(
     "sessions",
     vi.fn(),
     changes({ files: 2, additions: 3, deletions: 1 }),
   );
-  expect(tabs()[3].querySelector("[data-changes-dot]")).not.toBeNull();
+  expect(tabs()[4].querySelector("[data-changes-dot]")).not.toBeNull();
   // Open, the tab names its count instead.
   await render(
     "changes",
     vi.fn(),
     changes({ files: 2, additions: 3, deletions: 1 }),
   );
-  expect(tabs()[3].querySelector("[data-changes-dot]")).toBeNull();
+  expect(tabs()[4].querySelector("[data-changes-dot]")).toBeNull();
 });
 
 it("lists every session it started, newest first", async () => {

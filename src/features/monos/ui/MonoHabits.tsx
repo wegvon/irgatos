@@ -25,9 +25,19 @@ export function useHabits(
   monoId: string,
   status: MonoState["status"],
 ): Habit[] | undefined {
+  return useHabitsLoad(monoId, status).habits;
+}
+
+/** The habits, with why the last read failed and a way to read again. */
+export function useHabitsLoad(
+  monoId: string,
+  status: MonoState["status"],
+): { habits: Habit[] | undefined; error: boolean; retry: () => void } {
   const [habits, setHabits] = useState<Habit[] | undefined>(() =>
     loadedHabits.get(monoId),
   );
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const working = status === "working";
   useEffect(() => {
     let live = true;
@@ -35,9 +45,13 @@ export function useHabits(
       void loadHabits(monoId)
         .then((next) => {
           loadedHabits.set(monoId, next);
-          if (live) setHabits(next);
+          if (!live) return;
+          setHabits(next);
+          setError(false);
         })
-        .catch(() => {});
+        .catch(() => {
+          if (live) setError(true);
+        });
     };
     refresh();
     const stop = subscribeMonoFiles(refresh);
@@ -50,8 +64,12 @@ export function useHabits(
       window.removeEventListener("focus", refresh);
       window.clearInterval(timer);
     };
-  }, [monoId, working]);
-  return habits;
+  }, [monoId, working, attempt]);
+  return {
+    habits,
+    error,
+    retry: () => setAttempt((current) => current + 1),
+  };
 }
 
 export type HabitActions = {

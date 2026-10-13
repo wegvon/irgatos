@@ -1127,16 +1127,16 @@ function Workspace({
   // A Mono opens with its overview beside the chat until it is hidden.
   const [monoOverviewOpen, setMonoOverviewOpen] = useState(true);
   const [monoOverviewTab, setMonoOverviewTab] =
-    useState<MonoOverviewTab>("sessions");
+    useState<MonoOverviewTab>("all");
   // The Mono whose settings dialog is open; another Mono's view closes it.
   const [monoSettingsFor, setMonoSettingsFor] = useState<string | null>(null);
-  // A document opened from the chat shows on the overview's Documents tab,
-  // the same page the tab opens it on.
+  // A document opened from the chat shows over the overview's All or
+  // Documents tab, the same page the tab opens it on.
   const onOpenMonoArtifact = useCallback((_sessionId: string, id: string) => {
     setMonoActivity(null);
     setMonoShownSession(null);
     setMonoOverviewDocument(id);
-    setMonoOverviewTab("documents");
+    setMonoOverviewTab((tab) => (tab === "all" ? tab : "documents"));
     setMonoOverviewOpen(true);
   }, []);
   // What the overview's Changes tab was last asked to show.
@@ -4947,7 +4947,7 @@ function Workspace({
       const session = await ensureOpenSession(launchedId).catch(() => null);
       if (monoViewIdRef.current !== monoSessionId) return;
       setMonoActivity(null);
-      setMonoOverviewTab("sessions");
+      setMonoOverviewTab((tab) => (tab === "all" ? tab : "sessions"));
       setMonoOverviewDocument(null);
       setMonoOverviewOpen(true);
       // One that is gone leaves the sessions list open, which says so.
