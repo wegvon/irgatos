@@ -82,6 +82,9 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
       setPhase("idle");
       phaseRef.current = "idle";
     };
+    if (status.setupError) {
+      return fail({ message: status.setupError });
+    }
     if (!status.supported) {
       return fail({ message: "Voice input is available on macOS for now." });
     }

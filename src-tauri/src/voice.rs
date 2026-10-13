@@ -93,6 +93,8 @@ pub struct StartOptions {
 #[serde(rename_all = "camelCase")]
 pub struct VoiceStatus {
     pub supported: bool,
+    /// A bundle configuration issue that would make TCC terminate the process.
+    pub setup_error: Option<String>,
     pub microphone: Permission,
     pub speech: Permission,
     /// Whether the requested language transcribes without a network.
@@ -139,6 +141,7 @@ pub async fn voice_start(app: AppHandle, mut options: StartOptions) -> Result<()
         options.cloud_key = read_key(&app)?;
     }
     let sink = event_sink(&app);
+    platform::privacy_usage_descriptions()?;
     platform::start(&app, options, sink).await
 }
 
@@ -267,11 +270,24 @@ mod platform {
     use super::{apple, on_main, wait, Engine, Permission, Sink, StartOptions, VoiceStatus};
 
     pub(super) async fn status(app: &AppHandle, locale: String, cloud_key: bool) -> VoiceStatus {
+        if let Err(error) = privacy_usage_descriptions() {
+            return VoiceStatus {
+                supported: false,
+                setup_error: Some(error),
+                microphone: Permission::Unsupported,
+                speech: Permission::Unsupported,
+                on_device: false,
+                language_available: false,
+                locale: None,
+                cloud_key,
+            };
+        }
         let language = on_main(app, move || apple::language(&locale))
             .await
             .unwrap_or_default();
         VoiceStatus {
             supported: true,
+            setup_error: None,
             microphone: apple::microphone_permission(),
             speech: apple::speech_permission(),
             on_device: language.on_device,
@@ -282,6 +298,9 @@ mod platform {
     }
 
     pub(super) async fn request_access(_app: &AppHandle, engine: Engine) {
+        if privacy_usage_descriptions().is_err() {
+            return;
+        }
         if apple::microphone_permission() == Permission::Prompt {
             wait(apple::request_microphone()).await;
         }
@@ -298,6 +317,10 @@ mod platform {
         on_main(app, move || apple::start(options, sink))
             .await
             .unwrap_or_else(|| Err("Could not start listening".into()))
+    }
+
+    pub(super) fn privacy_usage_descriptions() -> Result<(), String> {
+        apple::privacy_usage_descriptions()
     }
 
     pub(super) async fn stop(app: &AppHandle, capture: String) {
@@ -353,6 +376,7 @@ mod platform {
     pub(super) async fn status(_app: &AppHandle, _locale: String, cloud_key: bool) -> VoiceStatus {
         VoiceStatus {
             supported: false,
+            setup_error: None,
             microphone: Permission::Unsupported,
             speech: Permission::Unsupported,
             on_device: false,
@@ -360,6 +384,10 @@ mod platform {
             locale: None,
             cloud_key,
         }
+    }
+
+    pub(super) fn privacy_usage_descriptions() -> Result<(), String> {
+        Ok(())
     }
 
     pub(super) async fn request_access(_app: &AppHandle, _engine: Engine) {}

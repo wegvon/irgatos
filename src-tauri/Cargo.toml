@@ -57,7 +57,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 block2 = "0.6.2"
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSImageRep", "NSButton", "NSColor", "NSControl", "NSDockTile", "NSEvent", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSView", "NSVisualEffectView", "NSWindow", "block2", "objc2-core-foundation"] }
-objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSData", "NSDictionary", "NSGeometry", "NSError", "NSLocale", "NSString"] }
+objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSBundle", "NSData", "NSDictionary", "NSGeometry", "NSError", "NSLocale", "NSString"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
 objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioEngine", "AVAudioFormat", "AVAudioIONode", "AVAudioNode", "AVAudioTime", "AVAudioTypes", "block2"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-foundation", "objc2-core-graphics"] }

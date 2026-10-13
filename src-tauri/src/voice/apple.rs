@@ -17,7 +17,7 @@ use objc2::runtime::{Bool, NSObjectProtocol};
 use objc2::{sel, AnyThread};
 use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
 use objc2_avf_audio::{AVAudioEngine, AVAudioPCMBuffer, AVAudioTime};
-use objc2_foundation::{NSError, NSLocale, NSString};
+use objc2_foundation::{NSBundle, NSError, NSLocale, NSString};
 use objc2_speech::{
     SFSpeechAudioBufferRecognitionRequest, SFSpeechRecognitionResult, SFSpeechRecognitionTask,
     SFSpeechRecognitionTaskHint, SFSpeechRecognizer, SFSpeechRecognizerAuthorizationStatus,
@@ -59,6 +59,28 @@ thread_local! {
     /// The last finished capture. Its task can still be inside the result
     /// handler that finished it, so it is released on the next start instead.
     static RETIRED: RefCell<Option<Capture>> = const { RefCell::new(None) };
+}
+
+const MICROPHONE_USAGE_KEY: &str = "NSMicrophoneUsageDescription";
+const SPEECH_USAGE_KEY: &str = "NSSpeechRecognitionUsageDescription";
+
+/// TCC aborts the process rather than returning an error when either
+/// description is missing. Check the running bundle before calling its APIs.
+pub(super) fn privacy_usage_descriptions() -> Result<(), String> {
+    let bundle = NSBundle::mainBundle();
+    for key in [MICROPHONE_USAGE_KEY, SPEECH_USAGE_KEY] {
+        let key_string = NSString::from_str(key);
+        let present = bundle
+            .objectForInfoDictionaryKey(&key_string)
+            .and_then(|value| value.downcast_ref::<NSString>().map(|value| value.to_string()))
+            .is_some_and(|value| !value.trim().is_empty());
+        if !present {
+            return Err(format!(
+                "Voice input is unavailable because this app bundle is missing {key}. Quit MonoCode, rebuild the app, and try again."
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn microphone_permission() -> Permission {

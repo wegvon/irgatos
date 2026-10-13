@@ -10,6 +10,8 @@ export type VoiceEngine = "apple" | "cloud";
 
 export type VoiceStatus = {
   supported: boolean;
+  /** A missing macOS privacy declaration that would make TCC terminate the app. */
+  setupError?: string | null;
   microphone: VoicePermission;
   speech: VoicePermission;
   /** The requested language transcribes without a network. */
