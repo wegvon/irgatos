@@ -473,6 +473,7 @@ mod tests {
     fn status_serializes_in_camel_case() {
         let status = VoiceStatus {
             supported: true,
+            setup_error: None,
             microphone: Permission::Granted,
             speech: Permission::Prompt,
             on_device: true,
@@ -484,6 +485,7 @@ mod tests {
             serde_json::to_value(status).unwrap(),
             serde_json::json!({
                 "supported": true,
+                "setupError": null,
                 "microphone": "granted",
                 "speech": "prompt",
                 "onDevice": true,
@@ -491,6 +493,24 @@ mod tests {
                 "locale": "tr-TR",
                 "cloudKey": false,
             })
+        );
+    }
+
+    #[test]
+    fn status_serializes_a_setup_error() {
+        let status = VoiceStatus {
+            supported: false,
+            setup_error: Some("Missing privacy description".into()),
+            microphone: Permission::Unsupported,
+            speech: Permission::Unsupported,
+            on_device: false,
+            language_available: false,
+            locale: None,
+            cloud_key: false,
+        };
+        assert_eq!(
+            serde_json::to_value(status).unwrap()["setupError"],
+            "Missing privacy description"
         );
     }
 }
