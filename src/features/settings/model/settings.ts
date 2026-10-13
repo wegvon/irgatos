@@ -23,6 +23,7 @@ export type SettingsSectionId =
   | "appearance"
   | "keybindings"
   | "chat"
+  | "voice"
   | "providers"
   | "mcp"
   | "skills"
@@ -90,6 +91,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "How transcripts read, what the composer does with a follow-up, how files save, and how diffs open.",
     keywords:
       "transcript composer prompt message diff review layout format save editor",
+  },
+  {
+    id: "voice",
+    group: "agents",
+    label: "Voice",
+    description:
+      "Dictate into the composer, and how MonoCode turns speech into text.",
+    keywords:
+      "voice dictation dictate speech microphone mic transcription whisper speak talk",
   },
   {
     id: "providers",
@@ -405,6 +415,42 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "chat",
     label: "Empty session games",
     keywords: "pacman snake arcade grid fun",
+  },
+  {
+    id: "voice-dictation",
+    section: "voice",
+    label: "Dictation",
+    keywords: "microphone mic button speech to text composer shortcut",
+  },
+  {
+    id: "voice-access",
+    section: "voice",
+    label: "Microphone and speech access",
+    keywords: "permission privacy allow denied system settings",
+  },
+  {
+    id: "voice-engine",
+    section: "voice",
+    label: "Transcription engine",
+    keywords: "apple on device local cloud openai whisper server",
+  },
+  {
+    id: "voice-language",
+    section: "voice",
+    label: "Language",
+    keywords: "locale turkish english dictation language",
+  },
+  {
+    id: "voice-allow-server",
+    section: "voice",
+    label: "Allow Apple servers",
+    keywords: "network offline on device privacy",
+  },
+  {
+    id: "voice-service",
+    section: "voice",
+    label: "Transcription service",
+    keywords: "endpoint url model api key openai whisper.cpp groq",
   },
   {
     id: "agent-clis",
@@ -1122,6 +1168,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
     keys: `${MOD}${SHIFT}G`,
     when: "Draft session composer",
   },
+  { command: "Composer: Dictate", keys: `${MOD}${SHIFT}E`, when: "Composer" },
   { command: "View: Reload", keys: `${MOD}${SHIFT}R`, when: "Always" },
   { command: "View: Zoom In", keys: `${MOD}+`, when: "Always" },
   { command: "View: Zoom Out", keys: `${MOD}-`, when: "Always" },

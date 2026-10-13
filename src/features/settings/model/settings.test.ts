@@ -607,6 +607,7 @@ describe("settings navigation", () => {
       "appearance",
       "keybindings",
       "chat",
+      "voice",
       "providers",
       "mcp",
       "skills",

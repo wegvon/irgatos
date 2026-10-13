@@ -54,6 +54,7 @@ pub mod ssh_askpass;
 mod trackpad_zoom;
 #[cfg(target_os = "windows")]
 mod tray;
+mod voice;
 mod window;
 mod window_transfer;
 #[cfg(windows)]
@@ -319,6 +320,13 @@ pub fn run() {
             notifications::request_notification_permission,
             notifications::show_notification,
             notifications::open_notification_settings,
+            voice::voice_status,
+            voice::voice_request_access,
+            voice::voice_start,
+            voice::voice_stop,
+            voice::voice_cancel,
+            voice::voice_set_cloud_key,
+            voice::voice_open_privacy_settings,
             reminders::reminder_list,
             reminders::reminder_set,
             reminders::reminder_clear,

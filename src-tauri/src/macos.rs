@@ -897,6 +897,10 @@ fn dev_bundle_plist(app_name: &str) -> Vec<u8> {
 	<string>13.0</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MonoCode listens while you dictate a message or talk to an agent in voice mode.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>MonoCode turns what you say into text for the message composer, on this Mac when the language is installed.</string>
 </dict>
 </plist>
 "#
@@ -980,5 +984,14 @@ mod tests {
         let plist = String::from_utf8(dev_bundle_plist("MonoCode Dev")).unwrap();
         assert!(plist.contains("<string>MonoCode Dev</string>"));
         assert!(!plist.contains("<string>MonoCode</string>"));
+    }
+
+    /// The Speech framework terminates an app that asks without these keys,
+    /// and `tauri dev` runs from this generated bundle, not `Info.plist`.
+    #[test]
+    fn dev_bundle_plist_declares_voice_usage() {
+        let plist = String::from_utf8(dev_bundle_plist("MonoCode")).unwrap();
+        assert!(plist.contains("<key>NSMicrophoneUsageDescription</key>"));
+        assert!(plist.contains("<key>NSSpeechRecognitionUsageDescription</key>"));
     }
 }

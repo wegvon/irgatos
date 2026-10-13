@@ -195,7 +195,13 @@ import {
   projectName,
 } from "../../../shared/lib/paths";
 import { revealPath } from "../../../platform/tauri/fs";
-import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import {
+  IS_LINUX,
+  IS_MAC,
+  IS_WIN,
+  MOD,
+  SHIFT,
+} from "../../../platform/tauri/platform";
 import {
   loadArchivedProjects,
   looksLikeProject,
@@ -333,6 +339,7 @@ import {
   loadMonosEnabled,
   loadMonoMenuBarIcon,
   loadKeybindingOverrides,
+  keybindingShortcutLabel,
   saveMonoMenuBarIcon,
   subscribeMonoMenuBarIcon,
   loadQuickComposerEnabled,
@@ -409,6 +416,22 @@ import {
   type RemoveWorktree,
 } from "../../source-control/model/worktrees";
 import type { Session } from "../../sessions/model/session";
+import {
+  openVoicePrivacySettings,
+  requestVoiceAccess,
+  saveTranscriptionKey,
+  voiceStatus,
+  type VoiceEngine,
+  type VoiceStatus,
+} from "../../../platform/tauri/voice";
+import {
+  DEFAULT_CLOUD_ENDPOINT,
+  DEFAULT_CLOUD_MODEL,
+  loadVoiceSettings,
+  saveVoiceSettings,
+  subscribeVoiceSettings,
+  VOICE_LANGUAGES,
+} from "../../voice/model/voiceSettings";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -591,6 +614,7 @@ export function SettingsView({
                 <AppearancePage appearance={appearance} />
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
+              {section === "voice" ? <VoicePage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
               {section === "monos" ? <MonosPage /> : null}
               {section === "mcp" ? (
@@ -1183,6 +1207,286 @@ function ChatPage() {
             onChange={onGridArcadeEnabled}
           />
         </Row>
+      </Group>
+    </>
+  );
+}
+
+function voiceAccessLabel(status: VoiceStatus, engine: VoiceEngine): string {
+  const needed =
+    engine === "apple"
+      ? [status.microphone, status.speech]
+      : [status.microphone];
+  if (needed.includes("denied")) return "Blocked";
+  if (needed.includes("prompt")) return "Not asked yet";
+  return "Allowed";
+}
+
+function voiceLanguageNote(status: VoiceStatus | null): string {
+  if (!status?.supported) return "";
+  if (!status.languageAvailable)
+    return " Apple's recognizer does not support this language.";
+  if (status.onDevice) return " This language transcribes on this Mac.";
+  return " This language has no on-device model yet. Add it under System Settings › Keyboard › Dictation, or allow Apple servers.";
+}
+
+function VoicePage() {
+  const voice = useSyncExternalStore(
+    subscribeVoiceSettings,
+    loadVoiceSettings,
+    loadVoiceSettings,
+  );
+  const [status, setStatus] = useState<VoiceStatus | null>(null);
+  const [endpoint, setEndpoint] = useState(voice.cloudEndpoint);
+  const [model, setModel] = useState(voice.cloudModel);
+  const [key, setKey] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void voiceStatus(voice.locale).then(setStatus);
+  }, [voice.locale]);
+
+  useEffect(() => {
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh]);
+
+  const supported = status?.supported ?? false;
+  const blocked =
+    status != null && voiceAccessLabel(status, voice.engine) === "Blocked";
+  const unasked =
+    status != null &&
+    voiceAccessLabel(status, voice.engine) === "Not asked yet";
+
+  const onAllow = () => {
+    void requestVoiceAccess(voice.engine, voice.locale).then(setStatus);
+  };
+
+  const onSaveKey = async (next: string) => {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      await saveTranscriptionKey(next);
+      setKey("");
+      refresh();
+    } catch (reason) {
+      setKeyError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const commitEndpoint = () => {
+    const next = endpoint.trim();
+    if (next && next !== voice.cloudEndpoint)
+      saveVoiceSettings({ cloudEndpoint: next });
+    else setEndpoint(voice.cloudEndpoint);
+  };
+
+  const commitModel = () => {
+    const next = model.trim();
+    if (next && next !== voice.cloudModel)
+      saveVoiceSettings({ cloudModel: next });
+    else setModel(voice.cloudModel);
+  };
+
+  const inputClass =
+    "min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35";
+  const fieldClass =
+    "flex h-7 w-72 max-w-full shrink-0 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20";
+
+  return (
+    <>
+      <Group
+        title="Dictation"
+        description={`Speak into the composer instead of typing. Press ${keybindingShortcutLabel("Composer: Dictate", `${MOD}${SHIFT}E`) ?? "the microphone"} to start and again to finish, or Esc to throw it away. The text stays editable before you send.`}
+      >
+        <Row
+          id="voice-dictation"
+          label="Dictation"
+          description="Show the microphone in session composers."
+        >
+          <Toggle
+            label="Dictation"
+            on={voice.dictation}
+            onChange={(next) => saveVoiceSettings({ dictation: next })}
+          />
+        </Row>
+        <Row
+          id="voice-access"
+          label="Microphone and speech access"
+          description={
+            status == null
+              ? "Checking…"
+              : !supported
+                ? "Voice input is available on macOS for now."
+                : voice.engine === "apple"
+                  ? "macOS asks once for the microphone and once for speech recognition. Only System Settings can change a decision afterwards."
+                  : "macOS asks once for the microphone. Only System Settings can change the decision afterwards."
+          }
+        >
+          {status != null && supported ? (
+            <>
+              <span className="text-[12px] text-content/45">
+                {voiceAccessLabel(status, voice.engine)}
+              </span>
+              {unasked ? (
+                <SecondaryButton onClick={onAllow}>Allow</SecondaryButton>
+              ) : null}
+              {blocked ? (
+                <SecondaryButton
+                  onClick={() =>
+                    openVoicePrivacySettings(
+                      status.microphone === "denied" ? "microphone" : "speech",
+                    )
+                  }
+                >
+                  Open System Settings
+                </SecondaryButton>
+              ) : null}
+            </>
+          ) : null}
+        </Row>
+      </Group>
+
+      <Group
+        title="Transcription"
+        description="Where speech becomes text. On this Mac uses Apple's recognizer with live text as you speak. A service uploads the recording when you finish."
+      >
+        <Row
+          id="voice-engine"
+          label="Transcription engine"
+          description={
+            voice.engine === "apple"
+              ? "Apple speech recognition. Audio stays on this Mac when the language is installed, and no key is needed."
+              : "Any OpenAI-compatible transcription endpoint, such as OpenAI, Groq, or a local whisper.cpp server. Audio leaves this Mac unless the endpoint is local."
+          }
+        >
+          <Segmented
+            label="Transcription engine"
+            value={voice.engine}
+            options={[
+              { value: "apple", label: "On this Mac" },
+              { value: "cloud", label: "Service" },
+            ]}
+            onChange={(next) => saveVoiceSettings({ engine: next })}
+          />
+        </Row>
+        <Row
+          id="voice-language"
+          label="Language"
+          description={`The language you speak. System language follows macOS.${
+            voice.engine === "apple" ? voiceLanguageNote(status) : ""
+          }`}
+        >
+          <Select
+            label="Language"
+            value={voice.locale}
+            options={VOICE_LANGUAGES}
+            onChange={(next) => saveVoiceSettings({ locale: next })}
+          />
+        </Row>
+        <Row
+          id="voice-allow-server"
+          label="Allow Apple servers"
+          description="When a language has no on-device model, let Apple's servers transcribe it. Off keeps audio on this Mac and asks you to install the language instead."
+        >
+          <Toggle
+            label="Allow Apple servers"
+            on={voice.allowServer}
+            disabled={voice.engine !== "apple"}
+            onChange={(next) => saveVoiceSettings({ allowServer: next })}
+          />
+        </Row>
+      </Group>
+
+      <Group
+        id="voice-service"
+        title="Transcription service"
+        description="Used when the engine is Service. Any OpenAI-compatible /v1/audio/transcriptions URL works. Plain http is only allowed for this machine, such as whisper.cpp's whisper-server on 127.0.0.1."
+      >
+        <Row label="Endpoint">
+          <label className={fieldClass}>
+            <input
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+              onBlur={commitEndpoint}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder={DEFAULT_CLOUD_ENDPOINT}
+              aria-label="Transcription endpoint"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </Row>
+        <Row label="Model" description="Sent as the model field.">
+          <label className={`${fieldClass} w-52`}>
+            <input
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              onBlur={commitModel}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder={DEFAULT_CLOUD_MODEL}
+              aria-label="Transcription model"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </Row>
+        <Row
+          label="API key"
+          description="Stored in MonoCode's app data, readable only by you. A local server usually needs none."
+        >
+          {status?.cloudKey ? (
+            <>
+              <span className="text-[12px] text-content/45">Saved</span>
+              <SecondaryButton
+                onClick={() => void onSaveKey("")}
+                disabled={keyBusy}
+              >
+                Remove
+              </SecondaryButton>
+            </>
+          ) : (
+            <div className="flex max-w-full flex-wrap items-center gap-2">
+              <label className={`${fieldClass} w-52`}>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(event) => setKey(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && key.trim())
+                      void onSaveKey(key.trim());
+                  }}
+                  placeholder="sk-…"
+                  aria-label="Transcription API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={inputClass}
+                />
+              </label>
+              <SecondaryButton
+                onClick={() => void onSaveKey(key.trim())}
+                disabled={keyBusy || !key.trim()}
+              >
+                {keyBusy ? "Saving" : "Save"}
+              </SecondaryButton>
+            </div>
+          )}
+        </Row>
+        {keyError ? (
+          <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+            {keyError}
+          </p>
+        ) : null}
       </Group>
     </>
   );

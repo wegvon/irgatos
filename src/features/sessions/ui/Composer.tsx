@@ -224,6 +224,30 @@ import {
 } from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import { useComposerAutocorrect } from "../../settings/model/displayPrefs";
+import { keybindingShortcutLabel } from "../../settings/model/settings";
+import { MOD, SHIFT } from "../../../platform/tauri/platform";
+import { useDictation } from "../../voice/hooks/useDictation";
+import { useVoiceSupport } from "../../voice/hooks/useVoiceSupport";
+import {
+  dictationAnchor,
+  restoreAnchor,
+  spliceTranscript,
+  type DictationAnchor,
+} from "../../voice/model/dictationText";
+import {
+  loadVoiceSettings,
+  subscribeVoiceSettings,
+  VOICE_SETTINGS_DEFAULTS,
+} from "../../voice/model/voiceSettings";
+import {
+  DICTATE_COMMAND,
+  isDictateShortcut,
+} from "../../voice/model/voiceShortcuts";
+import {
+  DictationButton,
+  DictationErrorNotice,
+  DictationStrip,
+} from "../../voice/ui/DictationControls";
 
 type Props = {
   enabled?: boolean;
@@ -575,6 +599,13 @@ export function Composer({
   const [resendEdited, setResendEdited] = useState(false);
   const [runnerEnabled, setRunnerEnabled] = useState(loadComposerRunner);
   const autocorrect = useComposerAutocorrect();
+  const voiceSettings = useSyncExternalStore(
+    subscribeVoiceSettings,
+    loadVoiceSettings,
+    () => VOICE_SETTINGS_DEFAULTS,
+  );
+  const voiceSupported = useVoiceSupport();
+  const dictationAvailable = voiceSupported && voiceSettings.dictation;
   const [runnerLive, setRunnerLive] = useState(
     () => busy && loadComposerRunner(),
   );
@@ -730,6 +761,90 @@ export function Composer({
     },
     [inboxCard, noteCard, handoffCard],
   );
+
+  /** Writes dictated text the way typing would, without an input event. */
+  const writeDraft = useCallback(
+    (text: string, selectionStart: number, selectionEnd = selectionStart) => {
+      const el = ref.current;
+      if (!el) return;
+      el.value = text;
+      resizeComposer(el);
+      el.setSelectionRange(selectionStart, selectionEnd);
+      draftRevisionRef.current += 1;
+      setDraft(text);
+      onDraftChange?.(text);
+      syncHasValue(text, attachmentsRef.current);
+    },
+    [onDraftChange, syncHasValue],
+  );
+  const dictationAnchorRef = useRef<DictationAnchor | null>(null);
+  /** Enter while dictating sends once the transcript settles. */
+  const sendAfterDictationRef = useRef(false);
+  const dictation = useDictation({
+    onBegin: () => {
+      const el = ref.current;
+      if (!el) return;
+      dictationAnchorRef.current = dictationAnchor(
+        el.value,
+        el.selectionStart ?? el.value.length,
+        el.selectionEnd ?? el.value.length,
+      );
+      setSlash(null);
+      setMention(null);
+    },
+    onTranscript: (text, final) => {
+      const anchor = dictationAnchorRef.current;
+      if (!anchor) return;
+      if (final && !text.trim()) {
+        const restored = restoreAnchor(anchor);
+        writeDraft(
+          restored.text,
+          restored.selectionStart,
+          restored.selectionEnd,
+        );
+        return;
+      }
+      const next = spliceTranscript(anchor, text);
+      writeDraft(next.text, next.caret);
+    },
+    onEnd: (reason) => {
+      const anchor = dictationAnchorRef.current;
+      dictationAnchorRef.current = null;
+      if (reason === "cancel" && anchor) {
+        const restored = restoreAnchor(anchor);
+        writeDraft(
+          restored.text,
+          restored.selectionStart,
+          restored.selectionEnd,
+        );
+      }
+      const send = sendAfterDictationRef.current && reason === "final";
+      sendAfterDictationRef.current = false;
+      ref.current?.focus();
+      if (send) submit(ref.current?.value ?? "");
+    },
+  });
+  const dictationShortcut = keybindingShortcutLabel(
+    DICTATE_COMMAND,
+    `${MOD}${SHIFT}E`,
+  );
+  const { detach: detachDictation, toggle: toggleDictation } = dictation;
+  useEffect(() => {
+    if (!hotkeys || !enabled || disabled || !dictationAvailable) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      if (!isDictateShortcut(event)) return;
+      event.preventDefault();
+      ref.current?.focus();
+      toggleDictation();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dictationAvailable, disabled, enabled, hotkeys, toggleDictation]);
+  useEffect(() => {
+    if (disabled || !dictationAvailable) detachDictation();
+  }, [detachDictation, dictationAvailable, disabled]);
+  useEffect(() => detachDictation(), [detachDictation, draftResetToken]);
 
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive =
@@ -1430,6 +1545,8 @@ export function Composer({
 
   const submit = (value: string) => {
     if (disabled || worktreeRemoved || submitLockRef.current) return;
+    // Whatever was heard so far goes with the message.
+    detachDictation();
     submitLockRef.current = true;
     void completeSubmit(value).finally(() => {
       submitLockRef.current = false;
@@ -1628,6 +1745,20 @@ export function Composer({
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
     if (creatingSkill) return;
+    if (dictation.active) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        dictation.cancel();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (dictation.phase === "starting") return;
+        sendAfterDictationRef.current = true;
+        dictation.stop();
+        return;
+      }
+    }
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
@@ -2278,6 +2409,8 @@ export function Composer({
               onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
               onInput={(e) => {
                 const el = e.currentTarget;
+                // Typing takes over from dictation and keeps what was heard.
+                if (dictation.active) dictation.detach();
                 if (enterBtwFromPrefix(el)) return;
                 resizeComposer(el);
                 draftRevisionRef.current += 1;
@@ -2302,6 +2435,24 @@ export function Composer({
               }}
             />
           </div>
+
+          {dictation.error ? (
+            <DictationErrorNotice
+              error={dictation.error}
+              onDismiss={dictation.clearError}
+            />
+          ) : null}
+
+          {dictation.phase !== "idle" ? (
+            <DictationStrip
+              phase={dictation.phase}
+              startedAt={dictation.startedAt}
+              venue={dictation.venue}
+              levels={dictation.levels}
+              onCancel={dictation.cancel}
+              onDone={dictation.stop}
+            />
+          ) : null}
 
           <div className="flex items-center gap-1 px-2 pb-2">
             <div
@@ -2581,6 +2732,15 @@ export function Composer({
               </button>
             ) : null}
             <div className="flex shrink-0 items-center gap-1">
+              {dictationAvailable ? (
+                <DictationButton
+                  phase={dictation.phase}
+                  levels={dictation.levels}
+                  shortcut={dictationShortcut}
+                  disabled={disabled || worktreeRemoved}
+                  onToggle={dictation.toggle}
+                />
+              ) : null}
               <ComposerAction
                 busy={busy}
                 disabled={disabled}
