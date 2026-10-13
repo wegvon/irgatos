@@ -482,10 +482,8 @@ export function BrowserPanel({
         setProfiles(available);
         setSelectedProfile(available[0]?.id ?? "");
       })
-      .catch(() => {
-        setProfilesError(
-          "Chrome profiles could not be read. You can still sign in inside Browser.",
-        );
+      .catch((reason) => {
+        setProfilesError(message(reason));
       });
   };
 

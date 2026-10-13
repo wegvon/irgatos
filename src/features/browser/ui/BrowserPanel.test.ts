@@ -507,6 +507,49 @@ it("imports only after the user selects a Chrome profile", async () => {
   }
 });
 
+it("explains when macOS blocks Chrome profile discovery", async () => {
+  vi.mocked(invoke).mockImplementation((command) => {
+    if (command === "browser_chrome_profiles") {
+      return Promise.reject(
+        new Error(
+          "No Chrome profiles are accessible. Grant MonoCode Full Disk Access in System Settings > Privacy & Security, then restart MonoCode.",
+        ),
+      );
+    }
+    return Promise.resolve(undefined);
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(BrowserPanel, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[title="Import a Chrome profile"]',
+        )!
+        .click(),
+    );
+    await flush();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Grant MonoCode Full Disk Access",
+    );
+    expect(
+      [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Import profile",
+      )?.disabled,
+    ).toBe(true);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
 it("hides the page and ends selection while the Chrome import dialog is open", async () => {
   const container = document.createElement("div");
   document.body.append(container);
