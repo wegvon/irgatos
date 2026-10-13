@@ -341,9 +341,7 @@ pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
                 })
                 .and_then(|profiles| {
                     if profiles.is_empty() {
-                        return Err(String::from(
-                            "No Chrome profiles are accessible. Grant Irgat Full Disk Access in System Settings > Privacy & Security, then restart Irgat.",
-                        ));
+                        return Err(chrome_profiles_access_error());
                     }
                     Ok(profiles
                         .into_iter()
@@ -363,6 +361,22 @@ pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
     {
         Err("Chrome import is currently available on macOS only.".into())
     }
+}
+
+#[cfg(target_os = "macos")]
+fn chrome_profiles_access_error() -> String {
+    let app = std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.ancestors()
+                .find(|ancestor| ancestor.extension().is_some_and(|ext| ext == "app"))
+                .map(std::path::Path::to_path_buf)
+        })
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "the Irgat app bundle".into());
+    format!(
+        "No Chrome profiles are accessible. In System Settings > Privacy & Security > Full Disk Access, add and enable {app}. Then return here and choose Try again."
+    )
 }
 
 /// Imports a selected Chrome profile into the isolated child webview.

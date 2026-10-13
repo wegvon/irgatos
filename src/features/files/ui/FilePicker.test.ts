@@ -154,12 +154,12 @@ describe("file picker command mode", () => {
     const dialog = document.querySelector<HTMLElement>("[data-file-picker]")!;
     const input = dialog.querySelector<HTMLInputElement>("input")!;
 
-    inputText(input, "> rmc");
+    inputText(input, "> ri");
     const reload = [
       ...dialog.querySelectorAll<HTMLButtonElement>("button"),
     ].find((button) => button.textContent?.includes("Reload Irgat"))!;
     expect(reload).not.toBeUndefined();
-    expect(reload.querySelectorAll(".text-accent")).toHaveLength(3);
+    expect(reload.querySelectorAll(".text-accent")).toHaveLength(2);
 
     inputText(input, "> missing");
     expect(dialog.textContent).toContain("No matching commands");

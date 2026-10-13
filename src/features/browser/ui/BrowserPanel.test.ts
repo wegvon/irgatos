@@ -544,6 +544,17 @@ it("explains when macOS blocks Chrome profile discovery", async () => {
         (button) => button.textContent === "Import profile",
       )?.disabled,
     ).toBe(true);
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Try again")!
+        .click(),
+    );
+    await flush();
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "browser_chrome_profiles"),
+    ).toHaveLength(2);
   } finally {
     act(() => root.unmount());
     container.remove();

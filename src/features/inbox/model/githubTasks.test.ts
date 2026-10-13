@@ -229,7 +229,7 @@ describe("dedupeInboxItems", () => {
         number: 10,
         updatedAt: "2026-08-27T10:00:00Z",
         projectPath: "/tmp/irgat",
-        repo: "HardBeat920/irgat",
+        repo: "WEGVON/monocode",
       }),
     ];
     const deduped = dedupeInboxItems(rows, [
@@ -298,7 +298,7 @@ describe("groupProjectsByRepo", () => {
     expect(
       groupProjectsByRepo([
         { path: "/tmp/irgat", repo: "wegvon/monocode" },
-        { path: "/tmp/agent-terminal", repo: "HardBeat920/irgat" },
+        { path: "/tmp/agent-terminal", repo: "WEGVON/monocode" },
         { path: "/tmp/docs", repo: "acme/docs" },
       ]).map((project) => project.path),
     ).toEqual(["/tmp/irgat", "/tmp/docs"]);
