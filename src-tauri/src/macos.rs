@@ -751,8 +751,10 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
     use std::process::Command;
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if let Some((app, app_name)) = existing_bundle_root_from_exe(&exe) {
-        write_dev_bundle_icons(&app, &app_name)?;
+    // This process has already entered the bundle. Modifying Info.plist or
+    // Resources now invalidates the code signature and is too late for TCC,
+    // which reads bundle metadata at launch.
+    if existing_bundle_root_from_exe(&exe).is_some() {
         return Ok(());
     }
     let app_name = dev_bundle_name_from_env(DEV_BUNDLE_DEFAULT_NAME);
@@ -780,13 +782,33 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
     // UNUserNotificationCenter refuses authorization, without prompting,
     // unless the signing identifier matches CFBundleIdentifier.
     let signed = Command::new("/usr/bin/codesign")
-        .args(["--force", "--sign", "-", "--identifier", DEV_BUNDLE_ID])
+        .args([
+            "--force",
+            "--deep",
+            "--sign",
+            "-",
+            "--identifier",
+            DEV_BUNDLE_ID,
+        ])
         .arg(&app)
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
-    if !signed {
-        eprintln!("irgat: macos dev bundle: codesign failed; notifications stay off");
+        .output()
+        .map_err(|error| format!("codesign failed to start: {error}"))?;
+    if !signed.status.success() {
+        return Err(format!(
+            "codesign failed: {}",
+            String::from_utf8_lossy(&signed.stderr).trim()
+        ));
+    }
+    let verified = Command::new("/usr/bin/codesign")
+        .args(["--verify", "--deep", "--strict", "--verbose=2"])
+        .arg(&app)
+        .output()
+        .map_err(|error| format!("codesign verification failed to start: {error}"))?;
+    if !verified.status.success() {
+        return Err(format!(
+            "codesign verification failed: {}",
+            String::from_utf8_lossy(&verified.stderr).trim()
+        ));
     }
 
     let err = Command::new(&bundled)
@@ -978,6 +1000,13 @@ mod tests {
     fn existing_bundle_root_from_exe_rejects_bundle_roots_without_a_usable_name() {
         let (root, exe) = test_bundle_exe_path(".app");
         assert_eq!(existing_bundle_root_from_exe(&exe), None);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_dev_bundle_is_not_rewritten_after_launch() {
+        let (root, exe) = test_bundle_exe_path("Irgat.app");
+        assert!(existing_bundle_root_from_exe(&exe).is_some());
         std::fs::remove_dir_all(root).unwrap();
     }
 
