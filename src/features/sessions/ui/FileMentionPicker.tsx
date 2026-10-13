@@ -1,7 +1,8 @@
-import { StickyNote } from "../../../shared/ui/icons";
+import { MessageMultiple, StickyNote } from "../../../shared/ui/icons";
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import type { RankedFile } from "../../files/model/fileIndex";
 import { isNoteMentionPath } from "../../notes";
+import { isSessionMentionPath } from "../model/sessionReferences";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
@@ -83,7 +84,8 @@ export function FileMentionPicker({
         >
           {files.map((file, index) => {
             const highlighted = index === active;
-            const note = isNoteMentionPath(file.path);
+            const session = isSessionMentionPath(file.path);
+            const note = isNoteMentionPath(file.path) || session;
             const slash = file.relative.lastIndexOf("/");
             const dir = note ? "" : slash === -1 ? "" : file.relative.slice(0, slash);
             const nameOffset = slash === -1 ? 0 : slash + 1;
@@ -107,7 +109,9 @@ export function FileMentionPicker({
                 }`}
               >
                 <span className="shrink-0">
-                  {isNoteMentionPath(file.path) ? (
+                  {session ? (
+                    <MessageMultiple className="size-3.5" strokeWidth={1.75} />
+                  ) : isNoteMentionPath(file.path) ? (
                     <StickyNote className="size-3.5" strokeWidth={1.75} />
                   ) : (
                     <FileTypeIcon
@@ -131,7 +135,7 @@ export function FileMentionPicker({
                 </span>
                 {note ? (
                   <span className="shrink-0 font-mono text-[11px] text-content/40">
-                    Note
+                    {session ? "Session" : "Note"}
                   </span>
                 ) : dir ? (
                   <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">

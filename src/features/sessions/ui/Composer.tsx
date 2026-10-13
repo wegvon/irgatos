@@ -55,6 +55,7 @@ import {
   type MentionToken,
 } from "../../files/model/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
+import type { RankedFile } from "../../files/model/fileIndex";
 import {
   composeInboxMessage,
   type InboxComposerCard,
@@ -110,6 +111,31 @@ import {
 import type { Worktree } from "../../source-control/model/worktrees";
 import { CwdPicker } from "../../projects/ui/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
+import {
+  SessionReferencePicker,
+  type SessionReferencePickerHandle,
+} from "./SessionReferencePicker";
+import { SessionReferenceTray } from "./SessionReferenceTray";
+import {
+  useSessionReferenceCandidates,
+  useSessionReferencePlans,
+} from "../hooks/useSessionReferences";
+import {
+  isSessionMentionPath,
+  rankReferenceCandidates,
+  removeSessionReferenceToken,
+  SESSION_MENTION_PREFIX,
+  SESSION_PATH_PREFIX,
+  sessionReferenceLabel,
+  sessionReferenceParts,
+  sessionReferenceTokens,
+} from "../model/sessionReferences";
+import {
+  INSERT_SESSION_REFERENCE_EVENT,
+  requestOpenReferencedSession,
+  type InsertSessionReferenceRequest,
+} from "../model/sessionReferenceEvents";
+import { sessionDisplayTitle } from "../model/session";
 import { McpServerPicker } from "./McpServerPicker";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
@@ -293,6 +319,45 @@ type Props = {
   onEditingLastTurnChange?: (editing: boolean) => void;
   children?: ReactNode;
 };
+
+const SESSION_PICKER_PATH = `${SESSION_PATH_PREFIX}*`;
+
+/** `@` offers the session picker, plus chats whose title contains the query. */
+function sessionMentionEntries(
+  candidates: Parameters<typeof rankReferenceCandidates>[0],
+  query: string,
+): RankedFile[] {
+  const needle = query.trim().toLowerCase();
+  const entries: RankedFile[] = [];
+  if (SESSION_MENTION_PREFIX.startsWith(needle)) {
+    entries.push({
+      name: "Reference another session…",
+      path: SESSION_PICKER_PATH,
+      relative: SESSION_MENTION_PREFIX,
+      score: 0,
+      positions: [],
+    });
+  }
+  if (needle.length < 3) return entries;
+  for (const { candidate, positions } of rankReferenceCandidates(
+    candidates,
+    needle,
+  )) {
+    const title = sessionDisplayTitle(candidate.title, candidate.harness);
+    if (!title.toLowerCase().includes(needle)) continue;
+    const label = sessionReferenceLabel(candidate);
+    if (!label) continue;
+    entries.push({
+      name: title,
+      path: `${SESSION_PATH_PREFIX}${candidate.id}`,
+      relative: label,
+      score: 0,
+      positions,
+    });
+    if (entries.length >= 4) break;
+  }
+  return entries;
+}
 
 function ToolButton({
   active,
@@ -521,8 +586,14 @@ export function Composer({
 
   attachmentsRef.current = attachments;
 
+  const sessionMentionQuery =
+    !remote && mention?.query.startsWith(SESSION_MENTION_PREFIX)
+      ? mention.query.slice(SESSION_MENTION_PREFIX.length)
+      : null;
   const mentionOpen =
-    !remote && mention !== null && (looksLikeProject(cwd) || notesEnabled);
+    !remote &&
+    mention !== null &&
+    (looksLikeProject(cwd) || notesEnabled || !!sessionId);
   const navigationEmpty =
     draft.length === 0 &&
     attachments.length === 0 &&
@@ -603,8 +674,19 @@ export function Composer({
   );
   const mentionIndexRef = useRef<MentionIndex>(mentionIndex);
   mentionIndexRef.current = mentionIndex;
+  const { candidates: sessionCandidates } = useSessionReferenceCandidates(
+    mentionOpen && sessionMentionQuery == null && !!sessionId,
+    sessionId,
+  );
+  const sessionPickerRef = useRef<SessionReferencePickerHandle>(null);
+  const { plans: sessionReferencePlans, loading: sessionReferencesLoading } =
+    useSessionReferencePlans(
+      draft,
+      { sessionId, harness, cwd: executionCwd },
+      !remote,
+    );
   const rankedFiles = useMemo(() => {
-    if (!mentionOpen) return [];
+    if (!mentionOpen || sessionMentionQuery != null) return [];
     const fileHits = looksLikeProject(executionCwd)
       ? rankMentionFiles(
           files,
@@ -616,8 +698,25 @@ export function Composer({
       ? rankNoteFiles(notes, mention?.query ?? "")
       : [];
     const seen = new Set(noteHits.map((file) => file.path));
-    return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, mention?.query, mentionOpen, notes, notesEnabled]);
+    return [
+      ...sessionMentionEntries(
+        sessionId ? sessionCandidates : [],
+        mention?.query ?? "",
+      ),
+      ...noteHits,
+      ...fileHits.filter((file) => !seen.has(file.path)),
+    ];
+  }, [
+    executionCwd,
+    files,
+    mention?.query,
+    mentionOpen,
+    notes,
+    notesEnabled,
+    sessionCandidates,
+    sessionId,
+    sessionMentionQuery,
+  ]);
 
   const syncHasValue = useCallback(
     (text: string, files: Attachment[]) => {
@@ -1109,9 +1208,23 @@ export function Composer({
         setMention(null);
         return;
       }
-      const label = isNoteMentionPath(file.path)
-        ? file.relative
-        : mentionLabel(file, mentionIndexRef.current);
+      if (file.path === SESSION_PICKER_PATH) {
+        const next = `${el.value.slice(0, token.start)}@${SESSION_MENTION_PREFIX}${el.value.slice(token.end)}`;
+        const cursor = token.start + 1 + SESSION_MENTION_PREFIX.length;
+        el.value = next;
+        resizeComposer(el);
+        el.setSelectionRange(cursor, cursor);
+        setDraft(next);
+        onDraftChange?.(next);
+        syncHasValue(next, attachmentsRef.current);
+        setMention(mentionTokenAt(next, cursor));
+        el.focus();
+        return;
+      }
+      const label =
+        isNoteMentionPath(file.path) || isSessionMentionPath(file.path)
+          ? file.relative
+          : mentionLabel(file, mentionIndexRef.current);
       const next = replaceMentionToken(el.value, token, label);
       el.value = next;
       resizeComposer(el);
@@ -1119,12 +1232,59 @@ export function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
+      if (isSessionMentionPath(file.path)) onDraftChange?.(next);
       syncHasValue(next, attachmentsRef.current);
       setMention(null);
       el.focus();
     },
-    [syncHasValue],
+    [onDraftChange, syncHasValue],
   );
+
+  const removeSessionReference = useCallback(
+    (label: string) => {
+      const el = ref.current;
+      if (!el) return;
+      const token = sessionReferenceTokens(el.value).find(
+        (item) => item.label === label,
+      );
+      if (!token) return;
+      const next = removeSessionReferenceToken(el.value, token);
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(token.start, token.start);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+      setMention(null);
+      el.focus();
+    },
+    [onDraftChange, syncHasValue],
+  );
+
+  useEffect(() => {
+    if (!sessionId || remote) return;
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertSessionReferenceRequest>)
+        .detail;
+      const el = ref.current;
+      if (!el || detail?.targetSessionId !== sessionId || detail.handled)
+        return;
+      detail.handled = true;
+      const token = `@${detail.label}`;
+      const next = !el.value.trim()
+        ? `${token} `
+        : `${el.value}${/\s$/.test(el.value) ? "" : " "}${token} `;
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(next.length, next.length);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+    };
+    window.addEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
+    return () =>
+      window.removeEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
+  }, [onDraftChange, remote, sessionId, syncHasValue]);
 
   useEffect(() => {
     if (!focused || disabled) return;
@@ -1494,7 +1654,9 @@ export function Composer({
       return;
     }
 
-    if (mentionOpen) {
+    if (mentionOpen && sessionMentionQuery != null) {
+      if (sessionPickerRef.current?.handleKey(e)) return;
+    } else if (mentionOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (rankedFiles.length === 0) return;
@@ -1888,7 +2050,24 @@ export function Composer({
             />
           </div>
         ) : null}
-        {mentionOpen && !pickerOpen ? (
+        {mentionOpen && !pickerOpen && sessionMentionQuery != null ? (
+          <div className="absolute inset-x-0 bottom-full z-30 mb-1">
+            <SessionReferencePicker
+              query={sessionMentionQuery}
+              currentSessionId={sessionId}
+              currentCwd={cwd}
+              handleRef={sessionPickerRef}
+              onPick={(label) =>
+                pickMention({
+                  name: label,
+                  path: `${SESSION_PATH_PREFIX}${label}`,
+                  relative: label,
+                })
+              }
+              onClose={() => setMention(null)}
+            />
+          </div>
+        ) : mentionOpen && !pickerOpen ? (
           <div className="absolute inset-x-0 bottom-full z-30 mb-1">
             <FileMentionPicker
               files={rankedFiles}
@@ -2036,6 +2215,15 @@ export function Composer({
               onDismiss={onHandoffCardDismiss}
             />
           ) : null}
+
+          <SessionReferenceTray
+            plans={sessionReferencePlans}
+            loading={sessionReferencesLoading}
+            onRemove={removeSessionReference}
+            onOpen={(id, blockId) =>
+              requestOpenReferencedSession({ sessionId: id, blockId })
+            }
+          />
 
           <div className="relative">
             <div
@@ -2493,6 +2681,22 @@ function FileMentionRuns({
   text: string;
   mentions: ReadonlyMap<string, ProjectFile>;
 }) {
+  const sessionParts = sessionReferenceParts(text);
+  if (sessionParts.some((part) => part.token)) {
+    return (
+      <>
+        {sessionParts.map((part, index) =>
+          part.token ? (
+            <span key={index} className="text-mention" data-session-reference>
+              {part.text}
+            </span>
+          ) : (
+            <FileMentionRuns key={index} text={part.text} mentions={mentions} />
+          ),
+        )}
+      </>
+    );
+  }
   const parts = fileMentionParts(text, mentions);
   return (
     <>
