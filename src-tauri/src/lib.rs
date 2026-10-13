@@ -21,6 +21,10 @@ mod gitlab;
 mod harness;
 mod harness_updates;
 mod inbox_media;
+mod irgat;
+#[cfg(target_os = "macos")]
+mod irgat_chat;
+mod irgat_transcript;
 mod jira;
 mod jsonc;
 mod kanban;
@@ -32,10 +36,6 @@ mod macos;
 mod macos_background;
 mod mcp;
 mod menu;
-mod irgat;
-#[cfg(target_os = "macos")]
-mod irgat_chat;
-mod irgat_transcript;
 mod notes;
 mod notifications;
 mod pasteboard;

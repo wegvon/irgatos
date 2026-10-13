@@ -103,7 +103,10 @@ pub(crate) fn migrate_transcript(conn: &Connection, id: &str) -> rusqlite::Resul
         return Ok(());
     };
     let tx = conn.unchecked_transaction()?;
-    tx.execute("INSERT INTO irgat_transcripts(session_id) VALUES (?1)", [id])?;
+    tx.execute(
+        "INSERT INTO irgat_transcripts(session_id) VALUES (?1)",
+        [id],
+    )?;
     insert_blocks(
         &tx,
         id,

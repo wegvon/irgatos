@@ -3595,10 +3595,8 @@ mod tests {
     fn configured_binary_paths_fail_closed_and_stay_exact() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!(
-            "irgat-configured-binaries-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("irgat-configured-binaries-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let codex = dir.join("codex");

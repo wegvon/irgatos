@@ -940,10 +940,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "irgat-macos-tests-{}-{nonce}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("irgat-macos-tests-{}-{nonce}", std::process::id()));
         let app = root.join(app_name);
         let exe = app.join("Contents/MacOS/irgat");
         std::fs::create_dir_all(exe.parent().unwrap()).unwrap();

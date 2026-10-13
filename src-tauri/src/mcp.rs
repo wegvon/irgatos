@@ -931,10 +931,8 @@ mod tests {
 
     #[test]
     fn adds_opencode_two_server_without_changing_existing_timeouts_or_servers() {
-        let root = std::env::temp_dir().join(format!(
-            "irgat-opencode-timeout-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("irgat-opencode-timeout-{}", uuid::Uuid::new_v4()));
         let path = root.join("opencode.json");
         std::fs::create_dir_all(&root).unwrap();
         let original = serde_json::json!({
@@ -1109,8 +1107,7 @@ mod tests {
 
     #[test]
     fn writes_server_without_discarding_other_configuration() {
-        let root =
-            std::env::temp_dir().join(format!("irgat-mcp-write-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("irgat-mcp-write-{}", uuid::Uuid::new_v4()));
         let path = root.join(".cursor/mcp.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
@@ -1129,8 +1126,7 @@ mod tests {
 
     #[test]
     fn removes_only_the_named_discovered_entry() {
-        let root =
-            std::env::temp_dir().join(format!("irgat-mcp-remove-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("irgat-mcp-remove-{}", uuid::Uuid::new_v4()));
         let home = root.join("home");
         let project = home.join("repo");
         std::fs::create_dir_all(project.join(".git")).unwrap();
@@ -1223,8 +1219,7 @@ mod tests {
 
     #[test]
     fn adds_to_existing_cursor_jsonc() {
-        let root =
-            std::env::temp_dir().join(format!("irgat-mcp-jsonc-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("irgat-mcp-jsonc-{}", uuid::Uuid::new_v4()));
         let path = root.join(".cursor/mcp.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(
@@ -1368,8 +1363,7 @@ mod tests {
 
     #[test]
     fn discovery_preserves_codex_enablement() {
-        let root =
-            std::env::temp_dir().join(format!("irgat-mcp-enabled-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("irgat-mcp-enabled-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("config.toml");
         std::fs::write(

@@ -328,8 +328,7 @@ mod tests {
     struct Fixture(std::path::PathBuf);
     impl Fixture {
         fn new(value: serde_json::Value) -> Self {
-            let dir =
-                std::env::temp_dir().join(format!("irgat-pi-usage-{}", uuid::Uuid::new_v4()));
+            let dir = std::env::temp_dir().join(format!("irgat-pi-usage-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("auth.json"), value.to_string()).unwrap();
             Self(dir)

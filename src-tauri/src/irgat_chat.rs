@@ -286,7 +286,8 @@ fn menu(
         builder = builder.item(&empty);
     } else {
         for irgat in irgats {
-            let mut item = IconMenuItemBuilder::with_id(format!("{SELECT}{}", irgat.id), &irgat.name);
+            let mut item =
+                IconMenuItemBuilder::with_id(format!("{SELECT}{}", irgat.id), &irgat.name);
             if let Some(icon) = menu_bar::icon_for(&irgat.id, mascots) {
                 item = item.icon(icon);
             } else {

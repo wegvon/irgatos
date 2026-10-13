@@ -1947,7 +1947,10 @@ mod tests {
             relatives(&store.status("irgat", &cwd).unwrap()),
             vec!["b/file.txt"]
         );
-        assert_eq!(std::fs::read_to_string(&paths[1]).unwrap(), "irgat change\n");
+        assert_eq!(
+            std::fs::read_to_string(&paths[1]).unwrap(),
+            "irgat change\n"
+        );
     }
 
     #[test]
