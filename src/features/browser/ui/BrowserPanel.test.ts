@@ -32,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear();
   document.body.innerHTML = "";
 });
 
@@ -159,6 +160,65 @@ it("rejects addresses that aren't on the web", async () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Only web addresses",
     );
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+  }
+});
+
+it("imports only after the user selects a Chrome profile", async () => {
+  vi.mocked(invoke).mockImplementation((command) => {
+    if (command === "browser_chrome_profiles") {
+      return Promise.resolve([{ id: "Default", name: "Personal" }]);
+    }
+    if (command === "browser_import_chrome_profile") {
+      return Promise.resolve({
+        importedCookies: 3,
+        skippedCookies: 0,
+        bookmarks: [{ name: "Example", url: "https://example.com" }],
+        history: [],
+      });
+    }
+    return Promise.resolve(undefined);
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(BrowserPanel, { visible: true, onClose: vi.fn() }),
+      ),
+    );
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[title="Import a Chrome profile"]',
+        )!
+        .click(),
+    );
+    await flush();
+    expect(container.querySelector("select")?.value).toBe("Default");
+    expect(invoke).not.toHaveBeenCalledWith(
+      "browser_import_chrome_profile",
+      expect.anything(),
+    );
+
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Import profile")!
+        .click(),
+    );
+    await flush();
+    expect(invoke).toHaveBeenCalledWith("browser_prepare", {
+      id: "main",
+      bounds: expect.objectContaining({ width: 560, height: 760 }),
+    });
+    expect(invoke).toHaveBeenCalledWith("browser_import_chrome_profile", {
+      id: "main",
+      profileId: "Default",
+    });
+    expect(container.textContent).toContain("Imported 3 cookies");
   } finally {
     act(() => root.unmount());
     container.remove();

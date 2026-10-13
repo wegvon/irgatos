@@ -5,12 +5,24 @@
 
 use std::{cell::RefCell, collections::HashMap};
 
+#[cfg(target_os = "macos")]
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, Url, WebviewWindow};
 use wry::{
     dpi::{PhysicalPosition, PhysicalSize},
     NewWindowResponse, PageLoadEvent, Rect, WebView, WebViewBuilder,
 };
+
+#[cfg(target_os = "macos")]
+use cookie::{Cookie, SameSite};
+#[cfg(target_os = "macos")]
+use rookie_cookies::{chrome_profiles, read, Cookie as ChromeCookie, ReadRequest};
 
 const EVENT: &str = "inline-browser";
 
@@ -81,6 +93,44 @@ pub enum BrowserAction {
     Back,
     Forward,
     Reload,
+}
+
+/// A Chrome profile the user may explicitly import from.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChromeProfile {
+    id: String,
+    name: String,
+}
+
+/// A bookmark read from Chrome's `Bookmarks` file.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserBookmark {
+    name: String,
+    url: String,
+}
+
+/// A recent history entry read from Chrome's copied `History` database.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserHistoryEntry {
+    title: String,
+    url: String,
+    last_visited: Option<i64>,
+}
+
+/// Metadata and non-secret browser-library data returned after an import.
+///
+/// Cookie values deliberately never cross Tauri IPC. They go straight from the
+/// local Chrome profile into the child webview's isolated website data store.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChromeImportResult {
+    imported_cookies: usize,
+    skipped_cookies: usize,
+    bookmarks: Vec<BrowserBookmark>,
+    history: Vec<BrowserHistoryEntry>,
 }
 
 /// Tauri serves the app and its custom protocols from `*.localhost` hosts on
@@ -241,6 +291,131 @@ fn build_view(
     })
 }
 
+/// Creates the isolated browser data store without navigating to a website.
+///
+/// This lets an explicit Chrome import set cookies before the user opens the
+/// first page. The view remains hidden until `browser_open` is called.
+#[tauri::command]
+pub async fn browser_prepare(
+    window: WebviewWindow,
+    id: String,
+    bounds: BrowserBounds,
+) -> Result<(), String> {
+    on_main(window, move |window| {
+        let (width, height) = window_size(&window)?;
+        let rect = bounds.physical(width, height)?;
+        let key = (window.label().to_string(), id.clone());
+        VIEWS.with(|views| {
+            if views.borrow().contains_key(&key) {
+                return Ok(());
+            }
+            let blank = Url::parse("about:blank").map_err(|e| e.to_string())?;
+            let view = build_view(
+                &window,
+                &id,
+                &blank,
+                rect,
+                window.config().build.dev_url.clone(),
+            )?;
+            view.set_visible(false).map_err(|e| e.to_string())?;
+            views.borrow_mut().insert(key, view);
+            Ok(())
+        })
+    })
+    .await
+}
+
+/// Lists the local Google Chrome profiles that can be selected for import.
+#[tauri::command]
+pub async fn browser_chrome_profiles() -> Result<Vec<ChromeProfile>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            chrome_profiles()
+                .map(|profiles| {
+                    profiles
+                        .into_iter()
+                        .map(|profile| ChromeProfile {
+                            id: profile.profile.profile_id.to_string(),
+                            name: profile.profile.display_name,
+                        })
+                        .collect()
+                })
+                .map_err(|_| {
+                    "Chrome profiles could not be read. You can still sign in in Browser.".into()
+                })
+        })
+        .await
+        .map_err(|_| {
+            "Chrome profiles could not be read. You can still sign in in Browser.".into()
+        })?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Chrome import is currently available on macOS only.".into())
+    }
+}
+
+/// Imports a selected Chrome profile into the isolated child webview.
+///
+/// This command is intentionally reachable only from the browser panel's
+/// explicit import action. It never writes Chrome data or cookie values to
+/// logs, app storage, or Tauri IPC.
+#[tauri::command]
+pub async fn browser_import_chrome_profile(
+    window: WebviewWindow,
+    id: String,
+    profile_id: String,
+) -> Result<ChromeImportResult, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let source = tauri::async_runtime::spawn_blocking(move || read_chrome_profile(&profile_id))
+            .await
+            .map_err(|_| import_error())??;
+
+        let ChromeProfileContents {
+            cookies,
+            bookmarks,
+            history,
+        } = source;
+        let (imported_cookies, skipped_cookies) = on_main(window, move |window| {
+            VIEWS.with(|views| {
+                let views = views.borrow();
+                let view = views
+                    .get(&(window.label().to_string(), id))
+                    .ok_or("Open the browser panel, then try the import again.")?;
+                let mut imported = 0;
+                let mut skipped = 0;
+                for cookie in cookies {
+                    let Some(cookie) = webview_cookie(&cookie) else {
+                        skipped += 1;
+                        continue;
+                    };
+                    if view.set_cookie(&cookie).is_ok() {
+                        imported += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                }
+                Ok((imported, skipped))
+            })
+        })
+        .await?;
+
+        Ok(ChromeImportResult {
+            imported_cookies,
+            skipped_cookies,
+            bookmarks,
+            history,
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, id, profile_id);
+        Err("Chrome import is currently available on macOS only.".into())
+    }
+}
+
 /// Show the browser at `url`, creating its view on first use.
 #[tauri::command]
 pub async fn browser_open(
@@ -335,6 +510,199 @@ pub async fn browser_close(window: WebviewWindow, id: String) -> Result<(), Stri
 /// Drop a closed window's views. Runs on the main thread from the event loop.
 pub fn window_closed(label: &str) {
     VIEWS.with(|views| views.borrow_mut().retain(|(owner, _), _| owner != label));
+}
+
+#[cfg(target_os = "macos")]
+const MAX_IMPORTED_HISTORY: usize = 1_000;
+
+#[cfg(target_os = "macos")]
+struct ChromeProfileContents {
+    cookies: Vec<ChromeCookie>,
+    bookmarks: Vec<BrowserBookmark>,
+    history: Vec<BrowserHistoryEntry>,
+}
+
+#[cfg(target_os = "macos")]
+fn import_error() -> String {
+    "Chrome could not be imported. You can still sign in inside Browser.".into()
+}
+
+#[cfg(target_os = "macos")]
+fn read_chrome_profile(profile_id: &str) -> Result<ChromeProfileContents, String> {
+    let profiles = chrome_profiles().map_err(|_| import_error())?;
+    let profile = profiles
+        .into_iter()
+        .find(|profile| profile.profile.profile_id.to_string() == profile_id)
+        .ok_or_else(import_error)?;
+    let profile_path = PathBuf::from(profile.profile.path);
+    let snapshot = read(
+        ReadRequest::browser("chrome")
+            .profile(profile_id)
+            .timeout(Duration::from_secs(30)),
+    )
+    .map_err(|_| import_error())?;
+
+    // Bookmarks and history have no secrets and are only returned after this
+    // explicit action. A missing one does not prevent usable session import.
+    let bookmarks = read_bookmarks(&profile_path).unwrap_or_default();
+    let history = read_history(&profile_path).unwrap_or_default();
+    Ok(ChromeProfileContents {
+        cookies: snapshot.cookies().to_vec(),
+        bookmarks,
+        history,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn webview_cookie(source: &ChromeCookie) -> Option<Cookie<'static>> {
+    let name = source.name.trim();
+    let domain = source.domain.trim().trim_start_matches('.');
+    if name.is_empty() || domain.is_empty() {
+        return None;
+    }
+
+    let mut builder = Cookie::build((name.to_owned(), source.value.clone()))
+        .domain(domain.to_owned())
+        .path(if source.path.is_empty() {
+            "/".to_owned()
+        } else {
+            source.path.clone()
+        })
+        .secure(source.secure)
+        .http_only(source.http_only);
+    if let Some(expires) = source
+        .expires
+        .and_then(|value| i64::try_from(value).ok())
+        .and_then(|value| time::OffsetDateTime::from_unix_timestamp(value).ok())
+    {
+        builder = builder.expires(expires);
+    }
+    builder = match source.same_site {
+        1 => builder.same_site(SameSite::Lax),
+        2 => builder.same_site(SameSite::Strict),
+        0 => builder.same_site(SameSite::None),
+        _ => builder,
+    };
+    Some(builder.build())
+}
+
+#[cfg(target_os = "macos")]
+fn read_bookmarks(profile_path: &Path) -> Result<Vec<BrowserBookmark>, String> {
+    let contents =
+        fs::read_to_string(profile_path.join("Bookmarks")).map_err(|_| import_error())?;
+    let document: serde_json::Value =
+        serde_json::from_str(&contents).map_err(|_| import_error())?;
+    let mut bookmarks = Vec::new();
+    if let Some(roots) = document.get("roots").and_then(serde_json::Value::as_object) {
+        for root in roots.values() {
+            collect_bookmarks(root, &mut bookmarks);
+        }
+    }
+    Ok(bookmarks)
+}
+
+#[cfg(target_os = "macos")]
+fn collect_bookmarks(node: &serde_json::Value, bookmarks: &mut Vec<BrowserBookmark>) {
+    if let Some(url) = node.get("url").and_then(serde_json::Value::as_str) {
+        if let Ok(url) = Url::parse(url) {
+            if matches!(url.scheme(), "http" | "https") {
+                bookmarks.push(BrowserBookmark {
+                    name: node
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|name| !name.trim().is_empty())
+                        .unwrap_or(url.as_str())
+                        .to_owned(),
+                    url: url.into(),
+                });
+            }
+        }
+    }
+    if let Some(children) = node.get("children").and_then(serde_json::Value::as_array) {
+        for child in children {
+            collect_bookmarks(child, bookmarks);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn read_history(profile_path: &Path) -> Result<Vec<BrowserHistoryEntry>, String> {
+    with_copied_sqlite(&profile_path.join("History"), "History", |path| {
+        let connection = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|_| import_error())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT url, title, last_visit_time
+                 FROM urls
+                 WHERE url LIKE 'http://%' OR url LIKE 'https://%'
+                 ORDER BY last_visit_time DESC
+                 LIMIT ?1",
+            )
+            .map_err(|_| import_error())?;
+        let rows = statement
+            .query_map([MAX_IMPORTED_HISTORY as i64], |row| {
+                let url: String = row.get(0)?;
+                let title: String = row.get(1)?;
+                let last_visited: i64 = row.get(2)?;
+                Ok((url, title, last_visited))
+            })
+            .map_err(|_| import_error())?;
+        let mut history = Vec::new();
+        for row in rows {
+            let (url, title, last_visited) = row.map_err(|_| import_error())?;
+            if let Ok(url) = Url::parse(&url) {
+                if matches!(url.scheme(), "http" | "https") {
+                    history.push(BrowserHistoryEntry {
+                        title: if title.trim().is_empty() {
+                            url.as_str().to_owned()
+                        } else {
+                            title
+                        },
+                        url: url.into(),
+                        last_visited: chromium_timestamp_to_unix(last_visited),
+                    });
+                }
+            }
+        }
+        Ok(history)
+    })
+}
+
+/// Reads a SQLite snapshot so an active Chrome process never blocks import.
+#[cfg(target_os = "macos")]
+fn with_copied_sqlite<T>(
+    source: &Path,
+    filename: &str,
+    read: impl FnOnce(&Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let directory =
+        std::env::temp_dir().join(format!("monocode-chrome-import-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&directory).map_err(|_| import_error())?;
+    let copied = directory.join(filename);
+    let result = (|| {
+        fs::copy(source, &copied).map_err(|_| import_error())?;
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = PathBuf::from(format!("{}{}", source.display(), suffix));
+            if sidecar.exists() {
+                fs::copy(
+                    sidecar,
+                    PathBuf::from(format!("{}{}", copied.display(), suffix)),
+                )
+                .map_err(|_| import_error())?;
+            }
+        }
+        read(&copied)
+    })();
+    let _ = fs::remove_dir_all(directory);
+    result
+}
+
+#[cfg(target_os = "macos")]
+fn chromium_timestamp_to_unix(value: i64) -> Option<i64> {
+    value.checked_div(1_000_000)?.checked_sub(11_644_473_600)
 }
 
 #[cfg(test)]

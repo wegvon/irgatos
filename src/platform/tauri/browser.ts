@@ -18,6 +18,24 @@ export type BrowserEvent = { id: string; kind: BrowserEventKind; url: string };
 export type BrowserAction =
   "back" | "forward" | "reload" | { navigate: string };
 
+export type ChromeProfile = { id: string; name: string };
+
+export type BrowserBookmark = { name: string; url: string };
+
+export type BrowserHistoryEntry = {
+  title: string;
+  url: string;
+  lastVisited: number | null;
+};
+
+/** Cookie values never cross IPC; only the import outcome and safe library data do. */
+export type ChromeImportResult = {
+  importedCookies: number;
+  skippedCookies: number;
+  bookmarks: BrowserBookmark[];
+  history: BrowserHistoryEntry[];
+};
+
 export function boundsOf(element: Element): BrowserBounds | null {
   const rect = element.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return null;
@@ -32,6 +50,26 @@ export function boundsOf(element: Element): BrowserBounds | null {
 
 export function openBrowser(id: string, url: string, bounds: BrowserBounds) {
   return invoke<void>("browser_open", { id, url, bounds });
+}
+
+/** Prepares the isolated browser store without showing or navigating a page. */
+export function prepareBrowser(id: string, bounds: BrowserBounds) {
+  return invoke<void>("browser_prepare", { id, bounds });
+}
+
+export function listChromeProfiles() {
+  return invoke<ChromeProfile[]>("browser_chrome_profiles");
+}
+
+/**
+ * Reads a selected local Chrome profile after a direct user action.
+ * Cookie values remain native and are written only to the browser's own store.
+ */
+export function importChromeProfile(id: string, profileId: string) {
+  return invoke<ChromeImportResult>("browser_import_chrome_profile", {
+    id,
+    profileId,
+  });
 }
 
 /** `null` hides the view without unloading its page. */

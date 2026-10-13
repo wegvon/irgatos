@@ -13,17 +13,24 @@ import {
 import {
   boundsOf,
   browserAction,
+  importChromeProfile,
+  listChromeProfiles,
   listenBrowserEvents,
   openBrowser,
+  prepareBrowser,
   setBrowserBounds,
   type BrowserAction,
+  type BrowserBookmark,
   type BrowserBounds,
+  type BrowserHistoryEntry,
+  type ChromeProfile,
 } from "../../../platform/tauri/browser";
 import { displayAddress, resolveAddress } from "../model/browserAddress";
 
 const BROWSER_ID = "main";
 const MIN_WIDTH = 360;
 const DEFAULT_WIDTH = 560;
+const IMPORT_STORAGE_KEY = "monocode-browser-chrome-library";
 /** Native views draw above the page, so they step aside for these. */
 const OVERLAY_SELECTOR = '[role="dialog"], [role="menu"], [role="listbox"]';
 
@@ -62,6 +69,35 @@ function message(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
 }
 
+type ImportedLibrary = {
+  bookmarks: BrowserBookmark[];
+  history: BrowserHistoryEntry[];
+};
+
+function readImportedLibrary(): ImportedLibrary {
+  try {
+    if (typeof window === "undefined") return { bookmarks: [], history: [] };
+    const value = localStorage.getItem(IMPORT_STORAGE_KEY);
+    if (!value) return { bookmarks: [], history: [] };
+    const parsed = JSON.parse(value) as Partial<ImportedLibrary>;
+    return {
+      bookmarks: Array.isArray(parsed.bookmarks) ? parsed.bookmarks : [],
+      history: Array.isArray(parsed.history) ? parsed.history : [],
+    };
+  } catch {
+    return { bookmarks: [], history: [] };
+  }
+}
+
+function saveImportedLibrary(library: ImportedLibrary) {
+  try {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(IMPORT_STORAGE_KEY, JSON.stringify(library));
+  } catch {
+    // The import itself succeeds even if this optional browser library cannot persist.
+  }
+}
+
 /**
  * A side panel with a native browser view and its address bar. The view keeps
  * its page while the panel is hidden, and has its own cookie store.
@@ -80,6 +116,12 @@ export function BrowserPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [profiles, setProfiles] = useState<ChromeProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState("");
+  const [profilesError, setProfilesError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [library, setLibrary] = useState<ImportedLibrary>(readImportedLibrary);
   const panelRef = useRef<HTMLElement | null>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +281,56 @@ export function BrowserPanel({
     void navigate(result.url);
   };
 
+  const openChromeImport = () => {
+    setImportOpen(true);
+    setProfilesError(null);
+    setProfiles([]);
+    setSelectedProfile("");
+    void listChromeProfiles()
+      .then((available) => {
+        setProfiles(available);
+        setSelectedProfile(available[0]?.id ?? "");
+      })
+      .catch(() => {
+        setProfilesError(
+          "Chrome profiles could not be read. You can still sign in inside Browser.",
+        );
+      });
+  };
+
+  const importSelectedProfile = async () => {
+    if (!selectedProfile || importing) return;
+    const slot = slotRef.current;
+    const bounds = slot ? boundsOf(slot) : null;
+    if (!bounds) {
+      setProfilesError("Open the browser panel, then try the import again.");
+      return;
+    }
+    setImporting(true);
+    setProfilesError(null);
+    try {
+      await prepareBrowser(BROWSER_ID, bounds);
+      const result = await importChromeProfile(BROWSER_ID, selectedProfile);
+      const next = { bookmarks: result.bookmarks, history: result.history };
+      setLibrary(next);
+      saveImportedLibrary(next);
+      const skipped =
+        result.skippedCookies > 0
+          ? ` ${result.skippedCookies} cookie${result.skippedCookies === 1 ? "" : "s"} could not be used.`
+          : "";
+      setNotice(
+        `Imported ${result.importedCookies} cookie${result.importedCookies === 1 ? "" : "s"}, ${result.bookmarks.length} bookmarks, and ${result.history.length} recent history entries.${skipped}`,
+      );
+      setImportOpen(false);
+    } catch {
+      setProfilesError(
+        "Chrome could not be imported. You can still sign in inside Browser.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  };
+
   return (
     <aside
       ref={setPanelRef}
@@ -320,6 +412,14 @@ export function BrowserPanel({
             }}
             className="mx-1 h-6 min-w-0 flex-1 rounded-md bg-content/[0.06] px-2 text-[12px] text-content placeholder:text-content/35 focus:bg-content/[0.09] focus:outline-none"
           />
+          <button
+            type="button"
+            onClick={openChromeImport}
+            className="h-6 shrink-0 rounded px-1.5 text-[11px] text-content/55 hover:bg-content/10 hover:text-content focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            title="Import a Chrome profile"
+          >
+            Import
+          </button>
           <IconButton
             label="Open in Default Browser"
             disabled={!url}
@@ -333,6 +433,105 @@ export function BrowserPanel({
             <X className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         </form>
+        {importOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chrome-import-title"
+            className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 p-4"
+          >
+            <div className="w-full max-w-md rounded-lg border border-stroke bg-background-base p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="chrome-import-title" className="text-sm font-medium">
+                    Import from Chrome
+                  </h2>
+                  <p className="mt-1 text-xs leading-5 text-content/60">
+                    Reads cookies and active sign-ins, bookmarks, and recent
+                    history from the selected Chrome profile on this Mac.
+                  </p>
+                </div>
+                <IconButton
+                  label="Close Chrome import"
+                  disabled={importing}
+                  onClick={() => setImportOpen(false)}
+                >
+                  <X className="size-3.5" strokeWidth={1.75} />
+                </IconButton>
+              </div>
+              <p className="mt-3 rounded bg-content/[0.05] px-3 py-2 text-[11px] leading-4 text-content/65">
+                Cookies and sessions go only to Browser&apos;s isolated data
+                store. Bookmark and history lists are saved locally in this
+                browser panel. Chrome is not changed.
+              </p>
+              {profilesError ? (
+                <p role="alert" className="mt-3 text-xs text-red-400">
+                  {profilesError}
+                </p>
+              ) : profiles.length === 0 ? (
+                <p className="mt-3 text-xs text-content/55">
+                  Looking for Chrome profiles…
+                </p>
+              ) : (
+                <label className="mt-3 block text-xs text-content/70">
+                  Chrome profile
+                  <select
+                    aria-label="Chrome profile"
+                    value={selectedProfile}
+                    disabled={importing}
+                    onChange={(event) => setSelectedProfile(event.target.value)}
+                    className="mt-1 block h-8 w-full rounded border border-stroke bg-background-raised px-2 text-sm text-content focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  >
+                    {profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {library.bookmarks.length || library.history.length ? (
+                <details className="mt-3 text-[11px] text-content/60">
+                  <summary className="cursor-pointer hover:text-content">
+                    Imported library: {library.bookmarks.length} bookmarks,{" "}
+                    {library.history.length} recent entries
+                  </summary>
+                  <ul className="mt-2 max-h-24 space-y-1 overflow-auto">
+                    {[...library.bookmarks, ...library.history]
+                      .slice(0, 10)
+                      .map((entry) => (
+                        <li
+                          key={entry.url}
+                          className="truncate"
+                          title={entry.url}
+                        >
+                          {"name" in entry ? entry.name : entry.title}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              ) : null}
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={importing}
+                  onClick={() => setImportOpen(false)}
+                  className="h-8 rounded px-3 text-xs text-content/65 hover:bg-content/10 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedProfile || importing}
+                  onClick={() => void importSelectedProfile()}
+                  className="h-8 rounded bg-accent px-3 text-xs font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {importing ? "Importing…" : "Import profile"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {error || notice ? (
           <div
             role={error ? "alert" : "status"}
@@ -345,14 +544,27 @@ export function BrowserPanel({
         ) : null}
         <div ref={slotRef} className="relative min-h-0 flex-1 bg-white">
           {started ? null : (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background-base px-8 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background-base px-8 text-center">
               <Globe className="size-6 text-content/30" strokeWidth={1.5} />
               <p className="text-[13px] text-content/75">
                 Browse without leaving MonoCode
               </p>
-              <p className="max-w-72 text-[12px] text-content/45">
-                Type an address or a search above. Pages here get no access to
-                your projects or agents, and keep their own sign-ins.
+              <p className="max-w-80 text-[12px] leading-5 text-content/45">
+                Browser keeps site storage and normal sign-ins in its own
+                persistent store, so they stay available after restarting
+                MonoCode. Pages here cannot access your projects or agents.
+              </p>
+              <button
+                type="button"
+                onClick={openChromeImport}
+                className="rounded bg-content/[0.08] px-3 py-1.5 text-xs text-content/75 hover:bg-content/[0.12]"
+              >
+                Import from Chrome
+              </button>
+              <p className="max-w-80 text-[11px] leading-4 text-content/40">
+                Some sites&apos; passkey sign-ins are unavailable in this
+                embedded browser. Use Open in Default Browser if a site asks
+                for a passkey.
               </p>
             </div>
           )}

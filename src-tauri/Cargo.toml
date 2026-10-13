@@ -62,6 +62,8 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = ["CA
 objc2-user-notifications = { version = "0.3.2", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationAction", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationSound", "block2"] }
 raw-window-handle = "0.6"
 tauri-plugin-global-shortcut = "2"
+rookie-cookies = "0.6.0"
+cookie = "0.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
