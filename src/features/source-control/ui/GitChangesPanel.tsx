@@ -38,6 +38,7 @@ import {
   loadGraphPanelHeight,
   saveGraphPanelHeight,
 } from "./GitHistoryGraph";
+import { CommitPushButton } from "./CommitPushButton";
 import {
   basename,
   gitCommit,
@@ -826,6 +827,28 @@ function ChangedFiles({
             </div>
           ) : null}
         </div>
+        {isRemoteProjectPath(cwd) ? null : (
+          <CommitPushButton
+            cwd={cwd}
+            message={message}
+            target={index?.upstream ?? null}
+            busy={busy}
+            setBusy={setBusy}
+            disabledReason={
+              amend
+                ? "Turn off Amend Last Commit to commit and push in one click"
+                : index
+                  ? undefined
+                  : "Loading changes…"
+            }
+            onCommitted={() => setMessage("")}
+            onPushed={() => recordPrActivity()}
+            onSettled={() => {
+              onMutated();
+              reloadPr();
+            }}
+          />
+        )}
         {index ? (
           <GitSyncActions
             index={index}

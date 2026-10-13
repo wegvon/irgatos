@@ -354,6 +354,81 @@ export function gitPush(cwd: string): Promise<void> {
   return invoke<void>("git_push", { cwd });
 }
 
+export type GitSubmoduleIssue = {
+  path: string;
+  moved: boolean;
+  modified: boolean;
+  untracked: boolean;
+};
+
+export type GitCommitPushError =
+  | { kind: "notRepository" }
+  | { kind: "operationInProgress"; operation: string }
+  | { kind: "detachedHead" }
+  | { kind: "submodules"; submodules: GitSubmoduleIssue[]; detail: string }
+  | { kind: "nothingToCommit"; ahead: number }
+  | { kind: "noRemote" }
+  | { kind: "noUpstream"; remote: string; branch: string }
+  | { kind: "authFailed"; remote: string; detail: string }
+  | { kind: "nonFastForward"; remote: string; branch: string; detail: string }
+  | { kind: "hookFailed"; hook: string; detail: string }
+  | { kind: "rebaseConflict"; detail: string }
+  | { kind: "failed"; phase: string; detail: string };
+
+export type GitCommitPushPlan = {
+  branch: string;
+  remote: string;
+  upstream: string | null;
+  stageAll: boolean;
+};
+
+export type GitCommitPushStaged = { paths: string[]; stagedAll: boolean };
+
+export type GitCommitPushCommit = {
+  sha: string;
+  message: string;
+  /** Files committed whole, with nothing left in the working tree. */
+  paths: string[];
+};
+
+export type GitCommitPushPushed = {
+  remote: string;
+  branch: string;
+  setUpstream: boolean;
+};
+
+export function gitCommitPushCheck(
+  cwd: string,
+  setUpstream: boolean,
+  allowSubmodules: boolean,
+): Promise<GitCommitPushPlan> {
+  return invoke<GitCommitPushPlan>("git_commit_push_check", {
+    cwd, setUpstream, allowSubmodules,
+  });
+}
+
+export function gitCommitPushStage(cwd: string): Promise<GitCommitPushStaged> {
+  return invoke<GitCommitPushStaged>("git_commit_push_stage", { cwd });
+}
+
+export function gitCommitPushCommit(
+  cwd: string,
+  message: string,
+): Promise<GitCommitPushCommit> {
+  return invoke<GitCommitPushCommit>("git_commit_push_commit", { cwd, message });
+}
+
+export function gitCommitPushPush(
+  cwd: string,
+  setUpstream: boolean,
+): Promise<GitCommitPushPushed> {
+  return invoke<GitCommitPushPushed>("git_commit_push_push", { cwd, setUpstream });
+}
+
+export function gitCommitPushRebase(cwd: string): Promise<void> {
+  return invoke<void>("git_commit_push_rebase", { cwd });
+}
+
 export function gitPull(cwd: string): Promise<void> {
   return invoke<void>("git_pull", { cwd });
 }

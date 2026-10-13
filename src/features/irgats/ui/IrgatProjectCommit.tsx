@@ -54,6 +54,8 @@ import {
   sameIndex,
   usePrStatus,
 } from "../../source-control/ui/GitChangesPanel";
+import { CommitPushButton } from "../../source-control/ui/CommitPushButton";
+import { isRemoteProjectPath } from "../../projects/model/recents";
 
 /** One session file, with its path inside the repository that holds it. */
 export type IrgatProjectFile = { file: CheckpointFile; relative: string };
@@ -395,6 +397,20 @@ export function IrgatProjectCommit({
     }
   };
 
+  const acceptCommitted = async (paths: string[]) => {
+    setMessage("");
+    const committed = files.filter((entry) => paths.includes(entry.relative));
+    try {
+      for (const entry of committed) {
+        await keepSessionChanges(sessionId, cwd, entry.file.relative);
+      }
+    } catch (error) {
+      fail(error);
+    }
+    notifyReviewChanged(sessionId);
+    invalidateWatchedFiles(committed.map((entry) => entry.file.path));
+  };
+
   const sync = async () => {
     if (!index || !(canSync || canPublish)) return;
     const pushesCommits = index.ahead > 0;
@@ -549,6 +565,19 @@ export function IrgatProjectCommit({
             </div>
           ) : null}
         </div>
+        {isRemoteProjectPath(root) ? null : (
+          <CommitPushButton
+            cwd={root}
+            message={message}
+            target={index?.upstream ?? null}
+            busy={busy}
+            setBusy={setBusy}
+            disabledReason={index ? undefined : "Loading changes…"}
+            onCommitted={(commit) => void acceptCommitted(commit.paths)}
+            onPushed={() => recordPrActivity()}
+            onSettled={settle}
+          />
+        )}
         {index ? (
           <GitSyncActions
             index={index}
