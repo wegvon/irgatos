@@ -499,6 +499,10 @@ import {
   type UsageLimit,
   type WorkspaceMode,
 } from "../features/sessions/model/session";
+import {
+  activeTurnSnapshotDue,
+  persistDelay,
+} from "../features/sessions/model/persistSchedule";
 
 import {
   canDispatchQueuedHead,
@@ -1802,6 +1806,8 @@ function Workspace({
   const workspaceSyncKey = useRef<string | null>(null);
   const observedSessions = useRef(new Map<string, Session>());
   const pendingPersist = useRef(new Map<string, Session>());
+  const pendingPersistSince = useRef<number | undefined>(undefined);
+  const activeTurnSnapshots = useRef(new Map<string, number>());
   const removingSessionIds = useRef(new Set<string>());
   const loadedSessionCache = useRef(new Map<string, Session>());
   const sessionLoads = useRef(new Map<string, Promise<Session | null>>());
@@ -2636,6 +2642,7 @@ function Workspace({
   useEffect(() => {
     const liveIds = new Set(sessions.map((session) => session.id));
     const visibleIds = openSessionIds(tabsRef.current);
+    const now = Date.now();
     for (const session of sessions) {
       if (
         removingSessionIds.current.has(session.id) ||
@@ -2677,18 +2684,35 @@ function Workspace({
           !lastPersisted.current.has(session.id))
       ) {
         pendingPersist.current.set(session.id, session);
+      } else if (shouldPersistSession(session)) {
+        // A running turn is saved every few seconds, so a crash mid-reply
+        // keeps what had streamed in.
+        const pending = pendingPersist.current.has(session.id);
+        const due = activeTurnSnapshotDue(
+          activeTurnSnapshots.current.get(session.id),
+          now,
+        );
+        if (due && !pending) activeTurnSnapshots.current.set(session.id, now);
+        if (due || pending) pendingPersist.current.set(session.id, session);
       }
+      if (!session.busy) activeTurnSnapshots.current.delete(session.id);
     }
     for (const sessionId of observedSessions.current.keys()) {
       if (liveIds.has(sessionId)) continue;
       observedSessions.current.delete(sessionId);
       pendingPersist.current.delete(sessionId);
+      activeTurnSnapshots.current.delete(sessionId);
     }
-    if (pendingPersist.current.size === 0) return;
+    if (pendingPersist.current.size === 0) {
+      pendingPersistSince.current = undefined;
+      return;
+    }
+    pendingPersistSince.current ??= now;
 
     const timer = window.setTimeout(() => {
       const dirty = [...pendingPersist.current.values()];
       pendingPersist.current.clear();
+      pendingPersistSince.current = undefined;
       void Promise.all(
         dirty.map(async (session) => {
           if (
@@ -2708,7 +2732,7 @@ function Workspace({
           }
         }),
       );
-    }, 650);
+    }, persistDelay(pendingPersistSince.current, now));
     return () => window.clearTimeout(timer);
   }, [persistSession, sessions]);
 

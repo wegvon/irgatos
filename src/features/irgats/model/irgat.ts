@@ -1,4 +1,5 @@
 import { projectKey, projectName } from "../../../shared/lib/paths";
+import { readStoredJson, writeStoredJson } from "../../../shared/lib/safeStorage";
 import {
   loadTabGroupColors,
   loadTabGroupCustomColors,
@@ -69,12 +70,7 @@ const LEGACY_KEYS: [string, string][] = [
 ];
 
 function readJson(key: string): unknown {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as unknown) : undefined;
-  } catch {
-    return undefined;
-  }
+  return readStoredJson(key);
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -186,7 +182,7 @@ export function listIrgats(): Irgat[] {
 
 function saveRoster(roster: readonly Irgat[]): void {
   try {
-    localStorage.setItem(ROSTER_KEY, JSON.stringify(roster));
+    writeStoredJson(ROSTER_KEY, roster, { backup: true });
   } catch {
     return;
   }

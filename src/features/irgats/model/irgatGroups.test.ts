@@ -101,6 +101,25 @@ describe("creating a group room", () => {
     ]);
   });
 
+  it("falls back to the last good rooms and keeps a torn transcript aside", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { architect, security, frontend } = three();
+    const first = createIrgatGroup([architect.id, security.id]);
+    const second = createIrgatGroup([security.id, frontend.id]);
+    appendIrgatGroupMessage(first.id, { role: "user", text: "kept?" });
+    stored.set("irgat:irgat-groups", '[{"id":"');
+    stored.set(`irgat:irgat-group-chat:${first.id}`, '[{"id":"m1","text":');
+
+    expect(listIrgatGroups().map((group) => group.id)).toEqual([first.id]);
+    expect(findIrgatGroup(second.id)).toBeUndefined();
+    expect(loadIrgatGroupMessages(first.id)).toEqual([]);
+    const corrupt = [...stored.keys()].filter((key) => key.includes(".corrupt-"));
+    expect(corrupt).toHaveLength(2);
+    expect(corrupt.map((key) => stored.get(key))).toContain('[{"id":"m1","text":');
+    appendIrgatGroupMessage(first.id, { role: "user", text: "again" });
+    expect(loadIrgatGroupMessages(first.id).map((m) => m.text)).toEqual(["again"]);
+  });
+
   it("ignores corrupt entries", () => {
     stored.set("irgat:irgat-groups", '[{"id":"../x"},{"id":"ok","memberIds":["a",3,"a"],"mode":"weird"}]');
     expect(listIrgatGroups()).toEqual([

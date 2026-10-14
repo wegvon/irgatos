@@ -1,5 +1,6 @@
 import { persistableAttachment } from "../../sessions/model/attachments";
 import type { Attachment, HarnessId } from "../../sessions/model/session";
+import { readStoredJson, writeStoredJson } from "../../../shared/lib/safeStorage";
 import { findIrgat, irgatLook, listIrgats, type Irgat } from "./irgat";
 
 /**
@@ -67,12 +68,7 @@ const MESSAGE_MAX_CHARS = 40_000;
 const VIEW_PREFIX = "irgat-group:";
 
 function readJson(key: string): unknown {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as unknown) : undefined;
-  } catch {
-    return undefined;
-  }
+  return readStoredJson(key);
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -121,7 +117,7 @@ export function listIrgatGroups(): IrgatGroup[] {
 
 function saveGroups(groups: readonly IrgatGroup[]): void {
   try {
-    localStorage.setItem(ROOMS_KEY, JSON.stringify(groups));
+    writeStoredJson(ROOMS_KEY, groups, { backup: true });
   } catch {
     return;
   }
@@ -261,7 +257,7 @@ function saveMessages(groupId: string, messages: IrgatGroupMessage[]): void {
   let kept = messages.slice(-GROUP_TRANSCRIPT_LIMIT);
   for (;;) {
     try {
-      localStorage.setItem(TRANSCRIPT_PREFIX + groupId, JSON.stringify(kept));
+      writeStoredJson(TRANSCRIPT_PREFIX + groupId, kept);
       break;
     } catch {
       // Storage is full: let the oldest half go rather than lose the new line.
