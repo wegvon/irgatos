@@ -11,6 +11,14 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ## [Unreleased]
 
+### Added
+
+- **Artifacts.** A new Artifacts tab sits beside Sessions, Explorer and Changes, with a count badge, and in every Irgat's overview. It gathers what the agents made: files written or edited by tool calls, HTML pages, SVG graphics, Mermaid diagrams, Markdown documents and plans, long or named code, JSON and SQL blocks, images and attachments (page-annotation screenshots included), plus anything you pin or create yourself.
+  - The list narrows by session (this session or all of the project's sessions), by kind (Files, Previews, Docs, Code, Media) and by search, and is fully keyboard driven.
+  - The viewer opens as a workspace tab with Preview and Source. HTML and SVG render in a sandboxed frame, Markdown is rendered, images zoom and fit, and written files are read live from disk with Open and Explorer buttons.
+  - Copy, Add to Chat (the active chat or any open one), Save as Note (once, however fast the clicks), Save to File… and Pin work from every artifact.
+  - Code blocks, diagrams and file-writing tool calls in a conversation have an Open in Artifacts button.
+
 ## [0.1.0] - 2026-10-14
 
 ### Added
