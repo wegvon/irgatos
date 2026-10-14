@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsView } from "./SettingsView";
+import {
+  loadAdhdState,
+  setAdhdForChat,
+} from "../../adhd/model/adhdMode";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import {
   SETTINGS_INDEX,
@@ -681,6 +686,70 @@ describe("settings pages", () => {
     await act(async () => control.click());
     expect(control.getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem("irgat.tabAnimationsEnabled")).toBe("1");
+  });
+
+  it("turns ADHD mode on for every chat and keeps the choice", async () => {
+    await render("adhd");
+    const control = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[role="switch"][aria-label="ADHD mode"]',
+      )!;
+    expect(control().getAttribute("aria-checked")).toBe("false");
+    await act(async () => control().click());
+    expect(control().getAttribute("aria-checked")).toBe("true");
+    expect(JSON.parse(localStorage.getItem("irgat.adhdMode")!)).toMatchObject({
+      enabled: true,
+    });
+    await render("general");
+    await render("adhd");
+    expect(control().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("ties the next step to the status bar switch and resets chat exceptions", async () => {
+    setAdhdForChat("chat-a", true);
+    await render("adhd");
+    const toggle = (label: string) =>
+      container.querySelector<HTMLButtonElement>(
+        `[role="switch"][aria-label="${label}"]`,
+      )!;
+    expect(toggle("Next step in status bar").disabled).toBe(false);
+    await act(async () => toggle("Show in status bar").click());
+    expect(toggle("Next step in status bar").disabled).toBe(true);
+
+    const chats = container.querySelector('[data-setting-id="adhd-chats"]')!;
+    expect(chats.textContent).toContain("/i-have-adhd");
+    expect(chats.textContent).toContain("stop adhd mode");
+    expect(chats.textContent).toContain("1 chat has its own setting.");
+    const reset = [...chats.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reset chats",
+    )!;
+    await act(async () => reset.click());
+    expect(chats.textContent).toContain("No chat has its own setting.");
+    expect(loadAdhdState().chats).toEqual({});
+  });
+
+  it("credits i-have-adhd and shows its rules", async () => {
+    await render("adhd");
+    const rules = container.querySelector('[data-setting-id="adhd-rules"]')!;
+    expect(rules.textContent).toContain("i-have-adhd 0.4.1 by Ayoub Ghriss");
+    expect(rules.textContent).toContain("MIT license");
+    expect(rules.querySelectorAll("li")).toHaveLength(10);
+    expect(container.querySelector('[data-testid="adhd-ruleset"]')).toBeNull();
+    const show = [...rules.querySelectorAll("button")].find(
+      (button) => button.textContent === "Show the full ruleset",
+    )!;
+    await act(async () => show.click());
+    expect(
+      container.querySelector('[data-testid="adhd-ruleset"]')?.textContent,
+    ).toContain("### 1. Lead with the next action");
+    const github = [...rules.querySelectorAll("button")].find(
+      (button) => button.textContent === "View on GitHub",
+    )!;
+    vi.mocked(openUrl).mockResolvedValueOnce(undefined);
+    await act(async () => github.click());
+    expect(openUrl).toHaveBeenCalledWith(
+      "https://github.com/ayghri/i-have-adhd",
+    );
   });
 
   it("defaults to the icon rail and lets users hide it", async () => {

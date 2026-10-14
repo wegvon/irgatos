@@ -608,6 +608,7 @@ describe("settings navigation", () => {
       "keybindings",
       "chat",
       "voice",
+      "adhd",
       "providers",
       "usage",
       "mcp",

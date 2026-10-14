@@ -24,6 +24,7 @@ export type SettingsSectionId =
   | "keybindings"
   | "chat"
   | "voice"
+  | "adhd"
   | "providers"
   | "usage"
   | "mcp"
@@ -101,6 +102,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Dictate into the composer, talk to agents hands-free, and how Irgatos turns speech into text.",
     keywords:
       "voice dictation dictate speech microphone mic transcription whisper speak talk",
+  },
+  {
+    id: "adhd",
+    group: "agents",
+    label: "ADHD mode",
+    description:
+      "Agents answer in a shape an ADHD brain can act on: the next action first, numbered steps, where things stand, and no filler.",
+    keywords:
+      "adhd focus attention i-have-adhd next step brief concise output style dikkat odak",
   },
   {
     id: "providers",
@@ -512,6 +522,37 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "voice",
     label: "Reading speed",
     keywords: "rate words per minute fast slow tts",
+  },
+  {
+    id: "adhd-mode",
+    section: "adhd",
+    label: "ADHD mode",
+    keywords:
+      "adhd i-have-adhd always on focus next action numbered steps no preamble",
+  },
+  {
+    id: "adhd-status-bar",
+    section: "adhd",
+    label: "Show in status bar",
+    keywords: "adhd chip footer indicator toggle",
+  },
+  {
+    id: "adhd-focus",
+    section: "adhd",
+    label: "Next step in status bar",
+    keywords: "adhd next step task progress working memory",
+  },
+  {
+    id: "adhd-chats",
+    section: "adhd",
+    label: "Per-chat control",
+    keywords: "adhd stop adhd mode normal mode command slash i-have-adhd",
+  },
+  {
+    id: "adhd-rules",
+    section: "adhd",
+    label: "The rules",
+    keywords: "adhd ruleset skill license mit ayghri credits",
   },
   {
     id: "agent-clis",

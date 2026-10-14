@@ -40,6 +40,16 @@ import {
 } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { useAdhdState } from "../../adhd/ui/AdhdModeChip";
+import {
+  clearAdhdChatOverrides,
+  saveAdhdSettings,
+} from "../../adhd/model/adhdMode";
+import {
+  ADHD_RULES,
+  ADHD_RULE_TITLES,
+  ADHD_UPSTREAM,
+} from "../../adhd/model/adhdRules";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
@@ -632,6 +642,7 @@ export function SettingsView({
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
               {section === "voice" ? <VoicePage /> : null}
+              {section === "adhd" ? <AdhdPage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
               {section === "irgats" ? <MonosPage /> : null}
               {section === "mcp" ? (
@@ -1247,6 +1258,108 @@ function voiceLanguageNote(status: VoiceStatus | null): string {
     return " Apple's recognizer does not support this language.";
   if (status.onDevice) return " This language transcribes on this Mac.";
   return " This language has no on-device model yet. Add it under System Settings › Keyboard › Dictation, or allow Apple servers.";
+}
+
+function AdhdPage() {
+  const adhd = useAdhdState();
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const exceptions = Object.keys(adhd.chats).length;
+
+  return (
+    <>
+      <Group
+        title="ADHD mode"
+        description="Every session and Irgat chat gets the i-have-adhd ruleset with its next message, once per conversation. Turning it off tells the agent once, too. The status bar switch does the same as this one."
+      >
+        <Row
+          id="adhd-mode"
+          label="ADHD mode"
+          description="Agents lead with the next action, number multi-step work, restate where things stand, give estimates in minutes, and drop the preamble, recaps and closers."
+        >
+          <Toggle
+            label="ADHD mode"
+            on={adhd.enabled}
+            onChange={(next) => saveAdhdSettings({ enabled: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-status-bar"
+          label="Show in status bar"
+          description="A one-click ADHD switch at the bottom of the window and under each Irgat's composer."
+        >
+          <Toggle
+            label="Show in status bar"
+            on={adhd.showInStatusBar}
+            onChange={(next) => saveAdhdSettings({ showInStatusBar: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-focus"
+          label="Next step in status bar"
+          description="Beside the switch, keep the step a working agent is on, or the Next: line its last reply ended with, so it stays on screen instead of in your head."
+        >
+          <Toggle
+            label="Next step in status bar"
+            on={adhd.showFocus}
+            disabled={!adhd.showInStatusBar}
+            onChange={(next) => saveAdhdSettings({ showFocus: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-chats"
+          label="Per-chat control"
+          description={`In any composer, /i-have-adhd toggles the mode for that chat, and /i-have-adhd on or off sets it. While it is on, sending just "stop adhd mode" or "normal mode" turns it off for that chat. Irgatos handles these itself, so they never reach the agent. ${
+            exceptions
+              ? `${exceptions} ${exceptions === 1 ? "chat has its" : "chats have their"} own setting.`
+              : "No chat has its own setting."
+          }`}
+        >
+          {exceptions ? (
+            <SecondaryButton onClick={clearAdhdChatOverrides}>
+              Reset chats
+            </SecondaryButton>
+          ) : null}
+        </Row>
+      </Group>
+
+      <Group
+        id="adhd-rules"
+        title="The rules"
+        description={`From ${ADHD_UPSTREAM.name} ${ADHD_UPSTREAM.version} by ${ADHD_UPSTREAM.author}, ${ADHD_UPSTREAM.license} license. Irgatos sends the upstream ruleset unchanged.`}
+        action={
+          <SecondaryButton
+            onClick={() => void openUrl(ADHD_UPSTREAM.url).catch(() => {})}
+          >
+            View on GitHub
+          </SecondaryButton>
+        }
+      >
+        <ol className="list-decimal space-y-1 px-4 py-3.5 pl-9 text-[12px] leading-relaxed text-content/70">
+          {ADHD_RULE_TITLES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ol>
+        <div className="border-t border-content/5 px-4 py-3">
+          <button
+            type="button"
+            aria-expanded={rulesOpen}
+            onClick={() => setRulesOpen((open) => !open)}
+            className="text-[12px] text-accent hover:underline"
+          >
+            {rulesOpen ? "Hide the full ruleset" : "Show the full ruleset"}
+          </button>
+          {rulesOpen ? (
+            <pre
+              data-testid="adhd-ruleset"
+              className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-content/5 p-3 font-mono text-[11px] leading-relaxed text-content/70"
+            >
+              {ADHD_RULES}
+            </pre>
+          ) : null}
+        </div>
+      </Group>
+    </>
+  );
 }
 
 function VoicePage() {
