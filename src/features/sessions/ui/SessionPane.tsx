@@ -78,6 +78,11 @@ import {
   subscribeIrgats,
 } from "../../irgats/model/irgat";
 import { IrgatHeader } from "../../irgats/ui/IrgatHeader";
+import {
+  irgatReviewScope,
+  projectReviewScope,
+} from "../../redline/model/reviewStore";
+import { RedlineReviewTray } from "../../redline/ui/RedlineReviewTray";
 import { IrgatComposer } from "../../irgats/ui/IrgatComposer";
 import type { LaunchedSessionView } from "../../irgats/model/irgatSpawnedSessions";
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
@@ -729,6 +734,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
         : latestReply(session.blocks, session.queuedMessages),
     [session.blocks, session.busy, session.queuedMessages],
   );
+  const reviewTray = session.inboxAsk ? null : (
+    <RedlineReviewTray
+      scope={
+        irgat ? irgatReviewScope(irgat.id) : projectReviewScope(session.cwd)
+      }
+      disabled={!!session.worktreeRemoved || !!draftBlock}
+      onSend={(text) => onSubmit(session.id, text, [])}
+      onInsert={(text) => addSelectionToChat(text, "plain")}
+    />
+  );
   const composer = (
     <Composer
       key={session.id}
@@ -877,6 +892,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onEditingLastTurnChange={setEditingLastTurn}
     >
       {interruptionBanner("composer")}
+      {reviewTray}
     </Composer>
   );
 
@@ -1126,6 +1142,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onSaveSelectionNote={
                         notesEnabled ? saveSelectionNote : undefined
                       }
+                      reviewLabel={session.inboxAsk ? undefined : title}
                       onOpenFile={onOpenFile}
                       onOpenDiff={onOpenDiff}
                       onOpenPlan={openPlan}
@@ -1286,6 +1303,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     />
                   )}
                   {interruptionBanner("irgat")}
+                  {reviewTray}
                   <IrgatComposer
                     key={session.id}
                     sessionId={session.id}

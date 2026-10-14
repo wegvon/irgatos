@@ -40,6 +40,10 @@ import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { sniffImageMime } from "../../files/model/filePreview";
 import { AgentMarkdown, MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
 import { HighlightedCodeBlock } from "../../sessions/ui/HighlightedCodeBlock";
+import {
+  selectionChatText,
+  TextSelectionReviewMenu,
+} from "../../redline/ui/TextSelectionReviewMenu";
 import { getArtifact } from "../artifacts";
 import { saveArtifactAsNote } from "../model/artifactActions";
 import { registerArtifacts } from "../model/artifactRegistry";
@@ -435,6 +439,7 @@ export function ArtifactDetail({
   const noteBusy = useRef(false);
   const [exporting, setExporting] = useState(false);
   const [chatMenu, setChatMenu] = useState<HTMLElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setNoteState("idle");
     noteBusy.current = false;
@@ -445,6 +450,12 @@ export function ArtifactDetail({
   const scope = artifact.scope ?? host.defaultScope;
   const isImage = artifact.format === "image";
   const shownPath = artifact.path ? displayPath(artifact.path, artifact.cwd) : undefined;
+  const reviewTarget = shownPath ?? artifact.title;
+  // An HTML or SVG preview is a sandboxed frame whose text the page cannot select.
+  const reviewable =
+    state.status === "ready" &&
+    !isImage &&
+    (mode === "source" || artifact.format === "markdown" || !visual);
 
   const copy = async () => {
     try {
@@ -667,7 +678,7 @@ export function ArtifactDetail({
           </button>
         </div>
       ) : null}
-      <div className="relative min-h-0 flex-1" data-artifact-body={mode}>
+      <div ref={bodyRef} className="relative min-h-0 flex-1" data-artifact-body={mode}>
         {state.status === "loading" && !isImage ? (
           <CenteredStatus>Loading…</CenteredStatus>
         ) : state.status === "error" && !isImage ? (
@@ -684,6 +695,17 @@ export function ArtifactDetail({
           <ArtifactBody artifact={artifact} text={text} mode={mode} onOpenFile={host.openFile} />
         )}
       </div>
+      {reviewable ? (
+        <TextSelectionReviewMenu
+          containerRef={bodyRef}
+          source={text}
+          reviewSource={artifact.documentId ? "document" : artifact.path ? "file" : "artifact"}
+          targetPath={reviewTarget}
+          onAddToChat={(selected) =>
+            host.addToChat(selectionChatText(reviewTarget, selected))
+          }
+        />
+      ) : null}
       {chatMenu ? (
         <ExplorerMenu
           anchor={chatMenu}

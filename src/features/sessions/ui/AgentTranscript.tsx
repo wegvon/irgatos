@@ -95,6 +95,7 @@ import {
   HARNESS_TITLE,
   type AgentStep,
   type Block,
+  type BlockRole,
   type HarnessId,
   type InterjectionMeta,
   type ModelTarget,
@@ -241,6 +242,8 @@ type Props = {
   onSendDraft?: (block: Block) => boolean | void;
   onRemoveDraft?: (block: Block) => boolean | void;
   onSaveSelectionNote?: (text: string) => void | Promise<void>;
+  /** The chat's title, naming a selected reply or plan in a review note. */
+  reviewLabel?: string;
   onOpenFile?: (path: string) => void;
   onOpenArtifact?: (id: string) => void;
   onOpenDiff?: (path: string) => void;
@@ -305,6 +308,7 @@ function AgentTranscriptComponent({
   onSendDraft,
   onRemoveDraft,
   onSaveSelectionNote,
+  reviewLabel,
   onOpenFile,
   onOpenArtifact,
   onOpenDiff,
@@ -423,8 +427,16 @@ function AgentTranscriptComponent({
     scrollerEl,
     onAddToChat !== undefined ||
       onSaveSelectionNote !== undefined ||
-      sendSelection !== undefined,
+      sendSelection !== undefined ||
+      reviewLabel !== undefined,
   );
+  const reviewTarget =
+    reviewLabel !== undefined && selection
+      ? transcriptReviewTarget(
+          blocks.find((block) => block.id === selection.blockId)?.role,
+          reviewLabel,
+        )
+      : undefined;
   const transcriptLayout = useTranscriptLayout();
   const promptAnchor = useTranscriptAnchor() && !bottomAligned;
   const lastUserId = lastUserBlockId(blocks, managed);
@@ -1674,17 +1686,28 @@ function AgentTranscriptComponent({
           );
         })}
       </TranscriptContent>
-      {onAddToChat || onSaveSelectionNote || sendSelection ? (
+      {onAddToChat || onSaveSelectionNote || sendSelection || reviewLabel !== undefined ? (
         <TranscriptSelectionMenu
           selection={selection}
           onAddToChat={onAddToChat}
           onAddToNotes={onSaveSelectionNote}
           onSendToSession={sendSelection}
+          reviewTarget={reviewTarget}
           onDismiss={dismissSelection}
         />
       ) : null}
     </div>
   );
+}
+
+/** How a review note names the reply or plan its selection came from. */
+export function transcriptReviewTarget(
+  role: BlockRole | undefined,
+  chatTitle: string,
+): string {
+  const kind = role === "plan" ? "Plan" : role === "user" ? "Message" : "Reply";
+  const title = chatTitle.replace(/[\r\n]+/g, " ").trim();
+  return title ? `${kind} in “${title}”` : kind;
 }
 
 function TranscriptContent({
@@ -2344,7 +2367,10 @@ const TranscriptBlock = memo(function TranscriptBlock({
       );
     }
     return (
-      <div className={embedded ? "py-1" : "px-4 py-1"}>
+      <div
+        data-selectable-agent-response={block.streaming ? undefined : block.id}
+        className={embedded ? "py-1" : "px-4 py-1"}
+      >
         <PlanPreview
           text={block.text}
           streaming={block.streaming}

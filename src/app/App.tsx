@@ -752,6 +752,12 @@ import {
   ArtifactHostContext,
   type ArtifactHost,
 } from "../features/artifacts/ui/artifactContext";
+import {
+  irgatReviewScope,
+  projectReviewScope,
+  setActiveReviewScope,
+} from "../features/redline/model/reviewStore";
+import { RedlineReviewBadge } from "../features/redline/ui/RedlineReviewBadge";
 import { ArtifactsList } from "../features/artifacts/ui/ArtifactsList";
 import type { IrgatChangesRequest } from "../features/irgats/ui/IrgatChangesView";
 import {
@@ -13635,6 +13641,17 @@ function Workspace({
 
   // Renames, mascot picks and new projects show up on the rail.
   const irgatViewIrgat = irgatViewId ? irgatForSession(irgatViewId) : undefined;
+  const reviewIrgat =
+    irgatViewIrgat ??
+    (active && !activeFile ? irgatForSession(active.id) : undefined);
+  const activeReviewScope = reviewIrgat
+    ? irgatReviewScope(reviewIrgat.id)
+    : sidebarCwd && sidebarCwd !== "~"
+      ? projectReviewScope(sidebarCwd)
+      : null;
+  useEffect(() => {
+    setActiveReviewScope(activeReviewScope);
+  }, [activeReviewScope]);
   const selectedIrgatActivity = resolveIrgatActivity(
     irgatActivity,
     irgatViewSession,
@@ -14023,6 +14040,11 @@ function Workspace({
       onPinFile={onPinFile}
       recents={recents}
       onSelectProject={onSelectProject}
+      reviewBadge={
+        activeReviewScope ? (
+          <RedlineReviewBadge scope={activeReviewScope} />
+        ) : undefined
+      }
     />
   );
 

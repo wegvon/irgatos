@@ -128,6 +128,8 @@ type Props = {
   onPinFile?: (fileId: string) => void;
   recents?: RecentProject[];
   onSelectProject?: (path: string) => void;
+  /** Open review notes for the project or Irgat in front; renders nothing at zero. */
+  reviewBadge?: ReactNode;
 };
 
 function sessionMeta(tab: Tab): string {
@@ -648,6 +650,7 @@ function TitleBarComponent({
   onReorder,
   onPlaceOnPane,
   onPinFile,
+  reviewBadge,
   recents = [],
   onSelectProject,
 }: Props) {
@@ -892,10 +895,16 @@ function TitleBarComponent({
     railClosed &&
     Boolean(onOpenInbox || onOpenNotes || onOpenSettings);
   const trailingControls =
+    reviewBadge ||
     showTrailingActions ||
     (irgat && (onToggleIrgatOverview || onOpenIrgatSettings)) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
+        {reviewBadge ? (
+          <div className="flex items-center pl-2 empty:hidden">
+            {reviewBadge}
+          </div>
+        ) : null}
         {irgat && (onToggleIrgatOverview || onOpenIrgatSettings) ? (
           <div className="flex items-center gap-1 px-3">
             {onToggleIrgatOverview ? (

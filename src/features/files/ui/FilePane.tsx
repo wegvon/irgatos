@@ -32,6 +32,11 @@ import {
 } from "../../settings/model/settings";
 import { AgentTabView } from "../../sessions/ui/AgentTabView";
 import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
+import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import {
+  ReviewableSelection,
+  selectionChatText,
+} from "../../redline/ui/TextSelectionReviewMenu";
 import { BinaryFileView } from "./BinaryFileView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -336,6 +341,7 @@ function PlanSurface({
     block.plan?.status === "streaming" ||
     block.plan?.status === "building" ||
     block.plan?.status === "built";
+  const planReviewTarget = `Plan “${plan.title.replace(/[\r\n]+/g, " ").trim() || "Untitled"}”`;
   const buildLabel =
     block.plan?.status === "building"
       ? "Building…"
@@ -349,12 +355,21 @@ function PlanSurface({
         mode={mode}
         onModeChange={setMode}
         preview={
-          <MarkdownPreview
-            text={block.text}
-            streaming={block.streaming}
-            cwd={file.cwd}
-            onOpenFile={onOpenFile}
-          />
+          <ReviewableSelection
+            source={block.text}
+            reviewSource="document"
+            targetPath={planReviewTarget}
+            onAddToChat={(text) =>
+              requestAddToChat(selectionChatText(planReviewTarget, text), "plain")
+            }
+          >
+            <MarkdownPreview
+              text={block.text}
+              streaming={block.streaming}
+              cwd={file.cwd}
+              onOpenFile={onOpenFile}
+            />
+          </ReviewableSelection>
         }
         actions={
           <div className="flex items-center font-sans">

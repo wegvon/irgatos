@@ -59,6 +59,11 @@ import { syncWatchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation } from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
+import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import {
+  ReviewableSelection,
+  selectionChatText,
+} from "../../redline/ui/TextSelectionReviewMenu";
 import {
   DiffCommentComposer,
   type DiffCommentComposerTarget,
@@ -468,12 +473,24 @@ export function FileEditor({
                 active={active && mode === "preview"}
                 contentVersion={draft}
               >
-                <MarkdownDocumentPreview
-                  text={draft}
-                  metadataLabel="Properties"
-                  cwd={cwd}
-                  onOpenFile={onOpenFile}
-                />
+                <ReviewableSelection
+                  source={draft}
+                  reviewSource="file"
+                  targetPath={relativePath}
+                  onAddToChat={(text) =>
+                    requestAddToChat(
+                      selectionChatText(relativePath, text),
+                      "plain",
+                    )
+                  }
+                >
+                  <MarkdownDocumentPreview
+                    text={draft}
+                    metadataLabel="Properties"
+                    cwd={cwd}
+                    onOpenFile={onOpenFile}
+                  />
+                </ReviewableSelection>
               </FilePreviewSearch>
             ) : (
               <SvgPreview source={draft} />
@@ -1056,6 +1073,7 @@ function editorSelectionTarget(
     path,
     startLine: view.state.doc.lineAt(selection.from).number,
     endLine: view.state.doc.lineAt(lastSelectedPosition).number,
+    text,
     anchor: new DOMRect(
       coordinates.left,
       coordinates.top,

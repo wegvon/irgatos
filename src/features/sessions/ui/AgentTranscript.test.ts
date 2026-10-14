@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { vi, describe, expect, it } from "vitest";
 import type { Block } from "../model/session";
-import { AgentTranscript } from "./AgentTranscript";
+import { AgentTranscript, transcriptReviewTarget } from "./AgentTranscript";
 
 function tool(id: string, approval?: Block["approval"]): Block {
   return {
@@ -995,5 +995,20 @@ describe("worker assignment prompts", () => {
     expect(markup).toContain("Looking now");
     expect(markup).not.toContain("irgat_assignment");
     expect(markup).not.toContain("You are a worker managed by an Irgatos lead");
+  });
+});
+
+describe("transcriptReviewTarget", () => {
+  it("names replies, plans, and messages by their chat", () => {
+    expect(transcriptReviewTarget("assistant", "Fix login")).toBe(
+      "Reply in “Fix login”",
+    );
+    expect(transcriptReviewTarget("plan", "Fix login")).toBe(
+      "Plan in “Fix login”",
+    );
+    expect(transcriptReviewTarget("user", "Fix\nlogin")).toBe(
+      "Message in “Fix login”",
+    );
+    expect(transcriptReviewTarget(undefined, "  ")).toBe("Reply");
   });
 });
