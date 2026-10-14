@@ -16,6 +16,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 vi.mock("./ComputerUseSettings", () => ({
   ComputerUseSettings: () => null,
 }));
+vi.mock("./LightpandaSettings", () => ({
+  LightpandaSettings: () => null,
+}));
 
 let container: HTMLDivElement;
 let root: Root;

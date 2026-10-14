@@ -27,6 +27,7 @@ import {
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 import { isComputerUseServer } from "../model/computerUse";
 import { ComputerUseSettings } from "./ComputerUseSettings";
+import { LightpandaSettings } from "./LightpandaSettings";
 import {
   getCachedMcpSettings,
   loadMcpSettings,
@@ -502,6 +503,14 @@ function McpConnections({
         loading={loading}
         onChanged={refresh}
       />
+      <div id="setting-lightpanda" data-setting-id="lightpanda">
+        <LightpandaSettings
+          cwd={cwd}
+          servers={servers}
+          loading={loading}
+          onChanged={refresh}
+        />
+      </div>
       <div
         role="group"
         className="inline-flex max-w-full flex-wrap gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"

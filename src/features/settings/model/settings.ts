@@ -206,6 +206,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "claude tools connections oauth authenticate login add remove",
   },
   {
+    id: "lightpanda",
+    section: "mcp",
+    label: "Lightpanda Headless Browser",
+    keywords:
+      "lightpanda headless browser cdp playwright puppeteer scraping research install mcp",
+  },
+  {
     id: "irgats-enabled",
     section: "irgats",
     label: "Show irgats",
@@ -223,6 +230,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Your irgats",
     keywords:
       "irgat reset soul name projects sessions sidebar visibility hidden show",
+  },
+  {
+    id: "irgat-lightpanda",
+    section: "irgats",
+    label: "Headless browser for Irgats",
+    keywords:
+      "lightpanda headless browser cdp habits background research scraping playwright",
   },
   {
     id: "project-worktrees",

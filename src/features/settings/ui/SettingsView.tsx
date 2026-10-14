@@ -43,6 +43,7 @@ import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
+import { LightpandaSettings } from "./LightpandaSettings";
 import { AgentQuotaSettings } from "./AgentQuotaSettings";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
 import { RemoveProjectDialog } from "../../projects/ui/RemoveProjectDialog";
@@ -4604,6 +4605,13 @@ function MonosPage() {
           </p>
         )}
       </Group>
+      <section
+        id={settingDomId("irgat-lightpanda")}
+        data-setting-id="irgat-lightpanda"
+        className="pt-8"
+      >
+        <LightpandaSettings variant="sidecar" />
+      </section>
     </>
   );
 }
