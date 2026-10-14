@@ -3,10 +3,22 @@ import {
   Suspense,
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import {
+  mentionTokenAt,
+  replaceMentionToken,
+  type MentionToken,
+} from "../../files/model/fileMentions";
+import {
+  mentionHandle,
+  mentionSuggestions,
+} from "../model/irgatGroupMentions";
+import { IrgatMentionPicker, type ComposerMention } from "./IrgatMentionPicker";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ArrowUp, FolderPlus, Plus, SmilePlus } from "../../../shared/ui/icons";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
@@ -88,6 +100,10 @@ type Props = {
   controls?: ReactNode;
   /** Sits beside attach and emoji, on the left under the input. */
   tools?: ReactNode;
+  /** Who typing @ suggests, as in a group room. */
+  mentions?: readonly ComposerMention[];
+  /** Replaces "Message <name>". */
+  placeholder?: string;
 };
 
 /**
@@ -112,8 +128,32 @@ export function IrgatComposer({
   onFocus,
   controls,
   tools,
+  mentions,
+  placeholder,
 }: Props) {
   const [text, setText] = useState(() => getComposerDraft(sessionId) ?? "");
+  const [mentionToken, setMentionToken] = useState<MentionToken | null>(null);
+  const [mentionActive, setMentionActive] = useState(0);
+  const mentionOptions = useMemo(
+    () =>
+      mentions?.length && mentionToken
+        ? mentionSuggestions(mentionToken.query, mentions)
+        : [],
+    [mentions, mentionToken],
+  );
+  const mentionOpen = mentionOptions.length > 0;
+  const trackMention = (value: string, caret: number) => {
+    if (!mentions?.length) return;
+    const token = mentionTokenAt(value, caret);
+    if (
+      token?.start === mentionToken?.start &&
+      token?.end === mentionToken?.end &&
+      token?.query === mentionToken?.query
+    )
+      return;
+    if (token?.query !== mentionToken?.query) setMentionActive(0);
+    setMentionToken(token);
+  };
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const autocorrect = useComposerAutocorrect();
   const textRef = useRef(text);
@@ -340,6 +380,30 @@ export function IrgatComposer({
     resizeComposer(el, MAX_HEIGHT);
     el.setSelectionRange(selectionStart, selectionEnd);
   };
+  const pickMention = (member: ComposerMention) => {
+    if (!mentionToken) return;
+    const handle = mentionHandle(member.name);
+    const next = replaceMentionToken(textRef.current, mentionToken, handle);
+    setMentionToken(null);
+    writeDraft(next, mentionToken.start + handle.length + 2);
+    field.current?.focus();
+  };
+  /** Arrows, Enter, Tab and Escape steer the @ picker while it is open. */
+  const handleMentionKey = (event: ReactKeyboardEvent): boolean => {
+    if (!mentionOpen) return false;
+    const count = mentionOptions.length;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setMentionActive((index) => (index + step + count) % count);
+    } else if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+      pickMention(mentionOptions[Math.min(mentionActive, count - 1)]);
+    } else if (event.key === "Escape") {
+      setMentionToken(null);
+    } else return false;
+    event.preventDefault();
+    event.stopPropagation();
+    return true;
+  };
   const voice = useComposerVoice({
     field,
     enabled: enabled && !submitting,
@@ -388,19 +452,28 @@ export function IrgatComposer({
       ref={field}
       rows={1}
       aria-label={`Message ${name}`}
-      placeholder={`Message ${name}`}
+      placeholder={placeholder ?? `Message ${name}`}
       spellCheck={autocorrect}
       autoCorrect={autocorrect ? "on" : "off"}
       disabled={!enabled || submitting}
       value={text}
       onFocus={onFocus}
+      onBlur={() => setMentionToken(null)}
+      onSelect={(event) =>
+        trackMention(
+          event.currentTarget.value,
+          event.currentTarget.selectionStart,
+        )
+      }
       onChange={(event) => {
         // Typing takes over from dictation and keeps what was heard.
         voice.noteInput();
         update(event.target.value);
+        trackMention(event.target.value, event.target.selectionStart);
       }}
       onKeyDown={(event) => {
         if (isImeComposition(event.nativeEvent)) return;
+        if (handleMentionKey(event)) return;
         // While the microphone is open, Escape and Enter belong to dictation,
         // not to the reply this chat would otherwise stop or send.
         if (voice.handleKeyDown(event)) {
@@ -444,6 +517,16 @@ export function IrgatComposer({
         ref={box}
         className={`agent-chat-composer relative rounded-lg border bg-content/3 backdrop-blur-sm ${fileDrag ? "border-accent/60" : "border-content/10 has-focus:border-content/20"}`}
       >
+        {mentionOpen ? (
+          <div className="absolute inset-x-0 bottom-full z-30 mb-1.5">
+            <IrgatMentionPicker
+              options={mentionOptions}
+              active={Math.min(mentionActive, mentionOptions.length - 1)}
+              onActive={setMentionActive}
+              onPick={pickMention}
+            />
+          </div>
+        ) : null}
         {fileDrag ? (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">
             Drop files or folders to attach
