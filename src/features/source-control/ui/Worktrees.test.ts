@@ -760,7 +760,7 @@ it("shows session and local-change consequences before removing a worktree", asy
       }),
     ),
   );
-  const toggle = document.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  const toggle = document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!;
   expect(toggle.getAttribute("aria-checked")).toBe("false");
   expect(document.body.textContent).toContain(
     "2 sessions using this worktree are kept.",
@@ -811,7 +811,7 @@ it("offers cascade deletion for a session-linked worktree but not the main copy"
   expect(removeFeature.disabled).toBe(false);
   await act(async () => removeFeature.click());
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!.click(),
   );
   await act(async () => button("Delete worktree and session").click());
   expect(onDeleteSessions).toHaveBeenCalledWith(["session-1"]);
@@ -865,7 +865,7 @@ it.each(["file", "terminal", "native"] as const)(
         .click(),
     );
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!.click(),
     );
     await act(async () => button("Delete worktree and sessions").click());
     expect(onDeleteSessions).not.toHaveBeenCalled();
@@ -898,7 +898,7 @@ it("reports partial completion if worktree removal fails after successful prefli
       .click(),
   );
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+    document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!.click(),
   );
   await act(async () => button("Delete worktree and session").click());
   expect(onDeleteSessions).toHaveBeenCalledOnce();
@@ -936,7 +936,7 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
     )!;
     await act(async () => remove.click());
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!.click(),
     );
     const refresh = deferred();
     vi.mocked(listWorktrees).mockReturnValue(refresh.promise);
@@ -966,7 +966,7 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
         "1 session using this worktree is kept.",
       );
       await act(async () =>
-        document.querySelector<HTMLButtonElement>('[role="switch"]')!.click(),
+        document.querySelector<HTMLButtonElement>('[role="switch"][aria-labelledby="delete-worktree-sessions-label"]')!.click(),
       );
       await act(async () => button("Delete worktree and session").click());
       expect(onDeleteSessions).toHaveBeenLastCalledWith(["remaining"]);

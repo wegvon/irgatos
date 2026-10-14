@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { CreateWorktreeDialog } from "./CreateWorktreeDialog";
 import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { WorktreeEnvironmentSettings } from "./WorktreeEnvironmentSettings";
+import { ProjectCompletionGateSettings } from "../../sessions/ui/ProjectCompletionGateSettings";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import {
   FolderOpen,
@@ -121,6 +122,7 @@ export function WorktreesPage({
         </p>
       )}
       {project ? <WorktreeEnvironmentSettings project={project} /> : null}
+      {project ? <ProjectCompletionGateSettings project={project} /> : null}
       {!project ? (
         <p className="text-[12px] text-content/50">
           Add a project to manage its worktrees.

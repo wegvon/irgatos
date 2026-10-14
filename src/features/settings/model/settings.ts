@@ -245,6 +245,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "git branch working copy create delete manage",
   },
   {
+    id: "completion-gate",
+    section: "worktrees",
+    label: "Completion Gate",
+    keywords:
+      "validator verify check typecheck tsc tests npm cargo lint stop hook retry agent turn verified",
+  },
+  {
     id: "update",
     section: "general",
     label: "Version",

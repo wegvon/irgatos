@@ -568,6 +568,16 @@ import { hiddenApprovalNotices } from "../features/notifications/model/approvalT
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { InboxResurfaceNotices } from "../features/inbox/ui/InboxResurfaceNotices";
+import {
+  cancelCheckCommand,
+  createCompletionGateController,
+  gateAppliesToTurn,
+  loadProjectGate,
+  loadSessionGate,
+  registerCompletionGateController,
+  resolveCompletionGate,
+  runCheckCommand,
+} from "../features/sessions/model/completionGate";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
@@ -967,6 +977,8 @@ type SubmitOptions = ComposerTurnOptions & {
   orchestrationRetry?: OrchestrationProposal;
   appRequestId?: string;
   irgatSessionCompletion?: Block["irgatSessionCompletion"];
+  /** An automatic retry after the Completion Gate's validator failed. */
+  completionGateBounce?: boolean;
   onSettled?: (outcome: ControlOutcome) => void;
   /** Generate a fresh title even when this is not the session's first turn. */
   refreshTitle?: boolean;
@@ -1826,6 +1838,22 @@ function Workspace({
     new Map<string, ReturnType<typeof synchronizeProjectLocation>>(),
   );
   const submitAfterProjectSyncRef = useRef<Submit>(() => false);
+  const completionGateSubmitRef = useRef<Submit>(() => false);
+  const completionGate = useRef(
+    createCompletionGateController({
+      runCheck: runCheckCommand,
+      cancelCheck: cancelCheckCommand,
+      submitBounce: (sessionId, prompt) =>
+        completionGateSubmitRef.current(sessionId, prompt, [], {
+          completionGateBounce: true,
+        }),
+      isCurrent: (sessionId, turn) => turnGen.current.get(sessionId) === turn,
+    }),
+  ).current;
+  useEffect(() => {
+    registerCompletionGateController(completionGate);
+    return () => registerCompletionGateController(null);
+  }, [completionGate]);
 
   useEffect(() => {
     for (const project of recents) {
@@ -7715,6 +7743,8 @@ function Workspace({
 
       const gen = (turnGen.current.get(sessionId) ?? 0) + 1;
       turnGen.current.set(sessionId, gen);
+      if (!options?.completionGateBounce)
+        completionGate.noteUserTurn(sessionId);
       const proposalId =
         intent === "orchestrate" ? crypto.randomUUID() : undefined;
       let proposalDraft: OrchestrationProposal | undefined = proposalId
@@ -8623,6 +8653,39 @@ function Workspace({
               ? { status: "cancelled", text: controlText }
               : controlOutcome,
           );
+          if (turnGen.current.get(sessionId) !== gen) return;
+          const ended = sessionsRef.current.find((s) => s.id === sessionId);
+          const gate = ended
+            ? resolveCompletionGate(
+                loadProjectGate(ended.cwd),
+                loadSessionGate(sessionId),
+              )
+            : null;
+          if (
+            ended &&
+            gate &&
+            gateAppliesToTurn({
+              completed: controlOutcome.status === "completed",
+              remote: false,
+              ephemeral: !!ended.ephemeral,
+              inboxAsk: !!ended.inboxAsk,
+              habitRun: isHabitRun(sessionId),
+              managed: !!options?.managed,
+              appRequest: !!options?.appRequestId,
+              plan: intent === "plan",
+              orchestration: !!proposalId,
+            })
+          ) {
+            void completionGate.afterTurn({
+              sessionId,
+              turn: gen,
+              cwd: sessionWorkCwd(ended),
+              gate,
+              bounce: !!options?.completionGateBounce,
+            });
+          } else if (options?.completionGateBounce) {
+            completionGate.clear(sessionId);
+          }
         });
       return true;
     },
@@ -8634,6 +8697,7 @@ function Workspace({
     ],
   );
   submitAfterProjectSyncRef.current = submitSession;
+  completionGateSubmitRef.current = submitSession;
   // Interactive callers use the immediate result to clear their composer. The
   // queued-launch receiver uses submitSession to await the actual acceptance.
   const onSubmit = useCallback(
