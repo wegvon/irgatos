@@ -513,6 +513,44 @@ describe("Composer question focus", () => {
     );
   });
 
+  it("offers /i-have-adhd in the command list and submits it for the app", async () => {
+    const onSubmit = vi.fn();
+    await renderComposer(
+      undefined,
+      vi.fn(),
+      false,
+      0,
+      undefined,
+      undefined,
+      onSubmit,
+    );
+    const textarea = container.querySelector("textarea")!;
+    await typeInto(textarea, "/i-have");
+    const command = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-skill-picker] [role="option"]',
+      ),
+    ].filter((button) => button.textContent?.includes("/i-have-adhd"));
+    expect(command).toHaveLength(1);
+    expect(command[0]!.textContent).toContain("Toggle ADHD mode");
+    await act(async () => command[0]!.click());
+    expect(textarea.value).toBe("/i-have-adhd ");
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/i-have-adhd\s*$/),
+      [],
+      expect.any(Object),
+    );
+  });
+
   it("inserts an MCP tag beside existing composer text", async () => {
     await renderComposer(undefined, vi.fn());
     const textarea = container.querySelector("textarea")!;

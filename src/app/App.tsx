@@ -611,6 +611,13 @@ import {
 } from "../features/workspace/model/tabVisitHistory";
 import { preparePrompt } from "../features/sessions/model/promptPreparation";
 import {
+  adhdEnabledFor,
+  applyAdhdCommand,
+  parseAdhdCommand,
+  planAdhdContext,
+  recordAdhdContext,
+} from "../features/adhd/model/adhdMode";
+import {
   consumeOperatorCommand,
   operatorEnabledInThread,
 } from "../features/sessions/model/operatorCommand";
@@ -7244,6 +7251,23 @@ function Workspace({
       // Output already received belongs before the submitted user message.
       // Flush before reading the session too, since pending errors can settle it.
       flushHarnessEvents();
+      const adhdCommand =
+        !options?.managed &&
+        !options?.irgatSessionCompletion &&
+        !options?.queuedMessageId &&
+        !options?.resendEdited &&
+        (options?.intent ?? "default") === "default" &&
+        attachments.length === 0
+          ? parseAdhdCommand(text)
+          : null;
+      const adhdReply = adhdCommand
+        ? applyAdhdCommand(sessionId, adhdCommand)
+        : null;
+      if (adhdReply) {
+        enqueueHarnessEvent(sessionId, { type: "status", text: adhdReply });
+        flushHarnessEvents();
+        return true;
+      }
       const controlError = orchestrator.submissionError(
         sessionId,
         options?.managed,
@@ -8458,6 +8482,17 @@ function Workspace({
           ) {
             appContext.push(irgatContext(agentLook, agentFiles, agentPlan));
           }
+          // A command owns its arguments, and a plan proposal has a fixed shape.
+          const adhdPlan =
+            rawCommand || proposalDraft
+              ? {}
+              : planAdhdContext(
+                  sessionId,
+                  current.providerSessionId,
+                  adhdEnabledFor(sessionId),
+                  { force: !!editedResend },
+                );
+          if (adhdPlan.context) appContext.push(adhdPlan.context);
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
@@ -8470,6 +8505,14 @@ function Workspace({
           else if (appContext.length)
             sendText += `\n\n${appContext.join("\n\n")}`;
           await sendTurn(sendText);
+          if (adhdPlan.state && !providerFailureSeen) {
+            recordAdhdContext(
+              sessionId,
+              sessionsRef.current.find((session) => session.id === sessionId)
+                ?.providerSessionId ?? current.providerSessionId,
+              adhdPlan.state,
+            );
+          }
           if (agentFiles) {
             recordAgentContext(
               sessionId,
@@ -14561,6 +14604,7 @@ function Workspace({
                 <UsageFooter
                   providers={usageProviders}
                   session={usageSession}
+                  adhd={{ session: active }}
                   project={active?.cwd ?? projectCwd}
                   onSelectAccount={onSelectProviderAccount}
                   onManageAccounts={() =>

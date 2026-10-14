@@ -202,6 +202,7 @@ import {
   supportsBtwHarness,
 } from "../model/btw";
 import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
+import { ADHD_COMMAND } from "../../adhd/model/adhdMode";
 import {
   consumeSessionFolderCommand,
   isSessionFolderCommand,
@@ -651,11 +652,16 @@ export function Composer({
             ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
+            ADHD_COMMAND,
             ...skills.filter(
               (skill) =>
-                ![OPERATOR_COMMAND.name, "irgat", "mono", "monocode"].includes(
-                  skill.name,
-                ) &&
+                ![
+                  OPERATOR_COMMAND.name,
+                  "irgat",
+                  "mono",
+                  "monocode",
+                  ADHD_COMMAND.name,
+                ].includes(skill.name) &&
                 (skill.kind === "native" ||
                   (skill.name !== PLAN_COMMAND.name &&
                     skill.name !== COMPACT_COMMAND.name &&
