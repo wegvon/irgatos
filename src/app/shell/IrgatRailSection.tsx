@@ -5,7 +5,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ImagePlus, MoreHorizontal, Plus, Trash2 } from "../../shared/ui/icons";
+import {
+  ImagePlus,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+  UserGroup,
+} from "../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../shared/ui/Popover";
 import { Shimmer } from "../../shared/ui/Shimmer";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
@@ -13,6 +19,12 @@ import { IrgatRailMascot } from "../../features/irgats/ui/IrgatRailMascot";
 import { IrgatIntroPopover } from "../../features/irgats/ui/IrgatIntro";
 import { ProjectBackgroundDialog } from "../../features/projects/ui/ProjectBackgroundDialog";
 import { irgatBackgroundKey } from "../../features/irgats/model/irgatBackground";
+import { createIrgatGroup } from "../../features/irgats/model/irgatGroups";
+import {
+  IrgatGroupRail,
+  type IrgatGroupRailProps,
+} from "../../features/irgats/ui/IrgatGroupRail";
+import { NewIrgatGroupDialog } from "../../features/irgats/ui/NewIrgatGroupDialog";
 import {
   ColorPicker,
   MascotPicker,
@@ -48,6 +60,8 @@ export type IrgatRailProps = {
   onDelete: (irgatId: string) => void;
   /** Whether the intro may show now, when there is no Irgat yet. */
   introAvailable?: boolean;
+  /** Group rooms of several Irgats, listed under them. */
+  groups?: IrgatGroupRailProps;
 };
 
 const IDLE: IrgatState = { status: "idle" };
@@ -74,6 +88,7 @@ export function IrgatRailSection({
   onCreate,
   onDelete,
   introAvailable = false,
+  groups,
 }: IrgatRailProps) {
   const snapshot = useSyncExternalStore(subscribeIrgats, monosSnapshot);
   const irgats = useMemo(() => listIrgats(), [snapshot]);
@@ -86,6 +101,7 @@ export function IrgatRailSection({
   const [menu, setMenu] = useState<{ id: string; anchor: PopoverAnchor }>();
   const [background, setBackground] = useState<string>();
   const backgroundIrgat = background ? findIrgat(background) : undefined;
+  const [newGroup, setNewGroup] = useState(false);
 
   return (
     <div className="mb-2 shrink-0" data-irgat-rail>
@@ -93,6 +109,17 @@ export function IrgatRailSection({
         <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
           Irgats
         </span>
+        {groups && irgats.length ? (
+          <button
+            type="button"
+            title="New group chat…"
+            aria-label="New group chat"
+            onClick={() => setNewGroup(true)}
+            className="grid size-5 shrink-0 place-items-center rounded-md text-content/50 hover:bg-content/8 hover:text-content"
+          >
+            <UserGroup className="size-3.5" strokeWidth={1.75} />
+          </button>
+        ) : null}
         {/* With none yet, the row below is the way to add one. */}
         {irgats.length ? (
           <button
@@ -241,6 +268,17 @@ export function IrgatRailSection({
           );
         })}
       </div>
+      {groups ? <IrgatGroupRail {...groups} /> : null}
+      {newGroup && groups ? (
+        <NewIrgatGroupDialog
+          irgats={irgats}
+          onClose={() => setNewGroup(false)}
+          onCreate={(memberIds, name) => {
+            setNewGroup(false);
+            groups.onOpen(createIrgatGroup(memberIds, name).id);
+          }}
+        />
+      ) : null}
       {menu ? (
         <IrgatMenu
           key={menu.id}
