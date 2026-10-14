@@ -7,6 +7,8 @@ import {
 } from "../../../../features/providers/model/rateLimits";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import {
+  buildProxySessionInitBypassReply,
+  isProxySessionInitQuestions,
   questionPromptTitle,
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
@@ -1392,13 +1394,24 @@ async function handleServerRequest(
       await live.rpc.respond(id, { answers: {} });
       return;
     }
+    const callId = stringField(asRecord(params), "itemId");
+    if (isProxySessionInitQuestions(questions, callId)) {
+      await live.rpc.respond(
+        id,
+        codexQuestionResponse(
+          questions,
+          buildProxySessionInitBypassReply(questions),
+        ),
+      );
+      return;
+    }
     const uiId = live.nextApprovalUiId++;
     const event: Extract<HarnessEvent, { type: "question.asked" }> = {
       type: "question.asked",
       requestId: uiId,
       title: questionPromptTitle(questions),
       questions,
-      callId: stringField(asRecord(params), "itemId"),
+      callId,
     };
     const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
       live.questions.set(uiId, {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   CUSTOM_OPTION_ID,
+  buildProxySessionInitBypassReply,
   buildQuestionReply,
+  isProxySessionInitQuestions,
   questionAnswersComplete,
   questionIsComplete,
   questionPromptTitle,
@@ -197,5 +199,59 @@ describe("buildQuestionReply", () => {
       },
       custom: { [language.id]: "Python" },
     });
+  });
+
+  it("translates MemoryProxy Chinese session-init questions while preserving wire labels", () => {
+    const rawPrompt =
+      "\u672c\u6b21\u5bf9\u8bdd\u662f\u5426\u8981\u5173\u8054\u56e2\u961f\u8d44\u4ea7\uff1f\uff08\u8bf7\u9009\u62e9\u6700\u5339\u914d\u7684\u9009\u9879\uff0c\u5f53\u524d\u6682\u4e0d\u652f\u6301\u81ea\u5b9a\u4e49\u8f93\u5165\u3002\u82e5\u9009\u62e9\u8df3\u8fc7\uff0c\u672c\u6b21 Session \u5c06\u4e0d\u6ce8\u5165\u56e2\u961f\u8d44\u4ea7\uff09";
+    const yesWire = "\u662f\uff0c\u5173\u8054\u8d44\u4ea7";
+    const noWire = "\u5426\uff0c\u672c\u6b21\u4e0d\u5173\u8054";
+    const parsed = questionsFromUnknown({
+      questions: [
+        {
+          header: "\u5173\u8054\u8d44\u4ea7",
+          question: rawPrompt,
+          multiSelect: false,
+          options: [
+            {
+              label: yesWire,
+              description:
+                "\u9009\u62e9 Team / Agent / Task\uff0c\u6ce8\u5165\u56e2\u961f\u4e0a\u4e0b\u6587",
+            },
+            {
+              label: noWire,
+              description:
+                "\u4e0d\u6ce8\u5165\u4efb\u4f55\u5185\u5bb9\uff0c\u76f4\u63a5\u653e\u884c",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      header: "Link Team Assets",
+      prompt:
+        "Link team assets to this session? (Choose the best matching option; custom input is not supported. If skipped, no team assets will be injected into this session.)",
+      wirePrompt: rawPrompt,
+      options: [
+        {
+          label: "Yes, link assets",
+          wireLabel: yesWire,
+          description: "Select Team / Agent / Task to inject team context",
+        },
+        {
+          label: "No, skip for this session",
+          wireLabel: noWire,
+          description: "Continue without injecting any team context",
+        },
+      ],
+    });
+    expect(isProxySessionInitQuestions(parsed)).toBe(true);
+    const bypass = buildProxySessionInitBypassReply(parsed);
+    expect(bypass.kind).toBe("answered");
+    if (bypass.kind === "answered") {
+      expect(selectedAnswerLabels(parsed[0]!, bypass)).toEqual([noWire]);
+    }
   });
 });

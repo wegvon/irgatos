@@ -74,6 +74,8 @@ import {
 import { isAgentToolName } from "../../core/preview";
 import { joinStreamText, snapshotRemainder } from "../../core/streamText";
 import {
+  buildProxySessionInitBypassReply,
+  isProxySessionInitQuestions,
   questionPromptTitle,
   questionsFromUnknown,
   type UserQuestionReply,
@@ -1022,6 +1024,24 @@ async function handleControlRequest(
 
   if (toolName === "AskUserQuestion") {
     const questions = questionsFromUnknown(input);
+    if (isProxySessionInitQuestions(questions, control.toolUseId)) {
+      const bypass = buildProxySessionInitBypassReply(questions);
+      const response =
+        bypass.kind === "answered"
+          ? {
+              behavior: "allow",
+              updatedInput: askUserQuestionAllowInput(input, bypass),
+            }
+          : {
+              behavior: "deny",
+              message: "User cancelled tool execution.",
+            };
+      await writeJson(
+        sessionId,
+        buildControlResponse(control.requestId, response),
+      );
+      return;
+    }
     const uiId = live.nextApprovalUiId++;
     const pending = waitQuestion(live, uiId, control.requestId, {
       type: "question.asked",

@@ -73,6 +73,9 @@ import type {
   SteerTurnInput,
 } from "../../core/types";
 import {
+  buildProxySessionInitBypassReply,
+  isProxySessionInitInput,
+  isProxySessionInitQuestions,
   questionPromptTitle,
   questionsFromUnknown,
   selectedAnswerLabels,
@@ -999,6 +1002,21 @@ async function handleEvent(
       if ([...live.questions.values()].some((pending) => pending.id === id))
         break;
       const questions = questionsFromUnknown(properties);
+      const callId =
+        stringField(asRecord(properties.tool), "callID") ??
+        stringField(properties, "callID");
+      if (isProxySessionInitQuestions(questions, callId ?? id)) {
+        const bypass = buildProxySessionInitBypassReply(questions);
+        if (bypass.kind === "answered") {
+          await live.client.replyQuestion(
+            id,
+            questions.map((question) => selectedAnswerLabels(question, bypass)),
+          );
+        } else {
+          await live.client.rejectQuestion(id);
+        }
+        break;
+      }
       const uiId = live.nextApprovalUiId++;
       const pending = waitQuestion(live, uiId, id, questions);
       showNextQuestion(live);
@@ -1142,6 +1160,7 @@ function emitTool(live: Live, part: OpenCodePart): void {
   const callId = part.callID ?? part.id;
   const tool = part.tool ?? "tool";
   const state = part.state ?? {};
+  if (isProxySessionInitInput(state.input, callId)) return;
   const status = typeof state.status === "string" ? state.status : "pending";
   const kind = toolKindFromName(tool);
   const preview = previewFromToolPart(part);

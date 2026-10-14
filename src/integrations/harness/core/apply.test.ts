@@ -275,7 +275,7 @@ describe("streamed markdown", () => {
     let session = newSession("omp", "/tmp");
     session = applyHarnessEvent(session, {
       type: "message.delta",
-      text: "contributor（",
+      text: "contributor (",
     });
     const id = session.blocks[0].id;
     session = applyHarnessEvent(session, {
@@ -284,10 +284,10 @@ describe("streamed markdown", () => {
     });
     session = applyHarnessEvent(session, {
       type: "message.delta",
-      text: "邮箱归属链已验证）",
+      text: "email attribution chain verified)",
     });
     expect(session.blocks.map((block) => block.text)).toEqual([
-      "contributor（邮箱归属链已验证）",
+      "contributor (email attribution chain verified)",
       "Advisor reviewed this turn",
     ]);
     expect(session.blocks[0]).toMatchObject({ id, streaming: true });
@@ -337,7 +337,7 @@ describe("streamed markdown", () => {
       let session = newSession("omp", "/tmp");
       session = applyHarnessEvent(session, {
         type: "message.delta",
-        text: "contributor（",
+        text: "contributor (",
       });
       const id = session.blocks[0].id;
       if (status)
@@ -353,13 +353,13 @@ describe("streamed markdown", () => {
       expect(session.blocks[0]).toMatchObject({ id, streaming: false });
       session = applyHarnessEvent(session, {
         type: "message.delta",
-        text: "邮箱归属链已验证）",
+        text: "email attribution chain verified)",
       });
       expect(session.blocks.map((block) => block.text)).toEqual([
-        "contributor（",
+        "contributor (",
         ...(status ? ["Reviewed"] : []),
         "Review",
-        "邮箱归属链已验证）",
+        "email attribution chain verified)",
       ]);
       expect(session.blocks.at(-1)).toMatchObject({
         role: "assistant",
