@@ -11,6 +11,22 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
+### Added
+
+- **Quota auto-hold.** When a provider reports a usage limit, Irgatos reads its reset time (epoch, JSON, ISO, relative or wall-clock with zone) and puts that harness and account on hold, with a fallback window under **Plan limits** when no time is given.
+  - Queued prompts, habit runs and scheduled automations wait with a **Paused until quota reset** label instead of failing or being skipped as missed, and pick up on their own when the hold ends. **Run anyway** overrides a hold.
+  - Session and Irgat composers show a countdown banner with **Resume now**.
+- **Session resume.** Sessions cut off by an agent exit, crash, dropped connection or app restart show an **Interrupted** banner with **Resume session** and a sidebar badge. Resume continues the provider thread where it can, or re-sends the unanswered prompt with a transcript recap when the thread is gone.
+- **Worktree ports and setup.** Each linked worktree gets its own port from the project's range (default 4100–4199), avoiding sibling worktrees and busy ports. Agents, terminals and setup see it as `PORT` and `IRGATOS_PORT`, with `IRGATOS_WORKTREE` and `IRGATOS_MAIN_WORKTREE`.
+  - A setup command from `.irgatos/worktree.json`, or this clone's override in **Settings > Worktrees**, runs in the background after a worktree is created. The composer shows its progress and output with a rerun action, plus a port badge that opens the dev server in the browser panel.
+- **Fleet.** One view of every open session and Irgat chat across projects, sorted into **Needs you** (approvals with the exact command and agent questions, answerable inline), **Ready to review**, **Running** and **Idle**. The sidebar and both rails get a Fleet button with a live count of sessions waiting on you.
+- **Lightpanda headless browser.** A **Lightpanda Headless Browser** card in MCP settings (and on the Irgats page) for a fast, low-memory headless browser agents can drive.
+  - It finds `lightpanda` on `PATH`, Homebrew, `/usr/local/bin` or `~/.irgatos/bin`, or installs the official release binary into `~/.irgatos/bin` in one click. Lightpanda is AGPL-3.0, so Irgatos never bundles it and only runs it as a separate process, always with `LIGHTPANDA_DISABLE_TELEMETRY=true`.
+  - One click adds `lightpanda mcp` to Claude Code, Codex, Cursor or OpenCode for all projects.
+  - An optional background `lightpanda serve` on `127.0.0.1` gives agent sessions started while it runs, Irgats and Habits included, its CDP address in `IRGATOS_LIGHTPANDA_CDP_URL` and `LIGHTPANDA_CDP_URL`. It can start with Irgatos.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added
