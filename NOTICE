@@ -6,3 +6,7 @@ Provider marks that appear in the UI (including Claude, Codex, Cursor, GitHub, G
 ADHD mode sends the i-have-adhd ruleset (https://github.com/ayghri/i-have-adhd),
 Copyright (c) 2026 Ayoub Ghriss, used under the MIT License. The ruleset and its
 license are kept unmodified in vendor/i-have-adhd/.
+
+The redline review mode (src/features/redline) follows the guided review flow of
+hermes-redline (https://github.com/silentpr0/hermes-redline), Copyright (c) 2026
+silentpr0, released under the MIT License. No code from that project is included.
