@@ -11,6 +11,13 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ## [Unreleased]
 
+### Added
+
+- **ADHD mode.** Built in from [i-have-adhd](https://github.com/ayghri/i-have-adhd) by Ayoub Ghriss (MIT). When it is on, every session and Irgat chat gets the upstream ruleset with its next message: lead with the next action, number multi-step work, end with one concrete next step, suppress tangents, restate state every turn, give estimates in minutes, make wins visible, state errors plainly, cap lists at five and drop the preamble, recaps and closers.
+  - Turn it on from the **ADHD** switch in the status bar or under a Irgat's composer, or in **Settings › ADHD mode**. The choice survives restarts. Each conversation receives the rules once, again when its provider conversation is replaced, and a one-line notice when the mode is turned off.
+  - `/i-have-adhd` (or `/adhd`) toggles the mode for one chat, `/i-have-adhd on` and `off` set it, and sending just "stop adhd mode" or "normal mode" turns it off there. Irgatos handles these itself, so they never reach the agent.
+  - Beside the switch, the status bar keeps the step a working agent is on ("Step 2 of 5: …") or the `Next:` line its last reply ended with, and shows a finished task list as "5 of 5 done".
+
 ## [0.3.0] - 2026-10-14
 
 ### Added
