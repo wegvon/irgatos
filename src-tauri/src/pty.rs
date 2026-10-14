@@ -273,6 +273,9 @@ fn spawn_unix(
         cmd.env("HOME", &home);
     }
     cmd.env("PWD", &workdir);
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
 
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
@@ -405,6 +408,9 @@ fn spawn_windows(
         cmd.env("USERPROFILE", &home);
     }
     cmd.env("PWD", workdir.to_string_lossy().as_ref());
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
 
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;

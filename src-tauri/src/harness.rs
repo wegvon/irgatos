@@ -959,6 +959,9 @@ pub fn harness_spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
     let codex_store = match codex_store.as_deref() {
         None => None,

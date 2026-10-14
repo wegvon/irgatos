@@ -105,6 +105,7 @@ import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import { WorktreePicker } from "../../source-control/ui/WorktreePicker";
+import { WorktreePortBadge } from "../../source-control/ui/WorktreePortBadge";
 import {
   isWorkspaceModeShortcut,
   WorkspaceIdentity,
@@ -2282,6 +2283,9 @@ export function Composer({
                     onChange={onBranchChange}
                     onClose={() => ref.current?.focus()}
                   />
+                  {!remote && pathKey(cwd) !== pathKey(executionCwd) ? (
+                    <WorktreePortBadge cwd={executionCwd} />
+                  ) : null}
                 </>
               )}
               <div className="ml-auto flex shrink-0 items-center">

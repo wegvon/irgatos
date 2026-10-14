@@ -17,6 +17,10 @@ export type Worktree = {
   dirty: boolean | null;
   unpushed: number | null;
   sessionIds: string[];
+  /** `PORT` for processes in this linked worktree, once assigned. */
+  port?: number | null;
+  /** Setup command started in the background when this worktree was created. */
+  setupCommand?: string | null;
 };
 export type Worktrees = { worktrees: Worktree[]; defaultRoot: string };
 

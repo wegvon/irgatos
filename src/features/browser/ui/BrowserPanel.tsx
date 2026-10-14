@@ -148,9 +148,12 @@ function saveImportedLibrary(library: ImportedLibrary) {
 export function BrowserPanel({
   visible,
   onClose,
+  openRequest,
 }: {
   visible: boolean;
   onClose: () => void;
+  /** A page to load, e.g. a worktree's dev server; a new token reloads it. */
+  openRequest?: { url: string; token: number };
 }) {
   const [address, setAddress] = useState("");
   const [url, setUrl] = useState<string | null>(null);
@@ -229,6 +232,18 @@ export function BrowserPanel({
 
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
+
+  const handledRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!openRequest || !visible) return;
+    if (handledRequest.current === openRequest.token) return;
+    // Wait a frame so a panel that just appeared has its slot laid out.
+    const frame = requestAnimationFrame(() => {
+      handledRequest.current = openRequest.token;
+      void navigateRef.current(openRequest.url);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [openRequest, visible]);
 
   useEffect(() => {
     let disposed = false;

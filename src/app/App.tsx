@@ -141,6 +141,7 @@ import {
   worktreeSessionIds,
   type Worktree,
 } from "../features/source-control/model/worktrees";
+import { OPEN_BROWSER_URL_EVENT } from "../features/source-control/model/worktreeEnv";
 import { UsageFooter } from "./shell/UsageFooter";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
@@ -1341,6 +1342,24 @@ function Workspace({
   const onToggleBrowser = useCallback(() => {
     setBrowserMounted(true);
     setBrowserOpen((open) => !open);
+  }, []);
+  const [browserRequest, setBrowserRequest] = useState<{
+    url: string;
+    token: number;
+  }>();
+  useEffect(() => {
+    const onOpenUrl = (event: Event) => {
+      const url = (event as CustomEvent<unknown>).detail;
+      if (typeof url !== "string" || !url) return;
+      setBrowserMounted(true);
+      setBrowserOpen(true);
+      setBrowserRequest((previous) => ({
+        url,
+        token: (previous?.token ?? 0) + 1,
+      }));
+    };
+    window.addEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
+    return () => window.removeEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
   }, []);
   const [linkedWorkItemPanels, setLinkedWorkItemPanels] = useState<
     ReadonlyMap<string, LinkedWorkItemPanelState>
@@ -14189,6 +14208,7 @@ function Workspace({
                             !kanbanViewOpen
                           }
                           onClose={() => setBrowserOpen(false)}
+                          openRequest={browserRequest}
                         />
                       ) : null}
                     </main>

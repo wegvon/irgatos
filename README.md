@@ -32,7 +32,7 @@ On macOS, open the DMG and drag Irgatos to Applications. After that, **Irgatos â
 Open a project folder, choose an agent, and send a message. Each tab is a session. Split panes to work with sessions side by side.
 
 - Keep conversations organized by project.
-- Use separate Git worktrees for parallel tasks.
+- Use separate Git worktrees for parallel tasks, each with its own `PORT` and an optional setup command.
 - Edit files and review changes in the app.
 - Start a message with `/operator` to let an agent open sessions and manage worktrees and notes.
 
@@ -45,6 +45,7 @@ Irgatos is still early. If something breaks, [report a bug](https://github.com/w
 - [Provider setup](docs/providers.md)
 - [Linux installation](docs/install.md)
 - [Agent access with /operator](docs/agent-access.md)
+- [Worktree ports and setup](docs/worktrees.md)
 - [Remote sessions, experimental](docs/remote-access.md)
 
 ## Build from source
