@@ -4,6 +4,14 @@ import type {
   HarnessId,
   Session,
 } from "../../sessions/model/session";
+import {
+  createProgressTracker,
+  deliveryBlock,
+  isDeliveryStalled,
+  toolInFlight,
+  type DeliveryBlock,
+  type ProgressTracker,
+} from "../../sessions/model/deliveryGuards";
 import { findIrgat, irgatLook } from "./irgat";
 import type { IrgatFiles } from "./irgatFiles";
 import {
@@ -74,16 +82,32 @@ type Turn = {
   generation: number;
 };
 
+/**
+ * Why the room is not moving: the speaker's seat waits on the user (a tool
+ * approval or a question), or it has shown no progress for too long. Every
+ * member after it waits too, since replies run one at a time.
+ */
+export type GroupHold =
+  | { kind: "blocked"; reason: DeliveryBlock; irgatId: string; seatId: string }
+  | { kind: "stalled"; irgatId: string; seatId: string; since: number };
+
 export type GroupRunState = {
   /** The member replying now, and its seat once it has one. */
   speaking?: { irgatId: string; seatId?: string };
   /** Members still to reply, in order. */
   queue: string[];
+  hold?: GroupHold;
 };
 
 type Room = {
   queue: Turn[];
   speaking?: { irgatId: string; seatId?: string };
+  /** When the speaker's prompt went to its seat. */
+  dispatchedAt?: number;
+  hold?: GroupHold;
+  /** The turn being run again after a stall; its cut reply is not posted. */
+  retrying?: Turn;
+  current?: Turn;
   /** Bumped by each stop. */
   generation: number;
   loop?: Promise<void>;
@@ -113,8 +137,12 @@ export class IrgatGroupRunner {
   private states = new Map<string, GroupRunState>();
   private listeners = new Set<() => void>();
   private version = 0;
+  private progress: ProgressTracker = createProgressTracker();
 
-  constructor(private host: () => IrgatGroupHost) {}
+  constructor(
+    private host: () => IrgatGroupHost,
+    private now: () => number = Date.now,
+  ) {}
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -195,6 +223,81 @@ export class IrgatGroupRunner {
     if (seat) await this.host().stop(seat).catch(() => undefined);
   }
 
+  /**
+   * Looks at the speakers' seats: a seat waiting on an approval or a question
+   * holds the room as `blocked`, and one with no progress in time as
+   * `stalled`. The app calls this on every session change and on a timer.
+   */
+  observe(sessions: readonly Session[]): void {
+    const now = this.now();
+    this.progress.observe(sessions, now);
+    for (const [groupId, room] of this.rooms) {
+      const hold = this.holdFor(room, sessions, now);
+      if (sameHold(room.hold, hold)) continue;
+      room.hold = hold;
+      this.publish(groupId);
+    }
+  }
+
+  private holdFor(
+    room: Room,
+    sessions: readonly Session[],
+    now: number,
+  ): GroupHold | undefined {
+    const speaking = room.speaking;
+    if (!speaking?.seatId || room.dispatchedAt == null) return undefined;
+    const seat = sessions.find((session) => session.id === speaking.seatId);
+    if (!seat) return undefined;
+    const base = { irgatId: speaking.irgatId, seatId: speaking.seatId };
+    const reason = deliveryBlock(seat);
+    if (reason) return { kind: "blocked", reason, ...base };
+    if (
+      isDeliveryStalled({
+        dispatchedAt: room.dispatchedAt,
+        busy: !!seat.busy,
+        toolRunning: toolInFlight(seat),
+        lastProgressAt: this.progress.lastProgressAt(seat.id),
+        now,
+      })
+    ) {
+      return {
+        kind: "stalled",
+        ...base,
+        since:
+          room.hold?.kind === "stalled" && room.hold.seatId === base.seatId
+            ? room.hold.since
+            : now,
+      };
+    }
+    return undefined;
+  }
+
+  /** Rooms whose speaker should be looked at again even without changes. */
+  watching(): boolean {
+    return [...this.rooms.values()].some((room) => room.dispatchedAt != null);
+  }
+
+  /** Stops a stalled reply and runs the same member's turn again. */
+  async retry(groupId: string): Promise<void> {
+    const room = this.rooms.get(groupId);
+    const seat = room?.speaking?.seatId;
+    if (!room || !seat || !room.current) return;
+    room.retrying = room.current;
+    room.hold = undefined;
+    this.publish(groupId);
+    await this.host().stop(seat).catch(() => undefined);
+  }
+
+  /** Stops the reply in progress and lets the next member speak. */
+  async skip(groupId: string): Promise<void> {
+    const room = this.rooms.get(groupId);
+    const seat = room?.speaking?.seatId;
+    if (!room || !seat) return;
+    room.hold = undefined;
+    this.publish(groupId);
+    await this.host().stop(seat).catch(() => undefined);
+  }
+
   private room(groupId: string): Room {
     let room = this.rooms.get(groupId);
     if (!room) {
@@ -232,6 +335,9 @@ export class IrgatGroupRunner {
       const turn = room.queue.shift();
       if (!turn) return;
       room.speaking = { irgatId: turn.irgatId };
+      room.current = turn;
+      room.dispatchedAt = undefined;
+      room.hold = undefined;
       this.publish(groupId);
       try {
         await this.runTurn(groupId, room, turn);
@@ -244,6 +350,9 @@ export class IrgatGroupRunner {
         });
       }
       room.speaking = undefined;
+      room.current = undefined;
+      room.dispatchedAt = undefined;
+      room.hold = undefined;
     }
   }
 
@@ -293,12 +402,18 @@ export class IrgatGroupRunner {
     try {
       if (stopped()) return;
       room.speaking = { irgatId: irgat.id, seatId: seat.seatId };
+      room.dispatchedAt = this.now();
       this.publish(groupId);
       // /operator gives the turn the app access the Irgat has in its own chat.
       outcome = await host.run(seat.seatId, `/operator ${prompt}`, turn.attachments);
       reply = cleanGroupReply(host.reply(seat.seatId) || outcome.text, look.name);
     } finally {
       await host.close(seat.seatId).catch(() => undefined);
+    }
+    if (room.retrying === turn) {
+      room.retrying = undefined;
+      if (!stopped()) room.queue.unshift(turn);
+      return;
     }
     const cut = stopped() || outcome.status === "cancelled";
     if (outcome.status === "failed" && !cut) {
@@ -361,9 +476,17 @@ export class IrgatGroupRunner {
       this.states.set(groupId, {
         ...(room.speaking ? { speaking: { ...room.speaking } } : {}),
         queue: room.queue.map((turn) => turn.irgatId),
+        ...(room.hold ? { hold: { ...room.hold } } : {}),
       });
     else this.states.delete(groupId);
     this.version++;
     for (const listener of this.listeners) listener();
   }
+}
+
+function sameHold(a: GroupHold | undefined, b: GroupHold | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.kind !== b.kind || a.seatId !== b.seatId || a.irgatId !== b.irgatId) return false;
+  if (a.kind === "blocked" && b.kind === "blocked") return a.reason === b.reason;
+  return a.kind === "stalled" && b.kind === "stalled" && a.since === b.since;
 }

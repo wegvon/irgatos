@@ -92,6 +92,8 @@ function fakeRunner(state: GroupRunState = { queue: [] }) {
     ),
     ask: vi.fn(),
     stop: vi.fn(async () => undefined),
+    retry: vi.fn(async () => undefined),
+    skip: vi.fn(async () => undefined),
   };
   return runner;
 }
@@ -100,6 +102,7 @@ async function render(
   groupId: string,
   runner: ReturnType<typeof fakeRunner>,
   liveSeat?: Session,
+  extra: Partial<Parameters<typeof IrgatGroupView>[0]> = {},
 ) {
   await act(async () => {
     root.render(
@@ -107,6 +110,7 @@ async function render(
         groupId,
         runner: runner as unknown as IrgatGroupRunner,
         liveSeat,
+        ...extra,
       }),
     );
     // Lets the members' SOUL.md roles load inside act.
@@ -400,5 +404,117 @@ describe("sending", () => {
       field().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     });
     expect(field().value).toBe("@Security ");
+  });
+});
+
+describe("the status bar", () => {
+  const seat = (patch: Partial<Session> = {}) =>
+    ({
+      id: "seat-1",
+      harness: "claude",
+      model: "sonnet",
+      busy: true,
+      blocks: [{ id: "u", role: "user", text: "prompt" }],
+      ...patch,
+    }) as unknown as Session;
+
+  it("says who waits on an approval and jumps to it", async () => {
+    const { group, idOf } = setup();
+    appendIrgatGroupMessage(group.id, { role: "user", text: "go" });
+    const runner = fakeRunner({
+      speaking: { irgatId: idOf("Architect"), seatId: "seat-1" },
+      queue: [idOf("Security"), idOf("Frontend")],
+      hold: { kind: "blocked", reason: "approval", irgatId: idOf("Architect"), seatId: "seat-1" },
+    });
+    const onApproval = vi.fn();
+    await render(
+      group.id,
+      runner,
+      seat({
+        blocks: [
+          { id: "u", role: "user", text: "prompt" },
+          {
+            id: "t",
+            role: "tool",
+            text: "",
+            tool: { title: "run npm test" },
+            approval: { requestId: 3 },
+          },
+        ],
+      }),
+      { onApproval },
+    );
+    const bar = q('[data-group-status="blocked"]')!;
+    expect(bar.dataset.groupBlockedBy).toBe("approval");
+    expect(bar.textContent).toContain("Architect is waiting for your approval to run npm test.");
+    expect(bar.textContent).toContain("2 replies wait behind it.");
+    const jump = bar.querySelector<HTMLButtonElement>('[data-group-status-action="jump"]')!;
+    expect(jump.textContent).toBe("Review");
+    act(() => jump.click());
+    expect(document.activeElement?.textContent).toBe("Allow");
+    act(() => (document.activeElement as HTMLButtonElement).click());
+    expect(onApproval).toHaveBeenCalledWith("seat-1", 3, "allow");
+  });
+
+  it("answers a question the speaker asked, right in the room", async () => {
+    const { group, idOf } = setup();
+    const runner = fakeRunner({
+      speaking: { irgatId: idOf("Security"), seatId: "seat-1" },
+      queue: [],
+      hold: { kind: "blocked", reason: "question", irgatId: idOf("Security"), seatId: "seat-1" },
+    });
+    await render(
+      group.id,
+      runner,
+      seat({
+        pendingQuestion: {
+          requestId: 8,
+          questions: [
+            {
+              id: "q1",
+              header: "Scope",
+              prompt: "Audit only the API?",
+              multiSelect: false,
+              allowCustom: false,
+              options: [
+                { id: "o1", label: "Yes" },
+                { id: "o2", label: "No" },
+              ],
+            },
+          ],
+        } as unknown as Session["pendingQuestion"],
+      }),
+    );
+    const bar = q('[data-group-status="blocked"]')!;
+    expect(bar.textContent).toContain("Security asked you a question.");
+    expect(bar.querySelector('[data-group-status-action="jump"]')!.textContent).toBe("Answer");
+    expect(q("[data-group-question]")!.textContent).toContain("Audit only the API?");
+  });
+
+  it("offers retry and skip for a stalled speaker", async () => {
+    const { group, idOf } = setup();
+    const runner = fakeRunner({
+      speaking: { irgatId: idOf("Frontend"), seatId: "seat-1" },
+      queue: [idOf("Architect")],
+      hold: { kind: "stalled", irgatId: idOf("Frontend"), seatId: "seat-1", since: Date.UTC(2026, 9, 14, 9, 5) },
+    });
+    await render(group.id, runner, seat());
+    const bar = q('[data-group-status="stalled"]')!;
+    expect(bar.textContent).toContain("Frontend has shown no progress since");
+    expect(bar.textContent).toContain("One reply waits behind it.");
+    act(() => bar.querySelector<HTMLButtonElement>('[data-group-status-action="retry"]')!.click());
+    expect(runner.retry).toHaveBeenCalledWith(group.id);
+    act(() => bar.querySelector<HTMLButtonElement>('[data-group-status-action="skip"]')!.click());
+    expect(runner.skip).toHaveBeenCalledWith(group.id);
+  });
+
+  it("stays hidden while the room moves", async () => {
+    const { group, idOf } = setup();
+    await render(
+      group.id,
+      fakeRunner({ speaking: { irgatId: idOf("Architect"), seatId: "seat-1" }, queue: [] }),
+      seat(),
+    );
+    expect(q("[data-group-status]")).toBeNull();
   });
 });

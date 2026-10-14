@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ControlOutcome } from "../../orchestration/model/orchestration";
+import {
+  DELIVERY_ACK_TIMEOUT_MS,
+  DELIVERY_PROGRESS_TIMEOUT_MS,
+} from "../../sessions/model/deliveryGuards";
+import type { Session } from "../../sessions/model/session";
 import { createIrgat, saveIrgatName, type Irgat } from "./irgat";
 import type { IrgatFiles } from "./irgatFiles";
 import {
@@ -333,4 +338,132 @@ it("reads a seat's reply as its last words since the prompt", () => {
   ).toBe("Final answer");
   expect(seatReply({ blocks: [{ id: "1", role: "assistant", text: "old" }, { id: "2", role: "user", text: "new" }] })).toBe("");
   expect(seatReply(undefined)).toBe("");
+});
+
+describe("delivery guards", () => {
+  type SeatLike = Pick<Session, "id" | "blocks" | "busy" | "pendingQuestion">;
+  const seat = (id: string, patch: Partial<SeatLike> = {}) =>
+    ({ id, blocks: [], busy: true, ...patch }) as unknown as Session;
+
+  function held(names = ["Architect", "Security"]) {
+    const { group, byId, all, idOf } = room(names);
+    const finishes: ((outcome: ControlOutcome) => void)[] = [];
+    const fake = fakeHost(
+      byId,
+      () => new Promise<ControlOutcome>((resolve) => finishes.push(resolve)),
+    );
+    let clock = 1_000;
+    const runner = new IrgatGroupRunner(() => fake.host, () => clock);
+    return {
+      group,
+      idOf,
+      all,
+      fake,
+      runner,
+      finishes,
+      tick: (ms: number) => {
+        clock += ms;
+      },
+      at: () => clock,
+    };
+  }
+
+  it("holds the room while the speaker waits on an approval, then releases it", async () => {
+    const t = held();
+    t.runner.send(t.group.id, "go", [], t.all);
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(1));
+    expect(t.runner.watching()).toBe(true);
+    t.runner.observe([
+      seat("seat-1", { blocks: [{ id: "a", role: "tool", text: "", approval: { requestId: 4 } }] }),
+    ]);
+    expect(t.runner.state(t.group.id)).toMatchObject({
+      speaking: { irgatId: t.idOf("Architect"), seatId: "seat-1" },
+      queue: [t.idOf("Security")],
+      hold: { kind: "blocked", reason: "approval", irgatId: t.idOf("Architect"), seatId: "seat-1" },
+    });
+    t.runner.observe([
+      seat("seat-1", { pendingQuestion: { requestId: 5, questions: [] } as unknown as Session["pendingQuestion"] }),
+    ]);
+    expect(t.runner.state(t.group.id).hold).toMatchObject({ kind: "blocked", reason: "question" });
+    t.runner.observe([seat("seat-1", { blocks: [{ id: "b", role: "assistant", text: "ok" }] })]);
+    expect(t.runner.state(t.group.id).hold).toBeUndefined();
+    expect(t.fake.turns).toHaveLength(1);
+    t.finishes[0]!({ status: "completed", text: "done" });
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(2));
+    t.finishes[1]!({ status: "completed", text: "done too" });
+    await t.runner.idle(t.group.id);
+  });
+
+  it("flags a speaker with no progress as stalled and keeps when it began", async () => {
+    const t = held();
+    t.runner.send(t.group.id, "go", [], t.all);
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(1));
+    const quiet = [seat("seat-1", { blocks: [{ id: "a", role: "assistant", text: "thinking" }] })];
+    t.runner.observe(quiet);
+    t.tick(DELIVERY_PROGRESS_TIMEOUT_MS - 1);
+    t.runner.observe(quiet);
+    expect(t.runner.state(t.group.id).hold).toBeUndefined();
+    t.tick(1);
+    t.runner.observe(quiet);
+    const since = t.at();
+    expect(t.runner.state(t.group.id).hold).toEqual({
+      kind: "stalled",
+      irgatId: t.idOf("Architect"),
+      seatId: "seat-1",
+      since,
+    });
+    t.tick(5_000);
+    t.runner.observe(quiet);
+    expect(t.runner.state(t.group.id).hold).toMatchObject({ since });
+    t.runner.observe([seat("seat-1", { blocks: [{ id: "a", role: "assistant", text: "thinking more" }] })]);
+    expect(t.runner.state(t.group.id).hold).toBeUndefined();
+    t.finishes[0]!({ status: "completed", text: "a" });
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(2));
+    t.finishes[1]!({ status: "completed", text: "b" });
+    await t.runner.idle(t.group.id);
+  });
+
+  it("retry stops a stalled reply and runs the same member again without posting it", async () => {
+    const t = held();
+    t.runner.send(t.group.id, "go", [], t.all);
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(1));
+    t.runner.observe([seat("seat-1", { busy: false })]);
+    t.tick(DELIVERY_ACK_TIMEOUT_MS);
+    t.runner.observe([seat("seat-1", { busy: false })]);
+    expect(t.runner.state(t.group.id).hold?.kind).toBe("stalled");
+    const retrying = t.runner.retry(t.group.id);
+    expect(t.runner.state(t.group.id).hold).toBeUndefined();
+    t.finishes[0]!({ status: "cancelled", text: "" });
+    await retrying;
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(2));
+    expect(t.fake.stopped).toEqual(["seat-1"]);
+    expect(t.fake.turns.map((turn) => turn.irgat)).toEqual(["Architect", "Architect"]);
+    expect(t.runner.state(t.group.id).queue).toEqual([t.idOf("Security")]);
+    t.finishes[1]!({ status: "completed", text: "second try" });
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(3));
+    t.finishes[2]!({ status: "completed", text: "fine" });
+    await t.runner.idle(t.group.id);
+    expect(said(t.group.id)).toEqual(["User: go", "Architect: second try", "Security: fine"]);
+  });
+
+  it("skip stops the stalled speaker and lets the next member reply", async () => {
+    const t = held();
+    t.runner.send(t.group.id, "go", [], t.all);
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(1));
+    const skipping = t.runner.skip(t.group.id);
+    t.finishes[0]!({ status: "cancelled", text: "" });
+    await skipping;
+    await vi.waitFor(() => expect(t.fake.turns).toHaveLength(2));
+    expect(t.fake.turns[1]!.irgat).toBe("Security");
+    t.finishes[1]!({ status: "completed", text: "here" });
+    await t.runner.idle(t.group.id);
+    expect(t.runner.watching()).toBe(false);
+  });
+
+  it("ignores rooms without a dispatched speaker", () => {
+    const t = held();
+    t.runner.observe([seat("seat-1")]);
+    expect(t.runner.activeGroups()).toEqual([]);
+    expect(t.runner.watching()).toBe(false);
+  });
 });

@@ -8,7 +8,11 @@ import {
 import { Popover } from "../../../shared/ui/Popover";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
+  CircleHelp,
+  Clock,
   CornerDownRight,
+  RotateCcw,
+  Shield,
   Square,
   UserAdd,
   X,
@@ -20,6 +24,8 @@ import { HARNESS_LABEL, type Session } from "../../sessions/model/session";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { QuestionForm } from "../../sessions/ui/QuestionForm";
+import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import {
   useIrgatGroup,
   useIrgatGroupMessages,
@@ -32,7 +38,11 @@ import {
   mentionHandle,
   mentionedMembers,
 } from "../model/irgatGroupMentions";
-import { seatReply, type IrgatGroupRunner } from "../model/irgatGroupRunner";
+import {
+  seatReply,
+  type GroupHold,
+  type IrgatGroupRunner,
+} from "../model/irgatGroupRunner";
 import {
   addIrgatGroupMember,
   irgatGroupViewKey,
@@ -58,6 +68,13 @@ type Props = {
     requestId: number,
     decision: ApprovalDecision,
   ) => void;
+  /** Answers a question (AskUserQuestion) the speaking seat asked. */
+  onQuestionReply?: (
+    seatId: string,
+    requestId: number,
+    reply: UserQuestionReply,
+  ) => void;
+  onQuestionInteraction?: (seatId: string, requestId: number) => void;
   onOpenFile?: OpenFileFn;
 };
 
@@ -94,6 +111,8 @@ export function IrgatGroupView({
   visible = true,
   focusToken,
   onApproval,
+  onQuestionReply,
+  onQuestionInteraction,
   onOpenFile,
 }: Props) {
   const { group, name, members } = useIrgatGroup(groupId);
@@ -246,12 +265,31 @@ export function IrgatGroupView({
               queue={run.queue.flatMap((id) => byId.get(id) ?? [])}
               onStop={() => void runner.stop(groupId)}
               onApproval={onApproval}
+              onQuestionReply={onQuestionReply}
+              onQuestionInteraction={onQuestionInteraction}
               onOpenFile={onOpenFile}
             />
           ) : null}
         </div>
       </div>
       <div className="shrink-0">
+        {run.hold ? (
+          <GroupStatusBar
+            hold={run.hold}
+            member={byId.get(run.hold.irgatId)}
+            seat={liveSeat?.id === run.hold.seatId ? liveSeat : undefined}
+            waiting={run.queue.length}
+            onJump={() => {
+              const target = scroller.current?.querySelector<HTMLElement>(
+                "[data-group-approval], [data-group-question]",
+              );
+              target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+              target?.querySelector<HTMLElement>("button, input, textarea")?.focus();
+            }}
+            onRetry={() => void runner.retry(groupId)}
+            onSkip={() => void runner.skip(groupId)}
+          />
+        ) : null}
         <ReplyChips
           members={members}
           mode={mode}
@@ -662,6 +700,105 @@ function GroupMessageRow({
   );
 }
 
+/**
+ * Why the room has stopped moving, above the composer: the speaker waits on
+ * the user, or has gone quiet. Replies after it wait too.
+ */
+export function GroupStatusBar({
+  hold,
+  member,
+  seat,
+  waiting,
+  onJump,
+  onRetry,
+  onSkip,
+}: {
+  hold: GroupHold;
+  member?: GroupMemberView;
+  seat?: Pick<Session, "blocks">;
+  waiting: number;
+  onJump: () => void;
+  onRetry: () => void;
+  onSkip: () => void;
+}) {
+  const name = member?.name ?? "A member";
+  const held =
+    waiting > 0
+      ? ` ${waiting === 1 ? "One reply waits" : `${waiting} replies wait`} behind it.`
+      : "";
+  const button =
+    "inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-2 text-[12px]";
+  if (hold.kind === "blocked") {
+    const tool = seat?.blocks.find(
+      (block) => block.approval && block.approval.decided == null,
+    )?.tool?.title;
+    const question = hold.reason === "question";
+    return (
+      <div
+        role="status"
+        data-group-status="blocked"
+        data-group-blocked-by={hold.reason}
+        className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-2 px-3 pb-1.5 text-[12px] text-content/75"
+      >
+        <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+          {question ? (
+            <CircleHelp className="size-3.5 shrink-0 text-amber-500" strokeWidth={1.75} />
+          ) : (
+            <Shield className="size-3.5 shrink-0 text-amber-500" strokeWidth={1.75} />
+          )}
+          <span className="min-w-0">
+            <strong className="font-medium">{name}</strong>
+            {question
+              ? " asked you a question."
+              : ` is waiting for your approval${tool ? ` to ${tool}` : ""}.`}
+            {held}
+          </span>
+        </span>
+        <button
+          type="button"
+          data-group-status-action="jump"
+          onClick={onJump}
+          className={`${button} primary-action`}
+        >
+          {question ? "Answer" : "Review"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div
+      role="status"
+      data-group-status="stalled"
+      className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-2 px-3 pb-1.5 text-[12px] text-content/75"
+    >
+      <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+        <Clock className="size-3.5 shrink-0 text-orange-400" strokeWidth={1.75} />
+        <span className="min-w-0">
+          <strong className="font-medium">{name}</strong> has shown no progress
+          since {clock(hold.since)}.{held}
+        </span>
+      </span>
+      <button
+        type="button"
+        data-group-status-action="retry"
+        onClick={onRetry}
+        className={`${button} primary-action`}
+      >
+        <RotateCcw className="size-3" strokeWidth={2} />
+        Retry
+      </button>
+      <button
+        type="button"
+        data-group-status-action="skip"
+        onClick={onSkip}
+        className={`${button} text-content/65 hover:bg-content/8 hover:text-content`}
+      >
+        Skip
+      </button>
+    </div>
+  );
+}
+
 function LiveReply({
   member,
   seat,
@@ -669,6 +806,8 @@ function LiveReply({
   queue,
   onStop,
   onApproval,
+  onQuestionReply,
+  onQuestionInteraction,
   onOpenFile,
 }: {
   member?: GroupMemberView;
@@ -677,6 +816,8 @@ function LiveReply({
   queue: readonly GroupMemberView[];
   onStop: () => void;
   onApproval?: Props["onApproval"];
+  onQuestionReply?: Props["onQuestionReply"];
+  onQuestionInteraction?: Props["onQuestionInteraction"];
   onOpenFile?: OpenFileFn;
 }) {
   const state = seat ? irgatState(seat) : undefined;
@@ -738,6 +879,22 @@ function LiveReply({
             </button>
           </div>
         ))}
+        {seat?.pendingQuestion ? (
+          <div
+            data-group-question
+            className="mt-2 rounded-lg border border-accent/30 bg-accent/6 px-3 py-2 text-[12.5px]"
+          >
+            <QuestionForm
+              prompt={seat.pendingQuestion}
+              onReply={(requestId, reply) =>
+                onQuestionReply?.(seat.id, requestId, reply)
+              }
+              onInteraction={(requestId) =>
+                onQuestionInteraction?.(seat.id, requestId)
+              }
+            />
+          </div>
+        ) : null}
         {queue.length ? (
           <p className="mt-1.5 text-[11.5px] text-content/45">
             Up next: {queue.map((entry) => `@${mentionHandle(entry.name)}`).join(", ")}

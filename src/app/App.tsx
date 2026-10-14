@@ -652,7 +652,10 @@ import { useIrgatHabits } from "./hooks/useIrgatHabits";
 import { useHabitWebhooks } from "./hooks/useHabitWebhooks";
 import { useHabitApprovals } from "../features/irgats/hooks/useHabitApprovals";
 import { decideHabitApproval } from "../features/irgats/model/habitApprovals";
-import { useIrgatGroupChat } from "./hooks/useIrgatGroupChat";
+import {
+  useIrgatGroupChat,
+  useIrgatGroupWatch,
+} from "./hooks/useIrgatGroupChat";
 import {
   useActiveIrgatGroups,
   useIrgatGroupRun,
@@ -11489,6 +11492,7 @@ function Workspace({
       setSessions(sessionsRef.current);
     },
   });
+  useIrgatGroupWatch(irgatGroups, sessions, () => sessionsRef.current);
   const activeIrgatGroups = useActiveIrgatGroups(irgatGroups);
   const openIrgatGroupId = irgatGroupOfView(irgatViewId);
   const openIrgatGroupRun = useIrgatGroupRun(
@@ -14490,6 +14494,8 @@ function Workspace({
                                   }
                                   focusToken={composerFocusToken}
                                   onApproval={onApproval}
+                                  onQuestionReply={onQuestionReply}
+                                  onQuestionInteraction={onQuestionInteraction}
                                   onOpenFile={onOpenFile}
                                 />
                               </div>

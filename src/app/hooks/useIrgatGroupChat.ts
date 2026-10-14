@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import {
   newSession,
@@ -88,4 +88,28 @@ export function useIrgatGroupChat(host: IrgatGroupChatHost): IrgatGroupRunner {
     () => new IrgatGroupRunner(() => groupRunnerHost(hostRef.current)),
   );
   return runner;
+}
+
+/** How often a speaking seat is looked at between session changes. */
+export const GROUP_WATCH_INTERVAL_MS = 5_000;
+
+/**
+ * Keeps the runner's blocked / stalled view of each speaker current: on
+ * every session change, and on a timer while a seat is speaking, since a
+ * stall is the absence of change.
+ */
+export function useIrgatGroupWatch(
+  runner: IrgatGroupRunner,
+  sessions: readonly Session[],
+  current: () => readonly Session[],
+): void {
+  const currentRef = useRef(current);
+  currentRef.current = current;
+  useEffect(() => runner.observe(sessions), [runner, sessions]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (runner.watching()) runner.observe(currentRef.current());
+    }, GROUP_WATCH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [runner]);
 }
