@@ -1,0 +1,105 @@
+name: Publish existing macOS artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Release workflow run containing successful macOS builds
+        required: true
+      source_sha:
+        description: Full commit SHA used by those builds
+        required: true
+      tag:
+        description: Stable version tag, for example v0.4.0
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-existing-macos
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RUN_ID: ${{ inputs.run_id }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Validate source builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$RUN_ID" > run.json
+          jq -e --arg sha "$SOURCE_SHA" --arg repo "$GH_REPO" '
+            .head_sha == $sha and .repository.full_name == $repo and
+            .head_repository.full_name == $repo and
+            .path == ".github/workflows/release.yml" and
+            .event == "workflow_dispatch" and .status == "completed"
+          ' run.json
+          gh api --paginate "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" --jq '.jobs[]' | jq -s '
+            [.[] | select(.name == "macOS aarch64" or .name == "macOS x64")]' > jobs.json
+          jq -e 'length == 2 and all(.[]; .conclusion == "success")' jobs.json
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Prepare only verified release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/bump-version.mjs --check "${TAG#v}"
+          gh run download "$RUN_ID" --name macos-aarch64 --dir incoming/arm
+          gh run download "$RUN_ID" --name macos-x64 --dir incoming/intel
+          mkdir release-assets
+          for pair in arm:aarch64 intel:x64; do
+            dir="${pair%%:*}"
+            arch="${pair##*:}"
+            for suffix in app.tar.gz dmg; do
+              name="Irgatos_${TAG#v}_${arch}.$suffix"
+              test -s "incoming/$dir/$name"
+              cp "incoming/$dir/$name" release-assets/
+            done
+          done
+          (cd release-assets && sha256sum -- * > SHA256SUMS.txt)
+          node <<'NODE'
+          const fs = require("node:fs");
+          const version = process.env.TAG.slice(1);
+          const lines = fs.readFileSync("CHANGELOG.md", "utf8").split("\n");
+          const start = lines.findIndex(line => line.startsWith("## [" + version + "]"));
+          if (start < 0) throw new Error("Missing changelog section");
+          let end = lines.findIndex((line, i) => i > start && /^## |^\[[^\]]+\]: /.test(line));
+          if (end < 0) end = lines.length;
+          const body = lines.slice(start + 1, end).join("\n").trim();
+          fs.writeFileSync("release-notes.md", body + "\n\nCommit: " + process.env.SOURCE_SHA + "\n");
+          NODE
+
+      - name: Publish release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to replace it" >&2
+            exit 1
+          fi
+          EXISTING_SHA=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null || true)
+          if [[ -n "$EXISTING_SHA" && "$EXISTING_SHA" != "$SOURCE_SHA" ]]; then
+            echo "Existing tag points to another commit" >&2
+            exit 1
+          fi
+          gh release create "$TAG" --draft --target "$SOURCE_SHA" --title "Irgatos ${TAG#v}" --notes-file release-notes.md
+          gh release upload "$TAG" release-assets/*
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > uploaded.txt
+          (cd release-assets && ls -1) | sort > expected.txt
+          diff -u expected.txt uploaded.txt
+          gh release edit "$TAG" --draft=false --latest

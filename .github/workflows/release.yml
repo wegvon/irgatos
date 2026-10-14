@@ -208,8 +208,8 @@ jobs:
         run: |
           set -euo pipefail
           BUNDLE="target/${{ matrix.target }}/release/bundle"
-          ARCHIVE="dist/Irgatos_${VERSION}_${{ matrix.arch }}.app.tar.gz"
-          mkdir -p dist
+          ARCHIVE="release-artifacts/Irgatos_${VERSION}_${{ matrix.arch }}.app.tar.gz"
+          mkdir -p release-artifacts
           if [[ -f "$BUNDLE/macos/Irgatos.app.tar.gz" ]]; then
             cp "$BUNDLE/macos/Irgatos.app.tar.gz" "$ARCHIVE"
             cp "$BUNDLE/macos/Irgatos.app.tar.gz.sig" "$ARCHIVE.sig"
@@ -222,13 +222,13 @@ jobs:
             echo "Expected exactly one DMG, found ${#DMGS[@]}" >&2
             exit 1
           fi
-          cp "${DMGS[0]}" "dist/Irgatos_${VERSION}_${{ matrix.arch }}.dmg"
-          ls -l dist
+          cp "${DMGS[0]}" "release-artifacts/Irgatos_${VERSION}_${{ matrix.arch }}.dmg"
+          ls -l release-artifacts
 
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}
-          path: dist/
+          path: release-artifacts/
           if-no-files-found: error
 
   host:
