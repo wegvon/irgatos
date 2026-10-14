@@ -110,6 +110,12 @@ import UngroupItemsIcon from "@hugeicons/core-free-icons/UngroupItemsIcon";
 import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
 import WholeWordIcon from "@hugeicons/core-free-icons/WholeWordIcon";
 import Wrench01Icon from "@hugeicons/core-free-icons/Wrench01Icon";
+import Download04Icon from "@hugeicons/core-free-icons/Download04Icon";
+import Image01Icon from "@hugeicons/core-free-icons/Image01Icon";
+import Package01Icon from "@hugeicons/core-free-icons/Package01Icon";
+import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
+import ZoomInAreaIcon from "@hugeicons/core-free-icons/ZoomInAreaIcon";
+import ZoomOutAreaIcon from "@hugeicons/core-free-icons/ZoomOutAreaIcon";
 import { forwardRef, type Ref } from "react";
 
 /** Props shared by every chrome icon. `icon` is filled in by the named wrappers. */
@@ -290,3 +296,9 @@ export const WholeWord = wrap(WholeWordIcon, "WholeWord");
 export const Wrench = wrap(Wrench01Icon, "Wrench");
 export const X = wrap(Cancel01Icon, "X");
 export const Zap = wrap(FlashIcon, "Zap");
+export const Artifacts = wrap(Package01Icon, "Artifacts");
+export const Download = wrap(Download04Icon, "Download");
+export const ImageIcon = wrap(Image01Icon, "ImageIcon");
+export const SourceCode = wrap(SourceCodeIcon, "SourceCode");
+export const ZoomIn = wrap(ZoomInAreaIcon, "ZoomIn");
+export const ZoomOut = wrap(ZoomOutAreaIcon, "ZoomOut");
