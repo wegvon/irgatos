@@ -72,3 +72,5 @@ Contributor image by [contrib.rocks](https://contrib.rocks).
 ## License
 
 [MIT](LICENSE). Provider names and logos are trademarks of their owners. See [NOTICE](NOTICE).
+
+ADHD mode uses the [i-have-adhd](https://github.com/ayghri/i-have-adhd) ruleset by Ayoub Ghriss, under its MIT license in [vendor/i-have-adhd](vendor/i-have-adhd).

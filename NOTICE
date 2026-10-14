@@ -2,3 +2,7 @@ Irgat is not affiliated with, endorsed by, or sponsored by the makers of the
 agent harnesses it can drive.
 
 Provider marks that appear in the UI (including Claude, Codex, Cursor, GitHub, GitLab, Linear, Grok, OpenCode, Pi, omp, fx, Hermes, Nous Research, Devin, and Cognition) are trademarks of their respective owners and are used only to identify those products.
+
+ADHD mode sends the i-have-adhd ruleset (https://github.com/ayghri/i-have-adhd),
+Copyright (c) 2026 Ayoub Ghriss, used under the MIT License. The ruleset and its
+license are kept unmodified in vendor/i-have-adhd/.
