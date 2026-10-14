@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Block, Session } from "./session";
+import { createProgressTracker } from "./deliveryGuards";
 import {
   formatSessionMessagePrompt,
+  guardSessionMessages,
   messageForTurn,
+  sessionMessagesNeedGuard,
   messagesAtBlocks,
   pendingIncomingMessages,
   reconcileSessionMessages,
@@ -260,5 +263,79 @@ describe("message anchors", () => {
     });
     expect(messageForTurn([delivered], target, "r2")).toBe(delivered);
     expect(messageForTurn([delivered], target, "missing")).toBeUndefined();
+  });
+});
+
+describe("guardSessionMessages", () => {
+  const waiting = (id: string) =>
+    session(id, {
+      busy: true,
+      blocks: [{ id: `${id}-t`, role: "tool", text: "", approval: { requestId: 1 } }],
+    });
+
+  it("releases held messages oldest first once the target is free", () => {
+    const progress = createProgressTracker();
+    const messages = [
+      message({ id: "late", status: "blocked", blockedBy: "approval", createdAt: 2_000 }),
+      message({ id: "early", status: "blocked", blockedBy: "approval", createdAt: 1_000 }),
+    ];
+    const held = guardSessionMessages(messages, [waiting("b")], progress, 3_000);
+    expect(held).toEqual({ patches: [], release: [] });
+    const free = guardSessionMessages(messages, [session("b")], progress, 3_000);
+    expect(free.release.map((entry) => entry.id)).toEqual(["early", "late"]);
+  });
+
+  it("ignores composer, delivered and finished messages and missing targets", () => {
+    const progress = createProgressTracker();
+    const result = guardSessionMessages(
+      [
+        message({ id: "c", mode: "composer", dispatchedAt: 0 }),
+        message({ id: "d", status: "delivered", deliveredBlockId: "x", dispatchedAt: 0 }),
+        message({ id: "f", status: "failed", dispatchedAt: 0 }),
+        message({ id: "gone", toSessionId: "zz", dispatchedAt: 0 }),
+      ],
+      [waiting("b")],
+      progress,
+      999_999,
+    );
+    expect(result).toEqual({ patches: [], release: [] });
+  });
+
+  it("flags a stalled message blocked if the target starts asking", () => {
+    const result = guardSessionMessages(
+      [message({ status: "stalled", stalledAt: 5, dispatchedAt: 1 })],
+      [waiting("b")],
+      createProgressTracker(),
+      10,
+    );
+    expect(result.patches).toEqual([
+      { id: "m1", patch: { status: "blocked", blockedBy: "approval", stalledAt: undefined } },
+    ]);
+  });
+});
+
+describe("sessionMessagesNeedGuard", () => {
+  it("is true only for held or dispatched run messages without a carrier", () => {
+    expect(sessionMessagesNeedGuard([message()])).toBe(false);
+    expect(sessionMessagesNeedGuard([message({ dispatchedAt: 1 })])).toBe(true);
+    expect(sessionMessagesNeedGuard([message({ status: "blocked" })])).toBe(true);
+    expect(sessionMessagesNeedGuard([message({ status: "stalled", dispatchedAt: 1 })])).toBe(false);
+    expect(
+      sessionMessagesNeedGuard([message({ dispatchedAt: 1, deliveredBlockId: "u" })]),
+    ).toBe(false);
+  });
+});
+
+describe("pendingIncomingMessages with guards", () => {
+  it("includes held and stalled messages", () => {
+    const pending = pendingIncomingMessages(
+      [
+        message({ id: "h", status: "blocked" }),
+        message({ id: "s", status: "stalled", createdAt: 2 }),
+        message({ id: "f", status: "failed" }),
+      ],
+      "b",
+    );
+    expect(pending.map((entry) => entry.id).sort()).toEqual(["h", "s"]);
   });
 });

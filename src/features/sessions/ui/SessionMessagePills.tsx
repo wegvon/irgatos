@@ -2,13 +2,17 @@ import { useContext, useMemo } from "react";
 import {
   Bot,
   CornerDownRight,
+  ExternalLink,
   RotateCcw,
   Share,
   X,
+  Zap,
 } from "../../../shared/ui/icons";
 import { useSessionMessages } from "../hooks/useSessionMessages";
+import { DELIVERY_BLOCK_LABEL } from "../model/deliveryGuards";
 import {
   dismissSessionMessage,
+  forceSendSessionMessage,
   retrySessionMessage,
 } from "../model/sessionMessageRouter";
 import {
@@ -34,6 +38,10 @@ export function sessionMessageStatusLabel(
   switch (message.status) {
     case "queued":
       return "Queued";
+    case "blocked":
+      return DELIVERY_BLOCK_LABEL[message.blockedBy ?? "approval"];
+    case "stalled":
+      return "Stalled";
     case "delivered":
       if (message.mode === "composer" && !message.deliveredBlockId) {
         return "In composer";
@@ -52,6 +60,8 @@ export function sessionMessageStatusLabel(
 
 const STATUS_TONE: Record<InterSessionMessage["status"], string> = {
   queued: "bg-content/8 text-content/60",
+  blocked: "bg-amber-500/15 text-amber-500",
+  stalled: "bg-orange-500/15 text-orange-400",
   delivered: "bg-accent/15 text-accent",
   replied: "bg-emerald-500/15 text-emerald-400",
   failed: "bg-red-500/15 text-red-400",
@@ -65,9 +75,24 @@ function receiptTitle(message: InterSessionMessage): string {
   if (message.repliedAt) {
     lines.push(`Replied ${new Date(message.repliedAt).toLocaleString()}`);
   }
+  if (message.status === "blocked") {
+    lines.push(
+      message.blockedBy === "question"
+        ? `Held until "${message.toTitle}" gets an answer to its question`
+        : `Held until a tool call in "${message.toTitle}" is approved or denied`,
+    );
+  }
+  if (message.status === "stalled" && message.stalledAt) {
+    lines.push(
+      `"${message.toTitle}" showed no progress; stalled ${new Date(message.stalledAt).toLocaleString()}`,
+    );
+  }
   if (message.error) lines.push(message.error);
   return lines.join("\n");
 }
+
+const ACTION =
+  "grid size-4 shrink-0 place-items-center rounded-full text-content/50 hover:bg-content/10 hover:text-content";
 
 /** Inter-session messages sent from, or delivered into, these blocks. */
 export function SessionMessagePills({
@@ -162,15 +187,77 @@ export function SessionMessagePill({
       >
         {sessionMessageStatusLabel(message)}
       </span>
+      {message.status === "blocked" ? (
+        <>
+          {!incoming ? (
+            <button
+              type="button"
+              data-session-message-action="open-blocker"
+              title={
+                message.blockedBy === "question"
+                  ? `Open “${message.toTitle}” to answer`
+                  : `Open “${message.toTitle}” to approve`
+              }
+              aria-label={
+                message.blockedBy === "question"
+                  ? `Open “${message.toTitle}” to answer`
+                  : `Open “${message.toTitle}” to approve`
+              }
+              onClick={() =>
+                requestOpenReferencedSession({ sessionId: message.toSessionId })
+              }
+              className={ACTION}
+            >
+              <ExternalLink className="size-2.5" strokeWidth={2} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            data-session-message-action="force-send"
+            title="Send anyway; it waits behind what the session is asking"
+            aria-label="Send anyway"
+            onClick={() => forceSendSessionMessage(message.id)}
+            className={ACTION}
+          >
+            <Zap className="size-2.5" strokeWidth={2} />
+          </button>
+        </>
+      ) : null}
+      {message.status === "stalled" ? (
+        <>
+          <button
+            type="button"
+            data-session-message-action="retry"
+            title="Send again"
+            aria-label="Send again"
+            onClick={() => retrySessionMessage(message.id)}
+            className={ACTION}
+          >
+            <RotateCcw className="size-2.5" strokeWidth={2} />
+          </button>
+          {!incoming ? (
+            <button
+              type="button"
+              title="Dismiss"
+              aria-label="Dismiss"
+              onClick={() => dismissSessionMessage(message.id)}
+              className={ACTION}
+            >
+              <X className="size-2.5" strokeWidth={2} />
+            </button>
+          ) : null}
+        </>
+      ) : null}
       {message.status === "failed" && !incoming ? (
         <>
           {message.toSessionId ? (
             <button
               type="button"
+              data-session-message-action="retry"
               title="Send again"
               aria-label="Send again"
               onClick={() => retrySessionMessage(message.id)}
-              className="grid size-4 shrink-0 place-items-center rounded-full text-content/50 hover:bg-content/10 hover:text-content"
+              className={ACTION}
             >
               <RotateCcw className="size-2.5" strokeWidth={2} />
             </button>
@@ -180,7 +267,7 @@ export function SessionMessagePill({
             title="Dismiss"
             aria-label="Dismiss"
             onClick={() => dismissSessionMessage(message.id)}
-            className="grid size-4 shrink-0 place-items-center rounded-full text-content/50 hover:bg-content/10 hover:text-content"
+            className={ACTION}
           >
             <X className="size-2.5" strokeWidth={2} />
           </button>

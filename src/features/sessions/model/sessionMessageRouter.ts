@@ -8,9 +8,16 @@ import {
 import { insertSessionMessageIntoComposer } from "./sessionReferenceEvents";
 import { sessionDisplayTitle, type Block, type Session } from "./session";
 import {
+  createProgressTracker,
+  deliveryBlock,
+  type ProgressTracker,
+} from "./deliveryGuards";
+import {
   MAX_SESSION_MESSAGE_HOPS,
   formatSessionMessagePrompt,
+  guardSessionMessages,
   messageForTurn,
+  sessionMessagesNeedGuard,
   reconcileSessionMessages,
   type InterSessionMessage,
   type SessionMessageMode,
@@ -77,7 +84,10 @@ export type RouterDeps = {
   transport?: SessionMessageTransport | null;
   now?: () => number;
   newId?: () => string;
+  progress?: ProgressTracker;
 };
+
+const targetProgress = createProgressTracker();
 
 function resolveDeps(deps: RouterDeps = {}) {
   return {
@@ -85,6 +95,7 @@ function resolveDeps(deps: RouterDeps = {}) {
     transport: deps.transport === undefined ? transport : deps.transport,
     now: deps.now ?? Date.now,
     newId: deps.newId ?? (() => crypto.randomUUID()),
+    progress: deps.progress ?? targetProgress,
   };
 }
 
@@ -156,7 +167,11 @@ function recordFailure(
   });
 }
 
-function deliver(message: InterSessionMessage, deps?: RouterDeps): void {
+function deliver(
+  message: InterSessionMessage,
+  deps?: RouterDeps,
+  { force = false }: { force?: boolean } = {},
+): void {
   const { store, transport: link, now } = resolveDeps(deps);
   const prompt = formatSessionMessagePrompt(message);
   if (message.mode === "composer") {
@@ -186,6 +201,17 @@ function deliver(message: InterSessionMessage, deps?: RouterDeps): void {
     });
     return;
   }
+  const block = force ? null : deliveryBlock(target);
+  if (block) {
+    store.update(message.id, {
+      status: "blocked",
+      blockedBy: block,
+      dispatchedAt: undefined,
+      stalledAt: undefined,
+      error: undefined,
+    });
+    return;
+  }
   let accepted = false;
   try {
     accepted = link.submit(message.toSessionId, prompt);
@@ -199,7 +225,13 @@ function deliver(message: InterSessionMessage, deps?: RouterDeps): void {
   store.update(
     message.id,
     accepted
-      ? { status: "queued", error: undefined }
+      ? {
+          status: "queued",
+          dispatchedAt: now(),
+          blockedBy: undefined,
+          stalledAt: undefined,
+          error: undefined,
+        }
       : {
           status: "failed",
           error: `"${message.toTitle}" didn't accept the message.`,
@@ -207,15 +239,48 @@ function deliver(message: InterSessionMessage, deps?: RouterDeps): void {
   );
 }
 
-/** Send a failed message again, as a new delivery of the same text. */
+/**
+ * Send a failed or stalled message again, as a new delivery of the same
+ * text. The delivery guards still apply, so a blocked target holds it.
+ */
 export function retrySessionMessage(id: string, deps?: RouterDeps): boolean {
+  return redeliver(id, ["failed", "stalled"], false, deps);
+}
+
+/**
+ * Submit a blocked or stalled message now, past the delivery guards: the
+ * user has seen what the target is waiting on and wants the prompt in anyway.
+ */
+export function forceSendSessionMessage(id: string, deps?: RouterDeps): boolean {
+  return redeliver(id, ["blocked", "stalled"], true, deps);
+}
+
+function redeliver(
+  id: string,
+  from: readonly InterSessionMessage["status"][],
+  force: boolean,
+  deps?: RouterDeps,
+): boolean {
   const { store, now } = resolveDeps(deps);
   const message = store.get(id);
-  if (!message || message.status !== "failed" || !message.toSessionId) {
+  if (
+    !message ||
+    !from.includes(message.status) ||
+    !message.toSessionId ||
+    message.deliveredBlockId
+  ) {
     return false;
   }
-  store.update(id, { status: "queued", createdAt: now(), error: undefined });
-  deliver({ ...message, status: "queued", createdAt: now() }, deps);
+  const reset = {
+    status: "queued" as const,
+    createdAt: now(),
+    dispatchedAt: undefined,
+    blockedBy: undefined,
+    stalledAt: undefined,
+    error: undefined,
+  };
+  store.update(id, reset);
+  deliver({ ...message, ...reset }, deps, { force });
   return store.get(id)?.status !== "failed";
 }
 
@@ -267,9 +332,59 @@ export function syncSessionMessages(
 ): void {
   const { store, now } = resolveDeps(deps);
   store.apply(reconcileSessionMessages(store.snapshot(), sessions, now()));
+  checkSessionMessageGuards(sessions, deps);
   forwardReplies(sessions, deps);
   const mode = loadCooperativeMode();
   if (mode.enabled) runDirectives(sessions, mode.since, deps);
+}
+
+/**
+ * Hold messages for blocked targets, release them once unblocked, and flag
+ * stalled deliveries. Runs on every session change and on a timer, since a
+ * stall is the absence of change.
+ */
+export function checkSessionMessageGuards(
+  sessions: readonly Session[],
+  deps?: RouterDeps,
+): void {
+  const { store, now, progress } = resolveDeps(deps);
+  const at = now();
+  progress.observe(sessions, at);
+  const { patches, release } = guardSessionMessages(
+    store.snapshot(),
+    sessions,
+    progress,
+    at,
+  );
+  store.apply(patches);
+  for (const message of release) {
+    const current = store.get(message.id);
+    if (current?.status === "blocked") deliver(current, deps);
+  }
+}
+
+/** How often held and dispatched messages are looked at between changes. */
+export const SESSION_MESSAGE_GUARD_INTERVAL_MS = 5_000;
+
+/** Re-checks the guards on a timer while any message needs it. */
+export function startSessionMessageGuardTimer(
+  sessions: () => readonly Session[],
+  deps?: RouterDeps,
+  interval: {
+    set: (fn: () => void, ms: number) => unknown;
+    clear: (handle: unknown) => void;
+  } = {
+    set: (fn, ms) => globalThis.setInterval(fn, ms),
+    clear: (handle) =>
+      globalThis.clearInterval(handle as ReturnType<typeof setInterval>),
+  },
+): () => void {
+  const handle = interval.set(() => {
+    if (sessionMessagesNeedGuard(resolveDeps(deps).store.snapshot())) {
+      checkSessionMessageGuards(sessions(), deps);
+    }
+  }, SESSION_MESSAGE_GUARD_INTERVAL_MS);
+  return () => interval.clear(handle);
 }
 
 function forwardReplies(sessions: readonly Session[], deps?: RouterDeps) {

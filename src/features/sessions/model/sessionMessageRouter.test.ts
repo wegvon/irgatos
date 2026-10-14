@@ -8,9 +8,18 @@ import {
 } from "../data/sessionMessageStore";
 import type { Block, Session } from "./session";
 import {
+  DELIVERY_ACK_TIMEOUT_MS,
+  DELIVERY_PROGRESS_TIMEOUT_MS,
+  createProgressTracker,
+} from "./deliveryGuards";
+import {
+  SESSION_MESSAGE_GUARD_INTERVAL_MS,
   applyCooperativeBridgeToTurn,
+  checkSessionMessageGuards,
+  forceSendSessionMessage,
   retrySessionMessage,
   sendSessionMessage,
+  startSessionMessageGuardTimer,
   syncSessionMessages,
   type RouterDeps,
   type SessionMessageTransport,
@@ -332,5 +341,161 @@ describe("applyCooperativeBridgeToTurn", () => {
       applyCooperativeBridgeToTurn("more", own.id, [...live, tests]),
     ).toContain('"Tests"');
     expect(applyCooperativeBridgeToTurn("solo", own.id, [own])).toBe("solo");
+  });
+});
+
+describe("delivery guards", () => {
+  const approval = (target: Session, requestId = 7): Session => ({
+    ...target,
+    busy: true,
+    blocks: [{ id: `${target.id}-tool`, role: "tool", text: "rm -rf build", approval: { requestId } }],
+  });
+  const asking = (target: Session): Session => ({
+    ...target,
+    busy: true,
+    pendingQuestion: { requestId: 9, questions: [] } as unknown as Session["pendingQuestion"],
+  });
+  const send = (to: Session = docs) =>
+    sendSessionMessage({ from: lead, to: [to], text: "Ship it", mode: "run", origin: "user" }, deps)[0]!;
+
+  beforeEach(() => {
+    deps.progress = createProgressTracker();
+  });
+
+  it("holds a prompt for a target waiting on approval instead of submitting it", () => {
+    sessions = [lead, approval(docs), tests];
+    const held = send();
+    expect(submit).not.toHaveBeenCalled();
+    expect(held).toMatchObject({ status: "blocked", blockedBy: "approval" });
+    expect(held.dispatchedAt).toBeUndefined();
+  });
+
+  it("holds a prompt for a target waiting on an answer", () => {
+    sessions = [lead, asking(docs), tests];
+    expect(send()).toMatchObject({ status: "blocked", blockedBy: "question" });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("releases a held prompt once the target is unblocked", () => {
+    sessions = [lead, approval(docs), tests];
+    const held = send();
+    syncSessionMessages(sessions, deps);
+    expect(submit).not.toHaveBeenCalled();
+    clock = 2_000;
+    sessions = [lead, { ...docs, busy: true }, tests];
+    syncSessionMessages(sessions, deps);
+    expect(submit).toHaveBeenCalledWith(docs.id, '[Message from session "Lead"]\n\nShip it');
+    expect(store.get(held.id)).toMatchObject({ status: "queued", dispatchedAt: 2_000 });
+    expect(store.get(held.id)?.blockedBy).toBeUndefined();
+  });
+
+  it("follows the target from approval to question while holding", () => {
+    sessions = [lead, approval(docs), tests];
+    const held = send();
+    sessions = [lead, asking(docs), tests];
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(held.id)).toMatchObject({ status: "blocked", blockedBy: "question" });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("shows a submitted prompt as blocked while the target waits, then queued again", () => {
+    sessions = [lead, { ...docs, busy: true }, tests];
+    const queued = send();
+    expect(queued).toMatchObject({ status: "queued", dispatchedAt: 1_000 });
+    sessions = [lead, approval(docs), tests];
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)).toMatchObject({ status: "blocked", blockedBy: "approval" });
+    clock = 4_000;
+    sessions = [lead, { ...docs, busy: true }, tests];
+    checkSessionMessageGuards(sessions, deps);
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(store.get(queued.id)).toMatchObject({ status: "queued", dispatchedAt: 4_000 });
+  });
+
+  it("marks a prompt stalled when an idle target never starts the turn", () => {
+    const queued = send();
+    checkSessionMessageGuards(sessions, deps);
+    clock = 1_000 + DELIVERY_ACK_TIMEOUT_MS - 1;
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)?.status).toBe("queued");
+    clock = 1_000 + DELIVERY_ACK_TIMEOUT_MS;
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)).toMatchObject({ status: "stalled", stalledAt: clock });
+  });
+
+  it("marks a prompt stalled when a running target stops making progress", () => {
+    sessions = [lead, { ...docs, busy: true, blocks: [{ id: "a", role: "assistant", text: "w" }] }, tests];
+    const queued = send();
+    checkSessionMessageGuards(sessions, deps);
+    clock = 60_000;
+    sessions = [lead, { ...docs, busy: true, blocks: [{ id: "a", role: "assistant", text: "working" }] }, tests];
+    checkSessionMessageGuards(sessions, deps);
+    clock = 60_000 + DELIVERY_PROGRESS_TIMEOUT_MS - 1;
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)?.status).toBe("queued");
+    clock = 60_000 + DELIVERY_PROGRESS_TIMEOUT_MS;
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)?.status).toBe("stalled");
+  });
+
+  it("counts a stalled prompt delivered once a turn carries it after all", () => {
+    const queued = send();
+    checkSessionMessageGuards(sessions, deps);
+    clock = 1_000 + DELIVERY_ACK_TIMEOUT_MS;
+    checkSessionMessageGuards(sessions, deps);
+    expect(store.get(queued.id)?.status).toBe("stalled");
+    sessions = [lead, delivered(docs, formatSessionMessagePrompt(queued), "", true), tests];
+    syncSessionMessages(sessions, deps);
+    expect(store.get(queued.id)).toMatchObject({ status: "delivered" });
+    expect(store.get(queued.id)?.stalledAt).toBeUndefined();
+  });
+
+  it("retries a stalled prompt and force-sends a blocked one", () => {
+    const stalled = send();
+    checkSessionMessageGuards(sessions, deps);
+    clock = 1_000 + DELIVERY_ACK_TIMEOUT_MS;
+    checkSessionMessageGuards(sessions, deps);
+    expect(retrySessionMessage(stalled.id, deps)).toBe(true);
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(store.get(stalled.id)).toMatchObject({ status: "queued", dispatchedAt: clock });
+
+    sessions = [lead, approval(docs), tests];
+    const held = send();
+    expect(retrySessionMessage(held.id, deps)).toBe(false);
+    expect(forceSendSessionMessage(held.id, deps)).toBe(true);
+    expect(submit).toHaveBeenCalledTimes(3);
+    expect(store.get(held.id)).toMatchObject({ status: "queued" });
+    expect(forceSendSessionMessage(held.id, deps)).toBe(false);
+  });
+
+  it("leaves composer messages alone", () => {
+    sessions = [lead, approval(docs), tests];
+    const [placed] = sendSessionMessage(
+      { from: lead, to: [docs], text: "Look", mode: "composer", origin: "user" },
+      deps,
+    );
+    expect(placed).toMatchObject({ status: "delivered" });
+    expect(insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-checks on a timer only while a message needs it", () => {
+    let tick: (() => void) | undefined;
+    const set = vi.fn((fn: () => void, ms: number) => {
+      expect(ms).toBe(SESSION_MESSAGE_GUARD_INTERVAL_MS);
+      tick = fn;
+      return 1;
+    });
+    const clear = vi.fn();
+    const stop = startSessionMessageGuardTimer(() => sessions, deps, { set, clear });
+    const apply = vi.spyOn(store, "apply");
+    tick!();
+    expect(apply).not.toHaveBeenCalled();
+    const queued = send();
+    tick!();
+    clock = 1_000 + DELIVERY_ACK_TIMEOUT_MS;
+    tick!();
+    expect(store.get(queued.id)?.status).toBe("stalled");
+    stop();
+    expect(clear).toHaveBeenCalledWith(1);
   });
 });

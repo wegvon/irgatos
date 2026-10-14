@@ -791,6 +791,7 @@ import { requestTranscriptJump } from "../features/sessions/model/transcriptJump
 import { publishLiveSessions } from "../features/sessions/data/sessionReferenceDirectory";
 import {
   connectSessionMessageTransport,
+  startSessionMessageGuardTimer,
   syncSessionMessages,
 } from "../features/sessions/model/sessionMessageRouter";
 import { SessionReferenceHost } from "../features/sessions/ui/SessionReferenceHost";
@@ -8812,6 +8813,10 @@ function Workspace({
     [onSubmit],
   );
   useEffect(() => syncSessionMessages(sessions), [sessions]);
+  useEffect(
+    () => startSessionMessageGuardTimer(() => sessionsRef.current),
+    [],
+  );
 
   // onApproval is created once; it reaches the current helper through this.
   const decideIrgatBlockRef = useRef<

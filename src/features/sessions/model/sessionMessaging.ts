@@ -1,13 +1,28 @@
 import { pathKey } from "../../../shared/lib/paths";
+import {
+  deliveryBlock,
+  isDeliveryStalled,
+  toolInFlight,
+  type DeliveryBlock,
+  type ProgressTracker,
+} from "./deliveryGuards";
 import type { Block, HarnessId, Session } from "./session";
 
 /**
  * Direct messages between sessions. A message is `queued` until the target
  * holds it (a submitted turn, or text placed in its composer), `delivered`
  * from then, and `replied` once the target's agent has answered the turn the
- * message started.
+ * message started. A message to run is `blocked` while its target waits on
+ * an approval or a question, and `stalled` when it was handed over but the
+ * target showed no progress in time.
  */
-export type SessionMessageStatus = "queued" | "delivered" | "replied" | "failed";
+export type SessionMessageStatus =
+  | "queued"
+  | "blocked"
+  | "stalled"
+  | "delivered"
+  | "replied"
+  | "failed";
 
 /** `composer` leaves the message in the target's draft; `run` submits it. */
 export type SessionMessageMode = "composer" | "run";
@@ -46,6 +61,11 @@ export type InterSessionMessage = {
   replyText?: string;
   /** The reply has been sent back to the sender. */
   replyForwardedAt?: number;
+  /** When the target's submit path accepted the prompt. */
+  dispatchedAt?: number;
+  /** What the target was waiting on while the message was `blocked`. */
+  blockedBy?: DeliveryBlock;
+  stalledAt?: number;
   error?: string;
 };
 
@@ -196,9 +216,11 @@ export function reconcileSessionMessages(
         claimed.add(`${target.id}:${carrier.id}`);
         carrierId = carrier.id;
         patch.deliveredBlockId = carrier.id;
-        if (message.status === "queued") {
+        if (awaitingCarrier(message.status)) {
           patch.status = "delivered";
           patch.deliveredAt = carrier.startedAt ?? carrier.sentAt ?? now;
+          if (message.blockedBy) patch.blockedBy = undefined;
+          if (message.stalledAt) patch.stalledAt = undefined;
         }
       }
     }
@@ -209,7 +231,7 @@ export function reconcileSessionMessages(
         patch.repliedAt = now;
         patch.replyBlockId = reply.blockId;
         patch.replyText = reply.text;
-        if (message.status === "queued" && !patch.deliveredAt) {
+        if (awaitingCarrier(message.status) && !patch.deliveredAt) {
           patch.deliveredAt = now;
         }
       }
@@ -217,6 +239,89 @@ export function reconcileSessionMessages(
     if (Object.keys(patch).length) patches.push({ id: message.id, patch });
   }
   return patches;
+}
+
+function awaitingCarrier(status: SessionMessageStatus): boolean {
+  return status === "queued" || status === "blocked" || status === "stalled";
+}
+
+/** What the delivery guards want done after one look at the sessions. */
+export type SessionMessageGuardResult = {
+  patches: SessionMessagePatch[];
+  /** Held back while the target was blocked, and now free to submit. */
+  release: InterSessionMessage[];
+};
+
+/**
+ * Hold, release and flag `run` messages from what their targets are doing.
+ * A message not yet submitted waits as `blocked` while its target needs the
+ * user, and is released once it does not; one already submitted shows as
+ * `blocked` meanwhile and goes back to `queued` after. A submitted message
+ * that no turn has picked up turns `stalled` when its target stops making
+ * progress (`deliveryGuards.ts`).
+ */
+export function guardSessionMessages(
+  messages: readonly InterSessionMessage[],
+  sessions: readonly Session[],
+  progress: ProgressTracker,
+  now = Date.now(),
+): SessionMessageGuardResult {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const patches: SessionMessagePatch[] = [];
+  const release: InterSessionMessage[] = [];
+  const ordered = [...messages].sort((a, b) => a.createdAt - b.createdAt);
+  for (const message of ordered) {
+    if (message.mode !== "run" || message.deliveredBlockId) continue;
+    if (!awaitingCarrier(message.status)) continue;
+    const target = byId.get(message.toSessionId);
+    if (!target) continue;
+    const block = deliveryBlock(target);
+    if (block) {
+      if (message.status !== "blocked" || message.blockedBy !== block) {
+        patches.push({
+          id: message.id,
+          patch: { status: "blocked", blockedBy: block, stalledAt: undefined },
+        });
+      }
+      continue;
+    }
+    if (message.status === "blocked") {
+      if (message.dispatchedAt == null) release.push(message);
+      else {
+        patches.push({
+          id: message.id,
+          patch: { status: "queued", blockedBy: undefined, dispatchedAt: now },
+        });
+      }
+      continue;
+    }
+    if (message.status !== "queued" || message.dispatchedAt == null) continue;
+    if (
+      isDeliveryStalled({
+        dispatchedAt: message.dispatchedAt,
+        busy: !!target.busy,
+        toolRunning: toolInFlight(target),
+        lastProgressAt: progress.lastProgressAt(target.id),
+        now,
+      })
+    ) {
+      patches.push({ id: message.id, patch: { status: "stalled", stalledAt: now } });
+    }
+  }
+  return { patches, release };
+}
+
+/** Messages the guards still have to look at again later. */
+export function sessionMessagesNeedGuard(
+  messages: readonly InterSessionMessage[],
+): boolean {
+  return messages.some(
+    (message) =>
+      message.mode === "run" &&
+      !message.deliveredBlockId &&
+      (message.status === "blocked" ||
+        (message.status === "queued" && message.dispatchedAt != null)),
+  );
 }
 
 function findCarrierBlock(
@@ -337,7 +442,8 @@ export function pendingIncomingMessages(
       (message) =>
         message.toSessionId === sessionId &&
         !message.deliveredBlockId &&
-        (message.status === "queued" || message.status === "delivered"),
+        message.status !== "failed" &&
+        message.status !== "replied",
     )
     .sort((a, b) => a.createdAt - b.createdAt);
 }

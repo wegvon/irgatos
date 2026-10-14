@@ -124,3 +124,66 @@ describe("PendingSessionMessages", () => {
     expect(pill()?.textContent).toContain("Queued");
   });
 });
+
+describe("SessionMessagePills delivery guards", () => {
+  const held = (patch: Partial<InterSessionMessage> = {}) =>
+    message({
+      status: "blocked",
+      blockedBy: "approval",
+      deliveredAt: undefined,
+      deliveredBlockId: undefined,
+      ...patch,
+    });
+
+  it("labels a held message and jumps to the blocked session", () => {
+    sessionMessageStore.add(held());
+    renderPills("lead", ["lead-r1"]);
+    expect(pill()?.dataset.status).toBe("blocked");
+    expect(pill()?.textContent).toContain("Waiting for approval");
+    expect(pill()?.title).toContain("Held until a tool call in \"Docs\" is approved");
+    const opened = vi.fn();
+    window.addEventListener(OPEN_REFERENCED_SESSION_EVENT, opened);
+    act(() =>
+      pill()
+        ?.querySelector<HTMLButtonElement>('[data-session-message-action="open-blocker"]')
+        ?.click(),
+    );
+    window.removeEventListener(OPEN_REFERENCED_SESSION_EVENT, opened);
+    expect((opened.mock.calls[0]![0] as CustomEvent).detail).toEqual({ sessionId: "docs" });
+  });
+
+  it("names a question the target is waiting on", () => {
+    sessionMessageStore.add(held({ blockedBy: "question" }));
+    renderPills("lead", ["lead-r1"]);
+    expect(pill()?.textContent).toContain("Waiting for an answer");
+    expect(
+      pill()?.querySelector('[data-session-message-action="open-blocker"]')?.getAttribute(
+        "aria-label",
+      ),
+    ).toBe("Open “Docs” to answer");
+  });
+
+  it("offers force-send for a held message and retry for a stalled one", () => {
+    sessionMessageStore.add(held());
+    sessionMessageStore.add(
+      held({ id: "m2", status: "stalled", blockedBy: undefined, stalledAt: 5_000, sourceBlockId: "lead-r2" }),
+    );
+    renderPills("lead", ["lead-r1", "lead-r2"]);
+    const pills = container.querySelectorAll<HTMLElement>("[data-session-message-pill]");
+    expect(pills[0]?.querySelector('[data-session-message-action="force-send"]')).not.toBeNull();
+    expect(pills[1]?.dataset.status).toBe("stalled");
+    expect(pills[1]?.textContent).toContain("Stalled");
+    expect(pills[1]?.querySelector('[data-session-message-action="retry"]')).not.toBeNull();
+    expect(pills[1]?.querySelector('[data-session-message-action="force-send"]')).toBeNull();
+  });
+
+  it("lists held messages among the target's pending incoming ones", () => {
+    sessionMessageStore.add(held());
+    act(() => root.render(createElement(PendingSessionMessages, { sessionId: "docs" })));
+    const incoming = pill();
+    expect(incoming?.dataset.direction).toBe("incoming");
+    expect(incoming?.textContent).toContain("Waiting for approval");
+    expect(incoming?.querySelector('[data-session-message-action="open-blocker"]')).toBeNull();
+    expect(incoming?.querySelector('[data-session-message-action="force-send"]')).not.toBeNull();
+  });
+});
