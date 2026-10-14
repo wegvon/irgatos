@@ -11,6 +11,8 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-14
+
 ### Added
 
 - **ADHD mode.** Built in from [i-have-adhd](https://github.com/ayghri/i-have-adhd) by Ayoub Ghriss (MIT). When it is on, every session and Irgat chat gets the upstream ruleset with its next message: lead with the next action, number multi-step work, end with one concrete next step, suppress tangents, restate state every turn, give estimates in minutes, make wins visible, state errors plainly, cap lists at five and drop the preamble, recaps and closers.
@@ -22,8 +24,10 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
   - Gemini can hand real work to the chat's agent (`delegate_to_irgat_session`) and tells you the result when it finishes. It can also save a note (`save_irgat_note`) and, for Irgats, remember a fact (`update_irgat_memory`).
   - What both sides said is added to the chat, and the next typed message carries it to the agent.
   - **Settings › Voice › Live voice (Gemini)** stores the API key, or picks up `GEMINI_API_KEY` / `GOOGLE_API_KEY` from your shell. It also sets the voice (Puck, Charon, Kore, Fenrir, Aoede), the model, interrupt-on-speech and whether calls are saved to the chat.
-### Added
-
+- **Redline batch review.** Collect review notes while you read and send them to the agent as one turn, following the guided review flow of [hermes-redline](https://github.com/silentpr0/hermes-redline) (MIT).
+  - **Add to Review** sits beside **Add to chat** on editor selections, diff line comments, transcript replies and plans, Artifacts and Irgat documents, Markdown previews and plan tabs. Each note is a change, a question or a comment and keeps the quoted lines it is about.
+  - The review tray above the composer lists the open notes to inspect, edit, delete, resolve or reopen. **Submit Review** sends them as one numbered turn, or inserts them into the draft.
+  - The title bar badge shows how many notes are open for the project or Irgat in front and opens the tray. Notes are kept per project or Irgat in the app, never as files in the working tree.
 - **Coding agents in plain terminals.** A terminal tab or dock running Claude Code, Codex, Cursor Agent, Gemini CLI, OpenCode, GitHub Copilot CLI, Amp, Qwen Code or any other of the 24 agents in the catalog now shows which agent it is and whether it is working, waiting for you, idle or done, read from the screen the agent draws. The patterns are adapted from [herdr](https://github.com/herdrdev/herdr) (Apache-2.0).
   - A badge on the terminal's tab names the agent and its state, pulsing while it works and amber while it waits for you.
   - The Kanban board lists running terminal agents above the columns, and a click opens their terminal.
@@ -31,6 +35,18 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 - **Messages wait for a busy session.** A session message sent to a session that is waiting on a tool approval or a question is held as **Blocked** instead of being typed into the prompt. It goes out on its own once the session is free; the pill can open that session to approve or answer, or send the message anyway.
   - A message the target has not picked up, or stopped making progress on, is marked **Stalled** and can be sent again.
 - **Group chats show who is stuck.** The room's status bar says when the member replying waits on an approval or a question (answer it right in the room) or has stalled, with **Answer** or **Review** to jump there, and **Retry** or **Skip** for a stalled turn.
+- **Inbox snooze and triage.** Snooze any Inbox item for an hour, until later today, tomorrow morning, next week or a custom time. Snoozes survive restarts and the item comes back with a **Back in your Inbox** toast and a badge when the time is up.
+  - Triage pills **All**, **Needs action**, **Agent activity**, **Drafts** and **Snoozed**, each with a live count, and the last pill is remembered.
+  - Replies you start on an Inbox item are kept as drafts per item until sent.
+- **Completion Gate.** A validator that runs after each agent turn: `npx tsc --noEmit`, `npm test`, `cargo check` or your own command, switched on per project (**Settings > Worktrees**) or per session (the bar above the composer).
+  - Exit 0, or a run that times out, marks the turn **Verified ✓**. A failing check sends its output back to the agent as a follow-up so it fixes its own errors, up to 3 times per message you send, with **Stop retries**.
+  - The command runs in its own process group with `CI=1` and `IRGATOS_CHECK=1` and is stopped on timeout or cancel.
+- **Habit guards and triggers.** On a habit's page:
+  - **Ask before each run** puts the run in Fleet's **Needs you** and on the habit's card with **Approve** and **Skip**. An approval nobody answers lapses after 12 hours.
+  - **Only run if** a command passes (exit 0, 60 second limit) or an expression is true, such as `now.weekday != 0 && trigger.json.branch == "main"`. A false condition skips the run without starting an agent and records why.
+  - **Wait before running** delays a due or triggered run by up to a day.
+  - **Trigger** gives the habit a secret local URL (`curl -X POST http://127.0.0.1:47615/habits/<token>`) that only this computer can reach, so scripts and CI can start it. The request body reaches the run as quoted data and as `trigger.payload` / `trigger.json`.
+  - Irgats can set the same guards through `app habits.add` / `habits.update`, but only you can turn approval off.
 
 ### Fixed
 
