@@ -41,6 +41,10 @@ import {
 } from "./UsageProviderChip";
 import { PiUsage } from "./PiUsage";
 import {
+  AdhdModeChip,
+  type AdhdChipSession,
+} from "../../features/adhd/ui/AdhdModeChip";
+import {
   ProviderSignInPanel,
   type ProviderSignInState,
 } from "../../features/sessions/ui/ProviderSignInPanel";
@@ -79,10 +83,13 @@ export function UsageFooter({
   onToggleBrowser,
   onSelectAccount,
   onManageAccounts,
+  adhd,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
   project?: string;
+  /** Show the ADHD mode switch, with this chat's next step when one is open. */
+  adhd?: { session?: AdhdChipSession };
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
@@ -137,8 +144,9 @@ export function UsageFooter({
           ) : null
         }
       />
-      {showTerminals || showTerminalButton || onToggleBrowser ? (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+      {adhd || showTerminals || showTerminalButton || onToggleBrowser ? (
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          {adhd ? <AdhdModeChip session={adhd.session} /> : null}
           {onToggleBrowser ? (
             <button
               type="button"

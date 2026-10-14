@@ -83,6 +83,7 @@ import type { LaunchedSessionView } from "../../irgats/model/irgatSpawnedSession
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
+import { AdhdModeChip } from "../../adhd/ui/AdhdModeChip";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
 import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
@@ -1323,6 +1324,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           accountPicker={false}
                           variant="composer"
                         />
+                        <AdhdModeChip session={session} variant="composer" />
                       </div>
                     }
                     controls={
