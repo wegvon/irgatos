@@ -151,8 +151,9 @@ const isLiveOnlyTab = (file: FilePaneTab) =>
 
 /**
  * Agent tabs watch a live worker, and a run does not outlive the window that
- * started it; artifact tabs read the live artifact registry. Dropping them in `sanitizeFile` would strand an empty pane and
- * cost the whole workspace tab on restore, so the pane is closed here instead.
+ * started it; artifact tabs read the live artifact registry. Dropping them in
+ * `sanitizeFile` would strand an empty pane and cost the whole workspace tab
+ * on restore, so the pane is closed here instead.
  */
 function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   return tabs.flatMap((tab) => {

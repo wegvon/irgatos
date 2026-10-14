@@ -9,6 +9,7 @@ import {
   leaf,
   leafIds,
   newAgentTab,
+  newArtifactTab,
   newChangesTab,
   newCommitTab,
   newFileTab,
@@ -280,6 +281,40 @@ describe("collectWorkspaceSnapshot", () => {
     ]);
     expect(panes[0]!.activeFileId).toBe(file.id);
     expect(leafIds(snapshot.tabs[0]!.layout)).toEqual(["s1"]);
+  });
+
+  it("drops artifact tabs, which only the live registry can fill", () => {
+    const file = newFileTab("/tmp/a/README.md", "/tmp/a");
+    const artifact = newArtifactTab(
+      { id: "snippet:s1:b1:0", title: "Landing page", fileName: "landing.html" },
+      "/tmp/a",
+    );
+    const lone = newArtifactTab(
+      { id: "file:/tmp/a/x.ts", title: "x.ts", fileName: "x.ts" },
+      "/tmp/a",
+    );
+    const tab = {
+      ...newTab("s1"),
+      id: "t1",
+      layout: splitPane(newTab("s1").layout, "s1", "right", "e1"),
+      editorPanes: [
+        { id: "e1", files: [lone], activeFileId: lone.id },
+        { id: "e2", files: [file, artifact], activeFileId: artifact.id },
+      ],
+    };
+    const snapshot = collectWorkspaceSnapshot(
+      [tab],
+      [],
+      "t1",
+      "/tmp/a",
+      new Map(),
+    );
+    const panes = snapshot.tabs[0]!.editorPanes;
+    expect(panes.map((pane) => pane.id)).toEqual(["e2"]);
+    expect(panes[0]!.files.map((entry) => entry.path)).toEqual([
+      "/tmp/a/README.md",
+    ]);
+    expect(panes[0]!.activeFileId).toBe(file.id);
   });
 
   it("round-trips a unified Changes tab", () => {
