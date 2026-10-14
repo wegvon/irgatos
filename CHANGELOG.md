@@ -11,6 +11,8 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Added
 
 - **Artifacts.** A new Artifacts tab sits beside Sessions, Explorer and Changes, with a count badge, and in every Irgat's overview. It gathers what the agents made: files written or edited by tool calls, HTML pages, SVG graphics, Mermaid diagrams, Markdown documents and plans, long or named code, JSON and SQL blocks, images and attachments (page-annotation screenshots included), plus anything you pin or create yourself.
@@ -52,5 +54,6 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 - The macOS bundle uses the Irgatos `.icns` icon.
 - Handing a session off to Claude Code, Codex or OpenCode through a MemoryProxy relay no longer stops on its Chinese "关联资产" (link team assets) question. Irgatos answers it with "don't link" automatically and shows any remaining prompt in English.
 
-[Unreleased]: https://github.com/wegvon/irgatos/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/wegvon/irgatos/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/wegvon/irgatos/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wegvon/irgatos/releases/tag/v0.1.0
