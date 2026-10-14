@@ -7,6 +7,7 @@ mod azure_devops;
 mod browser;
 mod browser_picker;
 mod chat_background;
+mod check_command;
 mod checkpoint;
 mod codex_irgat_store;
 mod computer_use;
@@ -461,6 +462,8 @@ pub fn run() {
             worktree_lifecycle::worktree_port,
             worktree_lifecycle::worktree_setup_status,
             worktree_lifecycle::worktree_setup_run,
+            check_command::check_command_run,
+            check_command::check_command_cancel,
             worktrees::git_orchestration_worktree_create,
             worktrees::git_worktree_rename_branch,
             worktrees::git_worktree_check_remove,
