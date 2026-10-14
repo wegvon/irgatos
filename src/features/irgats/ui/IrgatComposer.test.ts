@@ -272,3 +272,26 @@ it.each([
   act(submit);
   expect(onSubmit).toHaveBeenCalledWith("Look at these", [folder]);
 });
+
+it("offers a Live voice call only where the chat asks for one", async () => {
+  const { setLiveVoice } = await import("../../voice/live/liveVoice");
+  setLiveVoice(null);
+  const controls = createElement("span", null, "model");
+  render({ controls });
+  expect(container.querySelector("[data-live-voice-button]")).toBeNull();
+  render({ controls, live: true });
+  const button = container.querySelector<HTMLButtonElement>(
+    "[data-live-voice-button]",
+  )!;
+  expect(button.getAttribute("aria-label")).toBe("Live voice");
+  await act(async () => button.click());
+  const pill = container.querySelector<HTMLElement>("[data-live-voice-pill]");
+  // No app shell is registered here, so the call cannot start.
+  expect(pill?.dataset.phase).toBe("error");
+  expect(pill?.textContent).toContain("cannot start a live call");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>("[data-live-end]")!.click(),
+  );
+  expect(container.querySelector("[data-live-voice-pill]")).toBeNull();
+  setLiveVoice(null);
+});

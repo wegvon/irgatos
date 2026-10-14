@@ -551,6 +551,34 @@ describe("Composer question focus", () => {
     );
   });
 
+  it("shows the Live voice button only when the session offers a call", async () => {
+    const props = {
+      focused: true,
+      harness: "claude" as const,
+      model: "claude-sonnet",
+      runtimeMode: "supervised" as const,
+      executionCwd: "/repo",
+      sessionId: "live-chat",
+      hideProjectPicker: true,
+      hideBranchPicker: true,
+      onFocus: () => {},
+      onCwdChange: () => {},
+      onModelChange: () => {},
+      onRuntimeModeChange: () => {},
+      onSubmit: () => {},
+    };
+    await act(async () => root.render(createElement(Composer, props)));
+    expect(container.querySelector("[data-live-voice-button]")).toBeNull();
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, live: true })),
+    );
+    expect(
+      container
+        .querySelector("[data-live-voice-button]")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
   it("inserts an MCP tag beside existing composer text", async () => {
     await renderComposer(undefined, vi.fn());
     const textarea = container.querySelector("textarea")!;

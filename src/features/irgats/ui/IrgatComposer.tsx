@@ -48,6 +48,10 @@ import {
   ComposerVoiceButtons,
   ComposerVoiceStatus,
 } from "../../voice/ui/ComposerVoiceControls";
+import {
+  LiveVoiceButton,
+  LiveVoicePill,
+} from "../../voice/live/ui/LiveVoiceControls";
 
 // Loaded on first open, with its emoji data, so neither weighs on startup.
 const EmojiPickerPopover = lazy(() =>
@@ -104,6 +108,8 @@ type Props = {
   mentions?: readonly ComposerMention[];
   /** Replaces "Message <name>". */
   placeholder?: string;
+  /** Offers a Live voice call with the agent; real chats only. */
+  live?: boolean;
 };
 
 /**
@@ -130,6 +136,7 @@ export function IrgatComposer({
   tools,
   mentions,
   placeholder,
+  live = false,
 }: Props) {
   const [text, setText] = useState(() => getComposerDraft(sessionId) ?? "");
   const [mentionToken, setMentionToken] = useState<MentionToken | null>(null);
@@ -517,6 +524,7 @@ export function IrgatComposer({
         ref={box}
         className={`agent-chat-composer relative rounded-lg border bg-content/3 backdrop-blur-sm ${fileDrag ? "border-accent/60" : "border-content/10 has-focus:border-content/20"}`}
       >
+        {live ? <LiveVoicePill sessionId={sessionId} /> : null}
         {mentionOpen ? (
           <div className="absolute inset-x-0 bottom-full z-30 mb-1.5">
             <IrgatMentionPicker
@@ -641,6 +649,9 @@ export function IrgatComposer({
             voice={voice}
             disabled={!enabled || submitting}
           />
+          {live ? (
+            <LiveVoiceButton sessionId={sessionId} disabled={!enabled} />
+          ) : null}
           {tools}
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {controls}

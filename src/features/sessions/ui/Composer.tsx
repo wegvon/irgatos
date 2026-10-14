@@ -239,6 +239,10 @@ import {
   ComposerVoiceButtons,
   ComposerVoiceStatus,
 } from "../../voice/ui/ComposerVoiceControls";
+import {
+  LiveVoiceButton,
+  LiveVoicePill,
+} from "../../voice/live/ui/LiveVoiceControls";
 
 type Props = {
   enabled?: boolean;
@@ -258,6 +262,8 @@ type Props = {
   cwd?: string;
   executionCwd: string;
   sessionId?: string;
+  /** Offers a Live voice call with this session's agent. */
+  live?: boolean;
   branch?: string;
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
@@ -433,6 +439,7 @@ export function Composer({
   cwd = "~",
   executionCwd,
   sessionId,
+  live = false,
   branch,
   recents = [],
   hideProjectPicker = false,
@@ -2205,6 +2212,7 @@ export function Composer({
             />
           </div>
         ) : null}
+        {live && sessionId ? <LiveVoicePill sessionId={sessionId} /> : null}
         <div
           ref={boxRef}
           data-composer-box
@@ -2738,6 +2746,12 @@ export function Composer({
                 voice={voice}
                 disabled={disabled || worktreeRemoved}
               />
+              {live && sessionId ? (
+                <LiveVoiceButton
+                  sessionId={sessionId}
+                  disabled={disabled || worktreeRemoved}
+                />
+              ) : null}
               <ComposerAction
                 busy={busy}
                 disabled={disabled}

@@ -748,6 +748,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       cwd={session.cwd}
       executionCwd={workCwd}
       sessionId={session.id}
+      live={!remoteSession}
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
       hideProjectPicker={
@@ -1289,6 +1290,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     key={session.id}
                     sessionId={session.id}
                     name={agent.name}
+                    live
                     enabled={visible}
                     hotkeys={focused && !btw.open}
                     busy={session.busy}
