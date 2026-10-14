@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 
+use crate::state_file;
+
 const IRGATS_DIR: &str = "irgats";
 /// Where Irgats lived before they had their name; moved on first use.
 const LEGACY_DIR: &str = "agents";
@@ -143,30 +145,9 @@ pub fn content_hash(text: &str) -> String {
 /// Write beside the target and rename over it, so a crash mid-write leaves
 /// the old file whole. Owner-only, since memory can hold personal details.
 fn write_atomic(path: &Path, text: &str) -> Result<(), String> {
-    use std::io::Write;
-
-    let temp = path.with_extension("md.tmp");
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temp)
-        .map_err(|e| format!("{}: {e}", temp.display()))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        // A temporary file left by an older version may have wider permissions.
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))
-            .map_err(|e| format!("{}: {e}", temp.display()))?;
-    }
-    file.write_all(text.as_bytes())
-        .map_err(|e| format!("{}: {e}", temp.display()))?;
-    drop(file);
-    std::fs::rename(&temp, path).map_err(|e| format!("{}: {e}", path.display()))
+    // Older versions wrote through a fixed temporary name a crash could leave behind.
+    let _ = std::fs::remove_file(path.with_extension("md.tmp"));
+    state_file::write_atomic(path, text.as_bytes())
 }
 
 fn read_optional(path: &Path) -> Result<Option<String>, String> {
@@ -177,10 +158,12 @@ fn read_optional(path: &Path) -> Result<Option<String>, String> {
     }
 }
 
+/// A malformed index is kept aside and its last good copy used, so a broken
+/// file never silently drops the projects Irgats answered for.
 fn read_index(root: &Path) -> AgentIndex {
-    std::fs::read_to_string(root.join(INDEX_FILE))
+    state_file::read_json_or_recover(&root.join(INDEX_FILE))
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
+        .and_then(|(index, _)| index)
         .unwrap_or_default()
 }
 
@@ -227,11 +210,7 @@ fn adopt_legacy_folder(root: &Path, dir: &Path, project: &str) -> Result<(), Str
     if !dir.exists() && legacy.is_dir() && legacy != dir {
         std::fs::rename(&legacy, dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    let text = serde_json::to_string_pretty(&index).map_err(|e| e.to_string())?;
-    let path = root.join(INDEX_FILE);
-    let temp = root.join("index.json.tmp");
-    std::fs::write(&temp, text).map_err(|e| format!("{}: {e}", temp.display()))?;
-    std::fs::rename(&temp, &path).map_err(|e| format!("{}: {e}", path.display()))
+    state_file::write_json_atomic(&root.join(INDEX_FILE), &index, true)
 }
 
 fn load(root: &Path, irgat: &str, legacy_project: Option<&str>) -> Result<AgentFiles, String> {
@@ -387,6 +366,25 @@ mod tests {
         // Another Irgat naming the same project starts fresh.
         let other = load(&root, "irgat-b", Some("/code/app")).unwrap();
         assert_eq!(other.memory, "");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_corrupt_index_falls_back_to_its_last_good_copy() {
+        let root = temp_root();
+        let old = root.join("old-id");
+        std::fs::create_dir_all(old.join("memory")).unwrap();
+        std::fs::write(old.join(MEMORY_FILE), "- kept").unwrap();
+        let good = r#"{"agents":[{"id":"old-id","projects":["/code/app"]}]}"#;
+        std::fs::write(state_file::backup_path(&root.join(INDEX_FILE)), good).unwrap();
+        std::fs::write(root.join(INDEX_FILE), r#"{"agents":[{"id":"old"#).unwrap();
+
+        let adopted = load(&root, "irgat-a", Some("/code/app")).unwrap();
+        assert_eq!(adopted.memory, "- kept");
+        assert_eq!(state_file::corrupt_copies(&root.join(INDEX_FILE)).len(), 1);
+        let index: AgentIndex =
+            serde_json::from_str(&std::fs::read_to_string(root.join(INDEX_FILE)).unwrap()).unwrap();
+        assert!(index.agents.is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 

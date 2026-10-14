@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,6 +8,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::session_snapshots::{self, Snapshots};
 
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
@@ -31,17 +33,31 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 pub struct SessionStore {
     conn: Mutex<Connection>,
     read_conn: Mutex<Option<Connection>>,
+    snapshots: Option<Snapshots>,
+}
+
+fn open_writer(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    migrate(&conn)?;
+    Ok(conn)
 }
 
 impl SessionStore {
+    /// A database SQLite reports as corrupt is moved aside and replaced by
+    /// its newest good snapshot (see `session_snapshots`).
     pub fn open(path: PathBuf) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-            .map_err(|e| e.to_string())?;
-        migrate(&conn).map_err(|e| e.to_string())?;
+        let conn = match open_writer(&path) {
+            Ok(conn) => conn,
+            Err(error) if session_snapshots::is_corruption(&error) => {
+                session_snapshots::recover(&path)?;
+                open_writer(&path).map_err(|e| e.to_string())?
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         crate::worktrees::reconcile_removals(&conn)?;
         let read_conn = Connection::open(&path).map_err(|e| e.to_string())?;
         read_conn
@@ -50,6 +66,7 @@ impl SessionStore {
         Ok(Self {
             conn: Mutex::new(conn),
             read_conn: Mutex::new(Some(read_conn)),
+            snapshots: Some(Snapshots::new(path, session_snapshots::SNAPSHOT_INTERVAL)),
         })
     }
 
@@ -62,6 +79,7 @@ impl SessionStore {
         Ok(Self {
             conn: Mutex::new(conn),
             read_conn: Mutex::new(None),
+            snapshots: None,
         })
     }
 
@@ -248,6 +266,10 @@ pub fn session_upsert(
 
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
     let summary = upsert_session(&conn, &session).map_err(|e| e.to_string())?;
+    drop(conn);
+    if let Some(snapshots) = &store.snapshots {
+        snapshots.after_save();
+    }
     Ok(summary)
 }
 
@@ -2180,6 +2202,66 @@ mod tests {
         .unwrap();
         assert_eq!(result.hits.len(), 1);
         assert_eq!(result.hits[0].block_id.as_deref(), Some("old"));
+    }
+
+    #[test]
+    fn a_corrupt_database_reopens_from_its_newest_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("irgat.db");
+        let saved = |id: &str| SessionUpsert {
+            sidebar_hidden: false,
+            id: id.into(),
+            cwd: "/code/app".into(),
+            harness: "codex".into(),
+            model: "test".into(),
+            model_settings: json!({}),
+            runtime_mode: "supervised".into(),
+            title: id.into(),
+            provider_session_id: None,
+            provider_account_id: None,
+            blocks: json!([{ "role": "user", "text": "hello" }]),
+            queued_messages: Vec::new(),
+            queue_status: None,
+            context_used: None,
+            context_window: None,
+            branch: None,
+            worktree_cwd: None,
+            worktree_removed: false,
+            linked_work_item: None,
+            automation_id: None,
+        };
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            upsert_session(&store.lock_conn().unwrap(), &saved("kept")).unwrap();
+            session_snapshots::take_snapshot(&path).unwrap();
+            upsert_session(&store.lock_conn().unwrap(), &saved("after-snapshot")).unwrap();
+        }
+        std::fs::write(&path, vec![0x5a; 16384]).unwrap();
+
+        let store = SessionStore::open(path.clone()).unwrap();
+        let conn = store.lock_conn().unwrap();
+        assert!(get_session(&conn, "kept").unwrap().is_some());
+        assert!(get_session(&conn, "after-snapshot").unwrap().is_none());
+        assert_eq!(crate::state_file::corrupt_copies(&path).len(), 1);
+    }
+
+    #[test]
+    fn a_corrupt_database_without_snapshots_starts_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("irgat.db");
+        std::fs::write(&path, b"this is not a database").unwrap();
+        let store = SessionStore::open(path.clone()).unwrap();
+        let count: i64 = store
+            .lock_conn()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        let corrupt = crate::state_file::corrupt_copies(&path);
+        assert_eq!(
+            std::fs::read(&corrupt[0]).unwrap(),
+            b"this is not a database"
+        );
     }
 
     #[test]

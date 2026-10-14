@@ -55,9 +55,11 @@ mod remote;
 mod remote_ssh;
 mod search;
 mod self_update;
+mod session_snapshots;
 mod session_store;
 mod skills;
 pub mod ssh_askpass;
+mod state_file;
 #[cfg(target_os = "macos")]
 mod trackpad_zoom;
 #[cfg(target_os = "windows")]

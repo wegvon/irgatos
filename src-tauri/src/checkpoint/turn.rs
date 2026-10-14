@@ -2,7 +2,6 @@
 //! record what changed. Shared reviews require successful edit evidence for
 //! each displayed file, without inferring which process owns individual lines.
 use super::*;
-use std::io::Write;
 
 #[cfg(test)]
 mod tests;
@@ -884,13 +883,7 @@ fn read_blob(root: &Path, blob: Option<&Blob>) -> Result<FileState, String> {
 }
 
 fn read_review(dir: &Path) -> Result<Option<TurnReview>, String> {
-    match std::fs::read(dir.join("turn-review.json")) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
+    state_file::read_json_or_recover(&dir.join("turn-review.json")).map(|(review, _)| review)
 }
 
 fn write_review(dir: &Path, review: &TurnReview) -> Result<(), String> {
@@ -898,18 +891,5 @@ fn write_review(dir: &Path, review: &TurnReview) -> Result<(), String> {
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
-    let parent = path.parent().ok_or("Invalid checkpoint metadata path")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-    file.write_all(&serde_json::to_vec(value).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    std::fs::rename(tmp, path).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    std::fs::File::open(parent)
-        .and_then(|dir| dir.sync_all())
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    state_file::write_json_atomic(path, value, false)
 }

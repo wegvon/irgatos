@@ -14,6 +14,7 @@ use crate::fs::{
     expand_home, git_checked, git_diff_files_for, path_to_js, resolve_repo_path, GitChangedFile,
     GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
+use crate::state_file;
 
 const MAX_SNAPSHOT_FILES: usize = 500;
 
@@ -1391,21 +1392,11 @@ fn state_blob_path(blob_root: &Path, relative: &str) -> Result<PathBuf, String> 
 }
 
 fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
-    let path = dir.join("manifest.json");
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+    state_file::read_json_or_recover(&dir.join("manifest.json")).map(|(manifest, _)| manifest)
 }
 
 fn write_manifest(dir: &Path, manifest: &Manifest) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let dest = dir.join("manifest.json");
-    let tmp = dir.join("manifest.json.tmp");
-    let bytes = serde_json::to_vec_pretty(manifest).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(tmp, dest).map_err(|e| e.to_string())
+    state_file::write_json_atomic(&dir.join("manifest.json"), manifest, true)
 }
 
 fn project_root(cwd: &str) -> Result<PathBuf, String> {
@@ -1466,6 +1457,31 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn a_torn_manifest_recovers_its_last_good_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manifest = Manifest {
+            cwd: "/code/app".into(),
+            files: BTreeMap::new(),
+            touched: BTreeSet::new(),
+            tracked: BTreeSet::new(),
+            prepared: BTreeSet::new(),
+            after: BTreeMap::new(),
+            stats: BTreeMap::new(),
+            diverged: BTreeSet::new(),
+        };
+        write_manifest(dir.path(), &manifest).unwrap();
+        let first = manifest.clone();
+        manifest.touched.insert("a.txt".into());
+        write_manifest(dir.path(), &manifest).unwrap();
+        let path = dir.path().join("manifest.json");
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::write(&path, &bytes[..bytes.len() / 2]).unwrap();
+
+        assert_eq!(read_manifest(dir.path()).unwrap(), Some(first));
+        assert_eq!(state_file::corrupt_copies(&path).len(), 1);
+    }
 
     struct Tmp(PathBuf);
     impl Drop for Tmp {
