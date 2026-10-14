@@ -642,6 +642,7 @@ import {
   removeIrgatGroup,
 } from "../features/irgats/model/irgatGroups";
 import { IrgatGroupView } from "../features/irgats/ui/IrgatGroupView";
+import { useLightpandaAutostart } from "./hooks/useLightpandaAutostart";
 import { useFloatingIrgat } from "./hooks/useFloatingIrgat";
 import {
   dropRelays,
@@ -8711,6 +8712,7 @@ function Workspace({
   };
   decideIrgatBlockRef.current = decideIrgatBlock;
 
+  useLightpandaAutostart();
   useIrgatHabits({
     sessions: () => sessionsRef.current,
     open: async (id) => (await ensureOpenSession(id)) ?? undefined,
