@@ -584,6 +584,7 @@ pub fn run() {
             kanban::kanban_card_link_session,
             kanban::kanban_session_status,
             kanban::kanban_session_links,
+            kanban::kanban_sync_sessions,
             irgat::irgat_load,
             irgat::irgat_read,
             irgat::irgat_save,

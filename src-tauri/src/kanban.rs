@@ -54,6 +54,9 @@ pub struct KanbanCard {
     pub updated_at: i64,
     #[serde(default)]
     pub session: Option<KanbanCardSession>,
+    /// Present on cards the board filed for their session by itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_title: Option<String>,
 }
 
 /// The agent session a card is linked to. `status` is the last state the app
@@ -91,6 +94,24 @@ pub struct KanbanCardInput {
     pub notes: String,
     #[serde(default)]
     pub labels: Vec<String>,
+}
+
+/// One session the board should show. Live sessions report their state; the
+/// rest are read from their saved transcript.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KanbanSessionSync {
+    pub session_id: String,
+    pub title: String,
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Only file a missing card: a saved transcript can lag a live session,
+    /// so it never moves a card or touches a dismissal.
+    #[serde(default)]
+    pub backfill: bool,
+    /// The user asked for this card, which overrides an earlier dismissal.
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -131,9 +152,17 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )?;
     ensure_card_column(conn, "session_id", "TEXT")?;
     ensure_card_column(conn, "session_status", "TEXT")?;
+    // Set on cards the board filed for a session: the title it last wrote, so
+    // a title the user typed is never replaced.
+    ensure_card_column(conn, "auto_title", "TEXT")?;
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS kanban_cards_session
-           ON kanban_cards (session_id) WHERE session_id IS NOT NULL;",
+           ON kanban_cards (session_id) WHERE session_id IS NOT NULL;
+         CREATE TABLE IF NOT EXISTS kanban_session_dismissals (
+           session_id TEXT PRIMARY KEY,
+           status TEXT,
+           dismissed_at INTEGER NOT NULL
+         );",
     )
 }
 
@@ -303,8 +332,28 @@ pub fn kanban_card_link_session(
 ) -> Result<KanbanCard, String> {
     let conn = store.lock_conn()?;
     let card = link_session(&conn, &id, session_id.as_deref(), now_millis())?;
+    if let Some(session_id) = session_id.as_deref() {
+        for project in absorb_auto_cards(&conn, session_id, &card.id)? {
+            notify(&app, Some(project));
+        }
+    }
     notify_column(&app, &conn, &card.column_id);
     Ok(card)
+}
+
+#[tauri::command(async)]
+pub fn kanban_sync_sessions(
+    app: AppHandle,
+    store: State<'_, SessionStore>,
+    project: String,
+    sessions: Vec<KanbanSessionSync>,
+) -> Result<Vec<String>, String> {
+    let mut conn = store.lock_conn()?;
+    let changed = sync_sessions(&mut conn, &project, &sessions, now_millis())?;
+    for project in &changed {
+        notify(&app, Some(project.clone()));
+    }
+    Ok(changed)
 }
 
 #[tauri::command(async)]
@@ -447,35 +496,7 @@ fn column_board(conn: &Connection, column_id: &str) -> Result<String, String> {
 pub(crate) fn load_board(conn: &mut Connection, project: &str) -> Result<KanbanBoard, String> {
     let project = normalize_project(project)?;
     let tx = conn.transaction().map_err(sql)?;
-    let existing: Option<(String, i64)> = tx
-        .query_row(
-            "SELECT id, created_at FROM kanban_boards WHERE project = ?1",
-            [&project],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(sql)?;
-    let (id, created_at) = match existing {
-        Some(board) => board,
-        None => {
-            let id = uuid::Uuid::new_v4().to_string();
-            let now = now_millis();
-            tx.execute(
-                "INSERT INTO kanban_boards (id, project, created_at) VALUES (?1, ?2, ?3)",
-                params![id, project, now],
-            )
-            .map_err(sql)?;
-            for (position, title) in DEFAULT_COLUMNS.iter().enumerate() {
-                tx.execute(
-                    "INSERT INTO kanban_columns (id, board_id, title, position, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-                    params![uuid::Uuid::new_v4().to_string(), id, title, position as i64, now],
-                )
-                .map_err(sql)?;
-            }
-            (id, now)
-        }
-    };
+    let (id, created_at) = ensure_board(&tx, &project)?;
     let columns = read_columns(&tx, &id).map_err(sql)?;
     tx.commit().map_err(sql)?;
     Ok(KanbanBoard {
@@ -484,6 +505,43 @@ pub(crate) fn load_board(conn: &mut Connection, project: &str) -> Result<KanbanB
         columns,
         created_at,
     })
+}
+
+/// Id and creation time of the board for a normalized `project`.
+fn ensure_board(conn: &Connection, project: &str) -> Result<(String, i64), String> {
+    let existing: Option<(String, i64)> = conn
+        .query_row(
+            "SELECT id, created_at FROM kanban_boards WHERE project = ?1",
+            [project],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(sql)?;
+    if let Some(board) = existing {
+        return Ok(board);
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = now_millis();
+    conn.execute(
+        "INSERT INTO kanban_boards (id, project, created_at) VALUES (?1, ?2, ?3)",
+        params![id, project, now],
+    )
+    .map_err(sql)?;
+    for (position, title) in DEFAULT_COLUMNS.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO kanban_columns (id, board_id, title, position, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                id,
+                title,
+                position as i64,
+                now
+            ],
+        )
+        .map_err(sql)?;
+    }
+    Ok((id, now))
 }
 
 fn read_columns(conn: &Connection, board_id: &str) -> rusqlite::Result<Vec<KanbanColumn>> {
@@ -515,7 +573,7 @@ fn read_columns(conn: &Connection, board_id: &str) -> rusqlite::Result<Vec<Kanba
 
 const CARD_SELECT: &str = "SELECT k.id, k.column_id, k.title, k.notes, k.labels_json,
        k.created_at, k.updated_at, k.session_id, k.session_status,
-       s.title, s.harness, s.id IS NOT NULL
+       s.title, s.harness, s.id IS NOT NULL, k.auto_title
      FROM kanban_cards k LEFT JOIN sessions s ON s.id = k.session_id";
 
 fn read_card(row: &rusqlite::Row<'_>) -> rusqlite::Result<KanbanCard> {
@@ -539,6 +597,7 @@ fn read_card(row: &rusqlite::Row<'_>) -> rusqlite::Result<KanbanCard> {
             }),
             None => None,
         },
+        auto_title: row.get(12)?,
     })
 }
 
@@ -658,17 +717,26 @@ pub(crate) fn move_card(
 pub(crate) fn delete_card(conn: &mut Connection, id: &str) -> Result<(), String> {
     validate_id(id, "card")?;
     let tx = conn.transaction().map_err(sql)?;
-    let Some(column_id) = tx
+    let Some((column_id, session_id, session_status)) = tx
         .query_row(
-            "SELECT column_id FROM kanban_cards WHERE id = ?1",
+            "SELECT column_id, session_id, session_status FROM kanban_cards WHERE id = ?1",
             [id],
-            |row| row.get::<_, String>(0),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
         )
         .optional()
         .map_err(sql)?
     else {
         return Ok(());
     };
+    if let Some(session_id) = session_id {
+        dismiss_session(&tx, &session_id, session_status.as_deref())?;
+    }
     tx.execute("DELETE FROM kanban_cards WHERE id = ?1", [id])
         .map_err(sql)?;
     let rest = card_ids(&tx, &column_id, id).map_err(sql)?;
@@ -703,10 +771,11 @@ fn insert_card_row(conn: &Connection, card: &KanbanCard) -> Result<(), String> {
     let session = card.session.as_ref();
     if let Some(session) = session {
         validate_id(&session.id, "session")?;
+        undismiss_session(conn, &session.id)?;
     }
     conn.execute(
-        "INSERT INTO kanban_cards (id, column_id, title, notes, labels_json, position, created_at, updated_at, session_id, session_status)
-         VALUES (?1, ?2, ?3, ?4, ?5, -1, ?6, ?7, ?8, ?9)",
+        "INSERT INTO kanban_cards (id, column_id, title, notes, labels_json, position, created_at, updated_at, session_id, session_status, auto_title)
+         VALUES (?1, ?2, ?3, ?4, ?5, -1, ?6, ?7, ?8, ?9, ?10)",
         params![
             card.id,
             card.column_id,
@@ -719,6 +788,7 @@ fn insert_card_row(conn: &Connection, card: &KanbanCard) -> Result<(), String> {
             session
                 .and_then(|session| session.status.as_deref())
                 .filter(|status| SESSION_STATUSES.contains(status)),
+            session.and(card.auto_title.as_deref()),
         ],
     )
     .map_err(sql)?;
@@ -736,7 +806,8 @@ pub(crate) fn link_session(
     validate_id(id, "card")?;
     let existing = get_card(conn, id)?;
     let Some(session_id) = session_id else {
-        if existing.session.is_some() {
+        if let Some(old) = &existing.session {
+            dismiss_session(conn, &old.id, old.status.as_deref())?;
             conn.execute(
                 "UPDATE kanban_cards SET session_id = NULL, session_status = NULL, updated_at = ?1
                  WHERE id = ?2",
@@ -759,6 +830,10 @@ pub(crate) fn link_session(
         .optional()
         .map_err(sql)?;
     let status = blocks.as_deref().map_or("draft", status_from_blocks);
+    if let Some(old) = &existing.session {
+        dismiss_session(conn, &old.id, old.status.as_deref())?;
+    }
+    undismiss_session(conn, session_id)?;
     conn.execute(
         "UPDATE kanban_cards SET session_id = ?1, session_status = ?2, updated_at = ?3
          WHERE id = ?4",
@@ -766,6 +841,326 @@ pub(crate) fn link_session(
     )
     .map_err(sql)?;
     get_card(conn, id)
+}
+
+/// Remember that the user took `session_id` off the board, so syncing does
+/// not file it again until the session starts working or asks for input.
+fn dismiss_session(
+    conn: &Connection,
+    session_id: &str,
+    status: Option<&str>,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO kanban_session_dismissals (session_id, status, dismissed_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(session_id) DO UPDATE SET status = excluded.status,
+           dismissed_at = excluded.dismissed_at",
+        params![session_id, status, now_millis()],
+    )
+    .map_err(sql)?;
+    Ok(())
+}
+
+fn undismiss_session(conn: &Connection, session_id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM kanban_session_dismissals WHERE session_id = ?1",
+        [session_id],
+    )
+    .map_err(sql)?;
+    Ok(())
+}
+
+/// Cards the board filed for `session_id` and nobody has touched since give
+/// way when the user links that session to a card of their own. Returns the
+/// projects whose boards lost a card.
+pub(crate) fn absorb_auto_cards(
+    conn: &Connection,
+    session_id: &str,
+    keep: &str,
+) -> Result<Vec<String>, String> {
+    let doomed = conn
+        .prepare(
+            "SELECT k.id, k.column_id, b.project FROM kanban_cards k
+             JOIN kanban_columns c ON c.id = k.column_id
+             JOIN kanban_boards b ON b.id = c.board_id
+             WHERE k.session_id = ?1 AND k.id != ?2
+               AND k.auto_title IS NOT NULL AND k.title = k.auto_title
+               AND k.notes = '' AND k.labels_json = '[]'",
+        )
+        .map_err(sql)?
+        .query_map(params![session_id, keep], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(sql)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(sql)?;
+    let mut projects = Vec::new();
+    for (id, column_id, project) in doomed {
+        conn.execute("DELETE FROM kanban_cards WHERE id = ?1", [&id])
+            .map_err(sql)?;
+        let rest = card_ids(conn, &column_id, &id).map_err(sql)?;
+        write_card_positions(conn, &column_id, &rest).map_err(sql)?;
+        if !projects.contains(&project) {
+            projects.push(project);
+        }
+    }
+    Ok(projects)
+}
+
+/// Column titles each session state files into, matched without case so
+/// renamed or hand-made boards still sync when their names agree.
+fn status_column_titles(status: &str) -> &'static [&'static str] {
+    match status {
+        "running" | "stopped" => &["in progress", "doing", "in-progress", "wip", "working"],
+        "needs-input" | "failed" => &[
+            "review",
+            "in review",
+            "needs review",
+            "needs input",
+            "needs approval",
+            "waiting",
+        ],
+        "finished" => &["done", "finished", "complete", "completed"],
+        _ => &["backlog", "todo", "to do", "to-do", "not started"],
+    }
+}
+
+fn status_column(columns: &[(String, String)], status: &str) -> Option<String> {
+    let wanted = status_column_titles(status);
+    columns
+        .iter()
+        .find(|(_, title)| wanted.contains(&title.trim().to_lowercase().as_str()))
+        .map(|(id, _)| id.clone())
+}
+
+fn board_columns(conn: &Connection, board_id: &str) -> rusqlite::Result<Vec<(String, String)>> {
+    conn.prepare("SELECT id, title FROM kanban_columns WHERE board_id = ?1 ORDER BY position, created_at, id")?
+        .query_map([board_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect()
+}
+
+fn saved_session_status(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<Option<&'static str>, String> {
+    let blocks: Option<String> = conn
+        .query_row(
+            "SELECT blocks_json FROM sessions WHERE id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql)?;
+    Ok(blocks.as_deref().map(status_from_blocks))
+}
+
+struct LinkedCard {
+    id: String,
+    column_id: String,
+    board_id: String,
+    project: String,
+    title: String,
+    auto_title: Option<String>,
+    status: Option<String>,
+}
+
+fn linked_cards(conn: &Connection, session_id: &str) -> rusqlite::Result<Vec<LinkedCard>> {
+    conn.prepare(
+        "SELECT k.id, k.column_id, c.board_id, b.project, k.title, k.auto_title, k.session_status
+         FROM kanban_cards k
+         JOIN kanban_columns c ON c.id = k.column_id
+         JOIN kanban_boards b ON b.id = c.board_id
+         WHERE k.session_id = ?1",
+    )?
+    .query_map([session_id], |row| {
+        Ok(LinkedCard {
+            id: row.get(0)?,
+            column_id: row.get(1)?,
+            board_id: row.get(2)?,
+            project: row.get(3)?,
+            title: row.get(4)?,
+            auto_title: row.get(5)?,
+            status: row.get(6)?,
+        })
+    })?
+    .collect()
+}
+
+fn place_card(
+    conn: &Connection,
+    id: &str,
+    from: &str,
+    to: &str,
+    index: usize,
+) -> rusqlite::Result<()> {
+    let mut ids = card_ids(conn, to, id)?;
+    ids.insert(index.min(ids.len()), id.to_string());
+    write_card_positions(conn, to, &ids)?;
+    if from != to {
+        let rest = card_ids(conn, from, id)?;
+        write_card_positions(conn, from, &rest)?;
+    }
+    Ok(())
+}
+
+/// A linked card follows its session: a change of state moves it to the top
+/// of that state's column, while a card the user placed stays put until the
+/// session changes state again. Returns whether anything changed.
+fn follow_session(
+    conn: &Connection,
+    card: &LinkedCard,
+    status: &str,
+    title: &str,
+    now: i64,
+) -> Result<bool, String> {
+    let mut changed = false;
+    if card.status.as_deref() != Some(status) {
+        conn.execute(
+            "UPDATE kanban_cards SET session_status = ?1 WHERE id = ?2",
+            params![status, card.id],
+        )
+        .map_err(sql)?;
+        changed = true;
+        let columns = board_columns(conn, &card.board_id).map_err(sql)?;
+        if let Some(target) = status_column(&columns, status) {
+            if target != card.column_id {
+                place_card(conn, &card.id, &card.column_id, &target, 0).map_err(sql)?;
+                conn.execute(
+                    "UPDATE kanban_cards SET updated_at = ?1 WHERE id = ?2",
+                    params![now, card.id],
+                )
+                .map_err(sql)?;
+            }
+        }
+    }
+    if card.auto_title.as_deref() == Some(card.title.as_str()) && card.title != title {
+        conn.execute(
+            "UPDATE kanban_cards SET title = ?1, auto_title = ?1 WHERE id = ?2",
+            params![title, card.id],
+        )
+        .map_err(sql)?;
+        changed = true;
+    }
+    Ok(changed)
+}
+
+/// Whether a session with no card should get one. A dismissal holds while the
+/// session keeps the state it was dismissed in, follows it through settled
+/// states, and lapses once the session starts working or needs input again.
+fn wants_card(conn: &Connection, session_id: &str, status: &str) -> Result<bool, String> {
+    let dismissed: Option<Option<String>> = conn
+        .query_row(
+            "SELECT status FROM kanban_session_dismissals WHERE session_id = ?1",
+            [session_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(sql)?;
+    let Some(previous) = dismissed else {
+        return Ok(true);
+    };
+    if previous.as_deref() == Some(status) {
+        return Ok(false);
+    }
+    if status == "running" || status == "needs-input" {
+        undismiss_session(conn, session_id)?;
+        return Ok(true);
+    }
+    conn.execute(
+        "UPDATE kanban_session_dismissals SET status = ?1 WHERE session_id = ?2",
+        params![status, session_id],
+    )
+    .map_err(sql)?;
+    Ok(false)
+}
+
+/// Put `sessions` on `project`'s board: file a card for each one that has
+/// none, and move linked cards when their session changes state. Entries are
+/// applied in order and new cards go on top, so pass the newest last. Returns
+/// the projects whose boards changed.
+pub(crate) fn sync_sessions(
+    conn: &mut Connection,
+    project: &str,
+    sessions: &[KanbanSessionSync],
+    now: i64,
+) -> Result<Vec<String>, String> {
+    let project = normalize_project(project)?;
+    for entry in sessions {
+        validate_id(&entry.session_id, "session")?;
+        if let Some(status) = entry.status.as_deref() {
+            if !SESSION_STATUSES.contains(&status) {
+                return Err(format!("Unknown session status: {status}"));
+            }
+        }
+    }
+    let tx = conn.transaction().map_err(sql)?;
+    let (board_id, _) = ensure_board(&tx, &project)?;
+    let mut changed: Vec<String> = Vec::new();
+    let mut mark = |project: &str| {
+        if !changed.iter().any(|known| known == project) {
+            changed.push(project.to_string());
+        }
+    };
+    for entry in sessions {
+        let status = match entry.status.as_deref() {
+            Some(status) => status,
+            None => match saved_session_status(&tx, &entry.session_id)? {
+                Some(status) => status,
+                None => continue,
+            },
+        };
+        let title = normalize_card_title(&entry.title);
+        let linked = linked_cards(&tx, &entry.session_id).map_err(sql)?;
+        if !linked.is_empty() {
+            if entry.backfill {
+                continue;
+            }
+            for card in &linked {
+                if follow_session(&tx, card, status, &title, now)? {
+                    mark(&card.project);
+                }
+            }
+            continue;
+        }
+        if entry.force {
+            undismiss_session(&tx, &entry.session_id)?;
+        } else if entry.backfill {
+            let dismissed: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM kanban_session_dismissals WHERE session_id = ?1)",
+                    [&entry.session_id],
+                    |row| row.get(0),
+                )
+                .map_err(sql)?;
+            if dismissed {
+                continue;
+            }
+        } else if !wants_card(&tx, &entry.session_id, status)? {
+            continue;
+        }
+        let columns = board_columns(&tx, &board_id).map_err(sql)?;
+        let Some(column_id) =
+            status_column(&columns, status).or_else(|| columns.first().map(|(id, _)| id.clone()))
+        else {
+            continue;
+        };
+        let id = uuid::Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO kanban_cards (id, column_id, title, notes, labels_json, position,
+               created_at, updated_at, session_id, session_status, auto_title)
+             VALUES (?1, ?2, ?3, '', '[]', -1, ?4, ?4, ?5, ?6, ?3)",
+            params![id, column_id, title, now, entry.session_id, status],
+        )
+        .map_err(sql)?;
+        place_card(&tx, &id, &column_id, &column_id, 0).map_err(sql)?;
+        mark(&project);
+    }
+    tx.commit().map_err(sql)?;
+    Ok(changed)
 }
 
 /// The settled state of a saved transcript: whether its last sent turn ended
@@ -933,6 +1328,21 @@ pub(crate) fn delete_column(conn: &mut Connection, id: &str) -> Result<(), Strin
     let Ok(board_id) = column_board(&tx, id) else {
         return Ok(());
     };
+    let sessions = tx
+        .prepare(
+            "SELECT session_id, session_status FROM kanban_cards
+             WHERE column_id = ?1 AND session_id IS NOT NULL",
+        )
+        .map_err(sql)?
+        .query_map([id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .map_err(sql)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(sql)?;
+    for (session_id, status) in sessions {
+        dismiss_session(&tx, &session_id, status.as_deref())?;
+    }
     tx.execute("DELETE FROM kanban_columns WHERE id = ?1", [id])
         .map_err(sql)?;
     let rest = column_ids(&tx, &board_id, id).map_err(sql)?;
@@ -1447,6 +1857,415 @@ mod tests {
         assert_eq!(again.session.unwrap().status.as_deref(), Some("finished"));
     }
 
+    fn live(id: &str, title: &str, status: &str) -> KanbanSessionSync {
+        KanbanSessionSync {
+            session_id: id.into(),
+            title: title.into(),
+            status: Some(status.into()),
+            backfill: false,
+            force: false,
+        }
+    }
+
+    fn saved(id: &str, title: &str) -> KanbanSessionSync {
+        KanbanSessionSync {
+            status: None,
+            backfill: true,
+            ..live(id, title, "draft")
+        }
+    }
+
+    fn column_of(board: &KanbanBoard, session_id: &str) -> Option<String> {
+        board.columns.iter().find_map(|column| {
+            column
+                .cards
+                .iter()
+                .any(|card| card.session.as_ref().map(|s| s.id.as_str()) == Some(session_id))
+                .then(|| column.title.clone())
+        })
+    }
+
+    fn card_for(board: &KanbanBoard, session_id: &str) -> KanbanCard {
+        board
+            .columns
+            .iter()
+            .flat_map(|column| &column.cards)
+            .find(|card| card.session.as_ref().map(|s| s.id.as_str()) == Some(session_id))
+            .cloned()
+            .unwrap()
+    }
+
+    #[test]
+    fn sessions_land_in_the_column_for_their_state() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let changed = sync_sessions(
+            &mut conn,
+            "/work/app/",
+            &[
+                live("draft", "Plan it", "draft"),
+                live("run", "Build it", "running"),
+                live("ask", "Ask first", "needs-input"),
+                live("done", "Shipped", "finished"),
+                live("boom", "Broke", "failed"),
+                live("newer", "Also asking", "needs-input"),
+            ],
+            10,
+        )
+        .unwrap();
+        assert_eq!(changed, vec!["/work/app"]);
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(titles(&board.columns[0]), vec!["Plan it"]);
+        assert_eq!(titles(&board.columns[1]), vec!["Build it"]);
+        assert_eq!(
+            titles(&board.columns[2]),
+            vec!["Also asking", "Broke", "Ask first"]
+        );
+        assert_eq!(titles(&board.columns[3]), vec!["Shipped"]);
+        let card = card_for(&board, "ask");
+        assert_eq!(card.auto_title.as_deref(), Some("Ask first"));
+        assert_eq!(card.session.unwrap().status.as_deref(), Some("needs-input"));
+
+        let again = sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("ask", "Ask first", "needs-input")],
+            11,
+        )
+        .unwrap();
+        assert!(again.is_empty());
+        assert!(sync_sessions(&mut conn, "/work/app", &[live("x", "X", "exploded")], 12).is_err());
+    }
+
+    #[test]
+    fn cards_follow_state_changes_but_keep_a_manual_place_until_the_next_one() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix login", "running")],
+            1,
+        )
+        .unwrap();
+        let review = load_board(&mut conn, "/work/app").unwrap().columns[2]
+            .id
+            .clone();
+        create_card(&mut conn, &review, &input("manual", "Read docs"), None, 1).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix login", "needs-input")],
+            2,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(titles(&board.columns[2]), vec!["Fix login", "Read docs"]);
+        assert_eq!(card_for(&board, "s1").updated_at, 2);
+
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix login", "finished")],
+            3,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "s1").as_deref(), Some("Done"));
+
+        let card = card_for(&board, "s1");
+        move_card(&mut conn, &card.id, &board.columns[0].id, 0, 4).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix login", "finished")],
+            5,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "s1").as_deref(), Some("Backlog"));
+
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix login", "running")],
+            6,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "s1").as_deref(), Some("In progress"));
+    }
+
+    #[test]
+    fn renamed_and_missing_columns_still_sync() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        rename_column(&conn, &board.columns[1].id, "Doing", 1).unwrap();
+        delete_column(&mut conn, &board.columns[2].id).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[
+                live("run", "Run", "running"),
+                live("ask", "Ask", "needs-input"),
+            ],
+            2,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "run").as_deref(), Some("Doing"));
+        assert_eq!(column_of(&board, "ask").as_deref(), Some("Backlog"));
+        // With no Review column the card stays where it is.
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("run", "Run", "needs-input")],
+            3,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "run").as_deref(), Some("Doing"));
+    }
+
+    #[test]
+    fn an_auto_title_follows_the_session_until_the_user_edits_it() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "New session", "running")],
+            1,
+        )
+        .unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Fix the login redirect", "running")],
+            2,
+        )
+        .unwrap();
+        let card = card_for(&load_board(&mut conn, "/work/app").unwrap(), "s1");
+        assert_eq!(card.title, "Fix the login redirect");
+        update_card(&conn, &input(&card.id, "Login (mine)"), 3).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Something else", "finished")],
+            4,
+        )
+        .unwrap();
+        let card = card_for(&load_board(&mut conn, "/work/app").unwrap(), "s1");
+        assert_eq!(card.title, "Login (mine)");
+    }
+
+    #[test]
+    fn a_dismissed_session_stays_off_until_it_needs_attention_again() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "running")], 1).unwrap();
+        let card = card_for(&load_board(&mut conn, "/work/app").unwrap(), "s1");
+        delete_card(&mut conn, &card.id).unwrap();
+
+        let still =
+            sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "running")], 2).unwrap();
+        assert!(still.is_empty());
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "finished")], 3).unwrap();
+        assert_eq!(
+            column_of(&load_board(&mut conn, "/work/app").unwrap(), "s1"),
+            None
+        );
+
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "running")], 4).unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "s1").as_deref(), Some("In progress"));
+
+        // Undo brings the card back and forgets the dismissal.
+        let card = card_for(&board, "s1");
+        delete_card(&mut conn, &card.id).unwrap();
+        restore_card(&mut conn, &card, 0).unwrap();
+        delete_card(&mut conn, &card.id).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Task", "needs-input")],
+            5,
+        )
+        .unwrap();
+        assert_eq!(
+            column_of(&load_board(&mut conn, "/work/app").unwrap(), "s1").as_deref(),
+            Some("Review")
+        );
+    }
+
+    #[test]
+    fn asking_for_a_dismissed_session_files_it_again() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "finished")], 1).unwrap();
+        let card = card_for(&load_board(&mut conn, "/work/app").unwrap(), "s1");
+        link_session(&conn, &card.id, None, 2).unwrap();
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Task", "finished")], 3).unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "s1"), None);
+        assert_eq!(card_count(&board), 1);
+
+        let forced = KanbanSessionSync {
+            force: true,
+            ..live("s1", "Task", "finished")
+        };
+        sync_sessions(&mut conn, "/work/app", &[forced], 4).unwrap();
+        assert_eq!(
+            column_of(&load_board(&mut conn, "/work/app").unwrap(), "s1").as_deref(),
+            Some("Done")
+        );
+    }
+
+    fn card_count(board: &KanbanBoard) -> usize {
+        board.columns.iter().map(|column| column.cards.len()).sum()
+    }
+
+    #[test]
+    fn saved_sessions_backfill_without_moving_or_reviving_anything() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        let finished = serde_json::json!([{ "id": "u", "role": "user", "text": "go" }]);
+        save_session(&conn, "old", "Old work", finished.clone());
+        save_session(&conn, "live", "Live work", finished.clone());
+        save_session(&conn, "gone", "Dismissed", finished);
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("live", "Live work", "running")],
+            1,
+        )
+        .unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("gone", "Dismissed", "finished")],
+            1,
+        )
+        .unwrap();
+        let gone = card_for(&load_board(&mut conn, "/work/app").unwrap(), "gone");
+        delete_card(&mut conn, &gone.id).unwrap();
+
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[
+                saved("old", "Old work"),
+                saved("live", "Live work"),
+                saved("gone", "Dismissed"),
+                saved("unsaved", "Never saved"),
+            ],
+            2,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(column_of(&board, "old").as_deref(), Some("Done"));
+        assert_eq!(column_of(&board, "live").as_deref(), Some("In progress"));
+        assert_eq!(column_of(&board, "gone"), None);
+        assert_eq!(column_of(&board, "unsaved"), None);
+        // A backfill never touches the dismissal, so a still-finished session stays off.
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("gone", "Dismissed", "finished")],
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            column_of(&load_board(&mut conn, "/work/app").unwrap(), "gone"),
+            None
+        );
+    }
+
+    #[test]
+    fn linking_a_session_absorbs_its_untouched_auto_card() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Auto", "running"), live("s2", "Kept", "running")],
+            1,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        let kept = card_for(&board, "s2");
+        update_card(
+            &conn,
+            &KanbanCardInput {
+                notes: "my notes".into(),
+                ..input(&kept.id, "Kept")
+            },
+            2,
+        )
+        .unwrap();
+        create_card(
+            &mut conn,
+            &board.columns[0].id,
+            &input("mine", "Mine"),
+            None,
+            2,
+        )
+        .unwrap();
+        link_session(&conn, "mine", Some("s1"), 3).unwrap();
+        assert_eq!(
+            absorb_auto_cards(&conn, "s1", "mine").unwrap(),
+            vec!["/work/app"]
+        );
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Auto", "running")], 4).unwrap();
+        link_session(&conn, "mine", Some("s2"), 5).unwrap();
+        assert!(absorb_auto_cards(&conn, "s2", "mine").unwrap().is_empty());
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        assert_eq!(titles(&board.columns[1]), vec!["Mine", "Kept"]);
+        assert_eq!(card_for(&board, "s2").title, "Mine");
+        // Relinking "mine" away from s1 dismissed it, so it is not filed again.
+        sync_sessions(&mut conn, "/work/app", &[live("s1", "Auto", "running")], 6).unwrap();
+        assert_eq!(
+            column_of(&load_board(&mut conn, "/work/app").unwrap(), "s1"),
+            None
+        );
+    }
+
+    #[test]
+    fn deleting_a_column_dismisses_its_sessions_and_undo_restores_them() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let mut conn = store.lock_conn().unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Done work", "finished")],
+            1,
+        )
+        .unwrap();
+        let board = load_board(&mut conn, "/work/app").unwrap();
+        let done = board.columns[3].clone();
+        delete_column(&mut conn, &done.id).unwrap();
+        sync_sessions(
+            &mut conn,
+            "/work/app",
+            &[live("s1", "Done work", "finished")],
+            2,
+        )
+        .unwrap();
+        assert_eq!(card_count(&load_board(&mut conn, "/work/app").unwrap()), 0);
+        restore_column(&mut conn, &board.id, &done, 3).unwrap();
+        let restored = card_for(&load_board(&mut conn, "/work/app").unwrap(), "s1");
+        assert_eq!(restored.auto_title.as_deref(), Some("Done work"));
+        let dismissals: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM kanban_session_dismissals",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(dismissals, 0);
+    }
+
     #[test]
     fn an_existing_board_table_gains_the_session_columns() {
         let conn = Connection::open_in_memory().unwrap();
@@ -1469,5 +2288,13 @@ mod tests {
             )
             .unwrap();
         assert_eq!(session, None);
+        let auto: Option<String> = conn
+            .query_row(
+                "SELECT auto_title FROM kanban_cards WHERE id = 'a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(auto, None);
     }
 }
