@@ -11,6 +11,7 @@ import {
   PinOff,
   File,
   Plus,
+  Radar,
   Search,
   Settings,
   Zap,
@@ -70,7 +71,7 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RailAction, RailSearch } from "./RailAction";
+import { FleetNeedsYouCount, RailAction, RailSearch } from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
 import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -112,7 +113,11 @@ type Props = {
   onOpenAutomations?: () => void;
   automationsActive?: boolean;
   onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
   kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -153,7 +158,10 @@ export function ProjectRail({
   onOpenAutomations,
   automationsActive = false,
   onOpenKanban,
+  onOpenFleet,
   kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -341,6 +349,7 @@ export function ProjectRail({
     notesActive ||
     automationsActive ||
     kanbanActive ||
+    fleetActive ||
     !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
@@ -425,6 +434,20 @@ export function ProjectRail({
                 onClick={onOpenKanban}
                 active={kanbanActive}
                 ariaLabel="Board"
+              />
+            ) : null}
+            {onOpenFleet ? (
+              <RailAction
+                label="Fleet"
+                icon={Radar}
+                onClick={onOpenFleet}
+                active={fleetActive}
+                ariaLabel={
+                  fleetNeedsYou
+                    ? `Fleet, ${fleetNeedsYou} ${fleetNeedsYou === 1 ? "session needs" : "sessions need"} you`
+                    : "Fleet"
+                }
+                meta={<FleetNeedsYouCount count={fleetNeedsYou} />}
               />
             ) : null}
           </div>

@@ -33,6 +33,7 @@ Open a project folder, choose an agent, and send a message. Each tab is a sessio
 
 - Keep conversations organized by project.
 - Use separate Git worktrees for parallel tasks, each with its own `PORT` and an optional setup command.
+- Open **Fleet** to see every project's agents at once and approve or answer the ones waiting on you.
 - Edit files and review changes in the app.
 - Start a message with `/operator` to let an agent open sessions and manage worktrees and notes.
 
@@ -46,6 +47,7 @@ Irgatos is still early. If something breaks, [report a bug](https://github.com/w
 - [Linux installation](docs/install.md)
 - [Agent access with /operator](docs/agent-access.md)
 - [Worktree ports and setup](docs/worktrees.md)
+- [Fleet](docs/fleet.md)
 - [Remote sessions, experimental](docs/remote-access.md)
 
 ## Build from source

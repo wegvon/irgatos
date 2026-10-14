@@ -90,6 +90,26 @@ export function RailAction({
   );
 }
 
+/** Live count of sessions waiting on the user; renders nothing at zero. */
+export function FleetNeedsYouCount({
+  count,
+  className = "",
+}: {
+  count: number;
+  className?: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden
+      data-fleet-needs-you={count}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-black tabular-nums ${className}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
 export function RailSearch({
   label,
   icon: Icon,

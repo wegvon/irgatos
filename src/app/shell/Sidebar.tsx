@@ -29,6 +29,7 @@ import {
   Pin,
   RotateCcw,
   Plus,
+  Radar,
   Search,
   Share,
   Settings,
@@ -161,7 +162,7 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotificationMenu";
-import { RailAction } from "./RailAction";
+import { FleetNeedsYouCount, RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
@@ -329,6 +330,7 @@ type Props = {
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
   onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
   /** Opens the session's board card, filing one first when it has none. */
   onSessionBoard?: (sessionId: string) => void | Promise<void>;
   /** Sessions that already have a card on some board. */
@@ -339,6 +341,9 @@ type Props = {
   notesActive?: boolean;
   automationsActive?: boolean;
   kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   notesEnabled?: boolean;
   onToggleProjectRail?: () => void;
   projectRailOpen?: boolean;
@@ -435,6 +440,7 @@ function SidebarComponent({
   onOpenNotes,
   onOpenAutomations,
   onOpenKanban,
+  onOpenFleet,
   onSessionBoard,
   boardSessionIds,
   onGoToFile,
@@ -443,6 +449,8 @@ function SidebarComponent({
   notesActive = false,
   automationsActive = false,
   kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   notesEnabled = true,
   onToggleProjectRail,
   projectRailOpen = true,
@@ -816,6 +824,7 @@ function SidebarComponent({
     notesActive ||
     automationsActive ||
     kanbanActive ||
+    fleetActive ||
     settingsOpen;
   // A remembered Irgat sits underneath these views; select it only while visible.
   const railIrgats = irgats
@@ -1794,11 +1803,14 @@ function SidebarComponent({
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
               onOpenKanban={onOpenKanban}
+              onOpenFleet={onOpenFleet}
               searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
               automationsActive={automationsActive}
               kanbanActive={kanbanActive}
+              fleetActive={fleetActive}
+              fleetNeedsYou={fleetNeedsYou}
               inboxUnseen={inboxUnseen}
             />
           ) : null}
@@ -2331,7 +2343,10 @@ function SidebarComponent({
           onOpenAutomations={onOpenAutomations}
           automationsActive={automationsActive}
           onOpenKanban={onOpenKanban}
+          onOpenFleet={onOpenFleet}
           kanbanActive={kanbanActive}
+          fleetActive={fleetActive}
+          fleetNeedsYou={fleetNeedsYou}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
@@ -2364,7 +2379,10 @@ function SidebarComponent({
           onOpenAutomations={onOpenAutomations}
           automationsActive={automationsActive}
           onOpenKanban={onOpenKanban}
+          onOpenFleet={onOpenFleet}
           kanbanActive={kanbanActive}
+          fleetActive={fleetActive}
+          fleetNeedsYou={fleetNeedsYou}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2443,11 +2461,14 @@ function SidebarProjectPicker({
   onOpenNotes,
   onOpenAutomations,
   onOpenKanban,
+  onOpenFleet,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
   kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   inboxUnseen = false,
 }: {
   cwd: string;
@@ -2463,11 +2484,15 @@ function SidebarProjectPicker({
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
   onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
   kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   inboxUnseen?: boolean;
 }) {
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
@@ -2547,6 +2572,21 @@ function SidebarProjectPicker({
             <Kanban className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
+        {onOpenFleet ? (
+          <IconButton
+            label={fleetLabel(fleetNeedsYou)}
+            active={fleetActive}
+            onClick={onOpenFleet}
+          >
+            <span className="relative">
+              <Radar className="size-3.5" strokeWidth={1.75} />
+              <FleetNeedsYouCount
+                count={fleetNeedsYou}
+                className="absolute -right-2 -top-1.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            </span>
+          </IconButton>
+        ) : null}
       </div>
       {inboxMenu ? (
         <InboxNotificationMenu
@@ -2589,7 +2629,10 @@ function CompactProjectRail({
   onOpenAutomations,
   automationsActive,
   onOpenKanban,
+  onOpenFleet,
   kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   onOpenSettings,
   onTogglePanel,
   onLeaveActive,
@@ -2622,7 +2665,11 @@ function CompactProjectRail({
   onOpenAutomations?: () => void;
   automationsActive: boolean;
   onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
   kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   onOpenSettings?: () => void;
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
@@ -2665,6 +2712,7 @@ function CompactProjectRail({
     !notesActive &&
     !automationsActive &&
     !kanbanActive &&
+    !fleetActive &&
     !irgatViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
@@ -2814,6 +2862,15 @@ function CompactProjectRail({
             onClick={action(kanbanActive, onOpenKanban)}
           />
         ) : null}
+        {onOpenFleet ? (
+          <CompactRailAction
+            label={fleetLabel(fleetNeedsYou)}
+            icon={Radar}
+            active={fleetActive}
+            count={fleetNeedsYou}
+            onClick={action(fleetActive, onOpenFleet)}
+          />
+        ) : null}
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
@@ -2836,6 +2893,11 @@ function CompactProjectRail({
       ) : null}
     </nav>
   );
+}
+
+function fleetLabel(needsYou: number): string {
+  if (!needsYou) return "Fleet";
+  return `Fleet, ${needsYou} ${needsYou === 1 ? "session needs" : "sessions need"} you`;
 }
 
 function CompactRailIrgat({
@@ -2891,6 +2953,7 @@ function CompactRailAction({
   tab = false,
   active = false,
   dot = false,
+  count = 0,
   onClick,
   onOpenContextMenu,
 }: {
@@ -2899,6 +2962,7 @@ function CompactRailAction({
   tab?: boolean;
   active?: boolean;
   dot?: boolean;
+  count?: number;
   onClick?: () => void;
   onOpenContextMenu?: (x: number, y: number) => void;
 }) {
@@ -2954,6 +3018,10 @@ function CompactRailAction({
           className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent"
         />
       ) : null}
+      <FleetNeedsYouCount
+        count={count}
+        className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+      />
     </button>
   );
 }

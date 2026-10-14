@@ -158,6 +158,7 @@ import {
   type KanbanCard,
 } from "../features/kanban/model/kanban";
 import { liveSessionStatus } from "../features/kanban/model/cardSession";
+import { countNeedsYou } from "../features/fleet/model/fleet";
 import type { KanbanFocusRequest } from "../features/kanban/ui/KanbanView";
 import {
   loadProjectRailOpen,
@@ -935,6 +936,13 @@ const KanbanView = lazySurface(
   },
   { suspense: false },
 );
+const FleetView = lazySurface(
+  async () => {
+    const module = await import("../features/fleet/ui/FleetView");
+    return { default: module.FleetView };
+  },
+  { suspense: false },
+);
 
 type LinkedWorkItemPanelState = {
   item: LinkedWorkItem;
@@ -1380,6 +1388,7 @@ function Workspace({
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
   const [kanbanViewOpen, setKanbanViewOpen] = useState(false);
+  const [fleetViewOpen, setFleetViewOpen] = useState(false);
   const [kanbanFocus, setKanbanFocus] = useState<KanbanFocusRequest | null>(
     null,
   );
@@ -1419,6 +1428,7 @@ function Workspace({
     notes: false,
     automations: false,
     kanban: false,
+    fleet: false,
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
@@ -1644,6 +1654,7 @@ function Workspace({
       !notesViewOpen &&
       !automationsViewOpen &&
       !kanbanViewOpen &&
+      !fleetViewOpen &&
       !settingsOpen &&
       !irgatViewId,
     standaloneSessionId: inboxViewOpen
@@ -1652,6 +1663,7 @@ function Workspace({
           !notesViewOpen &&
           !automationsViewOpen &&
           !kanbanViewOpen &&
+          !fleetViewOpen &&
           !settingsOpen
         ? (irgatViewId ?? undefined)
         : undefined,
@@ -1661,6 +1673,7 @@ function Workspace({
       !notesViewOpen &&
       !automationsViewOpen &&
       !kanbanViewOpen &&
+      !fleetViewOpen &&
       !settingsOpen
         ? shownIrgatSessionId
         : undefined,
@@ -1671,6 +1684,8 @@ function Workspace({
   automationsViewOpenRef.current = automationsViewOpen;
   const kanbanViewOpenRef = useRef(kanbanViewOpen);
   kanbanViewOpenRef.current = kanbanViewOpen;
+  const fleetViewOpenRef = useRef(fleetViewOpen);
+  fleetViewOpenRef.current = fleetViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -2290,6 +2305,10 @@ function Workspace({
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
   );
+  const fleetNeedsYouCount = useMemo(
+    () => countNeedsYou(promptableSessions),
+    [promptableSessions],
+  );
   useInputNotifications(promptableSessions, activeSessionId);
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
@@ -2376,6 +2395,7 @@ function Workspace({
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
             !kanbanViewOpenRef.current &&
+            !fleetViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);
@@ -2415,6 +2435,7 @@ function Workspace({
     notesViewOpen,
     automationsViewOpen,
     kanbanViewOpen,
+    fleetViewOpen,
     settingsOpen,
     flushForegroundHarnessEvents,
   ]);
@@ -2909,6 +2930,7 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     const cwd = sidebarCwd;
     const session = newWorkspaceSession(cwd, sessionDefaults?.runtimeMode);
     const tab = newTab(session.id);
@@ -2926,6 +2948,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       const existing = findRemoteSessionTab(
         tabsRef.current,
         sessionsRef.current,
@@ -2955,6 +2978,7 @@ function Workspace({
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
         setKanbanViewOpen(false);
+        setFleetViewOpen(false);
         const cwd =
           item.projectPath || active?.cwd || sessionDefaults?.cwd || projectCwd;
         setSidebarTab("sessions", cwd);
@@ -2995,6 +3019,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       if (irgatViewIdRef.current) closeIrgatView();
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd)
@@ -4955,6 +4980,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       lastIrgatIdRef.current = irgatId;
       const session = await ensureIrgatSession(irgatId, {
         home: homeDir,
@@ -5220,6 +5246,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
@@ -5833,6 +5860,7 @@ function Workspace({
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
             kanbanViewOpenRef.current ||
+            fleetViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             whatsNewVersionRef.current,
@@ -6408,6 +6436,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
 
       // At most one folder can take the blank session, and it keeps the
       // retargeting rules `onCwdChange` already owns.
@@ -8907,6 +8936,7 @@ function Workspace({
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
           setKanbanViewOpen(false);
+          setFleetViewOpen(false);
           setSidebarTab("sessions", session.cwd);
         }
 
@@ -9075,6 +9105,7 @@ function Workspace({
             setNotesViewOpen(false);
             setAutomationsViewOpen(false);
             setKanbanViewOpen(false);
+            setFleetViewOpen(false);
             setSidebarTab("sessions", cwd);
           },
           submit: (id, text, attachments, options) =>
@@ -11954,6 +11985,19 @@ function Workspace({
     ],
   );
 
+  const onOpenFleetSession = useCallback(
+    (sessionId: string) => {
+      setFleetViewOpen(false);
+      const irgat = irgatForSession(sessionId);
+      if (irgat) {
+        void onOpenIrgat(irgat.id);
+        return;
+      }
+      onOpenApprovalSession(sessionId);
+    },
+    [onOpenApprovalSession, onOpenIrgat],
+  );
+
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
       setSearchViewOpen(false);
@@ -11961,6 +12005,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       onOpenApprovalSession(sessionId);
     },
     [onOpenApprovalSession],
@@ -12112,6 +12157,7 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setFilePickerInitialQuery("");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -12122,6 +12168,7 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setFilePickerInitialQuery(">");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -12139,6 +12186,7 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setSidebarTab("files");
     setFilesSearchOpen(true);
     setSearchFocusToken((token) => token + 1);
@@ -12153,6 +12201,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSearchViewOpen(true);
       setSearchViewFocusToken((token) => token + 1);
     });
@@ -12171,6 +12220,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setInboxViewOpen(true);
     });
   }, []);
@@ -12185,6 +12235,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setInboxViewOpen(false);
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??
@@ -12289,6 +12340,7 @@ function Workspace({
       setInboxViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setNotesViewOpen(true);
     });
   }, []);
@@ -12420,6 +12472,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setAutomationsViewOpen(true);
     });
   }, []);
@@ -12437,6 +12490,7 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setFleetViewOpen(false);
       setKanbanFocus(null);
       setKanbanViewOpen(true);
     });
@@ -12446,6 +12500,24 @@ function Workspace({
     setKanbanViewOpen(false);
   }, []);
 
+  const onOpenFleet = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveFleet = useCallback(() => {
+    setFleetViewOpen(false);
+  }, []);
+
   const onStartCardSession = useCallback(
     (card: KanbanCard, project: string) => {
       setSearchViewOpen(false);
@@ -12453,6 +12525,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
       const notes = card.notes.trim();
@@ -12485,6 +12558,7 @@ function Workspace({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setFleetViewOpen(false);
           setKanbanFocus({ project, cardId, token: Date.now() });
           setKanbanViewOpen(true);
         });
@@ -12553,6 +12627,7 @@ function Workspace({
         throw new Error("This conversation is no longer available.");
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -12576,6 +12651,7 @@ function Workspace({
           notes: notesViewOpenRef.current,
           automations: automationsViewOpenRef.current,
           kanban: kanbanViewOpenRef.current,
+          fleet: fleetViewOpenRef.current,
         };
       }
       startTransition(() => {
@@ -12585,6 +12661,7 @@ function Workspace({
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
         setKanbanViewOpen(false);
+        setFleetViewOpen(false);
         if (section) {
           setSettingsSection(section);
           saveSettingsSection(section);
@@ -12639,6 +12716,7 @@ function Workspace({
     setNotesViewOpen(returnView.notes && loadNotesEnabled());
     setAutomationsViewOpen(returnView.automations);
     setKanbanViewOpen(returnView.kanban);
+    setFleetViewOpen(returnView.fleet);
     setSettingsOpen(false);
   }, []);
 
@@ -12680,6 +12758,10 @@ function Workspace({
       setKanbanViewOpen(false);
       return;
     }
+    if (fleetViewOpen) {
+      setFleetViewOpen(false);
+      return;
+    }
     if (irgatViewIdRef.current) {
       closeIrgatView();
       setComposerFocused(true);
@@ -12696,6 +12778,7 @@ function Workspace({
     notesViewOpen,
     automationsViewOpen,
     kanbanViewOpen,
+    fleetViewOpen,
   ]);
 
   const onRailForward = useCallback(() => {
@@ -12705,6 +12788,7 @@ function Workspace({
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
     setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     onVisitForward();
   }, [onVisitForward]);
 
@@ -12977,6 +13061,7 @@ function Workspace({
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
             kanbanViewOpenRef.current ||
+            fleetViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             Boolean(whatsNewVersionRef.current);
@@ -13061,6 +13146,7 @@ function Workspace({
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
         !kanbanViewOpenRef.current &&
+        !fleetViewOpenRef.current &&
         !(
           e.target instanceof Element &&
           e.target.closest("[data-session-drop], [data-agent-tab]")
@@ -13717,7 +13803,8 @@ function Workspace({
     inboxViewOpen ||
     notesViewOpen ||
     automationsViewOpen ||
-    kanbanViewOpen;
+    kanbanViewOpen ||
+    fleetViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
   const compactTitleNavigation =
@@ -13845,7 +13932,8 @@ function Workspace({
                 inboxViewOpen ||
                 notesViewOpen ||
                 automationsViewOpen ||
-                kanbanViewOpen
+                kanbanViewOpen ||
+                fleetViewOpen
               }
               canGoForward={tabVisitNav.canForward}
               onGoBack={onRailBack}
@@ -13883,6 +13971,8 @@ function Workspace({
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
               onOpenKanban={onOpenKanban}
+              onOpenFleet={onOpenFleet}
+              fleetNeedsYou={fleetNeedsYouCount}
               onSessionBoard={onSessionBoard}
               boardSessionIds={kanbanSessions.linkedIds}
               onGoToFile={onGoToFile}
@@ -13891,6 +13981,7 @@ function Workspace({
               notesActive={notesViewOpen}
               automationsActive={automationsViewOpen}
               kanbanActive={kanbanViewOpen}
+              fleetActive={fleetViewOpen}
               notesEnabled={notesEnabled}
               projectRailOpen={projectRailOpen}
               compactProjectRail={compactProjectRail}
@@ -13918,7 +14009,8 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
-                  kanbanViewOpen
+                  kanbanViewOpen ||
+                  fleetViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
                 }
@@ -13928,7 +14020,8 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
-                  kanbanViewOpen
+                  kanbanViewOpen ||
+                  fleetViewOpen
                 }
                 inert={
                   searchViewOpen ||
@@ -13937,6 +14030,7 @@ function Workspace({
                   notesViewOpen ||
                   automationsViewOpen ||
                   kanbanViewOpen ||
+                  fleetViewOpen ||
                   undefined
                 }
               >
@@ -14187,6 +14281,7 @@ function Workspace({
                             !notesViewOpen &&
                             !automationsViewOpen &&
                             !kanbanViewOpen &&
+                            !fleetViewOpen &&
                             !irgatViewId &&
                             activeLinkedWorkItemPanel?.sessionId ===
                               panel.sessionId
@@ -14205,7 +14300,8 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
-                            !kanbanViewOpen
+                            !kanbanViewOpen &&
+                            !fleetViewOpen
                           }
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
@@ -14322,6 +14418,20 @@ function Workspace({
                   onToggleSidebar={onToggleSidebar}
                 />
               ) : null}
+              {fleetViewOpen ? (
+                <FleetView
+                  sessions={promptableSessions}
+                  unseenFinishedIds={unseenFinishedIds}
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  onClose={onLeaveFleet}
+                  onToggleSidebar={onToggleSidebar}
+                  onOpenSession={onOpenFleetSession}
+                  onApproval={onApproval}
+                  onQuestionReply={onQuestionReply}
+                  onQuestionInteraction={onQuestionInteraction}
+                />
+              ) : null}
               {settingsOpen ? (
                 <SettingsView
                   section={settingsSection}
@@ -14355,6 +14465,7 @@ function Workspace({
               notesViewOpen ||
               automationsViewOpen ||
               kanbanViewOpen ||
+              fleetViewOpen ||
               settingsOpen ? null : irgatCovers ? (
                 // The Irgat's composer already shows its usage, and it has no
                 // terminal of its own, so its footer carries the browser alone.
