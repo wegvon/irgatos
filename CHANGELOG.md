@@ -18,9 +18,18 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
   - The viewer opens as a workspace tab with Preview and Source. HTML and SVG render in a sandboxed frame, Markdown is rendered, images zoom and fit, and written files are read live from disk with Open and Explorer buttons.
   - Copy, Add to Chat (the active chat or any open one), Save as Note (once, however fast the clicks), Save to File… and Pin work from every artifact.
   - Code blocks, diagrams and file-writing tool calls in a conversation have an Open in Artifacts button.
+- **Irgat group chats.** Bring Irgats with different specialities into one room from the group button beside `+` in the Irgat rail. Pick two or more Irgats, set an optional name, and they reply in turn, each with its own soul, memory, harness and model, seeing the room's roster and what the others already said.
+  - `@Name` sends a message only to the members it mentions. Otherwise the members toggled on in the reply bar answer in order, either everyone ("All in order") or only those you pick.
+  - A reply that mentions another member hands it one follow-up turn when Follow-ups is on, or offers a "Let @Name reply" chip when it is off.
+  - The room streams the live reply with Stop, approvals and an "Up next" line, shows failed turns with Retry, and keeps the Irgat composer's dictation, voice mode, attachments and an `@` member picker.
+- **Add a saved note to an open chat.** Add to chat on a note lists the open chats (the Irgat in full view or the focused pane first, then the other panes and tabs) with a New chat entry last, and adds the note without touching what is typed.
 - **Direct messages between sessions.** **Send to session…** on any message, or on selected reply text, lists the sessions open in tabs and panes, siblings in the same project first, with their agent, model and status. Pick **Queue in composer** to drop the text into that session's draft, or **Send & run** to start a turn there headed `[Message from session "<sender>"]`. A broadcast row reaches every sibling at once, and **Bring the reply back here** returns the answer as a new turn.
   - Each message is tracked from Queued to Delivered to Replied, with timestamps. Pills under the sending reply and under the receiving turn show the state, and clicking one opens the other session at the linked message. Messages still on their way show above the receiver's composer.
   - **Cooperative mode** (a switch in the same dialog) tells agents which sibling sessions exist. An agent can then hand off work with `@send:"<session>" <message>` or ask a question with `@ask:"<session>" <question>` on its own line, and the answer to an `@ask` comes back to it. Chains stop after four hops, and failed directives show why on the sender's pill.
+
+### Fixed
+
+- Saving a note, or opening a new page in an Irgat's overview, files it once however fast the clicks come.
 
 ## [0.1.0] - 2026-10-14
 
