@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { newSession, type Session } from "./session";
 import {
   formatUsageLimitReset,
+  mergeUsageLimitError,
   USAGE_LIMIT_RESUME_GRACE_MS,
   usageLimitResumeDue,
   usageLimitFromError,
@@ -58,6 +59,50 @@ describe("provider error fallback", () => {
     "Network timeout",
   ])("keeps other failures out of usage recovery: %s", (message) => {
     expect(usageLimitFromError(message)).toBeUndefined();
+  });
+
+  it("reads the reset time when the error gives one", () => {
+    const now = 1_760_420_000_000;
+    expect(
+      usageLimitFromError("Claude AI usage limit reached|1760430000", now),
+    ).toEqual({ resetsAt: 1_760_430_000_000 });
+    expect(
+      usageLimitFromError("You've hit your usage limit. Try again in 2h.", now),
+    ).toEqual({ resetsAt: now + 2 * 3_600_000 });
+  });
+
+  it("treats a long rate-limit wait as a limit with its reset", () => {
+    expect(
+      usageLimitFromError("429 Too Many Requests. Retry-After: 900", 0),
+    ).toEqual({ resetsAt: 900_000 });
+  });
+});
+
+describe("mergeUsageLimitError", () => {
+  it("starts a limit from the error when none was known", () => {
+    expect(mergeUsageLimitError(undefined, "Quota exceeded", 0)).toEqual({});
+    expect(mergeUsageLimitError(undefined, "Invalid API key", 0)).toBeUndefined();
+  });
+
+  it("fills in a missing reset without losing the user's choice", () => {
+    expect(
+      mergeUsageLimitError(
+        { resumeAtReset: true },
+        "usage limit reached, try again in 30 minutes",
+        1_000,
+      ),
+    ).toEqual({ resumeAtReset: true, resetsAt: 1_000 + 30 * 60_000 });
+  });
+
+  it("keeps a reset the provider already reported", () => {
+    const known = { resetsAt: 5_000, resumeAtReset: false };
+    expect(mergeUsageLimitError(known, "try again in 30 minutes", 1_000)).toBe(
+      known,
+    );
+    const unknown = { resumeAtReset: true };
+    expect(mergeUsageLimitError(unknown, "Claude Code exited", 1_000)).toBe(
+      unknown,
+    );
   });
 });
 

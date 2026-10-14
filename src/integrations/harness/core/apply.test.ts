@@ -595,6 +595,40 @@ describe("usage limits", () => {
         .usageLimit,
     ).toEqual({});
   });
+
+  const NOW = 1_760_420_000_000;
+  const RESET_SECONDS = 1_760_430_000;
+
+  it("fills in the reset from a later error that names it", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      let session = applyHarnessEvent(newSession("claude", "/tmp"), {
+        type: "usage.limited",
+      });
+      session = applyHarnessEvent(session, {
+        type: "session.error",
+        message: `Claude AI usage limit reached|${RESET_SECONDS}`,
+      });
+      expect(session.usageLimit).toEqual({ resetsAt: RESET_SECONDS * 1_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts a limit from an error that names its reset", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      const session = applyHarnessEvent(newSession("codex", "/tmp"), {
+        type: "session.error",
+        message: `usage limit reached|${RESET_SECONDS}`,
+      });
+      expect(session.usageLimit).toEqual({ resetsAt: RESET_SECONDS * 1_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("status blocks", () => {

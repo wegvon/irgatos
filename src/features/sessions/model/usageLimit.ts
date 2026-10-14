@@ -1,13 +1,33 @@
 import { formatResetDuration } from "../../providers/model/rateLimits";
+import {
+  detectUsageLimit,
+  parseUsageLimitReset,
+} from "../../quotas/model/usageLimitReset";
 import type { Session, UsageLimit } from "./session";
 
-/** A fallback for adapters that report exhausted accounts as plain errors. */
-export function usageLimitFromError(message: string): UsageLimit | undefined {
-  return /(?:usage|spending|monthly|weekly|daily) limit (?:reached|exceeded)|(?:quota|credits?) (?:exceeded|exhausted|depleted)|insufficient[_ ](?:quota|credits)|hit your (?:usage )?limit|credit balance is too low/i.test(
-    message,
-  )
-    ? {}
-    : undefined;
+/**
+ * A fallback for adapters that report exhausted accounts as plain errors,
+ * with the reset time when the message gives one.
+ */
+export function usageLimitFromError(
+  message: string,
+  now = Date.now(),
+): UsageLimit | undefined {
+  const detected = detectUsageLimit(message, now);
+  if (!detected) return undefined;
+  return detected.resetAt != null ? { resetsAt: detected.resetAt } : {};
+}
+
+/** Keep a known limit, filling in its reset from the error when it was unknown. */
+export function mergeUsageLimitError(
+  limit: UsageLimit | undefined,
+  message: string,
+  now = Date.now(),
+): UsageLimit | undefined {
+  if (!limit) return usageLimitFromError(message, now);
+  if (limit.resetsAt != null) return limit;
+  const resetsAt = parseUsageLimitReset(message, now);
+  return resetsAt != null ? { ...limit, resetsAt } : limit;
 }
 
 /** Release the stopped outbox only when the user chooses to recover. */
