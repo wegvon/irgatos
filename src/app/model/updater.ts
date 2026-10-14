@@ -9,10 +9,9 @@ import { formatVersion } from "./appVersion";
 import { rememberInstalledUpdate } from "./updateNotice";
 
 /**
- * Irgatos's own repository, then its pre-rename name. GitHub redirects the
- * old name once the repo is renamed, so both keep working.
+ * Irgatos's own repository is the only default release source.
  */
-export const DEFAULT_UPDATE_REPOS = ["wegvon/irgatos", "wegvon/monocode"] as const;
+export const DEFAULT_UPDATE_REPOS = ["wegvon/irgatos"] as const;
 /** Upstream MonoCode owners ship a different app under the same asset names. */
 const BLOCKED_REPO_OWNERS = ["cretou", "hardbeat920"];
 const REPO_KEY = "irgatos.update.repo";

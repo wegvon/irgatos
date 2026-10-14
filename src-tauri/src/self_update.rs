@@ -21,9 +21,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
-/// Checked in order after any configured override. The fork may still live
-/// under its old name, and GitHub redirects a renamed repo to the new one.
-pub const DEFAULT_REPOS: [&str; 2] = ["wegvon/irgatos", "wegvon/monocode"];
+/// Irgatos is the only default release source.
+pub const DEFAULT_REPOS: [&str; 1] = ["wegvon/irgatos"];
 /// Upstream MonoCode owners ship a different app under the same asset names.
 /// Never offer their releases, whatever a remote or override says.
 const BLOCKED_OWNERS: [&str; 2] = ["cretou", "hardbeat920"];
@@ -1625,7 +1624,7 @@ mod tests {
             Some("CRETOU/irgatos"),
             Some("git@github.com:hardbeat920/monocode.git"),
         );
-        assert_eq!(repos, vec!["wegvon/irgatos", "wegvon/monocode"]);
+        assert_eq!(repos, vec!["wegvon/irgatos"]);
         assert!(repos
             .iter()
             .all(|repo| !repo.to_ascii_lowercase().contains("cretou")));
@@ -1647,7 +1646,7 @@ mod tests {
         );
         assert_eq!(
             candidate_repos(None, None, Some("git@github.com:someone/else.git")),
-            vec!["wegvon/irgatos", "wegvon/monocode", "someone/else"]
+            vec!["wegvon/irgatos", "someone/else"]
         );
         assert_eq!(candidate_repos(None, None, None), DEFAULT_REPOS.to_vec());
     }

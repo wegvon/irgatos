@@ -43,14 +43,14 @@ const BUILD: BuildInfo = {
   installPath: "/Applications/Irgatos.app",
   platform: "macos",
   arch: "aarch64",
-  defaultRepos: ["wegvon/irgatos", "wegvon/monocode"],
+  defaultRepos: ["wegvon/irgatos"],
   canSelfInstall: true,
 };
 
 function checkResult(overrides: Partial<UpdateCheck> = {}): UpdateCheck {
   return {
     build: BUILD,
-    repos: ["wegvon/irgatos", "wegvon/monocode"],
+    repos: ["wegvon/irgatos"],
     release: null,
     releaseNewer: false,
     releaseError: null,
@@ -110,7 +110,7 @@ describe("updater checks", () => {
       currentCommit: BUILD.commit,
       repo: "wegvon/irgatos",
     });
-    expect(result.note).toContain("No releases published on wegvon/irgatos or wegvon/monocode yet.");
+    expect(result.note).toContain("No releases published on wegvon/irgatos yet.");
     expect(invoke).toHaveBeenCalledWith("self_update_check", { repo: null, sourceDir: null });
     expect(isUpdateDialogOpen()).toBe(false);
   });

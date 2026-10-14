@@ -69,7 +69,7 @@ describe("UpdateDialogBody", () => {
       currentVersion: "0.1.0",
       currentCommit: COMMIT,
       branch: "main",
-      note: "No releases published on wegvon/irgatos or wegvon/monocode yet.",
+      note: "No releases published on wegvon/irgatos yet.",
     });
     expect(markup).toContain("Irgatos is up to date at v0.1.0");
     expect(markup).toContain("89b8805");
