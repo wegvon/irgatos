@@ -71,7 +71,8 @@ import {
   type KanbanCardInput,
   type KanbanColumn,
 } from "../model/kanban";
-import type { LiveCardSession } from "../model/cardSession";
+import { backfillKanbanBoard } from "../model/backfill";
+import { projectActivity, type LiveCardSession, type ProjectActivity } from "../model/cardSession";
 import { CardDialog } from "./CardDialog";
 import { CardSessionSection, SessionChip } from "./CardSession";
 import { KanbanCardItem } from "./KanbanCardItem";
@@ -123,6 +124,14 @@ export function KanbanView({
   }, [focusRequest]);
   useEffect(() => setQuery(""), [project]);
   const hasProject = looksLikeProject(project);
+  const { liveSessions } = sessionProps;
+  const elsewhere = useMemo(
+    () =>
+      liveSessions
+        ? projectActivity(liveSessions, hasProject ? kanbanProject(project) : null)
+        : [],
+    [hasProject, liveSessions, project],
+  );
 
   return (
     <div
@@ -181,6 +190,9 @@ export function KanbanView({
         ) : null}
         {IS_MAC ? null : <WindowControls />}
       </div>
+      {elsewhere.length > 0 ? (
+        <ElsewhereStrip projects={elsewhere} onSelect={setProject} />
+      ) : null}
       {hasProject ? (
         <KanbanBoardContent
           key={kanbanProject(project)}
@@ -280,6 +292,22 @@ function KanbanBoardContent({
     return subscribeKanban((changed) => {
       if (changed === key) void refresh();
     });
+  }, [project, refresh]);
+
+  const liveRef = useRef(liveSessions);
+  liveRef.current = liveSessions;
+  useEffect(() => {
+    let cancelled = false;
+    const key = kanbanProject(project);
+    // Loaded sessions report their live state themselves.
+    backfillKanbanBoard(project, new Set(liveRef.current?.keys() ?? []))
+      .then((changed) => {
+        if (!cancelled && changed.includes(key)) void refresh();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, [project, refresh]);
 
   const pushNotice = useCallback((next: NoticeInput) => {
@@ -817,6 +845,10 @@ function KanbanBoardContent({
                 liftedId={liftedId}
                 highlightId={highlightId}
                 tabbableId={tabbableId}
+                cardAttention={(card) =>
+                  !!card.session &&
+                  liveSessions?.get(card.session.id)?.status === "needs-input"
+                }
                 cardAccessory={(card) => (
                   <SessionChip
                     card={card}
@@ -1086,6 +1118,56 @@ function BoardToast({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function ElsewhereStrip({
+  projects,
+  onSelect,
+}: {
+  projects: ProjectActivity[];
+  onSelect: (project: string) => void;
+}) {
+  return (
+    <nav
+      aria-label="Sessions in other projects"
+      data-kanban-elsewhere
+      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-stroke px-4 py-1.5 text-[11.5px]"
+    >
+      <span className="shrink-0 text-content/45">Other projects</span>
+      {projects.map((item) => {
+        const name = basename(item.project) || item.project;
+        const parts = [
+          item.waiting ? `${item.waiting} waiting on you` : "",
+          item.running ? `${item.running} running` : "",
+        ].filter(Boolean);
+        return (
+          <button
+            key={item.project}
+            type="button"
+            title={`Open the ${name} board`}
+            aria-label={`${name}: ${parts.join(", ")}. Open its board`}
+            onClick={() => onSelect(item.project)}
+            data-tauri-drag-region="false"
+            className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border border-content/10 px-2 text-content/75 hover:border-content/25 hover:bg-content/8 hover:text-content"
+          >
+            <span className="max-w-40 truncate">{name}</span>
+            {item.waiting ? (
+              <span className="inline-flex items-center gap-1 text-amber-400">
+                <span aria-hidden className="size-1.5 rounded-full bg-amber-400" />
+                {item.waiting} waiting on you
+              </span>
+            ) : null}
+            {item.running ? (
+              <span className="inline-flex items-center gap-1 text-accent">
+                <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />
+                {item.running} running
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 

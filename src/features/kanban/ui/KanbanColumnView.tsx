@@ -27,6 +27,7 @@ type Props = {
   columnDragging: boolean;
   dropSide: "before" | "after" | null;
   cardAccessory?: (card: KanbanCard) => ReactNode;
+  cardAttention?: (card: KanbanCard) => boolean;
   onHeaderPointerDown: (event: ReactPointerEvent) => void;
   onCardPointerDown: (cardId: string, slot: CardDragSlot, event: ReactPointerEvent) => void;
   onCardOpen: (cardId: string) => void;
@@ -53,6 +54,7 @@ export function KanbanColumnView({
   columnDragging,
   dropSide,
   cardAccessory,
+  cardAttention,
   onHeaderPointerDown,
   onCardPointerDown,
   onCardOpen,
@@ -136,6 +138,7 @@ export function KanbanColumnView({
               highlighted={card.id === highlightId}
               hintId={hintId}
               accessory={cardAccessory?.(card)}
+              attention={cardAttention?.(card) ?? false}
               onPointerDown={(event) =>
                 onCardPointerDown(card.id, { columnId: column.id, slot: index }, event)
               }

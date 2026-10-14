@@ -23,6 +23,8 @@ export type KanbanCard = {
   createdAt: number;
   updatedAt: number;
   session?: KanbanCardSession | null;
+  /** Set when the board filed this card for its session by itself. */
+  autoTitle?: string | null;
 };
 
 /** Last state the app saw for a stored session; live sessions report their own. */
@@ -258,6 +260,37 @@ export function recordKanbanSessionStatus(
 export function loadKanbanSessionLinks(): Promise<KanbanSessionLink[]> {
   return invoke<KanbanSessionLink[]>("kanban_session_links");
 }
+
+export type KanbanSessionSync = {
+  sessionId: string;
+  title: string;
+  /** Live state; leave it out to read the saved transcript. */
+  status?: StoredSessionStatus | null;
+  /** Only file a missing card, never move one. */
+  backfill?: boolean;
+  /** The user asked for it, so an earlier dismissal no longer applies. */
+  force?: boolean;
+};
+
+/**
+ * Files cards for sessions that have none and moves linked cards when their
+ * session changes state. New cards go on top in order, so pass the newest
+ * last. Resolves with the projects whose boards changed.
+ */
+export function syncKanbanSessions(
+  project: string,
+  sessions: KanbanSessionSync[],
+): Promise<string[]> {
+  return enqueueKanbanWrite(() =>
+    invoke<string[] | null>("kanban_sync_sessions", {
+      project: kanbanProject(project),
+      sessions,
+    }),
+  ).then((changed) => (Array.isArray(changed) ? changed : []));
+}
+
+/** How many saved sessions a board files on its own when it opens. */
+export const KANBAN_BACKFILL_LIMIT = 200;
 
 /** Mirrors the store's label rules so chips render as they will be saved. */
 export function normalizeCardLabels(labels: readonly string[]): string[] {

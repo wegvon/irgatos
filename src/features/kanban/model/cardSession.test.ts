@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "../../sessions/model/session";
 import {
+  boardSyncBatches,
+  cardSessionLabel,
   cardSessionView,
+  liveSessionAttention,
   liveSessionStatus,
+  type BoardSession,
   liveSessionsKey,
   type LiveCardSession,
   type LiveSessionLike,
@@ -95,5 +99,69 @@ describe("liveSessionsKey", () => {
     const c = new Map([["s", { status: "finished", title: "T", harness: "claude" } as const]]);
     expect(liveSessionsKey(a)).toBe(liveSessionsKey(b));
     expect(liveSessionsKey(a)).not.toBe(liveSessionsKey(c));
+  });
+});
+
+describe("waiting on the user", () => {
+  it("tells an approval from a question, and both mean needs-input", () => {
+    const approval = session([block("user"), block("tool", { approval: { requestId: 1 } })], {
+      busy: true,
+    });
+    const question = session([block("user")], {
+      busy: true,
+      pendingQuestion: { requestId: 2, questions: [] },
+    });
+    expect(liveSessionStatus(approval)).toBe("needs-input");
+    expect(liveSessionStatus(question)).toBe("needs-input");
+    expect(liveSessionAttention(approval)).toBe("approval");
+    expect(liveSessionAttention(question)).toBe("question");
+    expect(liveSessionAttention({ ...question, worktreeRemoved: true })).toBeUndefined();
+  });
+
+  it("labels the badge with the reason", () => {
+    const live: LiveCardSession = {
+      status: "needs-input",
+      title: "T",
+      harness: "claude",
+      attention: "question",
+    };
+    const view = cardSessionView({ id: "s", saved: true }, live);
+    expect(cardSessionLabel(view)).toBe("Waiting for answers");
+    expect(cardSessionLabel({ ...view, attention: "approval" })).toBe("Need approval");
+    expect(cardSessionLabel({ state: "needs-input" })).toBe("Needs input");
+  });
+});
+
+describe("boardSyncBatches", () => {
+  const entry = (extra: Partial<BoardSession>): BoardSession => ({
+    status: "running",
+    title: "T",
+    harness: "codex",
+    project: "/work/app",
+    fileable: true,
+    ...extra,
+  });
+
+  it("groups changes by project and skips blank tabs unless a card links them", () => {
+    const sent = new Map<string, string>();
+    const sessions = new Map([
+      ["a", entry({})],
+      ["blank", entry({ status: "draft", fileable: false })],
+      ["linked", entry({ status: "draft", fileable: false })],
+      ["api", entry({ project: "/work/api", status: "finished" })],
+      ["nowhere", entry({ project: undefined })],
+    ]);
+    const batches = boardSyncBatches(sessions, new Set(["linked"]), sent);
+    expect([...batches]).toEqual([
+      [
+        "/work/app",
+        [
+          { sessionId: "a", title: "T", status: "running" },
+          { sessionId: "linked", title: "T", status: "draft" },
+        ],
+      ],
+      ["/work/api", [{ sessionId: "api", title: "T", status: "finished" }]],
+    ]);
+    expect(boardSyncBatches(sessions, new Set(["linked"]), sent).size).toBe(0);
   });
 });

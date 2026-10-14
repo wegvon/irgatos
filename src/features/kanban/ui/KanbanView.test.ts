@@ -337,6 +337,88 @@ it("shows each card's session state and opens the session from its chip", async 
   expect(document.querySelector("[data-card-session]")).toBeNull();
 });
 
+it("files the project's saved sessions when the board opens, leaving live ones to report themselves", async () => {
+  invoke.mockImplementation(async (command: string, args: Record<string, unknown> = {}) => {
+    calls.push({ command, args });
+    if (command === "kanban_board") return structuredClone(board);
+    if (command === "session_list_by_project") {
+      return [
+        { id: "old", cwd: PROJECT, harness: "codex", title: "codex · Old work", updatedAt: 1 },
+        { id: "new", cwd: PROJECT, harness: "codex", title: "New work", updatedAt: 9 },
+        { id: "live", cwd: PROJECT, harness: "codex", title: "Live", updatedAt: 10 },
+        { id: "gone", cwd: PROJECT, harness: "codex", title: "Archived", updatedAt: 11, archived: true },
+        { id: "hidden", cwd: PROJECT, harness: "codex", title: "Hidden", updatedAt: 12, sidebarHidden: true },
+      ];
+    }
+    if (command === "kanban_sync_sessions") {
+      board.columns[3]!.cards.push({
+        ...card("auto", "done", "New work"),
+        session: { id: "new", status: "finished", saved: true },
+        autoTitle: "New work",
+      });
+      return [PROJECT];
+    }
+    if (command.startsWith("kanban_")) return null;
+    if (command.startsWith("plugin:event|")) return 1;
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await render(PROJECT, {
+    liveSessions: new Map([["live", { status: "running", title: "Live", harness: "codex" }]]),
+  });
+  expect(writes("kanban_sync_sessions")).toEqual([
+    {
+      project: PROJECT,
+      sessions: [
+        { sessionId: "old", title: "Old work", backfill: true },
+        { sessionId: "new", title: "New work", backfill: true },
+      ],
+    },
+  ]);
+  expect(columnCards("done")).toEqual(["auto"]);
+});
+
+it("marks cards whose session waits on the user and names why", async () => {
+  board.columns[2]!.cards = [
+    { ...card("ask", "review", "Pick a library"), session: { id: "s-ask", status: "needs-input", saved: true } },
+    { ...card("perm", "review", "Delete build"), session: { id: "s-perm", status: "needs-input", saved: true } },
+  ];
+  await render(PROJECT, {
+    liveSessions: new Map([
+      ["s-ask", { status: "needs-input", title: "Pick", harness: "claude", attention: "question" }],
+      ["s-perm", { status: "needs-input", title: "Delete", harness: "codex", attention: "approval" }],
+    ]),
+  });
+  expect(cardElement("ask").dataset.kanbanAttention).toBe("true");
+  expect(cardElement("perm").dataset.kanbanAttention).toBe("true");
+  expect(cardElement("c1").dataset.kanbanAttention).toBeUndefined();
+  expect(cardElement("ask").textContent).toContain("Waiting for answers");
+  expect(cardElement("perm").textContent).toContain("Need approval");
+});
+
+it("points at other projects with sessions waiting or running", async () => {
+  await render(PROJECT, {
+    recents: [
+      { path: PROJECT, openedAt: 1 },
+      { path: "/work/api", openedAt: 2 },
+    ],
+    liveSessions: new Map([
+      ["here", { status: "needs-input", title: "Here", harness: "codex", project: PROJECT }],
+      ["api-1", { status: "running", title: "One", harness: "codex", project: "/work/api" }],
+      ["api-2", { status: "needs-input", title: "Two", harness: "codex", project: "/work/api" }],
+      ["web", { status: "finished", title: "Done", harness: "codex", project: "/work/web" }],
+    ]),
+  });
+  const strip = container.querySelector<HTMLElement>("[data-kanban-elsewhere]")!;
+  const buttons = [...strip.querySelectorAll("button")];
+  expect(buttons.map((button) => button.textContent)).toEqual(["api1 waiting on you1 running"]);
+  await act(async () => buttons[0]!.click());
+  await act(async () => {});
+  expect(writes("kanban_board").at(-1)).toEqual({ project: "/work/api" });
+  expect(
+    [...container.querySelectorAll("[data-kanban-elsewhere] button")].map((button) => button.textContent),
+  ).toEqual(["Edefyn1 waiting on you"]);
+});
+
 it("says so when a linked session can't be opened", async () => {
   board.columns[0]!.cards[0]!.session = { id: "s1", status: "finished", saved: true };
   await render(PROJECT, {

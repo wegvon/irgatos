@@ -152,8 +152,10 @@ import {
   kanbanProject,
   linkKanbanSession,
   loadKanbanBoard,
+  syncKanbanSessions,
   type KanbanCard,
 } from "../features/kanban/model/kanban";
+import { liveSessionStatus } from "../features/kanban/model/cardSession";
 import type { KanbanFocusRequest } from "../features/kanban/ui/KanbanView";
 import {
   loadProjectRailOpen,
@@ -1956,6 +1958,9 @@ function Workspace({
       tab: tab === "inbox" ? "sessions" : tab,
     });
   }, []);
+  // The board opens on the project the sidebar shows; an Irgat chat or a
+  // file outside any project leaves it on the current one.
+  const boardCwd = looksLikeProject(sidebarCwd) ? sidebarCwd : projectCwd;
   const sidebarCwdKey =
     sidebarCwd && sidebarCwd !== "~" ? normalizeProjectPath(sidebarCwd) : null;
   const historyFailed =
@@ -11791,8 +11796,28 @@ function Workspace({
         sidebarHistory.find((item) => item.id === sessionId);
       if (!session) return;
       const project = kanbanProject(session.cwd);
+      const title =
+        cardTitleFromText(sessionDisplayTitle(session.title, session.harness)) ||
+        "Untitled session";
+      const loaded = sessionsRef.current.find((item) => item.id === sessionId);
       try {
+        await syncKanbanSessions(project, [
+          {
+            sessionId,
+            title,
+            status: loaded ? liveSessionStatus(loaded) : null,
+            force: true,
+          },
+        ]);
         const board = await loadKanbanBoard(project);
+        const filed = board.columns
+          .flatMap((column) => column.cards)
+          .find((card) => card.session?.id === sessionId);
+        if (filed) {
+          showCard(project, filed.id);
+          return;
+        }
+        // Never saved, so there was no transcript to file it from.
         const column =
           board.columns[0] ??
           (await createKanbanColumn(
@@ -11802,7 +11827,7 @@ function Workspace({
           ));
         const card = await createKanbanCard(column.id, {
           id: crypto.randomUUID(),
-          title: cardTitleFromText(session.title) || "Untitled session",
+          title,
           notes: "",
           labels: [],
         });
@@ -13514,7 +13539,7 @@ function Workspace({
                 <KanbanView
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
-                  cwd={projectCwd}
+                  cwd={boardCwd}
                   recents={recents}
                   focusRequest={kanbanFocus}
                   liveSessions={kanbanSessions.live}

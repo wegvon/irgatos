@@ -49,6 +49,8 @@ type Props = {
   tabbable?: boolean;
   lifted?: boolean;
   highlighted?: boolean;
+  /** Its session is waiting on the user. */
+  attention?: boolean;
   overlay?: boolean;
   hintId?: string;
   style?: CSSProperties;
@@ -64,6 +66,7 @@ export function KanbanCardItem({
   tabbable = false,
   lifted = false,
   highlighted = false,
+  attention = false,
   overlay = false,
   hintId,
   style,
@@ -83,6 +86,7 @@ export function KanbanCardItem({
     <div
       data-kanban-card={overlay ? undefined : card.id}
       data-kanban-highlighted={highlighted || undefined}
+      data-kanban-attention={attention || undefined}
       role={overlay ? undefined : "button"}
       tabIndex={overlay ? undefined : tabbable ? 0 : -1}
       aria-roledescription={overlay ? undefined : "card"}
@@ -101,7 +105,9 @@ export function KanbanCardItem({
             ? "border-accent shadow-lg shadow-black/20 ring-2 ring-accent/60"
             : highlighted
               ? "border-accent/70 ring-2 ring-accent/40"
-              : "border-content/10 shadow-sm shadow-black/5 hover:border-content/20"
+              : attention
+                ? "border-amber-400/50 shadow-sm shadow-amber-500/10 hover:border-amber-400/70"
+                : "border-content/10 shadow-sm shadow-black/5 hover:border-content/20"
       }`}
     >
       <span className="line-clamp-3 break-words text-[13px] leading-snug text-content">

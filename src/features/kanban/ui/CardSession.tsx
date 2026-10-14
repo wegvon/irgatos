@@ -6,7 +6,7 @@ import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { listSessionsByProject } from "../../sessions/data/sessionStore";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
-  CARD_SESSION_LABEL,
+  cardSessionLabel,
   cardSessionView,
   type CardSessionState,
   type CardSessionView,
@@ -40,7 +40,7 @@ export function SessionStateBadge({
       className={`inline-flex h-4.5 shrink-0 items-center gap-1 rounded px-1.5 text-[10.5px] font-medium ${tone.chip} ${className}`}
     >
       <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${tone.dot}`} />
-      {CARD_SESSION_LABEL[view.state]}
+      {cardSessionLabel(view)}
     </span>
   );
 }
@@ -66,7 +66,7 @@ export function SessionChip({
       data-no-drag
       disabled={!canOpen}
       title={canOpen ? `Open session: ${view.title}` : view.title}
-      aria-label={`${CARD_SESSION_LABEL[view.state]} session${canOpen ? ", open it" : ""}`}
+      aria-label={`${cardSessionLabel(view)} session${canOpen ? ", open it" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
         if (canOpen) onOpen(sessionId);
@@ -142,7 +142,12 @@ export function CardSessionSection({
             <p className="text-[12px] text-content/50">
               It was still working when Irgatos last closed. Open it to pick up where it stopped.
             </p>
-          ) : null}
+          ) : (
+            <p className="text-[12px] text-content/45">
+              {card.autoTitle ? "Added for this session. " : ""}The card moves to In progress,
+              Review, or Done as the session works, waits on you, or finishes.
+            </p>
+          )}
         </>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
