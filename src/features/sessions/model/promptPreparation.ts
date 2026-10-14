@@ -8,6 +8,7 @@ import {
 } from "../../skills/model/skills";
 import { nativeCommandPrompt } from "../../../integrations/harness/core/nativeCommands";
 import { applySessionReferencesToTurn } from "../data/sessionReferenceDirectory";
+import { applyCooperativeBridgeToTurn } from "./sessionMessageRouter";
 
 export async function preparePrompt(
   text: string,
@@ -19,5 +20,10 @@ export async function preparePrompt(
   const withFiles = await applyFileMentionsToTurn(text, context.cwd);
   const withNotes = await applyNotesToTurn(withFiles);
   const withSkills = await applySkillsToTurn(withNotes, context);
-  return applySessionReferencesToTurn(text, withSkills, context);
+  const withReferences = await applySessionReferencesToTurn(
+    text,
+    withSkills,
+    context,
+  );
+  return applyCooperativeBridgeToTurn(withReferences, context.sessionId);
 }

@@ -5,6 +5,7 @@ export const OPEN_REFERENCED_SESSION_EVENT = "irgat:open-referenced-session";
 export const SEND_TO_SESSION_EVENT = "irgat:send-to-session";
 export const INSERT_SESSION_REFERENCE_EVENT =
   "irgat:insert-session-reference";
+export const INSERT_SESSION_MESSAGE_EVENT = "irgat:insert-session-message";
 
 export type OpenReferencedSessionRequest = {
   sessionId: string;
@@ -16,12 +17,21 @@ export type SendToSessionRequest = {
   sourceSessionId: string;
   /** Any block of the message being sent. */
   blockId: string;
+  /** Selected text to send instead of the whole message. */
+  text?: string;
 };
 
 export type InsertSessionReferenceRequest = {
   targetSessionId: string;
   label: string;
   /** Set by the mounted composer that took the reference. */
+  handled?: boolean;
+};
+
+export type InsertSessionMessageRequest = {
+  targetSessionId: string;
+  text: string;
+  /** Set by the mounted composer that took the message. */
   handled?: boolean;
 };
 
@@ -68,4 +78,33 @@ export function insertSessionReference(
     targetSessionId,
     appendSessionReference(getComposerDraft(targetSessionId) ?? "", label),
   );
+}
+
+/**
+ * Put a message in another chat's composer. A mounted composer takes it
+ * directly; otherwise it lands in the draft the composer opens with.
+ */
+export function insertSessionMessageIntoComposer(
+  targetSessionId: string,
+  text: string,
+): void {
+  const detail: InsertSessionMessageRequest = { targetSessionId, text };
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<InsertSessionMessageRequest>(
+        INSERT_SESSION_MESSAGE_EVENT,
+        { detail },
+      ),
+    );
+  }
+  if (detail.handled) return;
+  setComposerDraft(
+    targetSessionId,
+    appendToDraft(getComposerDraft(targetSessionId) ?? "", text),
+  );
+}
+
+export function appendToDraft(draft: string, text: string): string {
+  if (!draft.trim()) return text;
+  return `${draft.replace(/\s+$/, "")}\n\n${text}`;
 }
