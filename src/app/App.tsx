@@ -567,6 +567,7 @@ import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
+import { InboxResurfaceNotices } from "../features/inbox/ui/InboxResurfaceNotices";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
@@ -2374,6 +2375,7 @@ function Workspace({
     ],
   );
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
+  const [inboxResurfaceHeight, setInboxResurfaceHeight] = useState(0);
   const [harnessUpdateHeight, setHarnessUpdateHeight] = useState(0);
 
   useEffect(() => {
@@ -14532,9 +14534,18 @@ function Workspace({
               }}
             />
           )}
-          <HarnessUpdateNotice
+          <InboxResurfaceNotices
             topOffset={
               12 + (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0)
+            }
+            onOpenInbox={onOpenInbox}
+            onHeightChange={setInboxResurfaceHeight}
+          />
+          <HarnessUpdateNotice
+            topOffset={
+              12 +
+              (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
+              (inboxResurfaceHeight ? inboxResurfaceHeight + 8 : 0)
             }
             onHeightChange={setHarnessUpdateHeight}
           />
@@ -14543,6 +14554,7 @@ function Workspace({
             topOffset={
               12 +
               (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
+              (inboxResurfaceHeight ? inboxResurfaceHeight + 8 : 0) +
               (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
             }
             onFocusSession={onOpenApprovalSession}

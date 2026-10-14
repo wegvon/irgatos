@@ -20,6 +20,11 @@ import {
   inboxPersonAvatarUrl,
   type InboxProvider,
 } from "../model/githubTasks";
+import {
+  clearInboxDraft,
+  inboxDraft,
+  saveInboxDraft,
+} from "../model/inboxDrafts";
 import { MOD } from "../../../platform/tauri/platform";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 
@@ -233,22 +238,59 @@ export function InboxComments({
   );
 }
 
+const DRAFT_SAVE_MS = 400;
+
 export function InboxCommentForm({
+  draftKey,
   replyTo,
   posting,
   error,
   onCancelReply,
   onSubmit,
 }: {
+  /** Keeps an unsent reply for this item across switches and restarts. */
+  draftKey?: string;
   replyTo: InboxReplyTarget | null;
   posting: boolean;
   error: string | null;
   onCancelReply: () => void;
   onSubmit: (body: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftText] = useState(() =>
+    draftKey ? inboxDraft(draftKey) : "",
+  );
   const field = useRef<HTMLTextAreaElement>(null);
   const canPost = draft.trim().length > 0 && !posting;
+  const pendingSave = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    flush: () => void;
+  } | null>(null);
+
+  const cancelSave = () => {
+    if (!pendingSave.current) return;
+    clearTimeout(pendingSave.current.timer);
+    pendingSave.current = null;
+  };
+  const setDraft = (next: string) => {
+    setDraftText(next);
+    if (!draftKey) return;
+    cancelSave();
+    const flush = () => {
+      pendingSave.current = null;
+      saveInboxDraft(draftKey, next);
+    };
+    pendingSave.current = { timer: setTimeout(flush, DRAFT_SAVE_MS), flush };
+  };
+
+  useEffect(
+    () => () => {
+      const pending = pendingSave.current;
+      if (!pending) return;
+      clearTimeout(pending.timer);
+      pending.flush();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!replyTo) return;
@@ -267,7 +309,9 @@ export function InboxCommentForm({
     if (!body || posting) return;
     try {
       await onSubmit(body);
-      setDraft("");
+      setDraftText("");
+      cancelSave();
+      if (draftKey) clearInboxDraft(draftKey);
     } catch {
       // Parent keeps the error next to the button.
     }
@@ -318,7 +362,12 @@ export function InboxCommentForm({
           onKeyDown={onKeyDown}
           className="max-h-40 w-full resize-none overflow-y-auto bg-transparent px-3 py-2 text-[13px] leading-5 text-content outline-none placeholder:text-content/35 disabled:opacity-40"
         />
-        <div className="flex items-center justify-end px-2 pb-2">
+        <div className="flex items-center justify-end gap-2 px-2 pb-2">
+          {draftKey && draft.trim() && !posting ? (
+            <span className="mr-auto px-1 text-[11px] text-content/35">
+              Draft kept until you post it
+            </span>
+          ) : null}
           <button
             type="submit"
             disabled={!canPost}
