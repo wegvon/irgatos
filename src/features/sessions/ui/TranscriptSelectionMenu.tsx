@@ -1,4 +1,8 @@
-import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
+import {
+  FilePlusCorner,
+  MessageSquarePlus,
+  Share,
+} from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import { type TranscriptSelection } from "../model/transcriptSelection";
@@ -7,6 +11,7 @@ type Props = {
   selection: TranscriptSelection | null;
   onAddToChat?: (text: string) => void;
   onAddToNotes?: (text: string) => void | Promise<void>;
+  onSendToSession?: (text: string, blockId: string) => void;
   onDismiss: () => void;
 };
 
@@ -14,6 +19,7 @@ export function TranscriptSelectionMenu({
   selection,
   onAddToChat,
   onAddToNotes,
+  onSendToSession,
   onDismiss,
 }: Props) {
   const onDismissRef = useRef(onDismiss);
@@ -72,6 +78,15 @@ export function TranscriptSelectionMenu({
               className="size-3.5"
               strokeWidth={1.75}
             />
+          </SelectionAction>
+        ) : null}
+        {onSendToSession && selection.blockId ? (
+          <SelectionAction
+            label="Send to session…"
+            onSelect={() => onSendToSession(selection.text, selection.blockId!)}
+            onDismiss={onDismiss}
+          >
+            <Share aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
           </SelectionAction>
         ) : null}
       </div>

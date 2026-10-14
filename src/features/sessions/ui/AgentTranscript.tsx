@@ -21,6 +21,7 @@ import {
   memo,
   startTransition,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -45,7 +46,12 @@ import { PlanPreview } from "./PlanPreview";
 import { OrchestrationPreview } from "../../orchestration/ui/OrchestrationPreview";
 import { TaskListPreview } from "./TaskListPreview";
 import { HandoffButton, SecondOpinionButton } from "./SecondOpinionButton";
-import { SendToSessionButton } from "./SendToSessionButton";
+import {
+  SendToSessionButton,
+  SessionReferenceSourceContext,
+} from "./SendToSessionButton";
+import { SessionMessagePills } from "./SessionMessagePills";
+import { requestSendToSession } from "../model/sessionReferenceEvents";
 import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { ArtifactCard } from "../../artifacts/ui/ArtifactCard";
@@ -400,9 +406,24 @@ function AgentTranscriptComponent({
       setAnchorTurn(!!busy);
     }
   }
+  const sendSourceId = useContext(SessionReferenceSourceContext);
+  const sendSelection = useMemo(
+    () =>
+      sendSourceId
+        ? (text: string, blockId: string) =>
+            requestSendToSession({
+              sourceSessionId: sendSourceId,
+              blockId,
+              text,
+            })
+        : undefined,
+    [sendSourceId],
+  );
   const { selection, dismissSelection } = useTranscriptSelection(
     scrollerEl,
-    onAddToChat !== undefined || onSaveSelectionNote !== undefined,
+    onAddToChat !== undefined ||
+      onSaveSelectionNote !== undefined ||
+      sendSelection !== undefined,
   );
   const transcriptLayout = useTranscriptLayout();
   const promptAnchor = useTranscriptAnchor() && !bottomAligned;
@@ -1644,15 +1665,21 @@ function AgentTranscriptComponent({
                   }
                 />
               ) : null}
+              <SessionMessagePills
+                blockIds={turn.flatMap((block) =>
+                  block.role === "user" ? [] : [block.id],
+                )}
+              />
             </div>
           );
         })}
       </TranscriptContent>
-      {onAddToChat || onSaveSelectionNote ? (
+      {onAddToChat || onSaveSelectionNote || sendSelection ? (
         <TranscriptSelectionMenu
           selection={selection}
           onAddToChat={onAddToChat}
           onAddToNotes={onSaveSelectionNote}
+          onSendToSession={sendSelection}
           onDismiss={dismissSelection}
         />
       ) : null}
@@ -2784,6 +2811,7 @@ function UserMessageBlock({
           )}
         </div>
         {deliveryControl}
+        <SessionMessagePills blockIds={[block.id]} align="end" />
         {!compactFollowUp &&
         (text || block.attachments?.length || messageAt != null || onEdit) ? (
           <div className="user-message-actions flex items-center gap-1 px-3 pt-1">

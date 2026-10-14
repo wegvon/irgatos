@@ -734,6 +734,10 @@ import { lazySurface } from "../shared/ui/lazySurface";
 import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
 import { publishLiveSessions } from "../features/sessions/data/sessionReferenceDirectory";
+import {
+  connectSessionMessageTransport,
+  syncSessionMessages,
+} from "../features/sessions/model/sessionMessageRouter";
 import { SessionReferenceHost } from "../features/sessions/ui/SessionReferenceHost";
 import type { SettingsAnchor } from "../features/settings/ui/SettingsView";
 import {
@@ -8537,6 +8541,15 @@ function Workspace({
     },
     [submitSession],
   );
+  useEffect(
+    () =>
+      connectSessionMessageTransport({
+        sessions: () => sessionsRef.current,
+        submit: (sessionId, text) => onSubmit(sessionId, text, []),
+      }),
+    [onSubmit],
+  );
+  useEffect(() => syncSessionMessages(sessions), [sessions]);
 
   // onApproval is created once; it reaches the current helper through this.
   const decideIrgatBlockRef = useRef<

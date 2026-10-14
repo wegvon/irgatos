@@ -123,4 +123,41 @@ describe("TranscriptSelectionMenu", () => {
     expect(onAddToChat).not.toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalledOnce();
   });
+
+  it("sends a selection to another session with the block it came from", async () => {
+    const onSendToSession = vi.fn();
+    const onDismiss = vi.fn();
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          selection: {
+            text: "Run the migration",
+            rect: new DOMRect(10, 20, 100, 20),
+            blockId: "reply-1",
+          },
+          onSendToSession,
+          onDismiss,
+        }),
+      ),
+    );
+    const send = Array.from(document.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Send to session…"),
+    );
+    await act(async () => send?.click());
+    expect(onSendToSession).toHaveBeenCalledWith("Run the migration", "reply-1");
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("hides sending when the selection has no block", () => {
+    act(() =>
+      root.render(
+        createElement(TranscriptSelectionMenu, {
+          selection: { text: "Loose", rect: new DOMRect(10, 20, 100, 20) },
+          onSendToSession: vi.fn(),
+          onDismiss: vi.fn(),
+        }),
+      ),
+    );
+    expect(document.body.textContent).not.toContain("Send to session…");
+  });
 });

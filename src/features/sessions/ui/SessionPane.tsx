@@ -58,6 +58,7 @@ import { AgentTranscript } from "./AgentTranscript";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { SessionReferenceSourceContext } from "./SendToSessionButton";
 import { ArtifactSourceContext } from "../../artifacts/ui/artifactContext";
+import { PendingSessionMessages } from "./SessionMessagePills";
 import { TranscriptFind } from "./TranscriptFind";
 import {
   TranscriptJumpToBottom,
@@ -1317,7 +1318,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   />
                 </>
               ) : (
-                composer
+                <>
+                  {!remote && !session.inboxAsk ? (
+                    <PendingSessionMessages sessionId={session.id} />
+                  ) : null}
+                  {composer}
+                </>
               )}
             </div>
           ) : null}

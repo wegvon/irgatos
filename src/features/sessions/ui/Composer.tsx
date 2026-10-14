@@ -133,8 +133,11 @@ import {
   sessionReferenceTokens,
 } from "../model/sessionReferences";
 import {
+  appendToDraft,
+  INSERT_SESSION_MESSAGE_EVENT,
   INSERT_SESSION_REFERENCE_EVENT,
   requestOpenReferencedSession,
+  type InsertSessionMessageRequest,
   type InsertSessionReferenceRequest,
 } from "../model/sessionReferenceEvents";
 import { sessionDisplayTitle } from "../model/session";
@@ -1328,6 +1331,28 @@ export function Composer({
     window.addEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
     return () =>
       window.removeEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
+  }, [onDraftChange, remote, sessionId, syncHasValue]);
+
+  useEffect(() => {
+    if (!sessionId || remote) return;
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertSessionMessageRequest>)
+        .detail;
+      const el = ref.current;
+      if (!el || detail?.targetSessionId !== sessionId || detail.handled)
+        return;
+      detail.handled = true;
+      const next = appendToDraft(el.value, detail.text);
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(next.length, next.length);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+    };
+    window.addEventListener(INSERT_SESSION_MESSAGE_EVENT, onInsert);
+    return () =>
+      window.removeEventListener(INSERT_SESSION_MESSAGE_EVENT, onInsert);
   }, [onDraftChange, remote, sessionId, syncHasValue]);
 
   useEffect(() => {

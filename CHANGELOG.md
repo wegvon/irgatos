@@ -18,6 +18,9 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
   - The viewer opens as a workspace tab with Preview and Source. HTML and SVG render in a sandboxed frame, Markdown is rendered, images zoom and fit, and written files are read live from disk with Open and Explorer buttons.
   - Copy, Add to Chat (the active chat or any open one), Save as Note (once, however fast the clicks), Save to File… and Pin work from every artifact.
   - Code blocks, diagrams and file-writing tool calls in a conversation have an Open in Artifacts button.
+- **Direct messages between sessions.** **Send to session…** on any message, or on selected reply text, lists the sessions open in tabs and panes, siblings in the same project first, with their agent, model and status. Pick **Queue in composer** to drop the text into that session's draft, or **Send & run** to start a turn there headed `[Message from session "<sender>"]`. A broadcast row reaches every sibling at once, and **Bring the reply back here** returns the answer as a new turn.
+  - Each message is tracked from Queued to Delivered to Replied, with timestamps. Pills under the sending reply and under the receiving turn show the state, and clicking one opens the other session at the linked message. Messages still on their way show above the receiver's composer.
+  - **Cooperative mode** (a switch in the same dialog) tells agents which sibling sessions exist. An agent can then hand off work with `@send:"<session>" <message>` or ask a question with `@ask:"<session>" <question>` on its own line, and the answer to an `@ask` comes back to it. Chains stop after four hops, and failed directives show why on the sender's pill.
 
 ## [0.1.0] - 2026-10-14
 
