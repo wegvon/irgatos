@@ -17,11 +17,20 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 - **Irgatos identity.** The app is named Irgatos, ships as `com.irgatos.desktop` with its own icon, and carries settings, sessions and Irgats over from the MonoCode-era app data on first launch.
 - **One-click commit and push** from the source control panel, with progress that survives React StrictMode.
+- **Dictation and voice mode in the Irgat chat box**, sharing one implementation with the session composer.
+- **Attach folders** from the Irgat chat box and the session composer's plus menu, or by dropping them on the floating chat. The agent gets the folder's path and a summary of its top level, leaving out version control, dependency, build and gitignored entries.
+- **The in-app browser beside an Irgat.** The browser panel stays open next to a full-view Irgat, and page annotations, screenshots, notes and Add to Chat go to the Irgat's chat instead of a hidden session.
+- **Kanban boards that fill themselves.** Every project session gets a card in the column for its state and moves when that state changes. Sessions waiting on an approval or an AskUserQuestion answer move to Review with a badge, the board opens on the sidebar's project, and a strip lists other projects with active sessions. Cards you delete or unlink stay off until the session needs you again.
 - **Version at a glance.** The running version appears beside Settings in the sidebar, in the Settings header, and under Settings › General › About together with the commit it was built from. `npm run version:bump -- <x.y.z|patch|minor|major>` updates every version file at once, and `npm run version:check` verifies they agree.
 - **Check for Updates that works.** The macOS app menu, Settings and the sidebar share one Software Update window that shows the installed and available versions and walks through Checking, Up to date or Update available, Downloading, Installing and Relaunching.
   - **GitHub Releases:** Irgatos checks the latest release on `wegvon/irgatos` (falling back to `wegvon/monocode`, a configured repository or the checkout's `origin`), compares versions and commits, downloads the macOS `.app.tar.gz` or `.dmg` for your architecture, removes the quarantine flag, replaces `/Applications/Irgatos.app` (asking for an administrator password only when needed) and relaunches.
   - **Source checkout:** when Irgatos runs from a git checkout, newer commits on its branch are offered as **Rebuild & Relaunch**, which fast-forwards the checkout, rebuilds the app and installs it.
 - The Release workflow runs for `v*` tags or by hand and publishes the macOS archives and disk images the updater consumes. Apple signing, notarization and Tauri updater signatures are used when their secrets exist; without them the workflow publishes ad-hoc signed builds.
+
+### Fixed
+
+- The macOS bundle uses the Irgatos `.icns` icon.
+- Handing a session off to Claude Code, Codex or OpenCode through a MemoryProxy relay no longer stops on its Chinese "关联资产" (link team assets) question. Irgatos answers it with "don't link" automatically and shows any remaining prompt in English.
 
 [Unreleased]: https://github.com/wegvon/irgatos/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/wegvon/irgatos/releases/tag/v0.1.0
