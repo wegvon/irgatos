@@ -47,8 +47,19 @@ export type Habit = {
   runs?: HabitRun[];
   /** Run once as soon as possible, paused or not, leaving the schedule alone. */
   runRequested?: boolean;
+  /** Waiting for its provider's usage limit to reset instead of failing. */
+  quotaHold?: HabitQuotaHold;
   /** The suggestion card in the chat it was started from. */
   fromCard?: string;
+};
+
+export type HabitQuotaHold = {
+  harness: string;
+  accountId: string;
+  /** When the provider resets, as known when the habit was held. */
+  until: number;
+  /** The user chose Run anyway. */
+  override?: boolean;
 };
 
 export type HabitOutcome = "posted" | "quiet" | "failed";
@@ -138,10 +149,61 @@ export function parseHabits(text: string | null | undefined): Habit[] {
       ...(isString(value.lastError) ? { lastError: value.lastError } : {}),
       ...(Array.isArray(value.runs) ? { runs: parseRuns(value.runs) } : {}),
       ...(value.runRequested === true ? { runRequested: true } : {}),
+      ...parseQuotaHold(value.quotaHold),
       ...(isString(value.fromCard) ? { fromCard: value.fromCard } : {}),
     });
   }
   return habits;
+}
+
+function parseQuotaHold(value: unknown): { quotaHold?: HabitQuotaHold } {
+  if (!value || typeof value !== "object") return {};
+  const hold = value as Record<string, unknown>;
+  if (!isString(hold.harness) || !isNumber(hold.until)) return {};
+  return {
+    quotaHold: {
+      harness: hold.harness,
+      accountId: isString(hold.accountId) ? hold.accountId : "default",
+      until: hold.until,
+      ...(hold.override === true ? { override: true } : {}),
+    },
+  };
+}
+
+/** Held for its provider's reset, and the user has not overridden it. */
+export function habitQuotaHeld(habit: Habit, now: number): boolean {
+  const hold = habit.quotaHold;
+  return !!hold && !hold.override && hold.until > now;
+}
+
+/**
+ * Park a due habit until its provider resets. It stays requested, so it
+ * runs once at the reset however long the hold lasts.
+ */
+export function holdHabitForQuota(
+  habit: Habit,
+  hold: Omit<HabitQuotaHold, "override">,
+): Habit {
+  return {
+    ...habit,
+    runRequested: true,
+    quotaHold: {
+      harness: hold.harness,
+      accountId: hold.accountId,
+      until: hold.until,
+    },
+  };
+}
+
+/** Run a held habit now, past the hold. */
+export function runHabitAnyway(habit: Habit): Habit {
+  return habit.quotaHold
+    ? {
+        ...habit,
+        runRequested: true,
+        quotaHold: { ...habit.quotaHold, override: true },
+      }
+    : { ...habit, runRequested: true };
 }
 
 function parseRuns(value: unknown[]): HabitRun[] {
@@ -242,12 +304,15 @@ export function addHabit(irgatId: string, draft: HabitDraft): Promise<Habit> {
 export function dueHabits(
   habits: Habit[],
   now: number,
+  isHeld: (habit: Habit, now: number) => boolean = habitQuotaHeld,
 ): { run: Habit[]; skipped: Habit[] } {
   const run: Habit[] = [];
   const skipped: Habit[] = [];
   for (const habit of habits) {
     // One run of a habit at a time; it comes due again once this one ends.
     if (active.has(habit.id)) continue;
+    // Held for a usage limit: neither run nor skipped until the reset.
+    if (isHeld(habit, now)) continue;
     if (habit.runRequested) {
       run.push(habit);
       continue;
@@ -269,7 +334,7 @@ export function afterRun(
     startedAt?: number;
   },
 ): Habit {
-  const { runRequested, ...scheduled } = habit;
+  const { runRequested, quotaHold: _released, ...scheduled } = habit;
   const next: Habit = {
     ...scheduled,
     // A requested run leaves the schedule where it was.
@@ -326,6 +391,7 @@ export function subscribeCheckHabitsNow(onCheck: () => void): () => void {
 
 /** Due and waiting for the scheduler to pick it up: Run now, or a missed minute. */
 export function habitStarting(habit: Habit, now = Date.now()): boolean {
+  if (habitQuotaHeld(habit, now)) return false;
   return !!habit.runRequested || (habit.enabled && habit.nextRunAt <= now);
 }
 
@@ -407,9 +473,11 @@ export function claimHabit(
   now: number,
 ): Promise<Habit | undefined> {
   return updateHabits(irgatId, (habits) => {
+    // The scheduler already weighed any quota hold before claiming.
     const { run } = dueHabits(
       habits.filter((habit) => habit.id === habitId),
       now,
+      () => false,
     );
     const claimed = run[0];
     return {

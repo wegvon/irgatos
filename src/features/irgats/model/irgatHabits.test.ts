@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Block } from "../../sessions/model/session";
 import {
   HABIT_RUNS_KEPT,
@@ -13,6 +13,9 @@ import {
   relayApproval,
   takeRelayedApproval,
   dueHabits,
+  habitQuotaHeld,
+  holdHabitForQuota,
+  runHabitAnyway,
   habitPostsContext,
   habitReport,
   habitSchedule,
@@ -78,6 +81,67 @@ it("runs a recent missed habit once and skips stale ones", () => {
   const { run, skipped } = dueHabits([due, stale, paused, later], at(5, 9, 5));
   expect(run.map((h) => h.id)).toEqual(["h1"]);
   expect(skipped.map((h) => h.id)).toEqual(["h2"]);
+});
+
+describe("quota holds", () => {
+  const hold = { harness: "claude", accountId: "default", until: at(5, 12) };
+
+  it("parks a due habit until its provider resets, neither run nor skipped", () => {
+    const held = holdHabitForQuota(habit({ nextRunAt: at(5, 9) }), hold);
+    expect(held).toMatchObject({ runRequested: true, quotaHold: hold });
+    expect(habitQuotaHeld(held, at(5, 10))).toBe(true);
+    expect(dueHabits([held], at(5, 10))).toEqual({ run: [], skipped: [] });
+    expect(habitStarting(held, at(5, 10))).toBe(false);
+  });
+
+  it("is not skipped as missed however long the hold lasts", () => {
+    const held = holdHabitForQuota(habit({ nextRunAt: at(5, 9) }), hold);
+    const afterReset = at(5, 12) + MISSED_RUN_GRACE_MS * 3;
+    expect(habitQuotaHeld(held, afterReset)).toBe(false);
+    expect(dueHabits([held], afterReset).run).toEqual([held]);
+    expect(habitStarting(held, afterReset)).toBe(true);
+  });
+
+  it("lets the scheduler decide what counts as held", () => {
+    const held = holdHabitForQuota(habit(), hold);
+    expect(dueHabits([held], at(5, 10), () => false).run).toEqual([held]);
+    const plain = habit({ nextRunAt: at(5, 9) });
+    expect(dueHabits([plain], at(5, 9, 5), () => true)).toEqual({
+      run: [],
+      skipped: [],
+    });
+  });
+
+  it("runs anyway when the user overrides the hold", () => {
+    const held = holdHabitForQuota(habit(), hold);
+    const forced = runHabitAnyway(held);
+    expect(forced.quotaHold).toEqual({ ...hold, override: true });
+    expect(habitQuotaHeld(forced, at(5, 10))).toBe(false);
+    expect(dueHabits([forced], at(5, 10)).run).toEqual([forced]);
+    expect(runHabitAnyway(habit())).toEqual({ ...habit(), runRequested: true });
+  });
+
+  it("clears the hold once the run is claimed", () => {
+    const claimed = afterRun(holdHabitForQuota(habit(), hold), at(5, 12));
+    expect(claimed).not.toHaveProperty("quotaHold");
+    expect(claimed).not.toHaveProperty("runRequested");
+  });
+
+  it("round-trips the hold through habits.json and drops malformed ones", () => {
+    const forced = runHabitAnyway(holdHabitForQuota(habit(), hold));
+    expect(parseHabits(serializeHabits([forced]))).toEqual([forced]);
+    const broken = JSON.stringify([
+      { ...habit(), quotaHold: { harness: "claude" } },
+      { ...habit({ id: "h2" }), quotaHold: { harness: "codex", until: 5 } },
+    ]);
+    const [first, second] = parseHabits(broken);
+    expect(first).not.toHaveProperty("quotaHold");
+    expect(second.quotaHold).toEqual({
+      harness: "codex",
+      accountId: "default",
+      until: 5,
+    });
+  });
 });
 
 it("moves to the next run and records how it went", () => {
