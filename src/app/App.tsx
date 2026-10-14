@@ -609,6 +609,19 @@ import {
   writeAgentFile,
 } from "../features/irgats/model/irgatFiles";
 import { useIrgatHabits } from "./hooks/useIrgatHabits";
+import { useIrgatGroupChat } from "./hooks/useIrgatGroupChat";
+import {
+  useActiveIrgatGroups,
+  useIrgatGroupRun,
+} from "../features/irgats/hooks/useIrgatGroup";
+import {
+  findIrgatGroup,
+  irgatGroupName,
+  irgatGroupOfView,
+  irgatGroupViewKey,
+  removeIrgatGroup,
+} from "../features/irgats/model/irgatGroups";
+import { IrgatGroupView } from "../features/irgats/ui/IrgatGroupView";
 import { useFloatingIrgat } from "./hooks/useFloatingIrgat";
 import {
   dropRelays,
@@ -4926,6 +4939,31 @@ function Workspace({
       (last && findIrgat(last) ? last : undefined) ?? listIrgats()[0]?.id;
     if (irgatId) void onOpenIrgat(irgatId);
   }, [closeIrgatView, monosEnabled, onOpenIrgat]);
+
+  /**
+   * A group room covers the workspace the way an Irgat does, through the same
+   * view slot, so leaving it works everywhere leaving an Irgat does.
+   */
+  const onOpenIrgatGroup = useCallback(
+    (groupId: string) => {
+      setIrgatActivity(null);
+      workspaceNavigation.cancel();
+      irgatViewRequest.current += 1;
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      const key = irgatGroupViewKey(groupId);
+      irgatViewIdRef.current = key;
+      saveOpenIrgat(undefined);
+      setIrgatViewId(key);
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
+      setComposerFocusToken((token) => token + 1);
+    },
+    [workspaceNavigation.cancel],
+  );
 
   /** A new Irgat opens straight away, ready to be told what it works on. */
   const onCreateIrgat = useCallback(() => {
@@ -10894,6 +10932,77 @@ function Workspace({
 
   const stopSessionRef = useRef(onStop);
   stopSessionRef.current = onStop;
+
+  const irgatGroups = useIrgatGroupChat({
+    sessions: () => sessionsRef.current,
+    memberSession: (irgatId) =>
+      ensureIrgatSession(irgatId, {
+        home: homeDir,
+        load: ensureOpenSession,
+        create: (path) => newDefaultSession(path),
+        add: (created) => {
+          sessionsRef.current = [...sessionsRef.current, created];
+          setSessions(sessionsRef.current);
+        },
+      }),
+    add: (session) => {
+      sessionsRef.current = [...sessionsRef.current, session];
+      setSessions(sessionsRef.current);
+    },
+    run: (id, prompt, attachments) =>
+      new Promise((resolve) => {
+        void submitWithSettlement({
+          submit: (onSettled) =>
+            submitSession(id, prompt, attachments, { onSettled }),
+          onSettled: resolve,
+          rejectionMessage: "The group reply could not start.",
+        });
+      }),
+    stop: async (id) => {
+      await stopSessionRef.current(id);
+    },
+    remove: async (id) => {
+      const open = await stopSessionForRemoval(id);
+      if (open)
+        await Promise.all(
+          sessionChildHarnesses(open).map((harness) =>
+            forgetHarnessSession(harness, id),
+          ),
+        );
+      await deleteSession(id, []);
+      sessionsRef.current = sessionsRef.current.filter(
+        (session) => session.id !== id,
+      );
+      setSessions(sessionsRef.current);
+    },
+  });
+  const activeIrgatGroups = useActiveIrgatGroups(irgatGroups);
+  const openIrgatGroupId = irgatGroupOfView(irgatViewId);
+  const openIrgatGroupRun = useIrgatGroupRun(
+    irgatGroups,
+    openIrgatGroupId ?? "",
+  );
+  const openIrgatGroupSeatId = openIrgatGroupRun.speaking?.seatId;
+  const openIrgatGroupSeat = openIrgatGroupSeatId
+    ? sessions.find((session) => session.id === openIrgatGroupSeatId)
+    : undefined;
+  /** Deletes the room and what was said in it; its members stay. */
+  const onDeleteIrgatGroup = useCallback(
+    async (groupId: string) => {
+      const group = findIrgatGroup(groupId);
+      if (!group) return;
+      const confirmed = await ask(
+        `Delete the group chat “${irgatGroupName(group)}”? What was said in it will be deleted. Its Irgats stay. This can’t be undone.`,
+        { title: "Irgatos", kind: "warning" },
+      );
+      if (!confirmed) return;
+      await irgatGroups.stop(groupId);
+      if (irgatViewIdRef.current === irgatGroupViewKey(groupId))
+        closeIrgatView();
+      removeIrgatGroup(groupId);
+    },
+    [irgatGroups, closeIrgatView],
+  );
   const removeSessionRef = useRef(onRemoveHistorySession);
   removeSessionRef.current = onRemoveHistorySession;
 
@@ -13275,6 +13384,24 @@ function Workspace({
     (irgatId: string) => void onDeleteIrgat(irgatId),
     [onDeleteIrgat],
   );
+  const onDeleteRailIrgatGroup = useCallback(
+    (groupId: string) => void onDeleteIrgatGroup(groupId),
+    [onDeleteIrgatGroup],
+  );
+  const sidebarIrgatGroups = useMemo(
+    () => ({
+      activeId: openIrgatGroupId,
+      busy: activeIrgatGroups,
+      onOpen: onOpenIrgatGroup,
+      onDelete: onDeleteRailIrgatGroup,
+    }),
+    [
+      openIrgatGroupId,
+      activeIrgatGroups,
+      onOpenIrgatGroup,
+      onDeleteRailIrgatGroup,
+    ],
+  );
   // The memoized sidebar only skips a streamed batch if this keeps identity.
   const sidebarIrgats = useMemo(
     () =>
@@ -13288,6 +13415,7 @@ function Workspace({
             onDelete: onDeleteRailIrgat,
             // Release notes come first; the intro waits its turn.
             introAvailable: !whatsNewVersion,
+            groups: sidebarIrgatGroups,
           }
         : undefined,
     [
@@ -13298,6 +13426,7 @@ function Workspace({
       onCreateIrgat,
       onDeleteRailIrgat,
       whatsNewVersion,
+      sidebarIrgatGroups,
     ],
   );
   const onDismissUpdate = useCallback(() => setUpdateNotice(null), []);
@@ -13324,7 +13453,7 @@ function Workspace({
           : undefined
       }
       onToggleIrgatOverview={
-        irgatCovers
+        irgatCovers && irgatViewIrgat
           ? () => {
               setIrgatActivity(null);
                       setIrgatOverviewOpen(!irgatOverviewShown);
@@ -13736,6 +13865,25 @@ function Workspace({
                                   </div>
                                 );
                               })}
+                            {openIrgatGroupId ? (
+                              <div
+                                data-irgat-group-pane={openIrgatGroupId}
+                                className="absolute inset-0 flex h-full min-h-0 flex-col"
+                              >
+                                <IrgatGroupView
+                                  key={openIrgatGroupId}
+                                  groupId={openIrgatGroupId}
+                                  runner={irgatGroups}
+                                  liveSeat={openIrgatGroupSeat}
+                                  visible={
+                                    !projectTerminalFocused && composerFocused
+                                  }
+                                  focusToken={composerFocusToken}
+                                  onApproval={onApproval}
+                                  onOpenFile={onOpenFile}
+                                />
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
