@@ -84,6 +84,9 @@ import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
+import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
+import { sessionInterruption } from "../model/sessionInterruption";
+import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
 import { QuestionForm } from "./QuestionForm";
 import {
   irgatMessageDeliveries,
@@ -216,6 +219,11 @@ export type SessionPaneProps = {
   onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
   onUsageLimitDismiss: (sessionId: string) => void;
   onUsageLimitAccountChange?: (sessionId: string, accountId: string) => void;
+  /** Pick an interrupted conversation back up in one click. */
+  onResumeInterrupted?: (sessionId: string) => void;
+  onDismissInterrupted?: (sessionId: string) => void;
+  /** Send this session's queued prompts past its provider's quota hold. */
+  onRunQueueAnyway?: (sessionId: string) => void;
   onInboxCardDismiss?: (sessionId: string) => void;
   onLinkedWorkItemUpdateCardDismiss?: (sessionId: string) => void;
   onNoteCardDismiss?: (sessionId: string) => void;
@@ -351,6 +359,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
   onUsageLimitAccountChange,
+  onResumeInterrupted,
+  onDismissInterrupted,
+  onRunQueueAnyway,
   onInboxCardDismiss,
   onLinkedWorkItemUpdateCardDismiss,
   onNoteCardDismiss,
@@ -405,6 +416,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const recallLastTurnRef = useRef<(() => void) | null>(null);
   const remote = remoteSession;
+  const interruption =
+    !remote && onResumeInterrupted ? sessionInterruption(session) : undefined;
+  const interruptionBanner = (variant: "composer" | "irgat") =>
+    interruption && onResumeInterrupted ? (
+      <InterruptedSessionBanner
+        interruption={interruption}
+        variant={variant}
+        onResume={() => onResumeInterrupted(session.id)}
+        onDismiss={
+          onDismissInterrupted
+            ? () => onDismissInterrupted(session.id)
+            : undefined
+        }
+      />
+    ) : null;
   // A Irgat's chat is a running conversation; what was said stays said.
   const editLastTurnSupported =
     !remote && !irgatForSession(session.id) && canEditLastTurn(session);
@@ -826,6 +852,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onResumeQueue={() => onResumeQueue(session.id)}
       usageLimit={session.usageLimit}
+      providerAccountId={session.providerAccountId}
+      hideQuotaHold={remote}
+      queueHoldOverride={session.queueHoldOverride}
+      onRunQueueAnyway={
+        onRunQueueAnyway ? () => onRunQueueAnyway(session.id) : undefined
+      }
       onUsageLimitResume={() => onUsageLimitResume(session.id)}
       onUsageLimitResumeAtReset={(enabled) =>
         onUsageLimitResumeAtReset(session.id, enabled)
@@ -840,7 +872,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
         recallLastTurnRef.current = recall;
       }}
       onEditingLastTurnChange={setEditingLastTurn}
-    />
+    >
+      {interruptionBanner("composer")}
+    </Composer>
   );
 
   return (
@@ -1238,7 +1272,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         onUsageLimitResumeAtReset(session.id, enabled)
                       }
                     />
-                  ) : null}
+                  ) : remote ? null : (
+                    <SessionProviderHold
+                      harness={session.harness}
+                      providerAccountId={session.providerAccountId}
+                      cwd={session.cwd}
+                      queuedCount={session.queuedMessages?.length}
+                      queueOverride={session.queueHoldOverride}
+                      variant="irgat"
+                    />
+                  )}
+                  {interruptionBanner("irgat")}
                   <IrgatComposer
                     key={session.id}
                     sessionId={session.id}

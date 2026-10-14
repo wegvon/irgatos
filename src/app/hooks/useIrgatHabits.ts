@@ -23,6 +23,7 @@ import {
   HABIT_APPROVAL_WAIT_MS,
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
+  holdHabitForQuota,
   isRelayed,
   habitRunPrompt,
   loadHabits,
@@ -32,6 +33,12 @@ import {
   updateHabits,
   type Habit,
 } from "../../features/irgats/model/irgatHabits";
+import type { HarnessId } from "../../features/sessions/model/session";
+import type { UsageLimitHold } from "../../features/quotas/model/usageLimitRegistry";
+import {
+  holdAccountId,
+  usageLimitRegistry,
+} from "../../features/quotas/model/usageLimitStore";
 
 const TICK_MS = 60_000;
 
@@ -137,6 +144,32 @@ async function watchRun(
   return settled;
 }
 
+/** Held while its provider's registry hold stands, unless overridden. */
+function heldByRegistry(habit: Habit, now: number): boolean {
+  const hold = habit.quotaHold;
+  if (!hold || hold.override) return false;
+  return !!usageLimitRegistry.get(hold.harness as HarnessId, hold.accountId, now);
+}
+
+function parkHabit(
+  irgatId: string,
+  habitId: string,
+  hold: UsageLimitHold,
+): Promise<void> {
+  return updateHabits(irgatId, (habits) => ({
+    habits: habits.map((entry) =>
+      entry.id === habitId
+        ? holdHabitForQuota(entry, {
+            harness: hold.harness,
+            accountId: hold.accountId,
+            until: hold.resetAt,
+          })
+        : entry,
+    ),
+    result: undefined,
+  }));
+}
+
 /**
  * Runs each Irgat's habits on schedule while the app is open: in a hidden
  * session of its own, posting to the Irgat's chat only when the run has
@@ -166,6 +199,18 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       if (!irgat || stopped || !findIrgat(irgatId)) return;
       const files = await loadIrgatFiles(irgatId);
       if (stopped || !findIrgat(irgatId)) return;
+      // Out of quota: wait for the reset instead of failing the run.
+      const accountId = holdAccountId(irgat.harness, undefined, irgat.cwd);
+      const quotaHold = usageLimitRegistry.get(irgat.harness, accountId);
+      if (quotaHold) {
+        const latest = (await loadHabits(irgatId)).find(
+          (entry) => entry.id === habitId,
+        );
+        if (!latest?.quotaHold?.override) {
+          await parkHabit(irgatId, habitId, quotaHold);
+          return;
+        }
+      }
       const now = Date.now();
       // Claim after preparation, from the latest definition. A queued habit
       // may have been removed, paused, rescheduled or claimed in another window.
@@ -203,16 +248,30 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           error: error instanceof Error ? error.message : String(error),
         };
       }
-      const reply =
-        finalReply(host.sessions().find((s) => s.id === run.id)) ||
-        outcome.text;
-      const artifacts = artifactCards(
-        host.sessions().find((s) => s.id === run.id)?.blocks ?? [],
-      );
+      const ranSession = host.sessions().find((s) => s.id === run.id);
+      const reply = finalReply(ranSession) || outcome.text;
+      const artifacts = artifactCards(ranSession?.blocks ?? []);
+      const hitLimit =
+        outcome.status !== "completed" ? ranSession?.usageLimit : undefined;
       host.endApprovals(run.id);
       await host.remove(run.id).catch(() => undefined);
       clearHabitRun(run.id);
       setHabitRunning(habit.id);
+
+      // The run itself ran into the limit: run it again at the reset.
+      if (hitLimit) {
+        const hold =
+          usageLimitRegistry.hold({
+            harness: irgat.harness,
+            accountId,
+            resetAt: hitLimit.resetsAt,
+            source: "session",
+          }) ?? usageLimitRegistry.get(irgat.harness, accountId);
+        if (hold) {
+          await parkHabit(irgatId, habit.id, hold);
+          return;
+        }
+      }
 
       const report =
         outcome.status === "completed" ? habitReport(reply) : undefined;
@@ -254,12 +313,18 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           // Habits are set up in its chat, so one never opened has none.
           if (!sessionId) continue;
           const now = Date.now();
-          const { run, skipped } = dueHabits(await loadHabits(id), now);
+          const { run, skipped } = dueHabits(
+            await loadHabits(id),
+            now,
+            heldByRegistry,
+          );
           if (!run.length && !skipped.length) continue;
           if (skipped.length) {
             await updateHabits(id, (habits) => {
               const stale = new Set(
-                dueHabits(habits, Date.now()).skipped.map((habit) => habit.id),
+                dueHabits(habits, Date.now(), heldByRegistry).skipped.map(
+                  (habit) => habit.id,
+                ),
               );
               return {
                 habits: habits.map((habit) =>
@@ -287,10 +352,24 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
     void tick();
     const timer = window.setInterval(() => void tick(), TICK_MS);
     const stopChecks = subscribeCheckHabitsNow(() => void tick());
+    // A hold that ends or is lifted lets held habits run right away.
+    const holdsSignature = () =>
+      usageLimitRegistry
+        .snapshot()
+        .holds.map((hold) => `${hold.key}@${hold.resetAt}`)
+        .join("|");
+    let lastHolds = holdsSignature();
+    const stopHolds = usageLimitRegistry.subscribe(() => {
+      const next = holdsSignature();
+      if (next === lastHolds) return;
+      lastHolds = next;
+      void tick();
+    });
     return () => {
       stopped = true;
       window.clearInterval(timer);
       stopChecks();
+      stopHolds();
       if ((window as OwnedWindow)[OWNER] === owner)
         delete (window as OwnedWindow)[OWNER];
     };

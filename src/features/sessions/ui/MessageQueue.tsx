@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   CornerDownRight,
@@ -22,6 +22,7 @@ export function MessageQueue({
   onResume,
   variant = "queue",
   sendingId,
+  notice,
 }: {
   messages: QueuedMessage[];
   status?: MessageQueueStatus;
@@ -32,6 +33,8 @@ export function MessageQueue({
   onResume?: () => void;
   variant?: "queue" | "messages";
   sendingId?: string;
+  /** Why an active queue is waiting, shown as its header row. */
+  notice?: ReactNode;
 }) {
   const [editingId, setEditingId] = useState<string>();
   const [editDraft, setEditDraft] = useState("");
@@ -90,7 +93,9 @@ export function MessageQueue({
               {failed ? "Retry" : "Resume"}
             </button>
           </div>
-        ) : null}
+        ) : (
+          notice
+        )}
         {variant === "messages" && !paused ? (
           <div role="status" className="py-1 text-[11px] text-content/50">
             {sendingId ? "Sending…" : "Waiting to send"}

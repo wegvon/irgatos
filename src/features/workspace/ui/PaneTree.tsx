@@ -124,6 +124,9 @@ type Shared = {
   onUsageLimitResume: (sessionId: string) => void;
   onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
   onUsageLimitDismiss: (sessionId: string) => void;
+  onResumeInterrupted?: (sessionId: string) => void;
+  onDismissInterrupted?: (sessionId: string) => void;
+  onRunQueueAnyway?: (sessionId: string) => void;
   onInboxCardDismiss?: (sessionId: string) => void;
   onLinkedWorkItemUpdateCardDismiss?: (sessionId: string) => void;
   onNoteCardDismiss?: (sessionId: string) => void;
@@ -248,6 +251,9 @@ function PaneTreeComponent({
   onUsageLimitResume,
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
+  onResumeInterrupted,
+  onDismissInterrupted,
+  onRunQueueAnyway,
   onInboxCardDismiss,
   onLinkedWorkItemUpdateCardDismiss,
   onNoteCardDismiss,
@@ -539,6 +545,9 @@ function PaneTreeComponent({
                   onUsageLimitResume={onUsageLimitResume}
                   onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
                   onUsageLimitDismiss={onUsageLimitDismiss}
+                  onResumeInterrupted={onResumeInterrupted}
+                  onDismissInterrupted={onDismissInterrupted}
+                  onRunQueueAnyway={onRunQueueAnyway}
                   onInboxCardDismiss={onInboxCardDismiss}
                   onLinkedWorkItemUpdateCardDismiss={
                     onLinkedWorkItemUpdateCardDismiss

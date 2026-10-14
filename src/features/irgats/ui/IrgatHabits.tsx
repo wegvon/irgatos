@@ -5,15 +5,18 @@ import type { IrgatState } from "../model/irgat";
 import { subscribeIrgatFiles } from "../model/irgatFiles";
 import {
   checkHabitsNow,
+  habitQuotaHeld,
   habitScheduleLabel,
   habitsToday,
   habitStarting,
   loadHabits,
   nextHabitRunAt,
+  runHabitAnyway,
   subscribeHabitsRunning,
   updateHabits,
   type Habit,
 } from "../model/irgatHabits";
+import { heldUntilLabel } from "../../quotas/model/usageLimitRegistry";
 import { RunningFor, useHabitRunning } from "./HabitPage";
 import { Empty, Section } from "./irgatPanelParts";
 
@@ -96,8 +99,8 @@ export function habitActions(irgatId: string): HabitActions {
       .then(then)
       .catch((error) => console.warn("Could not change the habit", error));
   return {
-    runNow: (id) =>
-      change(id, (habit) => ({ ...habit, runRequested: true }), checkHabitsNow),
+    // On a habit waiting out a usage limit this is Run anyway.
+    runNow: (id) => change(id, runHabitAnyway, checkHabitsNow),
     toggle: (id) =>
       change(id, (habit) =>
         habit.enabled
@@ -123,11 +126,14 @@ export function HabitRow({
 }) {
   const runningSince = useHabitRunning(habit.id);
   const running = runningSince != null;
+  const now = Date.now();
+  const held = !running && habitQuotaHeld(habit, now);
   const starting = !running && habitStarting(habit);
   return (
     <li
       data-habit={habit.id}
       data-habit-running={running || undefined}
+      data-habit-held={held || undefined}
       className="group/habit flex items-center rounded-md hover:bg-content/5"
     >
       <button
@@ -155,11 +161,17 @@ export function HabitRow({
           >
             {habit.name}
           </span>
-          <span className="truncate text-[11px] leading-4 text-content/40">
+          <span
+            className={`truncate text-[11px] leading-4 ${
+              held ? "text-amber-500 dark:text-amber-300" : "text-content/40"
+            }`}
+          >
             {running ? (
               <>
                 Running now · <RunningFor since={runningSince} />
               </>
+            ) : held && habit.quotaHold ? (
+              heldUntilLabel(habit.quotaHold.until, now)
             ) : starting ? (
               "Starting…"
             ) : habit.enabled ? (
@@ -173,7 +185,13 @@ export function HabitRow({
       <span className="flex shrink-0 items-center pr-2 opacity-0 transition-opacity group-hover/habit:opacity-100 focus-within:opacity-100">
         <HabitButton
           label={
-            running ? "Already running" : starting ? "Starting" : "Run now"
+            running
+              ? "Already running"
+              : held
+                ? "Run anyway"
+                : starting
+                  ? "Starting"
+                  : "Run now"
           }
           disabled={running || starting}
           onClick={() => actions.runNow(habit.id)}

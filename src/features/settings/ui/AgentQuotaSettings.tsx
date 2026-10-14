@@ -38,6 +38,12 @@ import {
   type QuotaProvider,
   type QuotaState,
 } from "../model/agentQuotas";
+import {
+  loadUsageLimitFallbackMinutes,
+  saveUsageLimitFallbackMinutes,
+  subscribeUsageLimitFallback,
+  USAGE_LIMIT_FALLBACK_OPTIONS,
+} from "../../quotas/model/usageLimitStore";
 
 const CLOCK_MS = 30_000;
 
@@ -172,7 +178,64 @@ export function AgentQuotaSettings() {
           />
         ))}
       </div>
+      <UsageLimitFallbackSetting />
     </section>
+  );
+}
+
+function formatFallbackMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = minutes / 60;
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
+
+/** How long queued work waits when a limit arrives without a reset time. */
+function UsageLimitFallbackSetting() {
+  const [minutes, setMinutes] = useState(loadUsageLimitFallbackMinutes);
+  useEffect(
+    () =>
+      subscribeUsageLimitFallback(() =>
+        setMinutes(loadUsageLimitFallbackMinutes()),
+      ),
+    [],
+  );
+  const options: readonly number[] = USAGE_LIMIT_FALLBACK_OPTIONS.includes(
+    minutes as (typeof USAGE_LIMIT_FALLBACK_OPTIONS)[number],
+  )
+    ? USAGE_LIMIT_FALLBACK_OPTIONS
+    : [...USAGE_LIMIT_FALLBACK_OPTIONS, minutes].sort((a, b) => a - b);
+  return (
+    <div
+      data-setting-id="usage-limit-fallback"
+      className="mt-3 flex items-center gap-4 rounded-xl border border-content/10 bg-content/3 px-4 py-3"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium text-content">
+          Hold after a usage limit
+        </div>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-content/45">
+          Queued prompts, habits and scheduled automations pause until the
+          provider's reset time. When the provider doesn't say, they wait this
+          long before retrying.
+        </p>
+      </div>
+      <select
+        aria-label="Hold length when no reset time is known"
+        value={minutes}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          setMinutes(next);
+          saveUsageLimitFallbackMinutes(next);
+        }}
+        className="shrink-0 rounded-md border border-content/15 bg-background-base px-2 py-1 text-[12px] text-content"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {formatFallbackMinutes(option)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 

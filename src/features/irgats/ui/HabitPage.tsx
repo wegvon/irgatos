@@ -10,6 +10,7 @@ import { IconButton } from "../../../app/shell/TitleBar";
 import { PageHeader } from "./irgatPanelParts";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import {
+  habitQuotaHeld,
   habitRunningSince,
   habitScheduleLabel,
   habitStarting,
@@ -17,6 +18,8 @@ import {
   type Habit,
   type HabitRun,
 } from "../model/irgatHabits";
+import type { HarnessId } from "../../sessions/model/session";
+import { HeldWorkNotice } from "../../quotas/ui/HeldWorkNotice";
 
 const dayTime = new Intl.DateTimeFormat(undefined, {
   weekday: "short",
@@ -75,6 +78,7 @@ export function HabitPage({
 }) {
   const runningSince = useHabitRunning(habit.id);
   const starting = runningSince == null && habitStarting(habit);
+  const held = runningSince == null && habitQuotaHeld(habit, Date.now());
   const runs = habit.runs ?? [];
   return (
     <div
@@ -87,9 +91,11 @@ export function HabitPage({
           label={
             runningSince != null
               ? "Already running"
-              : starting
-                ? "Starting"
-                : "Run now"
+              : held
+                ? "Run anyway"
+                : starting
+                  ? "Starting"
+                  : "Run now"
           }
           disabled={runningSince != null || starting}
           onClick={onRunNow}
@@ -116,7 +122,17 @@ export function HabitPage({
           <Row label="Runs">
             {habit.enabled ? habitScheduleLabel(habit.schedule) : "Paused"}
           </Row>
-          {starting ? (
+          {held && habit.quotaHold ? (
+            <Row label="Next">
+              <HeldWorkNotice
+                harness={habit.quotaHold.harness as HarnessId}
+                accountId={habit.quotaHold.accountId}
+                until={habit.quotaHold.until}
+                onRunAnyway={onRunNow}
+                compact
+              />
+            </Row>
+          ) : starting ? (
             <Row label="Next">Starting…</Row>
           ) : habit.enabled ? (
             <Row label="Next">{when(habit.nextRunAt)}</Row>

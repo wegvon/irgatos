@@ -511,6 +511,24 @@ import {
   usageLimitResumeDue,
 } from "../features/sessions/model/usageLimit";
 import {
+  dismissSessionInterruption,
+  planSessionResume,
+  sessionInterruption,
+} from "../features/sessions/model/sessionInterruption";
+import {
+  getAllRateLimits,
+  subscribeRateLimits,
+} from "../features/providers/model/rateLimitsCache";
+import {
+  holdAccountId,
+  usageLimitRegistry,
+} from "../features/quotas/model/usageLimitStore";
+import {
+  automationHoldId,
+  queueHold,
+} from "../features/quotas/model/usageLimitRegistry";
+import { useUsageLimitSnapshot } from "../features/quotas/hooks/useUsageLimitHold";
+import {
   fetchClaudeRateLimits,
   fetchCodexRateLimits,
 } from "../features/providers/model/rateLimitsFetch";
@@ -941,6 +959,8 @@ type SubmitOptions = ComposerTurnOptions & {
   onSettled?: (outcome: ControlOutcome) => void;
   /** Generate a fresh title even when this is not the session's first turn. */
   refreshTitle?: boolean;
+  /** Transcript recap for an interrupted chat whose thread is gone. */
+  resumeContext?: string;
   /** Internal guard for the retry after resolving a renamed project. */
   projectLocationReady?: boolean;
 };
@@ -951,6 +971,19 @@ type Submit = (
   attachments?: Attachment[],
   options?: SubmitOptions,
 ) => SubmissionAcceptance;
+
+/** The session's provider and account are waiting out a usage limit. */
+function sessionProviderHold(session: Session) {
+  return usageLimitRegistry.get(
+    session.harness,
+    holdAccountId(session.harness, session.providerAccountId, session.cwd),
+  );
+}
+
+/** Its queued prompts wait for the reset, unless the user ran them anyway. */
+function providerOnHold(session: Session): boolean {
+  return !!queueHold(sessionProviderHold(session), session.queueHoldOverride);
+}
 
 function withPlanStatus(
   session: Session,
@@ -1460,6 +1493,7 @@ function Workspace({
   const linkedWorkItemActivityFetches = useRef(new Map<string, number>());
   const queueDispatchingRef = useRef(new Set<string>());
   const [queueDispatchVersion, setQueueDispatchVersion] = useState(0);
+  const usageLimitSnapshot = useUsageLimitSnapshot();
   const usageResumingRef = useRef(new Set<string>());
   const usageResetLookups = useRef(new WeakSet<UsageLimit>());
   const tabsRef = useRef(tabs);
@@ -2209,6 +2243,19 @@ function Workspace({
     approvalSessionIdsRef.current = nextApprovalSessionIds;
   }
   const approvalSessionIds = approvalSessionIdsRef.current;
+
+  const nextInterruptedSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const session of sessions) {
+      if (sessionInterruption(session)) ids.add(session.id);
+    }
+    return ids;
+  }, [sessions]);
+  const interruptedSessionIdsRef = useRef(nextInterruptedSessionIds);
+  if (!setsEqual(interruptedSessionIdsRef.current, nextInterruptedSessionIds)) {
+    interruptedSessionIdsRef.current = nextInterruptedSessionIds;
+  }
+  const interruptedSessionIds = interruptedSessionIdsRef.current;
 
   const activeSessionId = inboxViewOpen
     ? inboxAskPortal?.sessionId
@@ -7249,6 +7296,7 @@ function Workspace({
         ? (current.providerAccountId ??
           selectedProviderAccountId(accountProvider, current.cwd))
         : undefined;
+      const turnStartedAt = Date.now();
       if (
         accountProvider &&
         providerAccountId &&
@@ -8307,6 +8355,7 @@ function Workspace({
           const handAgent = agentPlan ? agentPlan.soul : irgatFirstTurn;
           // What the app adds to the user's message rather than them.
           const appContext: string[] = [];
+          if (options?.resumeContext) appContext.push(options.resumeContext);
           if (irgatRotation) {
             appContext.push(irgatRotation.brief(sessionId));
           }
@@ -8420,6 +8469,13 @@ function Workspace({
             text: controlText.trim(),
             ...(providerFailureSeen ? { error: controlOutcome.error } : {}),
           };
+          // The provider answered in full, so whatever held it is over.
+          if (controlOutcome.status === "completed")
+            usageLimitRegistry.noteSuccess(
+              current.harness,
+              providerAccountId,
+              turnStartedAt,
+            );
           await flushSessionCheckpoint(sessionId);
           setSessions((prev) =>
             prev.map((s) => {
@@ -8680,6 +8736,17 @@ function Workspace({
   });
 
   const automationSessionReservations = useRef(new Set<string>());
+  const heldAutomationRuns = useRef(
+    new Map<
+      string,
+      {
+        automation: Automation;
+        run: AutomationRun;
+        prompt: string;
+        sourceWorkItem?: LinkedWorkItem;
+      }
+    >(),
+  );
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
   const automationRecoveryCutoffRef = useRef(Date.now());
 
@@ -8690,7 +8757,36 @@ function Workspace({
       reveal = false,
       prompt = run.prompt ?? automation.prompt,
       sourceWorkItem?: LinkedWorkItem,
+      /** Run anyway, or the hold this run waited on has ended. */
+      force = false,
     ) => {
+      // A scheduled run whose provider is out of quota waits, still pending,
+      // for the reset instead of failing. A manual run is the user's call.
+      if (!force && run.trigger !== "manual") {
+        const accountId = holdAccountId(
+          automation.harness,
+          undefined,
+          automation.cwd,
+        );
+        if (usageLimitRegistry.get(automation.harness, accountId)) {
+          const id = automationHoldId(run.id);
+          heldAutomationRuns.current.set(id, {
+            automation,
+            run,
+            prompt,
+            ...(sourceWorkItem ? { sourceWorkItem } : {}),
+          });
+          usageLimitRegistry.holdWork({
+            id,
+            kind: "automation",
+            harness: automation.harness,
+            accountId,
+            label: automation.name,
+            ownerId: automation.id,
+          });
+          return;
+        }
+      }
       let reservationId: string | undefined;
       let releaseAfterSettle = false;
       const releaseReservation = () => {
@@ -8835,6 +8931,27 @@ function Workspace({
     },
     [appendTab, focusOpenSession, submitSession],
   );
+
+  // Held runs go once their hold ends, or right away on Run anyway.
+  useEffect(() => {
+    const drain = () => {
+      for (const item of usageLimitRegistry.takeReadyWork()) {
+        const held = heldAutomationRuns.current.get(item.id);
+        heldAutomationRuns.current.delete(item.id);
+        if (!held) continue;
+        void launchAutomation(
+          held.automation,
+          held.run,
+          false,
+          held.prompt,
+          held.sourceWorkItem,
+          true,
+        ).catch(() => undefined);
+      }
+    };
+    drain();
+    return usageLimitRegistry.subscribe(drain);
+  }, [launchAutomation]);
 
   const queueIrgatSessionCompletion = useCallback(
     async (
@@ -9142,6 +9259,8 @@ function Workspace({
         );
         continue;
       }
+      // Its provider is out of quota: the prompt waits for the reset.
+      if (!session.busy && providerOnHold(session)) continue;
       if (
         !(
           canDispatchQueuedHead(session) ||
@@ -9170,6 +9289,7 @@ function Workspace({
             !latest ||
             !head ||
             head.id !== next.id ||
+            (!latest.busy && providerOnHold(latest)) ||
             !(
               canDispatchQueuedHead(latest) ||
               (irgatForSession(latest.id) &&
@@ -9285,7 +9405,7 @@ function Workspace({
       for (const timer of timers) window.clearTimeout(timer);
       for (const id of scheduled) queueDispatchingRef.current.delete(id);
     };
-  }, [submitSession, sessions, queueDispatchVersion]);
+  }, [submitSession, sessions, queueDispatchVersion, usageLimitSnapshot]);
 
   const onDeleteQueuedMessage = useCallback(
     (sessionId: string, messageId: string) => {
@@ -9440,10 +9560,23 @@ function Workspace({
         (entry) => entry.id === sessionId,
       );
       if (!session?.usageLimit || session.busy) return;
+      usageLimitRegistry.release(
+        session.harness,
+        holdAccountId(session.harness, session.providerAccountId, session.cwd),
+      );
       if (isIrgatSession(sessionId)) {
         setSessions((prev) =>
           prev.map((entry) =>
             entry.id === sessionId ? resumeIrgatUsageLimit(entry) : entry,
+          ),
+        );
+        return;
+      }
+      // Held prompts are the work to resume: send them rather than Continue.
+      if (session.queuedMessages?.length) {
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId ? resumeUsageLimitedSession(entry) : entry,
           ),
         );
         return;
@@ -9453,6 +9586,118 @@ function Workspace({
     },
     [onSubmit, onUsageLimitDismiss],
   );
+
+  // Every usage limit a session runs into holds its provider for all of them.
+  const heldUsageLimits = useRef(new WeakSet<UsageLimit>());
+  useEffect(() => {
+    const armed = new Set<string>();
+    for (const session of sessions) {
+      const limit = session.usageLimit;
+      if (!limit || heldUsageLimits.current.has(limit)) continue;
+      heldUsageLimits.current.add(limit);
+      const hold = usageLimitRegistry.hold({
+        harness: session.harness,
+        accountId: holdAccountId(
+          session.harness,
+          session.providerAccountId,
+          session.cwd,
+        ),
+        resetAt: limit.resetsAt,
+        source: "session",
+        sessionId: session.id,
+      });
+      // Unattended or queued work fires on its own once the window resets.
+      if (
+        hold &&
+        limit.resumeAtReset == null &&
+        !session.ephemeral &&
+        (session.automationId || session.queuedMessages?.length)
+      )
+        armed.add(session.id);
+    }
+    if (!armed.size) return;
+    setSessions((prev) =>
+      prev.map((entry) => {
+        const limit = entry.usageLimit;
+        if (!armed.has(entry.id) || !limit || limit.resumeAtReset != null)
+          return entry;
+        const resetsAt =
+          limit.resetsAt ??
+          usageLimitRegistry.get(
+            entry.harness,
+            holdAccountId(entry.harness, entry.providerAccountId, entry.cwd),
+          )?.resetAt;
+        return {
+          ...entry,
+          usageLimit: {
+            ...limit,
+            resumeAtReset: true,
+            ...(resetsAt != null ? { resetsAt } : {}),
+          },
+        };
+      }),
+    );
+  }, [sessions]);
+
+  // An exhausted usage meter holds its provider too, with the exact reset.
+  useEffect(() => {
+    const sync = () => usageLimitRegistry.syncQuota(getAllRateLimits());
+    sync();
+    return subscribeRateLimits(sync);
+  }, []);
+
+  const onResumeInterrupted = useCallback(
+    (sessionId: string) => {
+      const session = sessionsRef.current.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (!session || session.busy) return;
+      const plan = planSessionResume(session, isLiveHarness(session.harness));
+      if (!plan) return;
+      if (plan.releaseQueue) {
+        // Like Resume queue: the paused follow-ups go once this turn ends.
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId
+              ? {
+                  ...entry,
+                  queueStatus: "resuming",
+                  queuedMessages: entry.queuedMessages?.map((message) => ({
+                    ...message,
+                    error: undefined,
+                  })),
+                }
+              : entry,
+          ),
+        );
+      }
+      onSubmit(
+        sessionId,
+        plan.prompt,
+        plan.attachments,
+        plan.context ? { resumeContext: plan.context } : undefined,
+      );
+    },
+    [onSubmit],
+  );
+
+  const onDismissInterrupted = useCallback((sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId ? dismissSessionInterruption(session) : session,
+      ),
+    );
+  }, []);
+
+  const onRunQueueAnyway = useCallback((sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) return session;
+        const hold = sessionProviderHold(session);
+        return hold ? { ...session, queueHoldOverride: hold.since } : session;
+      }),
+    );
+  }, []);
 
   const onUsageLimitAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
@@ -13092,6 +13337,9 @@ function Workspace({
     onUsageLimitResumeAtReset,
     onUsageLimitDismiss,
     onUsageLimitAccountChange,
+    onResumeInterrupted,
+    onDismissInterrupted,
+    onRunQueueAnyway,
     onInboxCardDismiss,
     onLinkedWorkItemUpdateCardDismiss,
     onNoteCardDismiss,
@@ -13545,6 +13793,7 @@ function Workspace({
               sessions={sidebarHistory}
               busySessionIds={busySessionIds}
               approvalSessionIds={approvalSessionIds}
+              interruptedSessionIds={interruptedSessionIds}
               activeSessionId={activeSessionId}
               status={historyFailed ? "error" : "idle"}
               pending={historyPending}

@@ -514,6 +514,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "quota limit usage plan tier rate reset billing cycle claude codex cursor opencode devin",
   },
   {
+    id: "usage-limit-fallback",
+    section: "usage",
+    label: "Hold after a usage limit",
+    keywords:
+      "quota hold pause resume reset fallback wait queue habit automation rate limit",
+  },
+  {
     id: "show-remaining-usage",
     section: "providers",
     label: "Show remaining usage",

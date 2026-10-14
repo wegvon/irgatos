@@ -175,6 +175,8 @@ import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
 import { useComposerSkills } from "./useComposerSkills";
 import { Popover } from "../../../shared/ui/Popover";
 import { UsageLimitNotice } from "./UsageLimitNotice";
+import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
+import { QueuedHoldNotice } from "../../quotas/ui/HeldWorkNotice";
 import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import {
   consumeOperatorCommand,
@@ -281,6 +283,14 @@ type Props = {
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
   usageLimit?: UsageLimit;
+  /** Account the session runs on, for the provider's quota-hold banner. */
+  providerAccountId?: string;
+  /** Hide the quota-hold banner, e.g. for remote host sessions. */
+  hideQuotaHold?: boolean;
+  /** The quota hold this queue was told to run anyway past. */
+  queueHoldOverride?: number;
+  /** Send queued prompts now although their provider is on quota hold. */
+  onRunQueueAnyway?: () => void;
   hotkeys?: boolean;
   onFocus: () => void;
   onCwdChange: (cwd: string) => void;
@@ -445,6 +455,10 @@ export function Composer({
   queuedMessages = [],
   queueStatus,
   usageLimit,
+  providerAccountId,
+  hideQuotaHold = false,
+  queueHoldOverride,
+  onRunQueueAnyway,
   onFocus,
   onCwdChange,
   onBranchChange,
@@ -1977,10 +1991,29 @@ export function Composer({
           onResumeAtReset={onUsageLimitResumeAtReset}
           onDismiss={onUsageLimitDismiss}
         />
-      ) : null}
+      ) : hideQuotaHold ? null : (
+        <SessionProviderHold
+          harness={harness}
+          providerAccountId={providerAccountId}
+          cwd={cwd}
+          queuedCount={queuedMessages.length}
+          queueOverride={queueHoldOverride}
+        />
+      )}
       <MessageQueue
         messages={queuedMessages}
         status={queueStatus}
+        notice={
+          !usageLimit && !hideQuotaHold && onRunQueueAnyway ? (
+            <QueuedHoldNotice
+              harness={harness}
+              providerAccountId={providerAccountId}
+              cwd={cwd}
+              override={queueHoldOverride}
+              onRunAnyway={onRunQueueAnyway}
+            />
+          ) : undefined
+        }
         onDelete={onDeleteQueuedMessage}
         onEdit={onEditQueuedMessage}
         onEditingChange={onQueuedMessageEditingChange}

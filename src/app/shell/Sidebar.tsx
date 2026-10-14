@@ -27,6 +27,7 @@ import {
   ListFilter,
   PanelLeft,
   Pin,
+  RotateCcw,
   Plus,
   Search,
   Share,
@@ -257,6 +258,8 @@ type Props = {
   sessions: SessionSummary[];
   busySessionIds: Set<string>;
   approvalSessionIds: Set<string>;
+  /** Chats whose agent went away mid-turn and can be resumed. */
+  interruptedSessionIds?: Set<string>;
   activeSessionId?: string;
   /** Open tabs, including blank ones not yet in history. */
   openSessions?: readonly SessionSummary[];
@@ -375,6 +378,7 @@ function SidebarComponent({
   sessions,
   busySessionIds,
   approvalSessionIds,
+  interruptedSessionIds,
   activeSessionId,
   openSessions = [],
   status,
@@ -1565,6 +1569,9 @@ function SidebarComponent({
         done={unseenFinishedIds.has(session.id)}
         linkedUpdate={linkedSessionUpdateIds.has(session.id)}
         needsApproval={listedApprovalSessionIds.has(session.id)}
+        interrupted={
+          !remoteProject && !!interruptedSessionIds?.has(session.id)
+        }
         dropTarget={isSessionDrop("session", session.id)}
         compact={compact}
         now={now}
@@ -3332,6 +3339,7 @@ export const SessionCard = memo(function SessionCard({
   done,
   linkedUpdate,
   needsApproval,
+  interrupted = false,
   dropTarget,
   compact = false,
   modelInFooter = false,
@@ -3356,6 +3364,8 @@ export const SessionCard = memo(function SessionCard({
   done: boolean;
   linkedUpdate: boolean;
   needsApproval: boolean;
+  /** The agent went away mid-turn; the chat offers Resume. */
+  interrupted?: boolean;
   dropTarget?: boolean;
   compact?: boolean;
   /** Shows the model as its provider's mark beside the branch, so the title
@@ -3411,7 +3421,9 @@ export const SessionCard = memo(function SessionCard({
     ? "text-amber-400"
     : busy
       ? "text-accent"
-      : done
+      : interrupted
+        ? "text-rose-400"
+        : done
         ? "text-emerald-400"
         : draft
           ? "text-content/55"
@@ -3430,6 +3442,15 @@ export const SessionCard = memo(function SessionCard({
           <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
           <span>Working...</span>
         </>
+      ) : interrupted ? (
+        <span
+          className="flex items-center gap-1"
+          title="The agent stopped mid-turn. Open the chat to resume it."
+          data-session-interrupted-badge
+        >
+          <RotateCcw className="size-3" strokeWidth={1.75} />
+          <span>Interrupted</span>
+        </span>
       ) : done ? (
         <>
           <Check className="size-3" strokeWidth={2.25} />
