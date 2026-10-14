@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -27,6 +27,7 @@ import {
   type FloatingIrgatEntry,
   type FloatingIrgatView,
 } from "../model/floatingIrgat";
+import { latestReply } from "../../voice/model/spokenReply";
 import { IrgatComposer } from "./IrgatComposer";
 import { IrgatStatusDot } from "./IrgatRailMascot";
 import { IrgatStatus } from "./IrgatStatus";
@@ -383,12 +384,17 @@ function FloatingConversation({
   onOpenArtifact: (id: string) => void;
 }) {
   const transcript = useIrgatTranscript(session, true);
+  const voiceReply = useMemo(
+    () => (session.busy ? null : latestReply(session.blocks)),
+    [session.blocks, session.busy],
+  );
   return (
     <div
       className="flex min-h-0 flex-1 flex-col"
       onKeyDown={(event) => {
         if (
           event.key === "Escape" &&
+          !event.defaultPrevented &&
           !event.nativeEvent.isComposing &&
           session.busy
         ) {
@@ -488,6 +494,9 @@ function FloatingConversation({
           sessionId={`floating:${session.id}`}
           name={irgat.name}
           enabled={!session.worktreeRemoved}
+          hotkeys
+          busy={session.busy}
+          voiceReply={voiceReply}
           focusToken={focus}
           onSubmit={async (text, attachments) => {
             const accepted = await action({

@@ -46,11 +46,7 @@ type Options = {
    * Writes dictated text the way typing would, without an input event, and
    * leaves the caret where the hook asks.
    */
-  write: (
-    text: string,
-    selectionStart: number,
-    selectionEnd?: number,
-  ) => void;
+  write: (text: string, selectionStart: number, selectionEnd?: number) => void;
   /** Sends what dictation settled on, for Enter mid-sentence and voice mode. */
   submit: (text: string) => void;
   /** Runs just before the microphone opens, while the draft is untouched. */

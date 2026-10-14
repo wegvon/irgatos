@@ -29,6 +29,12 @@ import {
   consumeQuoteRequest,
   type QuoteRequest,
 } from "../../sessions/model/quoteDraft";
+import { useComposerVoice } from "../../voice/hooks/useComposerVoice";
+import type { Reply } from "../../voice/model/spokenReply";
+import {
+  ComposerVoiceButtons,
+  ComposerVoiceStatus,
+} from "../../voice/ui/ComposerVoiceControls";
 
 // Loaded on first open, with its emoji data, so neither weighs on startup.
 const EmojiPickerPopover = lazy(() =>
@@ -45,6 +51,8 @@ const MAX_HEIGHT = 160;
 const TOOL_BUTTON =
   "grid size-6.5 shrink-0 place-items-center rounded-md text-content/55 transition-colors hover:bg-content/8 hover:text-content disabled:opacity-50";
 const INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_1.625rem]";
+/** The same line with room for the voice buttons between the field and send. */
+const VOICE_INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_auto_1.625rem]";
 const FIELD_CLASSES =
   "scrollbar-none block min-w-0 w-full resize-none bg-transparent py-1 text-[13px] leading-4.5 text-content outline-none placeholder:text-content/35";
 
@@ -52,6 +60,12 @@ type Props = {
   sessionId: string;
   name: string;
   enabled?: boolean;
+  /** This composer owns the voice shortcuts while its pane has the focus. */
+  hotkeys?: boolean;
+  /** The Irgat is working, so voice mode waits for the reply. */
+  busy?: boolean;
+  /** The Irgat's last finished reply, which voice mode reads aloud. */
+  voiceReply?: Reply | null;
   focusToken?: number;
   quoteRequest?: QuoteRequest;
   onQuoteRequestConsumed?: (id: number) => void;
@@ -83,6 +97,9 @@ export function IrgatComposer({
   sessionId,
   name,
   enabled = true,
+  hotkeys = false,
+  busy = false,
+  voiceReply = null,
   focusToken,
   quoteRequest,
   onQuoteRequestConsumed,
@@ -304,6 +321,34 @@ export function IrgatComposer({
     } else clear(result);
   };
 
+  /** Writes dictated text the way typing would, then places the caret. */
+  const writeDraft = (
+    text: string,
+    selectionStart: number,
+    selectionEnd = selectionStart,
+  ) => {
+    update(text);
+    const el = field.current;
+    if (!el) return;
+    // The field is controlled, so the value has to land before the caret;
+    // React leaves both alone once they already match the next render.
+    el.value = text;
+    resizeComposer(el, MAX_HEIGHT);
+    el.setSelectionRange(selectionStart, selectionEnd);
+  };
+  const voice = useComposerVoice({
+    field,
+    enabled: enabled && !submitting,
+    hotkeys,
+    busy,
+    draftEmpty: !text.trim() && attachments.length === 0,
+    reply: voiceReply,
+    write: writeDraft,
+    submit: () => send(),
+    onBegin: () => setEmojiOpen(false),
+  });
+  const inlineColumns = voice.available ? VOICE_INPUT_COLUMNS : INPUT_COLUMNS;
+
   // `tool` sizes the plus to match the emoji face beside it: its cross fills
   // 14 of the glyph's 24 units against the face's 21, so it is drawn larger,
   // with a thinner stroke so both lines render about 1px wide.
@@ -333,15 +378,20 @@ export function IrgatComposer({
       disabled={!enabled || submitting}
       value={text}
       onFocus={onFocus}
-      onChange={(event) => update(event.target.value)}
+      onChange={(event) => {
+        // Typing takes over from dictation and keeps what was heard.
+        voice.noteInput();
+        update(event.target.value);
+      }}
       onKeyDown={(event) => {
-        if (
-          event.key !== "Enter" ||
-          event.shiftKey ||
-          isImeComposition(event.nativeEvent)
-        ) {
+        if (isImeComposition(event.nativeEvent)) return;
+        // While the microphone is open, Escape and Enter belong to dictation,
+        // not to the reply this chat would otherwise stop or send.
+        if (voice.handleKeyDown(event)) {
+          event.stopPropagation();
           return;
         }
+        if (event.key !== "Enter" || event.shiftKey) return;
         event.preventDefault();
         send();
       }}
@@ -407,14 +457,15 @@ export function IrgatComposer({
             ))}
           </div>
         ) : null}
+        <ComposerVoiceStatus voice={voice} />
         {inline ? (
           <div
             data-layout={stacked ? "multiline" : "inline"}
-            className={`relative grid min-h-9 ${INPUT_COLUMNS} items-center gap-x-1.5 p-1 ${stacked ? "gap-y-1" : ""}`}
+            className={`relative grid min-h-9 ${inlineColumns} items-center gap-x-1.5 p-1 ${stacked ? "gap-y-1" : ""}`}
           >
             <div
               aria-hidden="true"
-              className={`pointer-events-none invisible absolute inset-x-1 top-1 grid ${INPUT_COLUMNS} gap-x-1.5`}
+              className={`pointer-events-none invisible absolute inset-x-1 top-1 grid ${inlineColumns} gap-x-1.5`}
             >
               <textarea
                 ref={inlineMeasure}
@@ -429,10 +480,20 @@ export function IrgatComposer({
               `col-start-1 grid size-6.5 place-items-center rounded-md bg-content/8 text-content/55 hover:bg-content/12 hover:text-content ${stacked ? "row-start-2" : "row-start-1"}`,
             )}
             {input(
-              `row-start-1 ${stacked ? "col-span-3 col-start-1 px-1.5" : "col-start-2"}`,
+              `row-start-1 ${stacked ? `${voice.available ? "col-span-4" : "col-span-3"} col-start-1 px-1.5` : "col-start-2"}`,
             )}
+            {voice.available ? (
+              <div
+                className={`col-start-3 flex items-center ${stacked ? "row-start-2" : "row-start-1"}`}
+              >
+                <ComposerVoiceButtons
+                  voice={voice}
+                  disabled={!enabled || submitting}
+                />
+              </div>
+            ) : null}
             {sendButton(
-              `col-start-3 ${stacked ? "row-start-2" : "row-start-1"}`,
+              `${voice.available ? "col-start-4" : "col-start-3"} ${stacked ? "row-start-2" : "row-start-1"}`,
             )}
           </div>
         ) : (
@@ -473,6 +534,10 @@ export function IrgatComposer({
               />
             </Suspense>
           ) : null}
+          <ComposerVoiceButtons
+            voice={voice}
+            disabled={!enabled || submitting}
+          />
           {tools}
           <div className="ml-auto flex min-w-0 items-center gap-1">
             {controls}

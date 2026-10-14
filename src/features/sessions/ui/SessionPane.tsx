@@ -1218,6 +1218,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     sessionId={session.id}
                     name={agent.name}
                     enabled={visible}
+                    hotkeys={focused && !btw.open}
+                    busy={session.busy}
+                    voiceReply={voiceReply}
                     quoteRequest={quoteRequest}
                     onQuoteRequestConsumed={acknowledgeQuote}
                     onDraftChange={(text) => {
