@@ -1884,6 +1884,49 @@ header[data-tauri-drag-region] button {
   right: 42px;
 }
 
+.agent-markdown
+  .markdown-code-shell:has(.markdown-code-artifact)
+  .markdown-code-path {
+  right: 70px;
+}
+
+.agent-markdown .markdown-code-artifact {
+  appearance: none;
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 36px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--color-content) 45%, transparent);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.agent-markdown .markdown-code-artifact:hover,
+.agent-markdown .markdown-code-artifact:focus-visible {
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+  color: var(--color-content);
+}
+
+.agent-markdown .markdown-code-artifact-solo {
+  right: 8px;
+  background: color-mix(in srgb, var(--color-background-base) 70%, transparent);
+}
+
+.agent-markdown .mermaid-shell:not(:hover) .markdown-code-artifact-solo:not(:focus-visible) {
+  opacity: 0;
+}
+
 .agent-markdown .markdown-code-path-link {
   pointer-events: auto;
   max-width: 100%;

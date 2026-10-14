@@ -61,6 +61,7 @@ import {
 } from "./wordFade";
 import { isFenceBlock, parseStreamingMarkdown } from "./streamingMarkdown";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
+import { CodeBlockArtifactButton } from "../../artifacts/ui/OpenInArtifactsButton";
 
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
@@ -361,9 +362,14 @@ function MarkdownCode({
 
   const meta = codeMeta(node);
   const fence = parseCodeFence(className, meta);
+  const info = `${className?.match(/\blanguage-([^\s]+)/)?.[1] ?? ""} ${meta}`;
   if (fence.language.toLowerCase() === "mermaid") {
     return (
-      <MermaidBlock code={textContent(children)} incomplete={incomplete} />
+      <MermaidBlock
+        code={textContent(children)}
+        incomplete={incomplete}
+        info={info}
+      />
     );
   }
   const iconName =
@@ -393,6 +399,7 @@ function MarkdownCode({
       ) : isPlaintextFallback ? (
         <span className="markdown-code-fallback-label">{fence.language}</span>
       ) : null}
+      <CodeBlockArtifactButton info={info} code={code} incomplete={incomplete} />
       <CodeCopyButton code={code} />
       <HighlightedCodeBlock
         code={code}
@@ -797,9 +804,11 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
 function MermaidBlock({
   code,
   incomplete,
+  info = "mermaid",
 }: {
   code: string;
   incomplete: boolean;
+  info?: string;
 }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -839,6 +848,7 @@ function MermaidBlock({
         <span className="markdown-code-icon" aria-hidden="true">
           <FileTypeIcon name="diagram.mmd" isDir={false} />
         </span>
+        <CodeBlockArtifactButton info={info} code={code} incomplete={incomplete} />
         <CodeCopyButton code={code} />
         <CodeBlock
           code={code}
@@ -857,12 +867,18 @@ function MermaidBlock({
   }
 
   return (
-    <div
-      className="mermaid-block overflow-x-auto rounded-[10px] border border-content/10 bg-content/6 p-3"
-      data-streamdown="mermaid-block"
-      dir="ltr"
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <div className="mermaid-shell relative" dir="ltr">
+      <CodeBlockArtifactButton
+        info={info}
+        code={code}
+        className="markdown-code-artifact markdown-code-artifact-solo"
+      />
+      <div
+        className="mermaid-block overflow-x-auto rounded-[10px] border border-content/10 bg-content/6 p-3"
+        data-streamdown="mermaid-block"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </div>
   );
 }
 

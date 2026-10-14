@@ -659,7 +659,10 @@ import {
   OPEN_ARTIFACT_EVENT,
   type OpenArtifactRequest,
 } from "../features/artifacts/model/artifactActions";
-import { registerArtifacts } from "../features/artifacts/model/artifactRegistry";
+import {
+  getRegisteredArtifact,
+  registerArtifacts,
+} from "../features/artifacts/model/artifactRegistry";
 import {
   loadArtifactScope,
   saveArtifactScope,
@@ -6668,7 +6671,8 @@ function Workspace({
   const artifactIrgatRef = useRef<{ scope: string; sessionIds: Set<string> } | null>(null);
   const openArtifact = useCallback(
     (artifact: WorkspaceArtifact, pin = false) => {
-      registerArtifacts([artifact]);
+      // A block opened from the transcript is already listed under its turn's time.
+      if (!getRegisteredArtifact(artifact.id)) registerArtifacts([artifact]);
       const irgat = irgatViewIdRef.current ? artifactIrgatRef.current : null;
       if (
         irgat &&

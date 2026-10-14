@@ -510,7 +510,8 @@ function isDeleteTool(block: Block): boolean {
   );
 }
 
-function fileArtifacts(
+/** The files a successful write or edit tool call produced. */
+export function fileArtifacts(
   source: ArtifactSource,
   block: Block,
 ): WorkspaceArtifact[] {

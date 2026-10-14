@@ -38,6 +38,7 @@ import { OrchestratorConstellation } from "./OrchestratorConstellation";
 import { PlanStepsBurst } from "./PlanStepsBurst";
 import { settleWordFades } from "./wordFade";
 import { FilePreview } from "../../files/ui/FilePreview";
+import { ToolArtifactButton } from "../../artifacts/ui/OpenInArtifactsButton";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { PlanPreview } from "./PlanPreview";
@@ -4731,7 +4732,7 @@ function ToolCall({
             onOpenFile={onOpenDiff ?? onOpenFile}
           />
         ) : (
-          <div className="flex min-w-0 items-center gap-2 py-1">
+          <div className="group/artifact flex min-w-0 items-center gap-2 py-1">
             <ToolCallIcon state={state} />
             <ToolCallSummary
               label={label}
@@ -4741,6 +4742,10 @@ function ToolCall({
               status={state}
               onOpenFile={onOpenFile}
               onOpenDiff={onOpenDiff}
+            />
+            <ToolArtifactButton
+              block={block}
+              className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 opacity-0 transition-opacity hover:bg-content/10 hover:text-content focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent group-hover/artifact:opacity-100"
             />
           </div>
         )}

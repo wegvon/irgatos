@@ -57,6 +57,7 @@ import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { AgentTranscript } from "./AgentTranscript";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { SessionReferenceSourceContext } from "./SendToSessionButton";
+import { ArtifactSourceContext } from "../../artifacts/ui/artifactContext";
 import { TranscriptFind } from "./TranscriptFind";
 import {
   TranscriptJumpToBottom,
@@ -657,6 +658,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     return () => window.removeEventListener(SEND_TO_CHAT_EVENT, onSend);
   }, [addToChatTarget, attachmentsSupported, onSubmit, session.id, title]);
   const workCwd = sessionWorkCwd(session);
+  const artifactSource = useMemo(
+    () =>
+      remote || session.inboxAsk
+        ? null
+        : { sessionId: session.id, sessionTitle: title, cwd: workCwd },
+    [remote, session.inboxAsk, session.id, title, workCwd],
+  );
   const reviewHidden =
     remote ||
     !!session.inboxAsk ||
@@ -971,6 +979,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       !agent && !remote && !session.inboxAsk ? session.id : null
                     }
                   >
+                  <ArtifactSourceContext.Provider value={artifactSource}>
                     <AgentTranscript
                       blocks={
                         agent && !irgatTranscript.viewingOlderPage
@@ -1128,6 +1137,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         )
                       }
                     />
+                  </ArtifactSourceContext.Provider>
                   </SessionReferenceSourceContext.Provider>
                 </PooledTranscript>
                 {!session.inboxAsk ? (
