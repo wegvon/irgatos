@@ -3058,20 +3058,22 @@ static LOGIN_SHELL_ENV: Mutex<Option<HashMap<String, String>>> = Mutex::new(None
 
 /// Keys worth keeping out of `printenv`. PATH is the important one: a
 /// Finder-launched app inherits only launchd's bare PATH.
-const LOGIN_SHELL_KEYS: [&str; 6] = [
+const LOGIN_SHELL_KEYS: [&str; 8] = [
     "PATH",
     "AI_GATEWAY_API_KEY",
     "FX_AI_GATEWAY_API_KEY",
     "VERCEL_OIDC_TOKEN",
     "XAI_API_KEY",
     "GROK_CODE_XAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
 ];
 
 fn login_shell_path() -> Option<String> {
     login_shell_env("PATH")
 }
 
-fn login_shell_env(name: &str) -> Option<String> {
+pub(crate) fn login_shell_env(name: &str) -> Option<String> {
     let mut cache = LOGIN_SHELL_ENV.lock().ok()?;
     if cache.is_none() {
         *cache = Some(load_login_shell_env());

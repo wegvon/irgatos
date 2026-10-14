@@ -32,6 +32,9 @@ static SPEAKER: speech::Speaker = speech::Speaker::new();
 pub const EVENT: &str = "irgat:voice";
 
 const KEY_FILE: &str = "voice-transcription-key";
+const LIVE_KEY_FILE: &str = "voice-live-gemini-key";
+/// Where a Gemini key is looked for when none is saved, in this order.
+const LIVE_KEY_ENV: [&str; 2] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -161,10 +164,77 @@ pub async fn voice_cancel(app: AppHandle, capture: String) {
 /// tokens, readable only by this user. An empty key removes it.
 #[tauri::command]
 pub fn voice_set_cloud_key(app: AppHandle, key: String) -> Result<bool, String> {
-    let path = key_path(&app)?;
+    store_secret(&key_path(&app)?, &key)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveKeyStatus {
+    /// A key saved in Settings, which wins over the environment.
+    stored: bool,
+    /// The variable a key was found in: the app's own environment first,
+    /// then the login shell's, since Finder-launched apps inherit neither.
+    env: Option<&'static str>,
+}
+
+/// Whether a Live voice call has a Gemini key, and where it comes from.
+#[tauri::command]
+pub async fn voice_live_key_status(app: AppHandle) -> Result<LiveKeyStatus, String> {
+    let stored = read_secret(&secret_path(&app, LIVE_KEY_FILE)?)?.is_some();
+    let env = tauri::async_runtime::spawn_blocking(|| live_env_key(env_value))
+        .await
+        .map_err(|error| error.to_string())?
+        .map(|(name, _)| name);
+    Ok(LiveKeyStatus { stored, env })
+}
+
+/// Stores the Gemini key beside the transcription key. An empty key removes it.
+#[tauri::command]
+pub fn voice_set_live_key(app: AppHandle, key: String) -> Result<bool, String> {
+    store_secret(&secret_path(&app, LIVE_KEY_FILE)?, &key)
+}
+
+/// The key a Live call opens its socket with. The Live API takes it in the
+/// WebSocket URL, so unlike the transcription key it has to reach the webview.
+#[tauri::command]
+pub async fn voice_live_key(app: AppHandle) -> Result<Option<String>, String> {
+    if let Some(key) = read_secret(&secret_path(&app, LIVE_KEY_FILE)?)? {
+        return Ok(Some(key));
+    }
+    tauri::async_runtime::spawn_blocking(|| live_env_key(env_value).map(|(_, key)| key))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| crate::harness::login_shell_env(name))
+}
+
+/// The first Gemini key variable that holds a value.
+fn live_env_key(lookup: impl Fn(&str) -> Option<String>) -> Option<(&'static str, String)> {
+    LIVE_KEY_ENV.into_iter().find_map(|name| {
+        let value = lookup(name)?;
+        let value = value.trim();
+        (!value.is_empty()).then(|| (name, value.to_string()))
+    })
+}
+
+fn secret_path(app: &AppHandle, file: &str) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join(file))
+}
+
+/// Writes `key` readable only by this user, or removes the file when empty.
+fn store_secret(path: &std::path::Path, key: &str) -> Result<bool, String> {
     let key = key.trim();
     if key.is_empty() {
-        return match std::fs::remove_file(&path) {
+        return match std::fs::remove_file(path) {
             Ok(()) => Ok(false),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
             Err(error) => Err(error.to_string()),
@@ -173,8 +243,16 @@ pub fn voice_set_cloud_key(app: AppHandle, key: String) -> Result<bool, String> 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    crate::linear::write_secret_file(&path, key)?;
+    crate::linear::write_secret_file(path, key)?;
     Ok(true)
+}
+
+fn read_secret(path: &std::path::Path) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(raw) => Ok(Some(raw.trim().to_string()).filter(|key| !key.is_empty())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// Opens the Privacy & Security pane where a declined permission is turned back on.
@@ -223,19 +301,11 @@ fn event_sink(app: &AppHandle) -> Sink {
 }
 
 fn key_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?
-        .join(KEY_FILE))
+    secret_path(app, KEY_FILE)
 }
 
 fn read_key(app: &AppHandle) -> Result<Option<String>, String> {
-    match std::fs::read_to_string(key_path(app)?) {
-        Ok(raw) => Ok(Some(raw.trim().to_string()).filter(|key| !key.is_empty())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
+    read_secret(&key_path(app)?)
 }
 
 /// Runs AppKit-bound work on the main thread and hands back its result.
@@ -423,6 +493,69 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_key_prefers_gemini_over_google() {
+        let both = |name: &str| Some(format!("{name}-value"));
+        assert_eq!(
+            live_env_key(both),
+            Some(("GEMINI_API_KEY", "GEMINI_API_KEY-value".to_string()))
+        );
+        let google_only = |name: &str| (name == "GOOGLE_API_KEY").then(|| " g-key \n".to_string());
+        assert_eq!(
+            live_env_key(google_only),
+            Some(("GOOGLE_API_KEY", "g-key".to_string()))
+        );
+    }
+
+    #[test]
+    fn live_key_skips_blank_variables() {
+        let blank =
+            |name: &str| Some(if name == "GEMINI_API_KEY" { "  " } else { "g" }.to_string());
+        assert_eq!(
+            live_env_key(blank),
+            Some(("GOOGLE_API_KEY", "g".to_string()))
+        );
+        assert_eq!(live_env_key(|_: &str| None), None);
+    }
+
+    #[test]
+    fn live_key_file_round_trips_and_removes() {
+        let dir = std::env::temp_dir().join(format!(
+            "irgat-live-key-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join(LIVE_KEY_FILE);
+        assert_eq!(read_secret(&path).unwrap(), None);
+        assert!(store_secret(&path, "  AIza-test \n").unwrap());
+        assert_eq!(read_secret(&path).unwrap().as_deref(), Some("AIza-test"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        assert!(!store_secret(&path, "").unwrap());
+        assert_eq!(read_secret(&path).unwrap(), None);
+        assert!(!store_secret(&path, " ").unwrap(), "removing twice is fine");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn live_key_status_serializes_for_the_webview() {
+        let status = LiveKeyStatus {
+            stored: false,
+            env: Some("GEMINI_API_KEY"),
+        };
+        assert_eq!(
+            serde_json::to_value(status).unwrap(),
+            serde_json::json!({ "stored": false, "env": "GEMINI_API_KEY" })
+        );
+    }
 
     #[test]
     fn events_serialize_with_a_kind_tag() {
