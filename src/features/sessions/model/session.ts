@@ -486,6 +486,10 @@ export type Session = {
   sendingQueuedMessageId?: string;
   /** Last turn hit a provider usage limit; cleared by the next send. In-memory only. */
   usageLimit?: UsageLimit;
+  /** The interruption notice whose Resume banner the user dismissed. In-memory only. */
+  dismissedInterruptionId?: string;
+  /** `since` of the quota hold the user chose Run anyway on for this queue. In-memory only. */
+  queueHoldOverride?: number;
   /**
    * Lives only in memory: never saved, never listed with the project's chats.
    * A Irgat's habit runs are, and disappear when the run ends.
