@@ -26,12 +26,20 @@ import {
   type TerminalFitMode,
 } from "../model/terminalLayout";
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { terminalAgentStore } from "../model/agentDetection/terminalAgentStore";
+import {
+  createTerminalAgentWatcher,
+  liveScreenLines,
+  type TerminalAgentWatcher,
+} from "../model/agentDetection/watcher";
 import "@xterm/xterm/css/xterm.css";
 
 type Props = {
   id: string;
   cwd: string;
   active: boolean;
+  /** Tab label, carried with the terminal's agent status. */
+  label?: string;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
 };
 
@@ -145,7 +153,7 @@ function oscColors() {
   };
 }
 
-export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
+export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
   const outerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -154,6 +162,11 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
   const onMetaChangeRef = useRef(onMetaChange);
   onMetaChangeRef.current = onMetaChange;
   const runningProcessRef = useRef<string | null>(null);
+  const agentWatcherRef = useRef<TerminalAgentWatcher | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const agentContextRef = useRef({ cwd, tabLabel: label ?? defaultTerminalTitle(cwd) });
+  agentContextRef.current = { cwd, tabLabel: label ?? defaultTerminalTitle(cwd) };
 
   useEffect(() => {
     const outer = outerRef.current;
@@ -224,6 +237,31 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
     });
 
     let oscBuffer = "";
+    let screenTitle = "";
+    const terminalSeen = () =>
+      activeRef.current &&
+      (typeof document === "undefined" || document.hasFocus());
+    const agentWatcher = createTerminalAgentWatcher({
+      read: () =>
+        runningProcessRef.current
+          ? {
+              process: runningProcessRef.current,
+              title: screenTitle,
+              lines: liveScreenLines(term.buffer.active, term.rows),
+            }
+          : null,
+      publish: (status) =>
+        terminalAgentStore.set(id, status, {
+          ...agentContextRef.current,
+          seen: terminalSeen(),
+        }),
+      seen: terminalSeen,
+    });
+    agentWatcherRef.current = agentWatcher;
+    const titleSub = term.onTitleChange((next) => {
+      screenTitle = next;
+      agentWatcher.poke();
+    });
 
     let unsubscribe = () => {};
     let didStart = false;
@@ -247,6 +285,7 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
             }
           }
           term.write(data);
+          agentWatcher.poke();
         },
         (code) => {
           if (closed) return;
@@ -378,6 +417,9 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
       oscCursor.dispose();
       renderSub.dispose();
       bufferSub.dispose();
+      titleSub.dispose();
+      agentWatcher.dispose();
+      if (agentWatcherRef.current === agentWatcher) agentWatcherRef.current = null;
       const stopping = starting
         .catch(() => undefined)
         .then(() => {
@@ -415,6 +457,7 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
           runningProcessRef.current = fg;
           if (fg === lastForeground) return;
           lastForeground = fg;
+          agentWatcherRef.current?.poke();
           onMetaChangeRef.current?.(
             fg
               ? { title: fg, foreground: fg }
@@ -436,10 +479,17 @@ export function TerminalView({ id, cwd, active, onMetaChange }: Props) {
   }, [id, cwd, wantsMeta]);
 
   useEffect(() => {
+    agentWatcherRef.current?.readNow();
     if (!active) return;
     applySizeRef.current();
     termRef.current?.focus();
   }, [active]);
+
+  useEffect(() => {
+    const onFocus = () => agentWatcherRef.current?.readNow();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   return (
     <div

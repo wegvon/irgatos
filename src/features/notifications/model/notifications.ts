@@ -270,18 +270,32 @@ async function notifyProjectSession(
   sessionVisible: boolean,
   subject: NotificationSubject,
 ): Promise<boolean> {
+  return deliverNotification(
+    session.id,
+    () => notificationText(session, event),
+    sessionVisible,
+    subject,
+  );
+}
+
+async function deliverNotification(
+  targetId: string,
+  text: () => NotificationText,
+  visible: boolean,
+  subject: NotificationSubject,
+): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
   const decision = shouldNotify({
     enabled: loadNotificationsEnabled(),
     permission,
     windowFocused,
-    sessionVisible,
+    sessionVisible: visible,
   });
   if (!decision) return false;
-  const { title, subtitle, body } = notificationText(session, event);
+  const { title, subtitle, body } = text();
   try {
     await invoke("show_notification", {
-      sessionId: session.id,
+      sessionId: targetId,
       title,
       subtitle,
       body,
@@ -291,4 +305,49 @@ async function notifyProjectSession(
   } catch {
     return false;
   }
+}
+
+/** A coding agent running in a raw terminal changed state. */
+export type TerminalAgentNotice = {
+  /** Click target; the app routes `terminal:` ids to the terminal tab. */
+  targetId: string;
+  cwd: string;
+  tabLabel: string;
+  agentLabel: string;
+  event: "blocked" | "done";
+};
+
+export function terminalAgentNotificationText(
+  notice: TerminalAgentNotice,
+): NotificationText {
+  return {
+    title: "Irgatos",
+    subtitle: `${notice.agentLabel} · ${notice.tabLabel}`,
+    body:
+      notice.event === "blocked"
+        ? `${notice.agentLabel} is waiting for your approval or answer in the terminal`
+        : `${notice.agentLabel} finished in the terminal`,
+  };
+}
+
+/** Banner for a terminal agent, under the same project rules as sessions. */
+export async function notifyTerminalAgent(
+  notice: TerminalAgentNotice,
+  visible: boolean,
+): Promise<boolean> {
+  const project = knownNotificationProject(notice.cwd);
+  if (!project) return false;
+  const subject: NotificationSubject = {
+    projectId: project.id,
+    category: notice.event === "done" ? "agentFinished" : "agentInput",
+    occurredAt: Date.now(),
+  };
+  const sent = await deliverNotification(
+    notice.targetId,
+    () => terminalAgentNotificationText(notice),
+    visible,
+    subject,
+  );
+  if (!sent && notice.event === "done" && !visible) playCue("turnFinished", subject);
+  return sent;
 }

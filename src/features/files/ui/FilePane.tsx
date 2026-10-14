@@ -20,7 +20,10 @@ import {
   type FilePaneTab,
 } from "../../workspace/model/layout";
 import { isImagePath, isVideoPath } from "../model/filePreview";
-import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
+import {
+  terminalTabLabel,
+  type TerminalMetaPatch,
+} from "../../terminal/model/terminalTab";
 import type { EditorNavigationTarget } from "../../search/model/search";
 import { editorPathsEqual } from "../../search/model/search";
 import type { PlanBuildTarget, Session } from "../../sessions/model/session";
@@ -220,6 +223,7 @@ function FilePaneComponent({
                   id={file.id}
                   cwd={file.cwd}
                   active={focused && file.id === pane.activeFileId}
+                  label={terminalTabLabel(file)}
                   onMetaChange={(patch) =>
                     onTerminalMetaChange?.(file.id, patch)
                   }

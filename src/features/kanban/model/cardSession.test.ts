@@ -8,6 +8,7 @@ import {
   liveSessionStatus,
   type BoardSession,
   liveSessionsKey,
+  projectActivity,
   type LiveCardSession,
   type LiveSessionLike,
 } from "./cardSession";
@@ -163,5 +164,33 @@ describe("boardSyncBatches", () => {
       ["/work/api", [{ sessionId: "api", title: "T", status: "finished" }]],
     ]);
     expect(boardSyncBatches(sessions, new Set(["linked"]), sent).size).toBe(0);
+  });
+});
+
+describe("projectActivity with terminal agents", () => {
+  const live = (project: string, status: LiveCardSession["status"]) =>
+    ({ project, status }) as LiveCardSession;
+
+  it("counts working and blocked terminal agents with other projects' sessions", () => {
+    const sessions = new Map<string, LiveCardSession>([
+      ["s1", live("/a", "running")],
+      ["s2", live("/here", "needs-input")],
+    ]);
+    const activity = projectActivity(sessions, "/here", [
+      { project: "/a", state: "blocked" },
+      { project: "/b", state: "working" },
+      { project: "/b", state: "idle" },
+      { project: "/c", state: "done" },
+      { project: "/here", state: "blocked" },
+    ]);
+    expect(activity).toEqual([
+      { project: "/a", waiting: 1, running: 1 },
+      { project: "/b", waiting: 0, running: 1 },
+    ]);
+  });
+
+  it("matches the session-only result without terminal agents", () => {
+    const sessions = new Map<string, LiveCardSession>([["s1", live("/a", "running")]]);
+    expect(projectActivity(sessions, null)).toEqual(projectActivity(sessions, null, []));
   });
 });

@@ -26,7 +26,10 @@ import {
   type ProjectTerminalDock,
 } from "../../projects/model/projectTerminal";
 import { MOD } from "../../../platform/tauri/platform";
-import type { TerminalMetaPatch } from "../model/terminalTab";
+import {
+  terminalTabLabel,
+  type TerminalMetaPatch,
+} from "../model/terminalTab";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 
 const TerminalView = lazySurface(async () => {
@@ -260,6 +263,7 @@ export function ProjectTerminalDock({
               id={file.id}
               cwd={file.cwd}
               active={focused && file.id === dock.pane.activeFileId}
+              label={terminalTabLabel(file)}
               onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
             />
           </div>

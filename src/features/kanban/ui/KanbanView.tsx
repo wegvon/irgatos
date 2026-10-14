@@ -73,6 +73,10 @@ import {
 } from "../model/kanban";
 import { backfillKanbanBoard } from "../model/backfill";
 import { projectActivity, type LiveCardSession, type ProjectActivity } from "../model/cardSession";
+import type { TerminalAgentEntry } from "../../terminal/model/agentDetection/terminalAgentStore";
+import { terminalAgentsForProject } from "../../terminal/model/agentDetection/terminalAgentStore";
+import { TerminalAgentPill } from "../../terminal/ui/TerminalAgentBadge";
+import { useTerminalAgents } from "../../terminal/hooks/useTerminalAgents";
 import { CardDialog } from "./CardDialog";
 import { CardSessionSection, SessionChip } from "./CardSession";
 import { KanbanCardItem } from "./KanbanCardItem";
@@ -100,6 +104,12 @@ type Props = SessionProps & {
   recents: RecentProject[];
   /** Opens the board on a project with one card focused. */
   focusRequest?: KanbanFocusRequest | null;
+  /**
+   * Coding agents running in raw terminals, which have no session or card.
+   * Defaults to the live terminal agent store.
+   */
+  terminalAgents?: readonly TerminalAgentEntry[];
+  onOpenTerminal?: (terminalId: string) => void;
   onClose: () => void;
   onToggleSidebar?: () => void;
 };
@@ -110,6 +120,8 @@ export function KanbanView({
   cwd,
   recents,
   focusRequest,
+  terminalAgents: terminalAgentsProp,
+  onOpenTerminal,
   onClose,
   onToggleSidebar,
   ...sessionProps
@@ -125,12 +137,24 @@ export function KanbanView({
   useEffect(() => setQuery(""), [project]);
   const hasProject = looksLikeProject(project);
   const { liveSessions } = sessionProps;
+  const liveTerminalAgents = useTerminalAgents();
+  const terminalAgents = terminalAgentsProp ?? liveTerminalAgents;
+  const current = hasProject ? kanbanProject(project) : null;
   const elsewhere = useMemo(
     () =>
-      liveSessions
-        ? projectActivity(liveSessions, hasProject ? kanbanProject(project) : null)
-        : [],
-    [hasProject, liveSessions, project],
+      projectActivity(
+        liveSessions ?? new Map(),
+        current,
+        terminalAgents.map((agent) => ({
+          project: kanbanProject(agent.cwd),
+          state: agent.state,
+        })),
+      ),
+    [current, liveSessions, terminalAgents],
+  );
+  const terminalsHere = useMemo(
+    () => terminalAgentsForProject(terminalAgents, kanbanProject, current),
+    [current, terminalAgents],
   );
 
   return (
@@ -192,6 +216,9 @@ export function KanbanView({
       </div>
       {elsewhere.length > 0 ? (
         <ElsewhereStrip projects={elsewhere} onSelect={setProject} />
+      ) : null}
+      {terminalsHere.length > 0 ? (
+        <TerminalAgentStrip agents={terminalsHere} onOpen={onOpenTerminal} />
       ) : null}
       {hasProject ? (
         <KanbanBoardContent
@@ -1167,6 +1194,46 @@ function ElsewhereStrip({
           </button>
         );
       })}
+    </nav>
+  );
+}
+
+/** Agents the user started in this project's terminals, which have no cards. */
+export function TerminalAgentStrip({
+  agents,
+  onOpen,
+}: {
+  agents: readonly TerminalAgentEntry[];
+  onOpen?: (terminalId: string) => void;
+}) {
+  return (
+    <nav
+      aria-label="Agents running in terminals"
+      data-kanban-terminal-agents
+      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-stroke px-4 py-1.5 text-[11.5px]"
+    >
+      <span className="shrink-0 text-content/45">In terminals</span>
+      {agents.map((agent) => (
+        <button
+          key={agent.terminalId}
+          type="button"
+          data-terminal-agent={agent.terminalId}
+          title={`Show ${agent.agentLabel} in ${agent.tabLabel}`}
+          disabled={!onOpen}
+          onClick={() => onOpen?.(agent.terminalId)}
+          data-tauri-drag-region="false"
+          className={`inline-flex h-6 shrink-0 items-center gap-1.5 rounded-md border px-2 text-content/75 hover:bg-content/8 hover:text-content disabled:cursor-default ${
+            agent.state === "blocked"
+              ? "border-amber-500/40"
+              : "border-content/10 hover:border-content/25"
+          }`}
+        >
+          <span className="max-w-40 truncate">
+            {agent.agentLabel} · {agent.tabLabel}
+          </span>
+          <TerminalAgentPill entry={agent} />
+        </button>
+      ))}
     </nav>
   );
 }

@@ -175,6 +175,12 @@ export function boardSyncBatches(
 
 export type ProjectActivity = { project: string; waiting: number; running: number };
 
+/** A coding agent in a raw terminal, counted with the project's sessions. */
+export type TerminalAgentActivity = {
+  project: string;
+  state: "working" | "blocked" | "idle" | "done";
+};
+
 /**
  * Projects other than `current` with sessions working or waiting on the
  * user, those waiting first, so the board can point at them.
@@ -182,9 +188,19 @@ export type ProjectActivity = { project: string; waiting: number; running: numbe
 export function projectActivity(
   sessions: ReadonlyMap<string, LiveCardSession>,
   current: string | null,
+  terminalAgents: readonly TerminalAgentActivity[] = [],
 ): ProjectActivity[] {
   const byProject = new Map<string, ProjectActivity>();
-  for (const session of sessions.values()) {
+  type Live = Pick<LiveCardSession, "project" | "status">;
+  const live: Live[] = [...sessions.values()];
+  for (const agent of terminalAgents) {
+    if (agent.state === "blocked") {
+      live.push({ project: agent.project, status: "needs-input" });
+    } else if (agent.state === "working") {
+      live.push({ project: agent.project, status: "running" });
+    }
+  }
+  for (const session of live) {
     if (!session.project || session.project === current) continue;
     if (session.status !== "needs-input" && session.status !== "running") continue;
     const entry = byProject.get(session.project) ?? {

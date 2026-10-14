@@ -588,6 +588,8 @@ import {
   setWindowFocused,
 } from "../features/notifications/model/notifications";
 import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
+import { useTerminalAgentNotifications } from "../features/terminal/hooks/useTerminalAgentNotifications";
+import { terminalIdFromTarget } from "../features/terminal/model/agentDetection/terminalAgentStore";
 import { archiveFocusedSession } from "../features/sessions/model/archiveShortcut";
 import {
   adjacentItemId,
@@ -2362,6 +2364,7 @@ function Workspace({
     [promptableSessions, habitApprovals],
   );
   useInputNotifications(promptableSessions, activeSessionId);
+  useTerminalAgentNotifications();
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
   useEffect(() => {
@@ -3443,13 +3446,14 @@ function Workspace({
     [],
   );
 
-  const onToggleRunningTerminal = useCallback(
-    (fileId: string) => {
+  /** Bring a running terminal forward; with `toggle`, a showing one hides. */
+  const revealTerminal = useCallback(
+    (fileId: string, toggle: boolean) => {
       const dock = projectTerminalsRef.current.find((entry) =>
         entry.pane.files.some((file) => file.id === fileId),
       );
       if (dock) {
-        if (dock.open) {
+        if (toggle && dock.open) {
           setProjectTerminals((prev) =>
             mapProjectTerminal(prev, dock.projectPath, (entry) =>
               withDockOpen(entry, false),
@@ -3473,7 +3477,7 @@ function Workspace({
             activeTabIdRef.current === tab.id &&
             tab.focusedId === pane.id &&
             pane.activeFileId === fileId;
-          if (showing) {
+          if (toggle && showing) {
             setComposerFocused(true);
             setProjectTerminalFocused(false);
             return;
@@ -3500,6 +3504,11 @@ function Workspace({
       }
     },
     [focusProjectTerminal],
+  );
+
+  const onToggleRunningTerminal = useCallback(
+    (fileId: string) => revealTerminal(fileId, true),
+    [revealTerminal],
   );
 
   const onNewTerminalTab = useCallback(() => {
@@ -6556,6 +6565,27 @@ function Workspace({
       workspaceNavigation.cancel,
       workspaceNavigation.selectProject,
     ],
+  );
+
+  const onShowTerminal = useCallback(
+    (fileId: string) => {
+      const dock = projectTerminalsRef.current.find((entry) =>
+        entry.pane.files.some((file) => file.id === fileId),
+      );
+      if (dock && dock.projectPath !== projectCwdRef.current) {
+        onSelectProject(dock.projectPath);
+      } else {
+        closeIrgatView();
+      }
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setSettingsOpen(false);
+      revealTerminal(fileId, false);
+    },
+    [onSelectProject, closeIrgatView, revealTerminal],
   );
 
   const pickProject = useCallback(async () => {
@@ -13112,6 +13142,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onShowTerminal,
   });
   actions.current = {
     onNewFocused,
@@ -13144,6 +13175,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onShowTerminal,
   };
 
   const debounce = useRef({ name: "", at: 0 });
@@ -13448,15 +13480,27 @@ function Workspace({
         window.dispatchEvent(new Event("open_model_picker"));
       }),
       // Every window hears the click; only the one holding the session acts.
-      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
-        if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
+      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: target }) => {
+        const terminalId = terminalIdFromTarget(target);
+        const holds = terminalId
+          ? projectTerminalsRef.current.some((entry) =>
+              entry.pane.files.some((file) => file.id === terminalId),
+            ) ||
+            tabsRef.current.some((tab) =>
+              (tab.terminalPanes ?? []).some((pane) =>
+                pane.files.some((file) => file.id === terminalId),
+              ),
+            )
+          : sessionsRef.current.some((s) => s.id === target);
+        if (!holds) return;
         const win = getCurrentWindow();
         // Windows leaves a minimized window minimized when it is only focused.
         void win
           .unminimize()
           .then(() => win.setFocus())
           .catch(() => {});
-        actions.current.onOpenApprovalSession(sessionId);
+        if (terminalId) actions.current.onShowTerminal(terminalId);
+        else actions.current.onOpenApprovalSession(target);
       }),
       listen("zoom_in", () => {
         const next = zoomInUiScale(loadUiScale());
@@ -14598,6 +14642,7 @@ function Workspace({
                   recents={recents}
                   focusRequest={kanbanFocus}
                   liveSessions={kanbanSessions.live}
+                  onOpenTerminal={onShowTerminal}
                   onStartSession={onStartCardSession}
                   onOpenSession={onOpenAutomationSession}
                   onClose={onLeaveKanban}
