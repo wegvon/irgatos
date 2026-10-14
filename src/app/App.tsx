@@ -214,6 +214,7 @@ import {
   leafIds,
   movePane,
   neighborLeafId,
+  newArtifactTab,
   newEditorWorkspaceTab,
   newFileTab,
   newPlanTab,
@@ -446,6 +447,7 @@ import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorks
 import { newWorkspaceSession } from "./model/newWorkspaceSession";
 import {
   ADD_TO_CHAT_EVENT,
+  requestAddToChat,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
@@ -652,6 +654,30 @@ import {
   removeArtifactCard,
   ARTIFACT_DELETED_EVENT,
 } from "../features/artifacts/artifacts";
+import { useProjectArtifacts } from "../features/artifacts/hooks/useArtifacts";
+import {
+  OPEN_ARTIFACT_EVENT,
+  type OpenArtifactRequest,
+} from "../features/artifacts/model/artifactActions";
+import { registerArtifacts } from "../features/artifacts/model/artifactRegistry";
+import {
+  loadArtifactScope,
+  saveArtifactScope,
+} from "../features/artifacts/model/artifactScopePref";
+import {
+  irgatArtifactScope,
+  projectArtifactScope,
+} from "../features/artifacts/model/pinnedArtifacts";
+import {
+  artifactFileName,
+  type ArtifactScope,
+  type WorkspaceArtifact,
+} from "../features/artifacts/model/workspaceArtifacts";
+import {
+  ArtifactHostContext,
+  type ArtifactHost,
+} from "../features/artifacts/ui/artifactContext";
+import { ArtifactsList } from "../features/artifacts/ui/ArtifactsList";
 import type { IrgatChangesRequest } from "../features/irgats/ui/IrgatChangesView";
 import {
   claimDueAutomations,
@@ -1177,10 +1203,14 @@ function Workspace({
   const [irgatOverviewDocument, setIrgatOverviewDocument] = useState<
     string | null
   >(null);
+  const [irgatOverviewArtifact, setIrgatOverviewArtifact] = useState<
+    string | null
+  >(null);
   useEffect(() => {
     if (irgatOverviewOpen) return;
     setIrgatShownSession(null);
     setIrgatOverviewDocument(null);
+    setIrgatOverviewArtifact(null);
   }, [irgatOverviewOpen]);
   // Whether the shown session, rather than the Irgat's chat, holds focus.
   const [irgatShownSessionFocused, setIrgatShownSessionFocused] = useState(false);
@@ -4773,6 +4803,7 @@ function Workspace({
         setIrgatShownSession(null);
         setIrgatShownSessionFocused(false);
         setIrgatOverviewDocument(null);
+        setIrgatOverviewArtifact(null);
       }
       irgatViewIdRef.current = session.id;
       saveOpenIrgat(irgatId);
@@ -6632,6 +6663,90 @@ function Workspace({
     },
     [activeTabId],
   );
+
+  // The Irgat in front and the sessions whose artifacts belong to it.
+  const artifactIrgatRef = useRef<{ scope: string; sessionIds: Set<string> } | null>(null);
+  const openArtifact = useCallback(
+    (artifact: WorkspaceArtifact, pin = false) => {
+      registerArtifacts([artifact]);
+      const irgat = irgatViewIdRef.current ? artifactIrgatRef.current : null;
+      if (
+        irgat &&
+        (artifact.scope === irgat.scope ||
+          (!!artifact.sessionId && irgat.sessionIds.has(artifact.sessionId)))
+      ) {
+        setIrgatActivity(null);
+        setIrgatShownSession(null);
+        setIrgatOverviewDocument(null);
+        setIrgatOverviewArtifact(artifact.id);
+        setIrgatOverviewTab("artifacts");
+        setIrgatOverviewOpen(true);
+        return;
+      }
+      closeIrgatView();
+      const projectCwd = sidebarCwdRef.current;
+      const cwd = artifact.cwd ?? projectCwd;
+      const file = {
+        ...newArtifactTab(
+          {
+            id: artifact.id,
+            title: artifact.title,
+            fileName: artifactFileName(artifact),
+          },
+          cwd,
+        ),
+        ...(projectCwd && projectCwd !== cwd ? { projectCwd } : {}),
+      };
+      setSidebarTab("artifacts", projectCwd);
+      setProjectTerminalFocused(false);
+      setComposerFocused(false);
+      if (loadFileTabMode() === "workspace") {
+        const created = newEditorWorkspaceTab(
+          pin ? file : { ...file, preview: true },
+        );
+        let target: { tabId: string; paneId?: string } | undefined;
+        flushSync(() => {
+          setTabs((prev) => {
+            const result = openWorkspaceFile(
+              prev,
+              file,
+              created,
+              (tabs, tab) => insertBesideActive(tabs, tab, projectCwd),
+              pin,
+            );
+            target = result;
+            return result.tabs;
+          });
+        });
+        if (target?.paneId) activateTab(target.tabId, target.paneId);
+        else if (target) setActiveTabId(target.tabId);
+        return;
+      }
+      const tab = tabsRef.current.find(
+        (entry) => entry.id === activeTabIdRef.current,
+      );
+      if (!tab) {
+        appendTab(newEditorWorkspaceTab(file), projectCwd);
+        return;
+      }
+      setTabs((prev) =>
+        prev.map((entry) =>
+          entry.id === tab.id
+            ? openEditorTab(entry, file, { split: "right", pin })
+            : entry,
+        ),
+      );
+    },
+    [activateTab, appendTab, closeIrgatView, insertBesideActive, setSidebarTab],
+  );
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<OpenArtifactRequest>).detail;
+      if (detail?.artifact) openArtifact(detail.artifact, !!detail.pin);
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpen);
+  }, [openArtifact]);
 
   const onPinFile = useCallback((fileId: string) => {
     setTabs((prev) => {
@@ -11709,6 +11824,120 @@ function Workspace({
     setNotesViewOpen(false);
   }, []);
 
+  const [artifactScope, setArtifactScopeState] =
+    useState<ArtifactScope>(loadArtifactScope);
+  const setArtifactScope = useCallback((scope: ArtifactScope) => {
+    saveArtifactScope(scope);
+    setArtifactScopeState(scope);
+  }, []);
+  // "This session" stays on the last chat while an artifact tab is in front.
+  const lastChatSessionRef = useRef<string | undefined>(undefined);
+  if (active?.id && !active.ephemeral) lastChatSessionRef.current = active.id;
+  const projectArtifacts = useProjectArtifacts({
+    cwd: sidebarCwd,
+    sessions: promptableSessions,
+    history: projectHistory,
+    activeSessionId: active?.id ?? lastChatSessionRef.current,
+    scope: artifactScope,
+    enabled: sidebarTab === "artifacts" && !irgatCovers,
+  });
+  const selectedArtifactId = activeFile?.artifact?.id;
+  const artifactsPanel = useMemo(
+    () =>
+      sidebarCwd && sidebarCwd !== "~" ? (
+        <ArtifactsList
+          artifacts={projectArtifacts.artifacts}
+          selectedId={selectedArtifactId}
+          onOpen={openArtifact}
+          scope={artifactScope}
+          onScopeChange={setArtifactScope}
+          hasActiveSession={projectArtifacts.hasActiveSession}
+          loading={projectArtifacts.loading}
+          error={projectArtifacts.error}
+          onRetry={projectArtifacts.retry}
+          createScope={projectArtifactScope(sidebarCwd)}
+        />
+      ) : undefined,
+    [
+      sidebarCwd,
+      projectArtifacts,
+      selectedArtifactId,
+      openArtifact,
+      artifactScope,
+      setArtifactScope,
+    ],
+  );
+  const artifactChatTargets = useCallback(() => {
+    const open = new Set(tabsRef.current.flatMap((tab) => leafIds(tab.layout)));
+    const current = activeSessionIdRef.current ?? lastChatSessionRef.current;
+    return sessionsRef.current
+      .filter(
+        (session) =>
+          open.has(session.id) && !session.ephemeral && !session.inboxAsk,
+      )
+      .map((session) => ({
+        sessionId: session.id,
+        title: sessionDisplayTitle(session.title, session.harness),
+        active: session.id === current,
+      }));
+  }, []);
+  const addArtifactToChat = useCallback(
+    (text: string, sessionId?: string) => {
+      const activeEntry = tabsRef.current.find(
+        (entry) => entry.id === activeTabIdRef.current,
+      );
+      const chatInFront =
+        !!activeEntry &&
+        leafIds(activeEntry.layout).some((id) =>
+          sessionsRef.current.some((session) => session.id === id),
+        );
+      const targetId =
+        sessionId ??
+        (irgatViewIdRef.current || chatInFront
+          ? undefined
+          : lastChatSessionRef.current);
+      const owner = targetId
+        ? tabsRef.current.find((entry) =>
+            leafIds(entry.layout).includes(targetId),
+          )
+        : undefined;
+      if (!owner || !targetId) {
+        requestAddToChat(text, "plain");
+        return;
+      }
+      // The pane only listens once it is the target, after this render.
+      flushSync(() => activateTab(owner.id, targetId));
+      setComposerFocused(true);
+      window.setTimeout(() => requestAddToChat(text, "plain"), 0);
+    },
+    [activateTab],
+  );
+  const artifactHost = useMemo<ArtifactHost>(
+    () => ({
+      chatTargets: artifactChatTargets,
+      addToChat: addArtifactToChat,
+      openFile: (path) => onOpenFile(path, undefined, { pin: true }),
+      revealInExplorer: (path) => {
+        setSidebarTab("files");
+        onOpenFile(path);
+      },
+      openNotes: notesEnabled ? onOpenNotes : undefined,
+      defaultScope:
+        sidebarCwd && sidebarCwd !== "~"
+          ? projectArtifactScope(sidebarCwd)
+          : undefined,
+    }),
+    [
+      artifactChatTargets,
+      addArtifactToChat,
+      onOpenFile,
+      setSidebarTab,
+      notesEnabled,
+      onOpenNotes,
+      sidebarCwd,
+    ],
+  );
+
   const onOpenAutomations = useCallback(() => {
     workspaceNavigation.cancel();
     startTransition(() => {
@@ -12834,6 +13063,16 @@ function Workspace({
         ),
       }
     : undefined;
+  artifactIrgatRef.current =
+    irgatViewIrgat && irgatViewSession
+      ? {
+          scope: irgatArtifactScope(irgatViewIrgat.id),
+          sessionIds: new Set([
+            irgatViewSession.id,
+            ...irgatLaunches.map((launch) => launch.sessionId),
+          ]),
+        }
+      : null;
   const irgatOverviewPanel =
     irgatViewIrgat && irgatViewSession ? (
       <IrgatOverview
@@ -12873,6 +13112,18 @@ function Workspace({
         }}
         shownDocumentId={irgatOverviewDocument ?? undefined}
         onBackFromDocument={() => setIrgatOverviewDocument(null)}
+        irgatSessionId={irgatViewSession.id}
+        shownArtifactId={
+          irgatOverviewTab === "artifacts"
+            ? (irgatOverviewArtifact ?? undefined)
+            : undefined
+        }
+        onOpenArtifact={(id) => {
+          setIrgatShownSession(null);
+          setIrgatOverviewDocument(null);
+          setIrgatOverviewArtifact(id);
+        }}
+        onBackFromArtifact={() => setIrgatOverviewArtifact(null)}
         onOpenFile={onOpenFile}
         onClose={() => setIrgatOverviewOpen(false)}
         windowControls={irgatCovers && !IS_MAC ? <WindowControls /> : undefined}
@@ -13029,6 +13280,7 @@ function Workspace({
   );
 
   return (
+    <ArtifactHostContext.Provider value={artifactHost}>
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
         <div
@@ -13123,6 +13375,8 @@ function Workspace({
               onRemoveProject={onRemoveProject}
               irgats={sidebarIrgats}
               irgatViewActive={irgatCovers}
+              artifactsPanel={artifactsPanel}
+              artifactCount={projectArtifacts.artifacts.length}
               onNew={onNew}
               openSessions={openProjectSessions}
               onNewTerminal={onNewTerminal}
@@ -13700,6 +13954,7 @@ function Workspace({
         <TranscriptPoolOutlet pool={transcriptPool} />
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
+    </ArtifactHostContext.Provider>
   );
 }
 function conversationTitle(session: Session): string {
@@ -13823,6 +14078,7 @@ function toTitleTab(
     seenKeys.add(key);
     files.push(
       file.plan?.title?.trim() ||
+        file.artifact?.title.trim() ||
         (file.releaseNotes
           ? releaseNotesTitle(file.releaseNotes.version)
           : file.terminal

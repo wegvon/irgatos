@@ -106,13 +106,19 @@ export const SHOW_EXCLUDED_FILES_DEFAULT = false;
 export const SHOW_EXCLUDED_FILES_CHANGE_EVENT =
   "irgat:showexcludedfileschange";
 
-export type SidebarTabId = "files" | "sessions" | "changes" | "inbox";
+export type SidebarTabId =
+  | "files"
+  | "sessions"
+  | "changes"
+  | "artifacts"
+  | "inbox";
 
 const DEFAULT_SIDEBAR_TAB_ORDER: SidebarTabId[] = [
   "sessions",
   "inbox",
   "files",
   "changes",
+  "artifacts",
 ];
 
 export const THEME_HUE_MIN = 0;
@@ -809,6 +815,7 @@ function isSidebarTabId(value: unknown): value is SidebarTabId {
     value === "files" ||
     value === "sessions" ||
     value === "changes" ||
+    value === "artifacts" ||
     value === "inbox"
   );
 }

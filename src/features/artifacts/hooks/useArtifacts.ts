@@ -8,6 +8,7 @@ import {
   subscribeArtifactRegistry,
 } from "../model/artifactRegistry";
 import {
+  irgatArtifactScope,
   listPinnedArtifacts,
   projectArtifactScope,
   subscribePinnedArtifacts,
@@ -72,6 +73,94 @@ function sameProject(a: string, b: string): boolean {
   return pathKey(a) === pathKey(b);
 }
 
+/**
+ * Artifacts of saved sessions that are not open, read from the store a few
+ * at a time and kept until the session changes.
+ */
+export function useStoredSessionArtifacts(
+  wanted: readonly SessionSummary[],
+  enabled: boolean,
+  pinScope?: string,
+): {
+  lists: WorkspaceArtifact[][];
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+} {
+  const [loadTick, setLoadTick] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [storedVersion, setStoredVersion] = useState(0);
+  const generation = useRef(0);
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+    const missing = wanted.filter(
+      (summary) => stored.get(summary.id)?.updatedAt !== summary.updatedAt,
+    );
+    if (!missing.length) {
+      setLoading(false);
+      return;
+    }
+    const run = ++generation.current;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      let failed = 0;
+      for (let index = 0; index < missing.length; index += 4) {
+        const batch = missing.slice(index, index + 4);
+        const loaded = await Promise.all(
+          batch.map((summary) => getSession(summary.id).catch(() => null)),
+        );
+        if (run !== generation.current) return;
+        loaded.forEach((session, offset) => {
+          const summary = batch[offset];
+          if (!session) {
+            failed += 1;
+            return;
+          }
+          stored.set(summary.id, {
+            updatedAt: summary.updatedAt,
+            artifacts: extractSessionArtifacts(session, {
+              sessionTitle: summary.title || session.title,
+              fallbackAt: summary.updatedAt,
+              scope: pinScope,
+            }),
+          });
+        });
+        setStoredVersion((value) => value + 1);
+      }
+      if (run !== generation.current) return;
+      setLoading(false);
+      if (failed && failed === missing.length)
+        setError("Could not read the saved sessions.");
+    })();
+    return () => {
+      generation.current += 1;
+    };
+  }, [enabled, wanted, loadTick, pinScope]);
+
+  const lists = useMemo(() => {
+    if (!enabled) return [];
+    const out: WorkspaceArtifact[][] = [];
+    for (const summary of wanted) {
+      const entry = stored.get(summary.id);
+      if (entry) out.push(entry.artifacts);
+    }
+    return out;
+    // storedVersion re-reads the module cache after a batch lands.
+  }, [enabled, wanted, storedVersion]);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setLoadTick((value) => value + 1);
+  }, []);
+
+  return { lists, loading: enabled && loading, error: enabled ? error : null, retry };
+}
+
 export type ProjectArtifacts = {
   artifacts: WorkspaceArtifact[];
   loading: boolean;
@@ -84,7 +173,7 @@ export type ProjectArtifacts = {
 /**
  * The project's artifacts for the Artifacts tab: the active chat's, or every
  * session's, with the project's pins on top. Saved sessions that are not open
- * are read from the store on demand, newest first, and kept until they change.
+ * are read from the store on demand, newest first.
  */
 export function useProjectArtifacts({
   cwd,
@@ -99,24 +188,22 @@ export function useProjectArtifacts({
   history: readonly SessionSummary[];
   activeSessionId?: string;
   scope: ArtifactScope;
+  /** Whether the list is on screen; saved sessions are only read then. */
   enabled: boolean;
 }): ProjectArtifacts {
   const project = cwd && cwd !== "~" ? cwd : "";
   const pinScope = project ? projectArtifactScope(project) : undefined;
   const pinned = usePinnedArtifacts(pinScope);
-  const [loadTick, setLoadTick] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [storedVersion, setStoredVersion] = useState(0);
   const updatedAt = useMemo(() => {
     const map = new Map<string, number>();
     for (const summary of history) map.set(summary.id, summary.updatedAt);
     return map;
   }, [history]);
 
-  const active = activeSessionId
+  const found = activeSessionId
     ? sessions.find((session) => session.id === activeSessionId)
     : undefined;
+  const active = found && project && sameProject(found.cwd, project) ? found : undefined;
   const activeArtifacts = useMemo(
     () =>
       active
@@ -158,53 +245,11 @@ export function useProjectArtifacts({
       .slice(0, PROJECT_SESSION_LIMIT);
   }, [history, liveProject, project]);
 
-  const generation = useRef(0);
-  useEffect(() => {
-    if (!enabled || scope !== "project") return;
-    const missing = wanted.filter(
-      (summary) => stored.get(summary.id)?.updatedAt !== summary.updatedAt,
-    );
-    if (!missing.length) {
-      setLoading(false);
-      return;
-    }
-    const run = ++generation.current;
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      let failed = 0;
-      for (let index = 0; index < missing.length; index += 4) {
-        const batch = missing.slice(index, index + 4);
-        const loaded = await Promise.all(
-          batch.map((summary) => getSession(summary.id).catch(() => null)),
-        );
-        if (run !== generation.current) return;
-        loaded.forEach((session, offset) => {
-          const summary = batch[offset];
-          if (!session) {
-            failed += 1;
-            return;
-          }
-          stored.set(summary.id, {
-            updatedAt: summary.updatedAt,
-            artifacts: extractSessionArtifacts(session, {
-              sessionTitle: summary.title || session.title,
-              fallbackAt: summary.updatedAt,
-              scope: pinScope,
-            }),
-          });
-        });
-        setStoredVersion((value) => value + 1);
-      }
-      if (run !== generation.current) return;
-      setLoading(false);
-      if (failed && failed === missing.length)
-        setError("Could not read this project's saved sessions.");
-    })();
-    return () => {
-      generation.current += 1;
-    };
-  }, [enabled, scope, wanted, loadTick, pinScope]);
+  const saved = useStoredSessionArtifacts(
+    wanted,
+    enabled && scope === "project",
+    pinScope,
+  );
 
   const artifacts = useMemo(() => {
     if (scope === "session") return mergeArtifacts(pinned, activeArtifacts);
@@ -216,26 +261,74 @@ export function useProjectArtifacts({
           scope: pinScope,
         }),
       );
-    for (const summary of wanted) {
-      const entry = stored.get(summary.id);
-      if (entry) lists.push(entry.artifacts);
-    }
-    return mergeArtifacts(...lists);
-    // storedVersion re-reads the module cache after a batch lands.
-  }, [scope, pinned, activeArtifacts, liveProject, wanted, updatedAt, pinScope, storedVersion]);
+    return mergeArtifacts(...lists, ...saved.lists);
+  }, [scope, pinned, activeArtifacts, liveProject, updatedAt, pinScope, saved.lists]);
 
   useEffect(() => registerArtifacts(artifacts), [artifacts]);
 
-  const retry = useCallback(() => {
-    setError(null);
-    setLoadTick((value) => value + 1);
-  }, []);
-
   return {
     artifacts,
-    loading: scope === "project" && loading,
-    error: scope === "project" ? error : null,
-    retry,
+    loading: scope === "project" && saved.loading,
+    error: scope === "project" ? saved.error : null,
+    retry: saved.retry,
     hasActiveSession: !!active,
+  };
+}
+
+/**
+ * A Irgat's artifacts: from its own conversation, the sessions it started,
+ * and what was pinned to it.
+ */
+export function useIrgatArtifacts({
+  irgatId,
+  sessionId,
+  launchedIds,
+  sessions,
+  history,
+  enabled,
+}: {
+  irgatId: string;
+  sessionId?: string;
+  launchedIds: readonly string[];
+  sessions: readonly Session[];
+  history?: readonly SessionSummary[];
+  enabled: boolean;
+}): ProjectArtifacts {
+  const pinScope = irgatArtifactScope(irgatId);
+  const pinned = usePinnedArtifacts(pinScope);
+  const ids = useMemo(
+    () => [...new Set([...(sessionId ? [sessionId] : []), ...launchedIds])],
+    [sessionId, launchedIds],
+  );
+  const live = useMemo(
+    () =>
+      ids.flatMap((id) => {
+        const session = sessions.find((entry) => entry.id === id);
+        return session ? [session] : [];
+      }),
+    [ids, sessions],
+  );
+  const wanted = useMemo(() => {
+    const open = new Set(live.map((session) => session.id));
+    const want = new Set(ids.filter((id) => !open.has(id)));
+    return (history ?? []).filter((summary) => want.has(summary.id));
+  }, [ids, live, history]);
+  const saved = useStoredSessionArtifacts(wanted, enabled, pinScope);
+  const artifacts = useMemo(
+    () =>
+      mergeArtifacts(
+        pinned,
+        ...live.map((session) => sessionArtifacts(session, { scope: pinScope })),
+        ...saved.lists,
+      ),
+    [pinned, live, saved.lists, pinScope],
+  );
+  useEffect(() => registerArtifacts(artifacts), [artifacts]);
+  return {
+    artifacts,
+    loading: saved.loading,
+    error: saved.error,
+    retry: saved.retry,
+    hasActiveSession: live.length > 0,
   };
 }

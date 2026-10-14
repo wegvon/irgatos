@@ -42,6 +42,7 @@ import { AgentMarkdown, MarkdownPreview } from "../../sessions/ui/AgentMarkdown"
 import { HighlightedCodeBlock } from "../../sessions/ui/HighlightedCodeBlock";
 import { getArtifact } from "../artifacts";
 import { saveArtifactAsNote } from "../model/artifactActions";
+import { registerArtifacts } from "../model/artifactRegistry";
 import {
   pinArtifact,
   PinnedArtifactTooLargeError,
@@ -515,10 +516,15 @@ export function ArtifactDetail({
     try {
       if (artifact.pinned) {
         unpinArtifact(scope, artifact.id);
+        const { pinned: _pinned, ...rest } = artifact;
+        registerArtifacts([rest]);
         showFeedback({ tone: "ok", text: "Unpinned" });
       } else {
-        pinArtifact(scope, artifact, artifact.path ? undefined : text);
-        showFeedback({ tone: "ok", text: "Pinned to this project's artifacts" });
+        registerArtifacts([pinArtifact(scope, artifact, artifact.path ? undefined : text)]);
+        showFeedback({
+          tone: "ok",
+          text: scope.startsWith("irgat:") ? "Pinned to this Irgat's artifacts" : "Pinned to this project's artifacts",
+        });
       }
     } catch (cause) {
       showFeedback({

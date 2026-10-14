@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
+  Artifacts,
   Clock,
   DashboardSquare,
   File,
   FileDiff,
   ListFilter,
   MessageMultiple,
+  PanelRightToggle,
   Plus,
   Search,
 } from "../../../shared/ui/icons";
@@ -24,6 +26,11 @@ import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
 import { habitActions, HabitsList, useHabitsLoad } from "./IrgatHabits";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
+import { useIrgatArtifacts } from "../../artifacts/hooks/useArtifacts";
+import { getRegisteredArtifact } from "../../artifacts/model/artifactRegistry";
+import { ArtifactDetail } from "../../artifacts/ui/ArtifactDetail";
+import { ArtifactsList } from "../../artifacts/ui/ArtifactsList";
+import { irgatArtifactScope } from "../../artifacts/model/pinnedArtifacts";
 import { DocumentRow } from "./DocumentRow";
 import { IrgatOverviewAll } from "./IrgatOverviewAll";
 import {
@@ -31,7 +38,7 @@ import {
   IrgatSessionList,
   type ShownIrgatSession,
 } from "./IrgatSessionList";
-import { EmptyState } from "./irgatPanelParts";
+import { EmptyState, PageHeader } from "./irgatPanelParts";
 import { PanelStack, type StackPage } from "./PanelStack";
 import { SessionFiltersMenu } from "../../sessions/ui/SessionFiltersMenu";
 import {
@@ -45,12 +52,13 @@ import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { IrgatChangesView, type IrgatChangesRequest } from "./IrgatChangesView";
 
 export type IrgatOverviewTab =
-  "all" | "sessions" | "habits" | "documents" | "changes";
+  "all" | "sessions" | "habits" | "documents" | "artifacts" | "changes";
 
 const TABS: { id: IrgatOverviewTab; label: string; icon: typeof Clock }[] = [
   { id: "all", label: "All", icon: DashboardSquare },
   { id: "sessions", label: "Sessions", icon: MessageMultiple },
   { id: "documents", label: "Documents", icon: File },
+  { id: "artifacts", label: "Artifacts", icon: Artifacts },
   { id: "habits", label: "Habits", icon: Clock },
   { id: "changes", label: "Changes", icon: FileDiff },
 ];
@@ -95,6 +103,12 @@ type Props = {
   onBackFromDocument?: () => void;
   onOpenFile?: (path: string) => void;
   onOpenDocument: (id: string) => void;
+  /** Its own conversation, whose artifacts lead the Artifacts tab. */
+  irgatSessionId?: string;
+  /** An artifact open over the list until Back. */
+  shownArtifactId?: string;
+  onOpenArtifact?: (id: string) => void;
+  onBackFromArtifact?: () => void;
   onClose: () => void;
   windowControls?: ReactNode;
 };
@@ -125,6 +139,10 @@ export function IrgatOverview({
   onBackFromDocument = () => {},
   onOpenFile,
   onOpenDocument,
+  irgatSessionId,
+  shownArtifactId,
+  onOpenArtifact = () => {},
+  onBackFromArtifact = () => {},
   onClose,
   windowControls,
 }: Props) {
@@ -149,6 +167,18 @@ export function IrgatOverview({
     setFilters(DEFAULT_SESSION_SIDEBAR_FILTERS);
     setLimits(INITIAL_OVERVIEW_LIMITS);
   }, [irgatId]);
+  const launchedIds = useMemo(
+    () => launches.map((launch) => launch.sessionId),
+    [launches],
+  );
+  const artifacts = useIrgatArtifacts({
+    irgatId,
+    sessionId: irgatSessionId,
+    launchedIds,
+    sessions,
+    history,
+    enabled: open && tab === "artifacts",
+  });
   const push = (route: Route) => setRoutes((current) => [...current, route]);
   const back = () => setRoutes((current) => current.slice(0, -1));
 
@@ -218,12 +248,36 @@ export function IrgatOverview({
       ),
     });
 
+  const shownArtifact = shownArtifactId
+    ? (artifacts.artifacts.find((entry) => entry.id === shownArtifactId) ??
+      getRegisteredArtifact(shownArtifactId))
+    : undefined;
+  if (shownArtifact)
+    pages.push({
+      key: `artifact:${shownArtifact.id}`,
+      node: (
+        <div className="flex min-h-0 flex-1 flex-col" data-irgat-artifact-page>
+          <ArtifactDetail
+            artifact={shownArtifact}
+            header={
+              <PageHeader title={shownArtifact.title} onBack={onBackFromArtifact}>
+                <IconButton label="Hide overview" active onClick={onClose}>
+                  <PanelRightToggle className="size-3.5" strokeWidth={1.75} />
+                </IconButton>
+              </PageHeader>
+            }
+          />
+        </div>
+      ),
+    });
+
   const habitsFull = !habits || habits.length >= HABITS_MAX;
   const counts: Record<IrgatOverviewTab, number | undefined> = {
     all: undefined,
     sessions: launches.length,
     habits: habits?.length,
     documents: documents.length,
+    artifacts: artifacts.artifacts.length,
     changes: changes?.totals?.files,
   };
 
@@ -292,13 +346,33 @@ export function IrgatOverview({
             />
           </div>
         ) : null}
+        {tab === "artifacts" ? (
+          <div
+            role="tabpanel"
+            aria-label="Artifacts"
+            className="flex min-h-0 flex-1 flex-col"
+            data-irgat-overview="artifacts"
+          >
+            <ArtifactsList
+              artifacts={artifacts.artifacts}
+              selectedId={shownArtifactId}
+              onOpen={(artifact) => onOpenArtifact(artifact.id)}
+              loading={artifacts.loading}
+              error={artifacts.error}
+              onRetry={artifacts.retry}
+              createScope={irgatArtifactScope(irgatId)}
+            />
+          </div>
+        ) : null}
         <div
           ref={lock}
           role="tabpanel"
           aria-label={TABS.find((entry) => entry.id === tab)?.label}
-          hidden={tab === "changes"}
+          hidden={tab === "changes" || tab === "artifacts"}
           className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 py-2"
-          data-irgat-overview={tab === "changes" ? undefined : tab}
+          data-irgat-overview={
+            tab === "changes" || tab === "artifacts" ? undefined : tab
+          }
         >
           {tab === "all" ? (
             <IrgatOverviewAll
@@ -355,7 +429,7 @@ export function IrgatOverview({
                 </EmptyState>
               }
             />
-          ) : documents.length ? (
+          ) : tab !== "documents" ? null : documents.length ? (
             <ul className="flex flex-col gap-px">
               {[...documents].reverse().map((card) => (
                 <li key={card.id}>

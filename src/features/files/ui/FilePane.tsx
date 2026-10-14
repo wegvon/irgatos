@@ -8,6 +8,7 @@ import {
 import { SurfaceTabs } from "../../workspace/ui/SurfaceTabs";
 import {
   isAgentTab,
+  isArtifactTab,
   isChangesTab,
   isCommitTab,
   isPlanTab,
@@ -38,6 +39,10 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 const CommitDiff = lazySurface(async () => {
   const module = await import("../../source-control/ui/CommitDiff");
   return { default: module.CommitDiff };
+});
+const ArtifactSurface = lazySurface(async () => {
+  const module = await import("../../artifacts/ui/ArtifactSurface");
+  return { default: module.ArtifactSurface };
 });
 const FileEditor = lazySurface(async () => {
   const module = await import("./FileEditor");
@@ -193,6 +198,8 @@ function FilePaneComponent({
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
                 />
+              ) : isArtifactTab(file) ? (
+                <ArtifactSurface source={file.artifact} />
               ) : isPlanTab(file) ? (
                 <PlanSurface
                   file={file}

@@ -14,6 +14,7 @@ import {
 } from "../../../platform/tauri/fs";
 import {
   isAgentTab,
+  isArtifactTab,
   isChangesTab,
   isCommitTab,
   isFilesystemTab,
@@ -151,6 +152,16 @@ export function surfaceTabPresentation(
       label: name,
       iconName: "AGENT",
       tooltip: `${name} — orchestration agent`,
+    };
+  }
+
+  if (isArtifactTab(file)) {
+    const name = file.artifact.title.trim() || "Artifact";
+    return {
+      name,
+      label: name,
+      iconName: file.artifact.fileName,
+      tooltip: `${name} — artifact`,
     };
   }
 

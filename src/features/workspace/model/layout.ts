@@ -51,6 +51,14 @@ export type AgentTabSource = {
   harness: HarnessId;
 };
 
+/** A generated artifact, looked up by id in the live artifact registry. */
+export type ArtifactTabSource = {
+  id: string;
+  title: string;
+  /** For the tab's file-type icon. */
+  fileName: string;
+};
+
 export type SessionChangesSource = {
   sessionId: string;
 };
@@ -74,6 +82,8 @@ export type FilePaneTab = {
   commit?: CommitTabSource;
   /** Read-only transcript of an orchestration worker. Live only — not persisted. */
   agent?: AgentTabSource;
+  /** Artifact viewer. Live only — not persisted. */
+  artifact?: ArtifactTabSource;
   terminal?: boolean;
   /** Foreground command when it isn't the shell. Live only — not persisted. */
   foreground?: string;
@@ -307,6 +317,18 @@ export function newAgentTab(
   return { id: crypto.randomUUID(), path: title, cwd, agent };
 }
 
+export function newArtifactTab(
+  artifact: ArtifactTabSource,
+  cwd: string,
+): FilePaneTab {
+  return {
+    id: crypto.randomUUID(),
+    path: `artifact:${artifact.id}`,
+    cwd,
+    artifact,
+  };
+}
+
 export function newTerminalFile(
   cwd: string,
   title?: string,
@@ -430,12 +452,19 @@ export function isAgentTab(
   return !!file.agent;
 }
 
+export function isArtifactTab(
+  file: FilePaneTab,
+): file is FilePaneTab & { artifact: ArtifactTabSource } {
+  return !!file.artifact;
+}
+
 export function isVirtualDocumentTab(file: FilePaneTab): boolean {
   return (
     isPlanTab(file) ||
     isReleaseNotesTab(file) ||
     isCommitTab(file) ||
-    isAgentTab(file)
+    isAgentTab(file) ||
+    isArtifactTab(file)
   );
 }
 
@@ -514,6 +543,7 @@ export function isSessionChangesTab(
 export function editorTabKey(file: FilePaneTab): string {
   if (file.terminal) return `terminal:${file.id}`;
   if (file.agent) return `agent:${file.agent.sessionId}`;
+  if (file.artifact) return `artifact:${file.artifact.id}`;
   if (file.plan) return `plan:${file.plan.blockId}`;
   if (file.releaseNotes) return `release-notes:${file.releaseNotes.version}`;
   if (file.commit) return `commit:${file.cwd}:${file.commit.sha}`;

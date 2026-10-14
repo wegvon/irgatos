@@ -9,6 +9,7 @@ import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/Orch
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
+  Artifacts,
   Chatting,
   Check,
   ChevronDown,
@@ -219,6 +220,7 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   inbox: "Inbox",
   files: "Explorer",
   changes: "Changes",
+  artifacts: "Artifacts",
 };
 
 const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
@@ -226,6 +228,7 @@ const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
   inbox: Inbox,
   files: FileScript,
   changes: GitBranch,
+  artifacts: Artifacts,
 };
 
 function projectPathBusy(
@@ -355,6 +358,9 @@ type Props = {
   irgats?: IrgatRailProps;
   /** A Irgat fills the main area, which has no project sidebar. */
   irgatViewActive?: boolean;
+  /** Content of the Artifacts tab. */
+  artifactsPanel?: ReactNode;
+  artifactCount?: number;
 };
 
 function SidebarComponent({
@@ -438,6 +444,8 @@ function SidebarComponent({
   projectRailOpen = true,
   compactProjectRail = true,
   titleBarAbove = false,
+  artifactsPanel,
+  artifactCount = 0,
   unseenFinishedIds: unseenFinishedIdsProp,
   inboxUnseen = false,
   linkedSessionUpdateIds = new Set(),
@@ -1645,9 +1653,13 @@ function SidebarComponent({
         .join(" ")
     : "Changes";
 
+  const artifactsLabel = artifactCount
+    ? `Artifacts, ${formatInteger(artifactCount)}`
+    : "Artifacts";
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const active = tab === itemId;
     const isChangesTab = itemId === "changes";
+    const isArtifactsTab = itemId === "artifacts";
     return (
       <div
         key={itemId}
@@ -1662,13 +1674,19 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={isChangesTab ? changesLabel : undefined}
+          aria-label={
+            isChangesTab
+              ? changesLabel
+              : isArtifactsTab && artifactCount
+                ? artifactsLabel
+                : undefined
+          }
           data-tauri-drag-region="false"
           onClick={() => {
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
+          className={`relative flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
             active ? "bg-selection text-content" : "text-content/50"
           }`}
         >
@@ -1679,6 +1697,15 @@ function SidebarComponent({
               {TAB_LABELS[itemId]}
             </span>
           )}
+          {isArtifactsTab && artifactCount > 0 ? (
+            <span
+              aria-hidden
+              data-artifact-count
+              className="pointer-events-none absolute -top-1 right-0 min-w-3.5 rounded-full bg-accent px-1 text-center text-[9px] font-medium leading-3.5 tabular-nums text-white"
+            >
+              {artifactCount > 99 ? "99+" : artifactCount}
+            </span>
+          ) : null}
         </button>
       </div>
     );
@@ -2135,6 +2162,15 @@ function SidebarComponent({
             </div>
           )}
         </div>
+        {tab === "artifacts" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {artifactsPanel ?? (
+              <p className="px-3 py-2 text-[12px] text-content/50">
+                No project folder
+              </p>
+            )}
+          </div>
+        ) : null}
         {tab === "changes" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <SourceControl
@@ -2271,6 +2307,8 @@ function SidebarComponent({
           tabShown={panelOpen}
           changesLabel={changesLabel}
           hasChanges={hasChanges}
+          artifactsLabel={artifactsLabel}
+          hasArtifacts={artifactCount > 0}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2527,6 +2565,8 @@ function CompactProjectRail({
   tabShown,
   changesLabel,
   hasChanges,
+  artifactsLabel,
+  hasArtifacts,
   inboxUnseen,
   onSelectProject,
   onOpenProject,
@@ -2558,6 +2598,8 @@ function CompactProjectRail({
   tabShown: boolean;
   changesLabel: string;
   hasChanges: boolean;
+  artifactsLabel: string;
+  hasArtifacts: boolean;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -2706,10 +2748,19 @@ function CompactProjectRail({
             <CompactRailAction
               key={itemId}
               tab
-              label={itemId === "changes" ? changesLabel : TAB_LABELS[itemId]}
+              label={
+                itemId === "changes"
+                  ? changesLabel
+                  : itemId === "artifacts"
+                    ? artifactsLabel
+                    : TAB_LABELS[itemId]
+              }
               icon={COMPACT_TAB_ICONS[itemId]}
               active={workspaceActive && tabShown && activeTab === itemId}
-              dot={itemId === "changes" && hasChanges}
+              dot={
+                (itemId === "changes" && hasChanges) ||
+                (itemId === "artifacts" && hasArtifacts)
+              }
               onClick={() => openWorkspaceTab(itemId)}
             />
           ))}
