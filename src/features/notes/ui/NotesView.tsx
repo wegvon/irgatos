@@ -126,6 +126,10 @@ export function NotesView({
     );
   });
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  // The blank note "New note" made last, until something is typed in it.
+  const freshNoteId = useRef<string | null>(null);
+  const [focusNoteId, setFocusNoteId] = useState<string | null>(null);
   const logos = useTabGroupLogos();
   const [groupMascots] = useState(loadTabGroupMascots);
   const [groupColors] = useState(loadTabGroupColors);
@@ -192,7 +196,17 @@ export function NotesView({
     null;
 
   const onCreate = async () => {
-    if (creating) return;
+    if (creatingRef.current) return;
+    const fresh = freshNoteId.current;
+    if (fresh && notes.some((note) => note.id === fresh)) {
+      // Another click on New note means "let me write", and that note is
+      // still empty; a second blank one would only need deleting.
+      setSelectedId(fresh);
+      setQuery("");
+      setFocusNoteId(fresh);
+      return;
+    }
+    creatingRef.current = true;
     setCreating(true);
     try {
       // A blank title marks the note's generated slug as pending.
@@ -201,14 +215,20 @@ export function NotesView({
         body: "",
         ...(cwd && looksLikeProject(cwd) ? { sourceCwd: cwd } : {}),
       });
+      freshNoteId.current = note.id;
       setNotes(await loadNotes(true));
       setSelectedId(note.id);
       setQuery("");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
+  };
+
+  const onEdited = (id: string) => {
+    if (freshNoteId.current === id) freshNoteId.current = null;
   };
 
   const onSaved = (note: Note) => {
@@ -222,6 +242,7 @@ export function NotesView({
   };
 
   const onDelete = async (id: string) => {
+    onEdited(id);
     try {
       await deleteNote(id);
       const next = await loadNotes(true);
@@ -263,6 +284,7 @@ export function NotesView({
           title="New note"
           aria-label="New note"
           disabled={creating}
+          aria-busy={creating || undefined}
           onClick={() => void onCreate()}
           className="grid size-6 shrink-0 place-items-center rounded-md text-content/45 hover:bg-content/10 hover:text-content disabled:opacity-40"
         >
@@ -354,7 +376,10 @@ export function NotesView({
           note={selected}
           recents={recents}
           activeCwd={cwd}
+          focusEditor={!!selected && focusNoteId === selected.id}
+          onEditorFocused={() => setFocusNoteId(null)}
           onSaved={onSaved}
+          onEdited={onEdited}
           onDelete={onDelete}
           onAddToChat={onAddToChat}
         />
@@ -512,14 +537,20 @@ function NoteDetail({
   note,
   recents,
   activeCwd,
+  focusEditor,
+  onEditorFocused,
   onSaved,
+  onEdited,
   onDelete,
   onAddToChat,
 }: {
   note: Note | null;
   recents: RecentProject[];
   activeCwd?: string;
+  focusEditor: boolean;
+  onEditorFocused: () => void;
   onSaved: (note: Note) => void;
+  onEdited: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
   onAddToChat: (note: Note) => void;
 }) {
@@ -537,7 +568,10 @@ function NoteDetail({
       note={note}
       recents={recents}
       activeCwd={activeCwd}
+      focusEditor={focusEditor}
+      onEditorFocused={onEditorFocused}
       onSaved={onSaved}
+      onEdited={onEdited}
       onDelete={onDelete}
       onAddToChat={onAddToChat}
     />
@@ -548,14 +582,20 @@ function NoteEditor({
   note,
   recents,
   activeCwd,
+  focusEditor,
+  onEditorFocused,
   onSaved,
+  onEdited,
   onDelete,
   onAddToChat,
 }: {
   note: Note;
   recents: RecentProject[];
   activeCwd?: string;
+  focusEditor: boolean;
+  onEditorFocused: () => void;
   onSaved: (note: Note) => void;
+  onEdited: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
   onAddToChat: (note: Note) => void;
 }) {
@@ -589,10 +629,18 @@ function NoteEditor({
   // it; a save clears it only if the same request is still current.
   const finalizeRef = useRef<{ title: string } | null>(null);
   const onSavedRef = useRef(onSaved);
+  const onEditedRef = useRef(onEdited);
+  onEditedRef.current = onEdited;
   bodyRef.current = body;
   noteRef.current = note;
   onSavedRef.current = onSaved;
   const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
+
+  useEffect(() => {
+    if (!focusEditor) return;
+    (sourceFieldRef.current ?? titleFieldRef.current)?.focus();
+    onEditorFocused();
+  }, [focusEditor, onEditorFocused]);
 
   useEffect(() => {
     if (blank) setMode("source");
@@ -601,6 +649,13 @@ function NoteEditor({
   }, []);
 
   const editNote = useCallback((change: Edits) => {
+    // Filling in the placeholder title on blur is not writing in the note.
+    if (
+      change.body?.trim() ||
+      change.tags?.length ||
+      (change.title?.trim() && change.title.trim() !== noteRef.current.title)
+    )
+      onEditedRef.current(noteRef.current.id);
     const next = { ...editsRef.current, ...change };
     editsRef.current = next;
     if (change.body !== undefined) bodyRef.current = change.body;

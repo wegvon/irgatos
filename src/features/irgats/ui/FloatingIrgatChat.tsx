@@ -304,6 +304,7 @@ function IrgatRail({
   onCreate: () => Promise<boolean>;
 }) {
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
   return (
     <nav
       aria-label="Irgats"
@@ -358,9 +359,15 @@ function IrgatRail({
         title="New irgat"
         aria-label="New irgat"
         disabled={creating || !currentId}
+        aria-busy={creating || undefined}
         onClick={() => {
+          if (creatingRef.current) return;
+          creatingRef.current = true;
           setCreating(true);
-          void onCreate().finally(() => setCreating(false));
+          void onCreate().finally(() => {
+            creatingRef.current = false;
+            setCreating(false);
+          });
         }}
         className="grid size-8 shrink-0 place-items-center rounded-lg border border-content/10 bg-content/5 text-content/60 hover:bg-content/10 hover:text-content disabled:opacity-40"
       >

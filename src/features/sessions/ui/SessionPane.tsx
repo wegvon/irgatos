@@ -100,7 +100,7 @@ import {
   type AddToChatRequest,
   type QuoteRequest,
 } from "../model/quoteDraft";
-import { createNote, noteTitle } from "../../notes";
+import { noteTitle, saveNoteOnce } from "../../notes";
 import {
   loadNotesEnabled,
   subscribeNotesEnabled,
@@ -605,7 +605,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const saveNote = useCallback(
     async (text: string) => {
       const sessionTitle = sessionDisplayTitle(session.title, session.harness);
-      await createNote({
+      await saveNoteOnce({
         title:
           sessionTitle && sessionTitle !== "New session"
             ? sessionTitle
@@ -619,7 +619,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const saveSelectionNote = useCallback(
     async (text: string) => {
-      await createNote({
+      await saveNoteOnce({
         title: noteTitle(text),
         body: text,
         sourceSessionId: session.id,

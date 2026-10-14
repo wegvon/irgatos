@@ -132,6 +132,50 @@ export async function createNote(input: {
   });
 }
 
+const savesInFlight = new Map<string, Promise<SavedNote>>();
+const savedNoteIds = new Map<string, string>();
+
+export type SavedNote = { note: Note; created: boolean };
+
+/**
+ * Save `body` as a note once. Saving the same text from the same session
+ * again, whether while the first save is still running or later, returns
+ * the note already holding it instead of filing a copy.
+ */
+export function saveNoteOnce(input: {
+  title?: string;
+  body: string;
+  sourceSessionId?: string;
+  sourceCwd?: string;
+}): Promise<SavedNote> {
+  const body = input.body.replace(/\r\n?/g, "\n");
+  const key = `${input.sourceSessionId ?? ""}\u0000${body}`;
+  const running = savesInFlight.get(key);
+  if (running) return running;
+  const save = (async (): Promise<SavedNote> => {
+    const notes = await loadNotes();
+    const existing = notes.find(
+      (note) =>
+        note.body === body &&
+        (note.sourceSessionId ?? "") === (input.sourceSessionId ?? ""),
+    );
+    if (existing) return { note: existing, created: false };
+    // A list fetched before the last save landed would not show it yet.
+    const savedId = savedNoteIds.get(key);
+    if (savedId) {
+      const saved = await getNote(savedId).catch(() => null);
+      if (saved && saved.body === body) return { note: saved, created: false };
+    }
+    const note = await createNote({ ...input, body });
+    savedNoteIds.set(key, note.id);
+    return { note, created: true };
+  })().finally(() => {
+    savesInFlight.delete(key);
+  });
+  savesInFlight.set(key, save);
+  return save;
+}
+
 /** Canonical, case-insensitive tags for storage and filtering. */
 export function normalizeNoteTags(tags: readonly string[]): string[] {
   const normalized: string[] = [];

@@ -51,13 +51,17 @@ export function NewHabitPage({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const nameRef = useRef<HTMLInputElement>(null);
+  // Set before the first await, so a second click or ⌘↵ in the same frame
+  // cannot add the habit twice.
+  const creating = useRef(false);
   // The page mounts offscreen to slide in; autoFocus would scroll the panel
   // over to it first, so the slide would jump.
   useEffect(() => nameRef.current?.focus({ preventScroll: true }), []);
   const ready = !!name.trim() && !!instructions.trim() && !saving;
 
   const create = () => {
-    if (!ready) return;
+    if (!ready || creating.current) return;
+    creating.current = true;
     setSaving(true);
     setError(undefined);
     addHabit(irgatId, {
@@ -67,6 +71,7 @@ export function NewHabitPage({
     })
       .then(onCreated)
       .catch((reason: unknown) => {
+        creating.current = false;
         setSaving(false);
         setError(
           reason instanceof Error ? reason.message : "Could not add the habit.",
@@ -80,6 +85,7 @@ export function NewHabitPage({
         <button
           type="button"
           disabled={!ready}
+          aria-busy={saving || undefined}
           onClick={create}
           data-tauri-drag-region="false"
           className="h-6 rounded-md bg-content/10 px-2 text-[12px] text-content enabled:hover:bg-content/[0.14] disabled:opacity-40"

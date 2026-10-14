@@ -2103,6 +2103,9 @@ function SaveNoteButton({
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
   const timer = useRef<number | null>(null);
+  // Clicks landing before React re-renders the disabled button still see
+  // this, so a burst of them saves once.
+  const saving = useRef(false);
 
   useEffect(() => {
     setSaved(false);
@@ -2117,10 +2120,13 @@ function SaveNoteButton({
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending || undefined}
         title={saved ? "Saved to Notes" : "Save as note"}
         aria-label={saved ? "Saved to Notes" : "Save as note"}
-        className="rounded-md p-1 text-content/40 hover:bg-content/8 hover:text-content/70"
+        className="rounded-md p-1 text-content/40 hover:bg-content/8 hover:text-content/70 disabled:cursor-default"
         onClick={async () => {
+          if (saving.current) return;
+          saving.current = true;
           setError(null);
           setSaved(false);
           setPending(true);
@@ -2133,6 +2139,7 @@ function SaveNoteButton({
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
+            saving.current = false;
             setPending(false);
           }
         }}

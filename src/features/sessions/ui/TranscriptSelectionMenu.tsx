@@ -92,13 +92,17 @@ function SelectionAction({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const running = useRef(false);
   return (
     <>
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending || undefined}
         onMouseDown={(event) => event.preventDefault()}
         onClick={async () => {
+          if (running.current) return;
+          running.current = true;
           setPending(true);
           setError(null);
           try {
@@ -109,6 +113,7 @@ function SelectionAction({
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
+            running.current = false;
             setPending(false);
           }
         }}

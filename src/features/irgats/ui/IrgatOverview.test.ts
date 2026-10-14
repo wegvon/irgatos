@@ -239,3 +239,16 @@ it("opens a document over its tab with a way back", async () => {
   );
   expect(onBackFromDocument).toHaveBeenCalledOnce();
 });
+
+it("opens one New habit page however fast + is clicked", async () => {
+  await render("habits");
+  const add = container.querySelector<HTMLButtonElement>(
+    '[aria-label="New habit"]',
+  )!;
+  act(() => {
+    add.click();
+    add.click();
+  });
+  await act(async () => add.click());
+  expect(container.querySelectorAll("[data-new-habit]")).toHaveLength(1);
+});

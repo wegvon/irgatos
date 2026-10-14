@@ -77,6 +77,11 @@ export type IrgatOverviewChanges = {
 
 type Route = { kind: "new-habit" } | { kind: "habit"; id: string };
 
+function sameRoute(a: Route | undefined, b: Route): boolean {
+  if (!a || a.kind !== b.kind) return false;
+  return a.kind === "new-habit" || (b.kind === "habit" && a.id === b.id);
+}
+
 type Props = {
   open: boolean;
   irgatId: string;
@@ -179,7 +184,14 @@ export function IrgatOverview({
     history,
     enabled: open && tab === "artifacts",
   });
-  const push = (route: Route) => setRoutes((current) => [...current, route]);
+  // A second click on the same row or `+` before the page slides in would
+  // otherwise stack the same page twice.
+  const push = (route: Route) =>
+    setRoutes((current) =>
+      sameRoute(current[current.length - 1], route)
+        ? current
+        : [...current, route],
+    );
   const back = () => setRoutes((current) => current.slice(0, -1));
 
   const pages: StackPage[] = routes.flatMap((route, depth): StackPage[] => {

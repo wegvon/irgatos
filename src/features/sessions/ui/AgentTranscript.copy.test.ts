@@ -274,3 +274,33 @@ it("saves the user prompt to Notes from the action row outside the bubble", asyn
   );
   expect(save!.getAttribute("aria-label")).toBe("Saved to Notes");
 });
+
+it("saves once when Save as note is clicked again before the save lands", async () => {
+  let finish!: () => void;
+  const onSaveNote = vi.fn(
+    () => new Promise<void>((resolve) => (finish = resolve)),
+  );
+  act(() =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks: [{ id: "prompt", role: "user", text: "Only once" }],
+        onSaveNote,
+      }),
+    ),
+  );
+  const save = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Save as note"]',
+  )!;
+  act(() => {
+    save.click();
+    save.click();
+    save.click();
+  });
+  expect(onSaveNote).toHaveBeenCalledTimes(1);
+  expect(save.disabled).toBe(true);
+  expect(save.getAttribute("aria-busy")).toBe("true");
+
+  await act(async () => finish());
+  expect(save.disabled).toBe(false);
+  expect(save.getAttribute("aria-label")).toBe("Saved to Notes");
+});

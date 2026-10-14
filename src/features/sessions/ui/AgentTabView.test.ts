@@ -8,18 +8,22 @@ import { AgentTabView } from "./AgentTabView";
 import { AgentTranscript } from "./AgentTranscript";
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(async (_command, args) => args?.note),
+  invoke: vi.fn(async (command, args) =>
+    command === "notes_list" ? [] : args?.note,
+  ),
 }));
 
 it("waits for note storage, reports failure, and lets the user retry", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  let rejectSave!: (error: Error) => void;
-  vi.mocked(invoke).mockImplementationOnce(
-    () =>
-      new Promise((_resolve, reject) => {
-        rejectSave = reject;
-      }),
+  let rejectSave: ((error: Error) => void) | undefined;
+  const storage = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation((command, args) =>
+    command !== "notes_upsert" || rejectSave
+      ? storage(command, args)
+      : new Promise((_resolve, reject) => {
+          rejectSave = reject;
+        }),
   );
   const container = document.createElement("div");
   document.body.append(container);
@@ -43,7 +47,7 @@ it("waits for note storage, reports failure, and lets the user retry", async () 
     await act(async () => button.click());
     expect(container.querySelector('[aria-label="Saved to Notes"]')).toBeNull();
     expect(button.disabled).toBe(true);
-    await act(async () => rejectSave(new Error("Storage unavailable")));
+    await act(async () => rejectSave!(new Error("Storage unavailable")));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Storage unavailable",
     );
@@ -52,6 +56,7 @@ it("waits for note storage, reports failure, and lets the user retry", async () 
     expect(button.getAttribute("aria-label")).toBe("Saved to Notes");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   } finally {
+    vi.mocked(invoke).mockImplementation(storage);
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
@@ -183,6 +188,51 @@ it("saves worker prompts and responses with their source session and project", a
       });
     }
   } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps one note when a saved message is saved again", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  const notes = new Map<string, { id: string; body: string }>();
+  const storage = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    const note = (args as { note?: { id: string; body: string } })?.note;
+    if (command === "notes_list") return [...notes.values()];
+    if (command === "notes_upsert" && note) notes.set(note.id, note);
+    return note;
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(AgentTabView, {
+          title: "Worker",
+          visible: true,
+          session: {
+            ...newSession("codex", "/project"),
+            blocks: [{ id: "p", role: "user", text: "Remember the cache" }],
+          },
+        }),
+      ),
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Save as note"]',
+    )!;
+    await act(async () => button.click());
+    expect(button.getAttribute("aria-label")).toBe("Saved to Notes");
+    await act(async () => button.click());
+    await act(async () => button.click());
+
+    expect(notes.size).toBe(1);
+    expect(button.getAttribute("aria-label")).toBe("Saved to Notes");
+  } finally {
+    vi.mocked(invoke).mockImplementation(storage);
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
