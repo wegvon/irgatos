@@ -37,6 +37,7 @@ tauri-plugin-process = "2"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 png = "0.18"
 wry = { version = "0.55", default-features = false, features = ["os-webview", "x11"] }
+tiny_http = "0.12"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

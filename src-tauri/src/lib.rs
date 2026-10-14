@@ -20,6 +20,7 @@ mod devin_usage;
 mod external_editor;
 mod fs;
 mod gitlab;
+mod habit_webhook;
 mod harness;
 mod harness_updates;
 mod inbox_media;
@@ -464,6 +465,7 @@ pub fn run() {
             worktree_lifecycle::worktree_setup_run,
             check_command::check_command_run,
             check_command::check_command_cancel,
+            habit_webhook::habit_webhook_sync,
             worktrees::git_orchestration_worktree_create,
             worktrees::git_worktree_rename_branch,
             worktrees::git_worktree_check_remove,
