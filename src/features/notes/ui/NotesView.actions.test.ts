@@ -2,7 +2,14 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { invalidateNotes, type Note, type NoteUpsert } from "../notes";
+import {
+  ADD_NOTE_TO_CHAT_EVENT,
+  invalidateNotes,
+  type AddNoteToChatRequest,
+  type Note,
+  type NoteUpsert,
+} from "../notes";
+import type { NoteChatTarget } from "../noteChatTargets";
 import { NotesView } from "./NotesView";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -24,6 +31,9 @@ let root: Root;
 let container: HTMLDivElement;
 let store: Map<string, Note>;
 let onClose: ReturnType<typeof vi.fn>;
+let requests: AddNoteToChatRequest[];
+const onRequest = (event: Event) =>
+  requests.push((event as CustomEvent<AddNoteToChatRequest>).detail);
 
 const saved: Note = {
   id: "note-saved",
@@ -36,6 +46,27 @@ const saved: Note = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+const targets: NoteChatTarget[] = [
+  {
+    sessionId: "irgat-chat",
+    title: "Captain",
+    harness: "claude",
+    model: "Opus 4.7",
+    project: "Edefyn",
+    irgat: true,
+    current: true,
+  },
+  {
+    sessionId: "tab-codex",
+    title: "Fix the login race",
+    harness: "codex",
+    model: "GPT-5.5",
+    project: "portognjeeen",
+    irgat: false,
+    current: false,
+  },
+];
 
 let created: string[];
 const creates = () => created;
@@ -75,24 +106,28 @@ beforeEach(() => {
     },
   );
   onClose = vi.fn();
+  requests = [];
+  window.addEventListener(ADD_NOTE_TO_CHAT_EVENT, onRequest);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 });
 
 afterEach(async () => {
+  window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onRequest);
   await act(async () => root.unmount());
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-async function render() {
+async function render(chatTargets: NoteChatTarget[] = []) {
   await act(async () =>
     root.render(
       createElement(NotesView, {
         cwd: "/work/Edefyn",
         recents: [{ path: "/work/Edefyn", openedAt: 1 }],
+        chatTargets,
         onClose,
       }),
     ),
@@ -107,6 +142,18 @@ function titleField() {
   return container.querySelector<HTMLInputElement>(
     '[aria-label="Note title"]',
   )!;
+}
+
+function addToChatButton() {
+  return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Add to chat",
+  )!;
+}
+
+function menuItem(target: string) {
+  return document.body.querySelector<HTMLButtonElement>(
+    `[data-note-chat-target="${target}"]`,
+  );
 }
 
 it("creates one blank note when New note is double-clicked", async () => {
@@ -164,4 +211,88 @@ it("makes a new note once the blank one has been written in", async () => {
   await act(async () => newNoteButton().click());
 
   expect(store.size).toBe(3);
+});
+
+it("adds straight to a new chat when no chat is open", async () => {
+  await render();
+  const add = addToChatButton();
+  expect(add.getAttribute("aria-haspopup")).toBeNull();
+
+  await act(async () => add.click());
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.card).toMatchObject({ id: saved.id, title: "Auth plan" });
+  expect(requests[0]!.targetSessionId).toBeUndefined();
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("lists the open chats, the one in front first, then New chat", async () => {
+  await render(targets);
+  const add = addToChatButton();
+  expect(add.getAttribute("aria-haspopup")).toBe("menu");
+
+  await act(async () => add.click());
+
+  const menu = document.body.querySelector(
+    '[role="menu"][aria-label="Add to chat"]',
+  )!;
+  expect(menu).not.toBeNull();
+  const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  expect(items.map((item) => item.dataset.noteChatTarget)).toEqual([
+    "irgat-chat",
+    "tab-codex",
+    "new",
+  ]);
+  expect(items[0]!.textContent).toContain("Captain");
+  expect(items[0]!.textContent).toContain("Irgat · Opus 4.7 · Edefyn");
+  expect(items[0]!.textContent).toContain("Current");
+  expect(items[1]!.textContent).toContain("Fix the login race");
+  expect(items[1]!.textContent).toContain("Codex · GPT-5.5 · portognjeeen");
+  expect(items[1]!.textContent).not.toContain("Current");
+  expect(requests).toHaveLength(0);
+});
+
+it("adds the note to the open chat that was picked", async () => {
+  await render(targets);
+  await act(async () => addToChatButton().click());
+
+  await act(async () => {
+    menuItem("tab-codex")!.click();
+  });
+
+  expect(requests).toEqual([
+    {
+      card: expect.objectContaining({
+        id: saved.id,
+        body: "Keep the session cookie global.",
+      }),
+      targetSessionId: "tab-codex",
+    },
+  ]);
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+it("starts a new chat from the menu's New chat", async () => {
+  await render(targets);
+  await act(async () => addToChatButton().click());
+
+  await act(async () => menuItem("new")!.click());
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.targetSessionId).toBeUndefined();
+});
+
+it("hands the note over once when a chat is clicked twice", async () => {
+  await render(targets);
+  await act(async () => addToChatButton().click());
+  const item = menuItem("irgat-chat")!;
+
+  await act(async () => {
+    item.click();
+    item.click();
+  });
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]!.targetSessionId).toBe("irgat-chat");
+  expect(onClose).toHaveBeenCalledTimes(1);
 });

@@ -447,9 +447,15 @@ import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorks
 import { newWorkspaceSession } from "./model/newWorkspaceSession";
 import {
   ADD_TO_CHAT_EVENT,
+  appendComposerInsert,
   requestAddToChat,
+  requestInsertIntoChat,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
+import {
+  getComposerDraft,
+  setComposerDraft,
+} from "../features/sessions/model/draftCache";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -640,12 +646,18 @@ import {
 import {
   ADD_NOTE_TO_CHAT_EVENT,
   NOTES_CHANGED_EVENT,
+  appendNoteReference,
   composeNoteMessage,
   loadNotes,
   noteCardMeta,
   upsertNote,
+  type AddNoteToChatRequest,
   type NoteComposerCard,
 } from "../features/notes";
+import {
+  noteChatPlacement,
+  openNoteChatTargets,
+} from "../features/notes/noteChatTargets";
 import {
   getArtifact,
   saveArtifact,
@@ -1900,6 +1912,22 @@ function Workspace({
     ? sessions.find((session) => session.id === irgatViewId)
     : undefined;
   const irgatCovers = !!irgatViewId;
+  const noteChatTargets = useMemo(() => {
+    if (!notesViewOpen) return [];
+    return openNoteChatTargets({
+      sessions,
+      tabs,
+      activeTabId,
+      ...(irgatViewId
+        ? {
+            irgat: {
+              sessionId: irgatViewId,
+              name: irgatForSession(irgatViewId)?.name,
+            },
+          }
+        : {}),
+    });
+  }, [notesViewOpen, irgatViewId, sessions, tabs, activeTabId]);
   const activeTabSessionIds = activeTab ? leafIds(activeTab.layout) : [];
   const activeLinkedWorkItemPanel = activeTab
     ? (linkedWorkItemPanels.get(activeTab.focusedId) ??
@@ -2884,6 +2912,7 @@ function Workspace({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
+      if (irgatViewIdRef.current) closeIrgatView();
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd)
           ? card.sourceCwd
@@ -2907,21 +2936,12 @@ function Workspace({
     [
       active?.cwd,
       appendTab,
+      closeIrgatView,
       sessionDefaults?.cwd,
       sessionDefaults?.runtimeMode,
       projectCwd,
     ],
   );
-
-  useEffect(() => {
-    const onAdd = (event: Event) => {
-      const card = (event as CustomEvent<NoteComposerCard>).detail;
-      if (!card?.id) return;
-      onAddNoteToChat(card);
-    };
-    window.addEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
-    return () => window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
-  }, [onAddNoteToChat]);
 
   const onInboxCardDismiss = useCallback((sessionId: string) => {
     setSessions((prev) =>
@@ -4410,6 +4430,69 @@ function Workspace({
     setComposerFocused(true);
     return true;
   }, []);
+
+  /**
+   * Put a saved note into a chat that is already open, in front of the
+   * user, keeping whatever is typed there. False when that chat is gone.
+   */
+  const addNoteToOpenChat = useCallback(
+    (card: NoteComposerCard, sessionId: string) => {
+      const target = sessionsRef.current.find(
+        (session) => session.id === sessionId,
+      );
+      if (!target) return false;
+      const irgat = isIrgatSession(sessionId);
+      if (
+        irgat
+          ? irgatViewIdRef.current !== sessionId
+          : !findOpenSessionTab(tabsRef.current, sessionsRef.current, sessionId)
+      )
+        return false;
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      if (!irgat) {
+        if (irgatViewIdRef.current) closeIrgatView();
+        focusOpenSession(sessionId);
+      }
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
+      if (noteChatPlacement(target, card, irgat) === "card") {
+        const next = sessionsRef.current.map((session) =>
+          session.id === sessionId ? { ...session, noteCard: card } : session,
+        );
+        sessionsRef.current = next;
+        setSessions(next);
+        return true;
+      }
+      const text = appendNoteReference("", card.title, card.body);
+      if (!requestInsertIntoChat(sessionId, text)) {
+        setComposerDraft(
+          sessionId,
+          appendComposerInsert(getComposerDraft(sessionId) ?? "", text),
+        );
+      }
+      return true;
+    },
+    [closeIrgatView, focusOpenSession],
+  );
+
+  useEffect(() => {
+    const onAdd = (event: Event) => {
+      const request = (event as CustomEvent<AddNoteToChatRequest>).detail;
+      if (!request?.card?.id) return;
+      if (
+        request.targetSessionId &&
+        addNoteToOpenChat(request.card, request.targetSessionId)
+      )
+        return;
+      onAddNoteToChat(request.card);
+    };
+    window.addEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
+    return () => window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
+  }, [addNoteToOpenChat, onAddNoteToChat]);
 
   const replaceBlankPaneWithSession = useCallback((session: Session) => {
     const tab =
@@ -13775,6 +13858,7 @@ function Workspace({
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
                   cwd={projectCwd}
+                  chatTargets={noteChatTargets}
                   recents={recents}
                   onClose={onLeaveNotes}
                   onToggleSidebar={onToggleSidebar}

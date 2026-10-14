@@ -377,12 +377,21 @@ export function noteComposerCard(note: Note): NoteComposerCard {
   };
 }
 
-export function requestAddNoteToChat(note: Note) {
+export type AddNoteToChatRequest = {
+  card: NoteComposerCard;
+  /** An open chat to add it to; a new chat when absent. */
+  targetSessionId?: string;
+};
+
+export function requestAddNoteToChat(note: Note, targetSessionId?: string) {
   if (typeof window === "undefined") return;
   if (!note.body.replace(/\r\n?/g, "\n").trim()) return;
   window.dispatchEvent(
-    new CustomEvent<NoteComposerCard>(ADD_NOTE_TO_CHAT_EVENT, {
-      detail: noteComposerCard(note),
+    new CustomEvent<AddNoteToChatRequest>(ADD_NOTE_TO_CHAT_EVENT, {
+      detail: {
+        card: noteComposerCard(note),
+        ...(targetSessionId ? { targetSessionId } : {}),
+      },
     }),
   );
 }

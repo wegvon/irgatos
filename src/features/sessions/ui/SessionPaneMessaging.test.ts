@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionPane, type SessionPaneProps } from "./SessionPane";
 import { clearComposerDraft, setComposerDraft } from "../model/draftCache";
 import { requestSendToChat } from "../model/sendToChat";
-import { requestAddToChat } from "../model/quoteDraft";
+import { requestAddToChat, requestInsertIntoChat } from "../model/quoteDraft";
+import { appendNoteReference } from "../../notes/notes";
 
 const probes = vi.hoisted(() => ({
   pick: vi.fn(),
@@ -396,4 +397,36 @@ it("leaves captures alone while it is not the chat that takes them", () => {
   render({ ...pane, addToChatTarget: false });
   expect(requestSendToChat("Fix this button", [])).toBeNull();
   expect(pane.onSubmit).not.toHaveBeenCalled();
+});
+
+it("adds a saved note to the open Irgat chat after what is already typed", () => {
+  setComposerDraft("chat", "Keep my draft");
+  render(props());
+  expect(field().value).toBe("Keep my draft");
+
+  let taken = false;
+  act(() => {
+    taken = requestInsertIntoChat(
+      "chat",
+      appendNoteReference("", "Auth plan", "Keep the cookie global."),
+    );
+  });
+
+  expect(taken).toBe(true);
+  expect(field().value).toBe(
+    "Keep my draft\n\nNote: Auth plan\n\nKeep the cookie global.\n\n",
+  );
+});
+
+it("leaves its draft alone when a note is meant for another chat", () => {
+  setComposerDraft("chat", "Keep my draft");
+  render(props());
+
+  let taken = true;
+  act(() => {
+    taken = requestInsertIntoChat("other-chat", "Note: Elsewhere");
+  });
+
+  expect(taken).toBe(false);
+  expect(field().value).toBe("Keep my draft");
 });

@@ -24,6 +24,31 @@ export function requestAddToChat(text: string, mode: AddToChatMode = "quote") {
   );
 }
 
+export const INSERT_INTO_CHAT_EVENT = "irgat:insert-into-chat";
+
+export type InsertIntoChatRequest = {
+  sessionId: string;
+  text: string;
+  /** Set by the pane that took it, so a second pane on the same chat skips it. */
+  handled?: boolean;
+};
+
+/**
+ * Append `text` to one particular chat's draft, leaving what is typed there
+ * in place. False when no mounted pane holds that chat.
+ */
+export function requestInsertIntoChat(
+  sessionId: string,
+  text: string,
+): boolean {
+  if (typeof window === "undefined") return false;
+  const detail: InsertIntoChatRequest = { sessionId, text };
+  window.dispatchEvent(
+    new CustomEvent<InsertIntoChatRequest>(INSERT_INTO_CHAT_EVENT, { detail }),
+  );
+  return !!detail.handled;
+}
+
 /** Initial composer text for an add-to-chat request that opens a new session. */
 export function composerSeedForAddToChat(
   text: string,

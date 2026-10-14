@@ -1,4 +1,12 @@
-import { LoaderCircle, Plus, Search, File, Trash2, X } from "../../../shared/ui/icons";
+import {
+  ChevronDown,
+  LoaderCircle,
+  Plus,
+  Search,
+  File,
+  Trash2,
+  X,
+} from "../../../shared/ui/icons";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   useCallback,
@@ -52,6 +60,10 @@ import {
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HARNESS_TITLE } from "../../sessions/model/session";
+import { Popover } from "../../../shared/ui/Popover";
+import type { NoteChatTarget } from "../noteChatTargets";
 import { MarkdownSourceEditor } from "../../sessions/ui/MarkdownSourceEditor";
 
 const MIN_WIDTH = 240;
@@ -88,6 +100,8 @@ type Props = {
   besideRail?: boolean;
   compactRail?: boolean;
   cwd?: string;
+  /** Chats open in the workspace, the one in front first. */
+  chatTargets?: NoteChatTarget[];
   recents: RecentProject[];
   onClose: () => void;
   onToggleSidebar?: () => void;
@@ -97,6 +111,7 @@ export function NotesView({
   besideRail = false,
   compactRail = false,
   cwd,
+  chatTargets = [],
   recents,
   onClose,
   onToggleSidebar,
@@ -256,8 +271,8 @@ export function NotesView({
     }
   };
 
-  const onAddToChat = (note: Note) => {
-    requestAddNoteToChat(note);
+  const onAddToChat = (note: Note, targetSessionId?: string) => {
+    requestAddNoteToChat(note, targetSessionId);
     onClose();
   };
 
@@ -381,6 +396,7 @@ export function NotesView({
           onSaved={onSaved}
           onEdited={onEdited}
           onDelete={onDelete}
+          chatTargets={chatTargets}
           onAddToChat={onAddToChat}
         />
       </div>
@@ -542,6 +558,7 @@ function NoteDetail({
   onSaved,
   onEdited,
   onDelete,
+  chatTargets,
   onAddToChat,
 }: {
   note: Note | null;
@@ -552,7 +569,8 @@ function NoteDetail({
   onSaved: (note: Note) => void;
   onEdited: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
-  onAddToChat: (note: Note) => void;
+  chatTargets: NoteChatTarget[];
+  onAddToChat: (note: Note, targetSessionId?: string) => void;
 }) {
   if (!note) {
     return (
@@ -573,6 +591,7 @@ function NoteDetail({
       onSaved={onSaved}
       onEdited={onEdited}
       onDelete={onDelete}
+      chatTargets={chatTargets}
       onAddToChat={onAddToChat}
     />
   );
@@ -587,6 +606,7 @@ function NoteEditor({
   onSaved,
   onEdited,
   onDelete,
+  chatTargets,
   onAddToChat,
 }: {
   note: Note;
@@ -597,7 +617,8 @@ function NoteEditor({
   onSaved: (note: Note) => void;
   onEdited: (id: string) => void;
   onDelete: (id: string) => void | Promise<void>;
-  onAddToChat: (note: Note) => void;
+  chatTargets: NoteChatTarget[];
+  onAddToChat: (note: Note, targetSessionId?: string) => void;
 }) {
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const blank = !note.body.trim() && note.title === "Untitled";
@@ -937,14 +958,11 @@ function NoteEditor({
             }}
           />
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <button
-              type="button"
+            <AddToChatButton
               disabled={!canAddToChat}
-              onClick={() => onAddToChat(draft)}
-              className="inline-flex items-center gap-1 rounded-md bg-content px-3 h-6.5 text-[12px] text-background-base hover:bg-content/80 disabled:cursor-default disabled:opacity-40"
-            >
-              Add to chat
-            </button>
+              targets={chatTargets}
+              onAdd={(targetSessionId) => onAddToChat(draft, targetSessionId)}
+            />
             <button
               type="button"
               onClick={() => {
@@ -1133,5 +1151,114 @@ function hasDroppedFiles(data: DataTransfer | null): data is DataTransfer {
   if (!data) return false;
   return [...data.types].some(
     (type) => type === "Files" || type === "application/x-moz-file",
+  );
+}
+
+/**
+ * Add to chat: straight into a new chat when none is open, otherwise a menu
+ * of the open chats, the one in front first, with a new chat last.
+ */
+function AddToChatButton({
+  disabled,
+  targets,
+  onAdd,
+}: {
+  disabled: boolean;
+  targets: NoteChatTarget[];
+  onAdd: (targetSessionId?: string) => void;
+}) {
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  // The note is handed over once, however fast the clicks come.
+  const added = useRef(false);
+  const add = (targetSessionId?: string) => {
+    if (added.current) return;
+    added.current = true;
+    setOpen(false);
+    onAdd(targetSessionId);
+  };
+  const menu = targets.length > 0;
+  return (
+    <>
+      <button
+        ref={anchor}
+        type="button"
+        disabled={disabled}
+        aria-haspopup={menu ? "menu" : undefined}
+        aria-expanded={menu ? open : undefined}
+        onClick={() => (menu ? setOpen((value) => !value) : add())}
+        className="inline-flex items-center gap-1 rounded-md bg-content px-3 h-6.5 text-[12px] text-background-base hover:bg-content/80 disabled:cursor-default disabled:opacity-40"
+      >
+        Add to chat
+        {menu ? (
+          <ChevronDown className="-mr-1 size-3" strokeWidth={2} aria-hidden />
+        ) : null}
+      </button>
+      {open && menu ? (
+        <Popover
+          anchor={anchor}
+          side="bottom"
+          align="start"
+          width={280}
+          autoFocus
+          onDismiss={() => setOpen(false)}
+          role="menu"
+          aria-label="Add to chat"
+          className="p-1"
+        >
+          <p className="px-2 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-content/40">
+            Open chats
+          </p>
+          {targets.map((target) => (
+            <button
+              key={target.sessionId}
+              type="button"
+              role="menuitem"
+              data-note-chat-target={target.sessionId}
+              onClick={() => add(target.sessionId)}
+              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-content hover:bg-content/10"
+            >
+              <HarnessIcon
+                harness={target.harness}
+                className="size-3.5 shrink-0 text-content/60"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] leading-4">
+                  {target.title || "New session"}
+                </span>
+                <span className="block truncate text-[11px] leading-4 text-content/45">
+                  {[
+                    target.irgat ? "Irgat" : HARNESS_TITLE[target.harness],
+                    target.model,
+                    target.project,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </span>
+              {target.current ? (
+                <span className="shrink-0 text-[10px] text-content/40">
+                  Current
+                </span>
+              ) : null}
+            </button>
+          ))}
+          <div className="my-1 h-px bg-content/8" />
+          <button
+            type="button"
+            role="menuitem"
+            data-note-chat-target="new"
+            onClick={() => add()}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] text-content hover:bg-content/10"
+          >
+            <Plus
+              className="size-3.5 shrink-0 text-content/60"
+              strokeWidth={1.75}
+            />
+            New chat
+          </button>
+        </Popover>
+      ) : null}
+    </>
   );
 }

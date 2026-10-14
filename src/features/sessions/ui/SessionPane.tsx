@@ -97,7 +97,9 @@ import { MOD } from "../../../platform/tauri/platform";
 import {
   acknowledgeQuoteRequest,
   ADD_TO_CHAT_EVENT,
+  INSERT_INTO_CHAT_EVENT,
   type AddToChatRequest,
+  type InsertIntoChatRequest,
   type QuoteRequest,
 } from "../model/quoteDraft";
 import { noteTitle, saveNoteOnce } from "../../notes";
@@ -639,6 +641,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
     window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
     return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
   }, [addSelectionToChat, addToChatTarget]);
+  // Unlike Add to Chat, this names its chat, so a pane in a hidden tab
+  // takes it too.
+  useEffect(() => {
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertIntoChatRequest>).detail;
+      if (!detail?.text || detail.handled || detail.sessionId !== session.id)
+        return;
+      detail.handled = true;
+      addSelectionToChat(detail.text, "plain");
+    };
+    window.addEventListener(INSERT_INTO_CHAT_EVENT, onInsert);
+    return () => window.removeEventListener(INSERT_INTO_CHAT_EVENT, onInsert);
+  }, [addSelectionToChat, session.id]);
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) &&
     harnessSupportsAttachments(session.harness);
