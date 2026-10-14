@@ -47,6 +47,14 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+const live = vi.hoisted(() => ({
+  status: vi.fn(async () => ({ stored: false, env: null as string | null })),
+  save: vi.fn(async (_key: string) => true),
+}));
+vi.mock("../../../platform/tauri/liveVoice", () => ({
+  liveKeyStatus: live.status,
+  saveLiveKey: live.save,
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn(async () => true) }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "claude" || id === "cursor",
@@ -686,6 +694,54 @@ describe("settings pages", () => {
     await act(async () => control.click());
     expect(control.getAttribute("aria-checked")).toBe("true");
     expect(localStorage.getItem("irgat.tabAnimationsEnabled")).toBe("1");
+  });
+
+  it("finds a Gemini key in the environment and saves one typed in", async () => {
+    live.status.mockResolvedValueOnce({ stored: false, env: "GEMINI_API_KEY" });
+    await render("voice");
+    const row = container.querySelector('[data-setting-id="voice-live-key"]')!;
+    expect(row.textContent).toContain("Using GEMINI_API_KEY from your environment");
+    const input = row.querySelector<HTMLInputElement>('input[aria-label="Gemini API key"]')!;
+    const props = Object.entries(input).find(([key]) =>
+      key.startsWith("__reactProps"),
+    )![1];
+    await act(async () => props.onChange({ target: { value: " AIza-typed " } }));
+    live.status.mockResolvedValueOnce({ stored: true, env: "GEMINI_API_KEY" });
+    const save = [...row.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    await act(async () => save.click());
+    expect(live.save).toHaveBeenCalledWith("AIza-typed");
+    expect(row.textContent).toContain("Saved");
+    expect(row.textContent).toContain("wins over the environment");
+  });
+
+  it("keeps the Live voice choices", async () => {
+    await render("voice");
+    const bargeIn = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Interrupt when I talk"]',
+    )!;
+    expect(bargeIn.getAttribute("aria-checked")).toBe("true");
+    await act(async () => bargeIn.click());
+    expect(JSON.parse(localStorage.getItem("irgat.liveVoice")!)).toMatchObject({
+      localBargeIn: false,
+      voice: "Puck",
+    });
+    const model = container.querySelector('[data-setting-id="voice-live-model"]')!;
+    const props = () => {
+      const other = model.querySelector<HTMLInputElement>(
+        'input[aria-label="Other Live model"]',
+      )!;
+      return Object.entries(other).find(([key]) =>
+        key.startsWith("__reactProps"),
+      )![1];
+    };
+    await act(async () => props().onChange({ target: { value: "gemini-live-next" } }));
+    await act(async () => props().onBlur());
+    expect(JSON.parse(localStorage.getItem("irgat.liveVoice")!).model).toBe(
+      "models/gemini-live-next",
+    );
+    expect(model.textContent).toContain("gemini-live-next");
   });
 
   it("turns ADHD mode on for every chat and keeps the choice", async () => {

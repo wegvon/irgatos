@@ -524,6 +524,37 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "rate words per minute fast slow tts",
   },
   {
+    id: "voice-live-key",
+    section: "voice",
+    label: "Gemini API key",
+    keywords:
+      "live voice gemini google api key GEMINI_API_KEY GOOGLE_API_KEY realtime call",
+  },
+  {
+    id: "voice-live-voice",
+    section: "voice",
+    label: "Live voice",
+    keywords: "gemini live speaker puck charon kore fenrir aoede realtime",
+  },
+  {
+    id: "voice-live-model",
+    section: "voice",
+    label: "Live model",
+    keywords: "gemini live native audio flash model realtime",
+  },
+  {
+    id: "voice-live-barge-in",
+    section: "voice",
+    label: "Interrupt when I talk",
+    keywords: "barge in interrupt live voice talk over stop speaking",
+  },
+  {
+    id: "voice-live-transcript",
+    section: "voice",
+    label: "Save live calls to the chat",
+    keywords: "live voice transcript conversation history chat",
+  },
+  {
     id: "adhd-mode",
     section: "adhd",
     label: "ADHD mode",

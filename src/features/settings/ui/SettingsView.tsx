@@ -458,6 +458,20 @@ import {
   SPEECH_RATES,
   VOICE_LANGUAGES,
 } from "../../voice/model/voiceSettings";
+import {
+  LIVE_MODELS,
+  LIVE_VOICE_HINTS,
+  LIVE_VOICES,
+  loadLiveSettings,
+  saveLiveSettings,
+  subscribeLiveSettings,
+  type LiveVoiceName,
+} from "../../voice/live/liveSettings";
+import {
+  liveKeyStatus,
+  saveLiveKey,
+  type LiveKeyStatus,
+} from "../../../platform/tauri/liveVoice";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -1588,6 +1602,8 @@ function VoicePage() {
         </Row>
       </Group>
 
+      <LiveVoiceGroup fieldClass={fieldClass} inputClass={inputClass} />
+
       <Group
         title="Transcription"
         description="Where speech becomes text. On this Mac uses Apple's recognizer with live text as you speak. A service uploads the recording when you finish."
@@ -1726,6 +1742,188 @@ function VoicePage() {
         ) : null}
       </Group>
     </>
+  );
+}
+
+/** Gemini Live: the key, the voice and the model a Live call uses. */
+function LiveVoiceGroup({
+  fieldClass,
+  inputClass,
+}: {
+  fieldClass: string;
+  inputClass: string;
+}) {
+  const live = useSyncExternalStore(
+    subscribeLiveSettings,
+    loadLiveSettings,
+    loadLiveSettings,
+  );
+  const [status, setStatus] = useState<LiveKeyStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [customModel, setCustomModel] = useState("");
+
+  const refresh = useCallback(() => {
+    void liveKeyStatus().then(setStatus);
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  const onSave = async (next: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveLiveKey(next);
+      setKey("");
+      refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const known = LIVE_MODELS.some((option) => option.value === live.model);
+  const commitCustomModel = () => {
+    const next = customModel.trim();
+    if (next) saveLiveSettings({ model: next });
+    setCustomModel("");
+  };
+
+  return (
+    <Group
+      title="Live voice (Gemini)"
+      description="Talk with an agent in real time, both ways at once, like a phone call: press the Live button in a composer. Gemini's realtime model speaks for the agent, you can talk over it, and real work goes to the agent in the chat. Audio streams to Google while the call is open."
+    >
+      <Row
+        id="voice-live-key"
+        label="Gemini API key"
+        description={
+          status == null
+            ? "Checking…"
+            : status.stored
+              ? "Saved in Irgatos's app data, readable only by you. It wins over the environment."
+              : status.env
+                ? `Using ${status.env} from your environment. Save a key here to use another one.`
+                : "Create one in Google AI Studio. Irgatos also picks up GEMINI_API_KEY or GOOGLE_API_KEY from your shell."
+        }
+      >
+        {status?.stored ? (
+          <>
+            <span className="text-[12px] text-content/45">Saved</span>
+            <SecondaryButton onClick={() => void onSave("")} disabled={busy}>
+              Remove
+            </SecondaryButton>
+          </>
+        ) : (
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            {status?.env ? (
+              <span className="text-[12px] text-content/45">
+                From {status.env}
+              </span>
+            ) : null}
+            <label className={`${fieldClass} w-52`}>
+              <input
+                type="password"
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && key.trim())
+                    void onSave(key.trim());
+                }}
+                placeholder="AIza…"
+                aria-label="Gemini API key"
+                autoComplete="off"
+                spellCheck={false}
+                className={inputClass}
+              />
+            </label>
+            <SecondaryButton
+              onClick={() => void onSave(key.trim())}
+              disabled={busy || !key.trim()}
+            >
+              {busy ? "Saving" : "Save"}
+            </SecondaryButton>
+          </div>
+        )}
+      </Row>
+      {error ? (
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+          {error}
+        </p>
+      ) : null}
+      <Row
+        id="voice-live-voice"
+        label="Live voice"
+        description="The voice the agent speaks with in a Live call."
+      >
+        <Select
+          label="Live voice"
+          value={live.voice}
+          options={LIVE_VOICES.map((name) => ({
+            value: name,
+            label: `${name} · ${LIVE_VOICE_HINTS[name]}`,
+          }))}
+          onChange={(next) => saveLiveSettings({ voice: next as LiveVoiceName })}
+        />
+      </Row>
+      <Row
+        id="voice-live-model"
+        label="Live model"
+        description="Native audio sounds most natural. Type another Live model id to try it."
+      >
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <Select
+            label="Live model"
+            value={live.model}
+            options={[
+              ...LIVE_MODELS,
+              ...(known
+                ? []
+                : [{ value: live.model, label: live.model.replace(/^models\//, "") }]),
+            ]}
+            onChange={(next) => saveLiveSettings({ model: next })}
+          />
+          <label className={`${fieldClass} w-44`}>
+            <input
+              value={customModel}
+              onChange={(event) => setCustomModel(event.target.value)}
+              onBlur={commitCustomModel}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder="Other model id"
+              aria-label="Other Live model"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </div>
+      </Row>
+      <Row
+        id="voice-live-barge-in"
+        label="Interrupt when I talk"
+        description="Stop the agent the moment the microphone hears you, before Gemini notices. Turn off if speakers without echo cancellation cut it off."
+      >
+        <Toggle
+          label="Interrupt when I talk"
+          on={live.localBargeIn}
+          onChange={(next) => saveLiveSettings({ localBargeIn: next })}
+        />
+      </Row>
+      <Row
+        id="voice-live-transcript"
+        label="Save live calls to the chat"
+        description="Add what you and the agent said to the conversation, so the next typed message picks up from it."
+      >
+        <Toggle
+          label="Save live calls to the chat"
+          on={live.saveTranscript}
+          onChange={(next) => saveLiveSettings({ saveTranscript: next })}
+        />
+      </Row>
+    </Group>
   );
 }
 
