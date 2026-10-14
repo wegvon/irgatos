@@ -3673,6 +3673,14 @@ mod tests {
             ),
         )
         .unwrap();
+        // Same size and inode as before, and a coarse filesystem clock can give
+        // both writes the same mtime, so move it forward explicitly.
+        std::fs::File::options()
+            .write(true)
+            .open(&codex)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + Duration::from_secs(5))
+            .unwrap();
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
             resolve_harness_binary_override("codex", &codex_path),
