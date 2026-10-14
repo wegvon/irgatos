@@ -1,4 +1,4 @@
-import { RefreshCw, Terminal } from "../../shared/ui/icons";
+import { Globe, RefreshCw, Terminal } from "../../shared/ui/icons";
 import {
   useCallback,
   useEffect,
@@ -41,6 +41,10 @@ import {
 } from "./UsageProviderChip";
 import { PiUsage } from "./PiUsage";
 import {
+  AdhdModeChip,
+  type AdhdChipSession,
+} from "../../features/adhd/ui/AdhdModeChip";
+import {
   ProviderSignInPanel,
   type ProviderSignInState,
 } from "../../features/sessions/ui/ProviderSignInPanel";
@@ -75,18 +79,25 @@ export function UsageFooter({
   onNewTerminal,
   onShowTerminal,
   projectTerminalActive = false,
+  browserOpen = false,
+  onToggleBrowser,
   onSelectAccount,
   onManageAccounts,
+  adhd,
 }: {
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
   project?: string;
+  /** Show the ADHD mode switch, with this chat's next step when one is open. */
+  adhd?: { session?: AdhdChipSession };
   terminals?: RunningTerminal[];
   terminalOpen?: boolean;
   onToggleTerminal?: (fileId: string) => void;
   onNewTerminal?: () => void;
   onShowTerminal?: () => void;
   projectTerminalActive?: boolean;
+  browserOpen?: boolean;
+  onToggleBrowser?: () => void;
   onSelectAccount?: (
     provider: ProviderAccountProvider,
     accountId: string,
@@ -133,8 +144,26 @@ export function UsageFooter({
           ) : null
         }
       />
-      {showTerminals || showTerminalButton ? (
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+      {adhd || showTerminals || showTerminalButton || onToggleBrowser ? (
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          {adhd ? <AdhdModeChip session={adhd.session} /> : null}
+          {onToggleBrowser ? (
+            <button
+              type="button"
+              className={`inline-flex h-5 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
+                browserOpen
+                  ? "text-accent"
+                  : "text-content/40 hover:text-content"
+              }`}
+              aria-label={browserOpen ? "Hide Browser" : "Show Browser"}
+              aria-pressed={browserOpen}
+              title={browserOpen ? "Hide Browser" : "Show Browser"}
+              onClick={onToggleBrowser}
+            >
+              <Globe className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <span>Browser</span>
+            </button>
+          ) : null}
           {showTerminals ? (
             <RunningTerminalChip
               terminals={terminals}
@@ -169,7 +198,7 @@ export function UsageFooter({
  * and anywhere else a conversation shows how much of its plan is left.
  * `accountPicker` off keeps the chips to usage alone, for a conversation
  * whose account is not switched from here. `variant` `composer` matches
- * the tool buttons under a Mono's composer instead of the footer.
+ * the tool buttons under a Irgat's composer instead of the footer.
  */
 export function UsageChips({
   providers,

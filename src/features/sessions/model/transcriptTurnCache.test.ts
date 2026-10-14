@@ -91,7 +91,7 @@ describe("transcript turn cache", () => {
     expect(cache.group(blocks.slice())).toBe(before);
   });
 
-  it("caches Mono follow-ups together and updates when inline work changes", () => {
+  it("caches Irgat follow-ups together and updates when inline work changes", () => {
     const cache = new TranscriptTurnCache();
     const blocks: Block[] = [
       { id: "u", role: "user", text: "Inspect this" },
@@ -100,18 +100,18 @@ describe("transcript turn cache", () => {
       { id: "reply", role: "assistant", text: "Done" },
     ];
     expect(cache.group(blocks)).toHaveLength(2);
-    const monoTurns = cache.group(blocks, false, true);
-    expect(monoTurns).toHaveLength(1);
-    expect(monoTurns[0]).toEqual(blocks);
-    const items = cache.turnItems(monoTurns[0], true, { inlineWork: true });
-    expect(cache.group(blocks.slice(), false, true)).toBe(monoTurns);
-    expect(cache.turnItems(monoTurns[0], true, { inlineWork: true })).toBe(
+    const irgatTurns = cache.group(blocks, false, true);
+    expect(irgatTurns).toHaveLength(1);
+    expect(irgatTurns[0]).toEqual(blocks);
+    const items = cache.turnItems(irgatTurns[0], true, { inlineWork: true });
+    expect(cache.group(blocks.slice(), false, true)).toBe(irgatTurns);
+    expect(cache.turnItems(irgatTurns[0], true, { inlineWork: true })).toBe(
       items,
     );
     expect(cache.group(blocks)).toHaveLength(2);
   });
 
-  it("keeps cached Mono narration distinct from ordinary and settled work", () => {
+  it("keeps cached Irgat narration distinct from ordinary and settled work", () => {
     const cache = new TranscriptTurnCache();
     const turn: Block[] = [
       { id: "u", role: "user", text: "Inspect this" },
@@ -163,7 +163,7 @@ describe("transcript turn cache", () => {
         role: "user",
         text: "Private completion prompt",
         internal: true,
-        appRequestId: "mono-completion-result",
+        appRequestId: "irgat-completion-result",
         // A day later, so the reply opens a turn of its own.
         startedAt: 24 * 60 * 60 * 1000,
       },
@@ -180,7 +180,7 @@ describe("transcript turn cache", () => {
     expect(managed[0]).toEqual({ type: "block", block: blocks[2] });
     expect(cache.turnItems(turns[1], true, { inlineWork: true })).toBe(visible);
   });
-  it("keeps each merged Mono run's answer when a later run did more work", () => {
+  it("keeps each merged Irgat run's answer when a later run did more work", () => {
     const cache = new TranscriptTurnCache();
     const shell = (id: string): Block => ({
       id,
@@ -196,7 +196,7 @@ describe("transcript turn cache", () => {
         role: "user",
         text: "Private completion prompt",
         internal: true,
-        appRequestId: "mono-completion-review",
+        appRequestId: "irgat-completion-review",
         startedAt: 60_000,
       },
       shell("check"),

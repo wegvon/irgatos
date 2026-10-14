@@ -9,6 +9,10 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useHeldWork } from "../../quotas/hooks/useUsageLimitHold";
+import { automationHoldId } from "../../quotas/model/usageLimitRegistry";
+import { usageLimitRegistry } from "../../quotas/model/usageLimitStore";
+import { HeldWorkNotice } from "../../quotas/ui/HeldWorkNotice";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
@@ -563,6 +567,7 @@ function AutomationCard({
           </span>
         </span>
       </button>
+      <HeldAutomationRuns automationId={automation.id} className="px-2.5 pb-2" />
       <span className="absolute right-2.5 top-2 flex">
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
@@ -692,6 +697,9 @@ function RunRow({
 }) {
   const trigger = runTriggerMeta(run, draft);
   const sessionId = run.sessionId;
+  const held = useHeldWork(draft.id).some(
+    (item) => item.id === automationHoldId(run.id),
+  );
   return (
     <li>
       <button
@@ -721,13 +729,47 @@ function RunRow({
           {formatAutomationRunAt(run.scheduledFor || run.createdAt)}
         </span>
         <span>
-          <RunStatusPill status={run.status} />
+          {held && run.status === "pending" ? (
+            <span
+              title="Waiting for the provider's usage limit to reset"
+              className="inline-flex h-5 max-w-full items-center rounded-full bg-amber-500/12 px-2 text-[11px] font-medium text-amber-400"
+            >
+              Paused
+            </span>
+          ) : (
+            <RunStatusPill status={run.status} />
+          )}
         </span>
         <span className="text-right tabular-nums text-content/55">
           {formatAutomationRunDuration(run)}
         </span>
       </button>
     </li>
+  );
+}
+
+/** Scheduled runs waiting on a quota hold, each with a Run anyway override. */
+function HeldAutomationRuns({
+  automationId,
+  className = "",
+}: {
+  automationId: string;
+  className?: string;
+}) {
+  const held = useHeldWork(automationId);
+  if (!held.length) return null;
+  return (
+    <div className={`flex flex-col gap-1 ${className}`}>
+      {held.map((item) => (
+        <HeldWorkNotice
+          key={item.id}
+          harness={item.harness}
+          accountId={item.accountId}
+          onRunAnyway={() => usageLimitRegistry.forceWork(item.id)}
+          compact
+        />
+      ))}
+    </div>
   );
 }
 
@@ -1091,6 +1133,7 @@ function AutomationEditor({
               ) : null}
             </div>
           </header>
+          {draft.id ? <HeldAutomationRuns automationId={draft.id} /> : null}
           {historyAvailable ? (
             <div
               role="tablist"

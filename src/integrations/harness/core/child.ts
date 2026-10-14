@@ -34,20 +34,20 @@ export function readHarnessTextFile(path: string): Promise<string> {
   });
 }
 
-export function prepareMonoCodexStore(
+export function prepareIrgatxStore(
   providerAccountId?: string,
   threadId?: string,
 ): Promise<{ home: string; hasThread: boolean }> {
-  return invoke("codex_mono_store_prepare", { providerAccountId, threadId });
+  return invoke("codex_irgat_store_prepare", { providerAccountId, threadId });
 }
 
-export function copyMonoCodexThreads(
+export function copyIrgatxThreads(
   providerAccountId: string | undefined,
   threadId: string,
   paths: string[],
   sqliteHome?: string,
 ): Promise<void> {
-  return invoke("codex_mono_store_copy", {
+  return invoke("codex_irgat_store_copy", {
     providerAccountId,
     threadId,
     paths,
@@ -55,11 +55,11 @@ export function copyMonoCodexThreads(
   });
 }
 
-export function restoreMonoCodexAgentState(
+export function restoreIrgatxAgentState(
   providerAccountId: string | undefined,
   threadId: string,
 ): Promise<void> {
-  return invoke("codex_mono_store_restore_agent_state", {
+  return invoke("codex_irgat_store_restore_agent_state", {
     providerAccountId,
     threadId,
   });
@@ -338,7 +338,7 @@ export async function spawnChild(
   cwd: string,
   account?: { provider: "claude" | "codex"; id: string },
   binaryProvider?: ConfigurableBinaryProvider,
-  codexStore?: "mono",
+  codexStore?: "irgat",
   /** `devin acp` only: start with an approval rule for every edit. */
   devinAskEdits?: boolean,
 ): Promise<void> {
@@ -560,7 +560,7 @@ export function inspectHarnessBinary(
   });
 }
 
-/** Runs the CLI's own self-update against the binary MonoCode uses. */
+/** Runs the CLI's own self-update against the binary Irgatos uses. */
 export async function updateHarnessCli(
   provider: ConfigurableBinaryProvider,
 ): Promise<void> {

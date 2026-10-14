@@ -7,6 +7,7 @@ import {
   applyClaudePromptEffortPrefix,
   applyClaudeTaskTool,
   askUserQuestionAllowInput,
+  assistantToolUses,
   buildClaudeSpawnArgs,
   buildClaudeUserMessage,
   contextFromResult,
@@ -684,6 +685,55 @@ describe("helpers", () => {
     ).toMatchObject({
       answers: { "Which file?": "b.ts" },
     });
+  });
+
+  it("ignores synthetic MemoryProxy session-init tool_use blocks and preserves wire keys when bypassed", () => {
+    const rawPrompt =
+      "\u672c\u6b21\u5bf9\u8bdd\u662f\u5426\u8981\u5173\u8054\u56e2\u961f\u8d44\u4ea7\uff1f\uff08\u8bf7\u9009\u62e9\u6700\u5339\u914d\u7684\u9009\u9879\uff0c\u5f53\u524d\u6682\u4e0d\u652f\u6301\u81ea\u5b9a\u4e49\u8f93\u5165\u3002\u82e5\u9009\u62e9\u8df3\u8fc7\uff0c\u672c\u6b21 Session \u5c06\u4e0d\u6ce8\u5165\u56e2\u961f\u8d44\u4ea7\uff09";
+    const noWire = "\u5426\uff0c\u672c\u6b21\u4e0d\u5173\u8054";
+    const input = {
+      questions: [
+        {
+          header: "\u5173\u8054\u8d44\u4ea7",
+          question: rawPrompt,
+          multiSelect: false,
+          options: [
+            { label: "\u662f\uff0c\u5173\u8054\u8d44\u4ea7" },
+            { label: noWire },
+          ],
+        },
+      ],
+    };
+    expect(
+      toolStartFromEvent({
+        type: "stream_event",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_cc_session_init_1700000000000",
+            name: "AskUserQuestion",
+            input: {},
+          },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      assistantToolUses({
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_cc_session_init_1700000000000",
+              name: "AskUserQuestion",
+              input,
+            },
+          ],
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("drops request lifecycle status pings", () => {

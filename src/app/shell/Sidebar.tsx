@@ -9,6 +9,7 @@ import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/Orch
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
+  Artifacts,
   Chatting,
   Check,
   ChevronDown,
@@ -22,10 +23,13 @@ import {
   GitBranch,
   GitPullRequest,
   Inbox,
+  Kanban,
   ListFilter,
   PanelLeft,
   Pin,
+  RotateCcw,
   Plus,
+  Radar,
   Search,
   Share,
   Settings,
@@ -158,7 +162,7 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotificationMenu";
-import { RailAction } from "./RailAction";
+import { FleetNeedsYouCount, RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
@@ -174,27 +178,27 @@ import {
   type SessionReminder,
 } from "../../features/sessions/model/sessionReminders";
 import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
-import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
-  isMonoSession,
-  listMonos,
-  MONO_STATUS_LABEL,
-  monoLook,
+  isIrgatSession,
+  listIrgats,
+  IRGAT_STATUS_LABEL,
+  irgatLook,
   monosSnapshot,
-  subscribeMonos,
-  type MonoStatus,
-} from "../../features/monos/model/mono";
-import { MonoRailMascot } from "../../features/monos/ui/MonoRailMascot";
+  subscribeIrgats,
+  type IrgatStatus,
+} from "../../features/irgats/model/irgat";
+import { IrgatRailMascot } from "../../features/irgats/ui/IrgatRailMascot";
 import { useRailMonosPinned } from "../../features/settings/model/displayPrefs";
-import type { PickerMonos } from "../../features/projects/ui/SearchableProjectPicker";
-import { isHabitRun } from "../../features/monos/model/monoHabits";
+import type { PickerIrgats } from "../../features/projects/ui/SearchableProjectPicker";
+import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 import {
   unreadBadge,
   unreadLabel,
-  type MonoRailProps,
-} from "./MonoRailSection";
+  type IrgatRailProps,
+} from "./IrgatRailSection";
 import {
   refreshRemoteProjectSessions,
   remoteRequest,
@@ -218,6 +222,7 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   inbox: "Inbox",
   files: "Explorer",
   changes: "Changes",
+  artifacts: "Artifacts",
 };
 
 const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
@@ -225,6 +230,7 @@ const COMPACT_TAB_ICONS: Record<SidebarTab, typeof PanelLeft> = {
   inbox: Inbox,
   files: FileScript,
   changes: GitBranch,
+  artifacts: Artifacts,
 };
 
 function projectPathBusy(
@@ -253,6 +259,8 @@ type Props = {
   sessions: SessionSummary[];
   busySessionIds: Set<string>;
   approvalSessionIds: Set<string>;
+  /** Chats whose agent went away mid-turn and can be resumed. */
+  interruptedSessionIds?: Set<string>;
   activeSessionId?: string;
   /** Open tabs, including blank ones not yet in history. */
   openSessions?: readonly SessionSummary[];
@@ -321,11 +329,21 @@ type Props = {
   onOpenInboxItem?: (item: LinkedWorkItem, sessionId: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
+  /** Opens the session's board card, filing one first when it has none. */
+  onSessionBoard?: (sessionId: string) => void | Promise<void>;
+  /** Sessions that already have a card on some board. */
+  boardSessionIds?: ReadonlySet<string>;
   onGoToFile?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   notesEnabled?: boolean;
   onToggleProjectRail?: () => void;
   projectRailOpen?: boolean;
@@ -344,10 +362,13 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos on the rail; absent while Monos are off. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area, which has no project sidebar. */
-  monoViewActive?: boolean;
+  /** The Irgats on the rail; absent while Irgats are off. */
+  irgats?: IrgatRailProps;
+  /** A Irgat fills the main area, which has no project sidebar. */
+  irgatViewActive?: boolean;
+  /** Content of the Artifacts tab. */
+  artifactsPanel?: ReactNode;
+  artifactCount?: number;
 };
 
 function SidebarComponent({
@@ -362,6 +383,7 @@ function SidebarComponent({
   sessions,
   busySessionIds,
   approvalSessionIds,
+  interruptedSessionIds,
   activeSessionId,
   openSessions = [],
   status,
@@ -417,16 +439,25 @@ function SidebarComponent({
   onOpenInboxItem,
   onOpenNotes,
   onOpenAutomations,
+  onOpenKanban,
+  onOpenFleet,
+  onSessionBoard,
+  boardSessionIds,
   onGoToFile,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   notesEnabled = true,
   onToggleProjectRail,
   projectRailOpen = true,
   compactProjectRail = true,
   titleBarAbove = false,
+  artifactsPanel,
+  artifactCount = 0,
   unseenFinishedIds: unseenFinishedIdsProp,
   inboxUnseen = false,
   linkedSessionUpdateIds = new Set(),
@@ -439,8 +470,8 @@ function SidebarComponent({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
-  monoViewActive = false,
+  irgats,
+  irgatViewActive = false,
 }: Props) {
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
@@ -647,14 +678,14 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
+  useSyncExternalStore(subscribeIrgats, monosSnapshot);
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
     sessionFolders,
   ).filter(
     (session) =>
-      !isMonoSession(session.id) &&
+      !isIrgatSession(session.id) &&
       !session.sidebarHidden &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&
@@ -792,15 +823,17 @@ function SidebarComponent({
     inboxActive ||
     notesActive ||
     automationsActive ||
+    kanbanActive ||
+    fleetActive ||
     settingsOpen;
-  // A remembered Mono sits underneath these views; select it only while visible.
-  const railMonos = monos
-    ? { ...monos, activeId: otherViewActive ? undefined : monos.activeId }
+  // A remembered Irgat sits underneath these views; select it only while visible.
+  const railIrgats = irgats
+    ? { ...irgats, activeId: otherViewActive ? undefined : irgats.activeId }
     : undefined;
   // A blank session has no project to browse, so the shell stands alone until
   // one is picked — whether or not the rail is open.
   const sidebarAvailable =
-    !otherViewActive && !monoViewActive && inProject;
+    !otherViewActive && !irgatViewActive && inProject;
   const sidebarVisible = open && sidebarAvailable;
   // With the sidebar collapsed beside the compact rail, its tab shortcuts
   // open the sidebar temporarily until the user clicks away.
@@ -1153,8 +1186,8 @@ function SidebarComponent({
               },
               {
                 kind: "item" as const,
-                id: "copy-monocode-session-id",
-                label: "MonoCode session ID",
+                id: "copy-irgat-session-id",
+                label: "Irgatos session ID",
               },
             ],
           },
@@ -1168,6 +1201,17 @@ function SidebarComponent({
             label: menuSessions[0]?.linkedWorkItem
               ? "Edit GitHub issue or PR link…"
               : "Link GitHub issue or PR…",
+          },
+        ]
+      : []),
+    ...(!multipleMenuSessions && onSessionBoard && sessionMenu
+      ? [
+          {
+            kind: "item" as const,
+            id: "board",
+            label: boardSessionIds?.has(sessionMenu.sessionId)
+              ? "Show on board"
+              : "Add to board",
           },
         ]
       : []),
@@ -1299,7 +1343,7 @@ function SidebarComponent({
       setRenamingSessionId(sessionId);
       return;
     }
-    if (id === "copy-harness-session-id" || id === "copy-monocode-session-id") {
+    if (id === "copy-harness-session-id" || id === "copy-irgat-session-id") {
       const value =
         id === "copy-harness-session-id" ? providerSessionId : sessionId;
       if (value) {
@@ -1311,6 +1355,10 @@ function SidebarComponent({
     }
     if (id === "link-work-item") {
       setLinkingSession(menuSessions[0] ?? null);
+      return;
+    }
+    if (id === "board") {
+      void onSessionBoard?.(sessionId);
       return;
     }
     if (id === "folder-new") {
@@ -1530,6 +1578,9 @@ function SidebarComponent({
         done={unseenFinishedIds.has(session.id)}
         linkedUpdate={linkedSessionUpdateIds.has(session.id)}
         needsApproval={listedApprovalSessionIds.has(session.id)}
+        interrupted={
+          !remoteProject && !!interruptedSessionIds?.has(session.id)
+        }
         dropTarget={isSessionDrop("session", session.id)}
         compact={compact}
         now={now}
@@ -1618,9 +1669,13 @@ function SidebarComponent({
         .join(" ")
     : "Changes";
 
+  const artifactsLabel = artifactCount
+    ? `Artifacts, ${formatInteger(artifactCount)}`
+    : "Artifacts";
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const active = tab === itemId;
     const isChangesTab = itemId === "changes";
+    const isArtifactsTab = itemId === "artifacts";
     return (
       <div
         key={itemId}
@@ -1635,13 +1690,19 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={isChangesTab ? changesLabel : undefined}
+          aria-label={
+            isChangesTab
+              ? changesLabel
+              : isArtifactsTab && artifactCount
+                ? artifactsLabel
+                : undefined
+          }
           data-tauri-drag-region="false"
           onClick={() => {
             if (sortable.consumeClick()) return;
             onTabPick(itemId);
           }}
-          className={`flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
+          className={`relative flex h-6 min-w-0 flex-1 items-center justify-center self-center rounded-md px-2 text-[12px] leading-none ${
             active ? "bg-selection text-content" : "text-content/50"
           }`}
         >
@@ -1652,6 +1713,15 @@ function SidebarComponent({
               {TAB_LABELS[itemId]}
             </span>
           )}
+          {isArtifactsTab && artifactCount > 0 ? (
+            <span
+              aria-hidden
+              data-artifact-count
+              className="pointer-events-none absolute -top-1 right-0 min-w-3.5 rounded-full bg-accent px-1 text-center text-[9px] font-medium leading-3.5 tabular-nums text-white"
+            >
+              {artifactCount > 99 ? "99+" : artifactCount}
+            </span>
+          ) : null}
         </button>
       </div>
     );
@@ -1732,10 +1802,15 @@ function SidebarComponent({
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenKanban={onOpenKanban}
+              onOpenFleet={onOpenFleet}
               searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
               automationsActive={automationsActive}
+              kanbanActive={kanbanActive}
+              fleetActive={fleetActive}
+              fleetNeedsYou={fleetNeedsYou}
               inboxUnseen={inboxUnseen}
             />
           ) : null}
@@ -2106,6 +2181,15 @@ function SidebarComponent({
             </div>
           )}
         </div>
+        {tab === "artifacts" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {artifactsPanel ?? (
+              <p className="px-3 py-2 text-[12px] text-content/50">
+                No project folder
+              </p>
+            )}
+          </div>
+        ) : null}
         {tab === "changes" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <SourceControl
@@ -2146,6 +2230,7 @@ function SidebarComponent({
                   onClick={onOpenSettings}
                   shortcut={`${MOD},`}
                   ariaLabel={`Settings (${MOD},)`}
+                  meta={<AppVersionBadge />}
                 />
               ) : null}
             </div>
@@ -2241,6 +2326,8 @@ function SidebarComponent({
           tabShown={panelOpen}
           changesLabel={changesLabel}
           hasChanges={hasChanges}
+          artifactsLabel={artifactsLabel}
+          hasArtifacts={artifactCount > 0}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2255,12 +2342,17 @@ function SidebarComponent({
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
           automationsActive={automationsActive}
+          onOpenKanban={onOpenKanban}
+          onOpenFleet={onOpenFleet}
+          kanbanActive={kanbanActive}
+          fleetActive={fleetActive}
+          fleetNeedsYou={fleetNeedsYou}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
           onLeaveActive={onGoBack}
           titleBarAbove={titleBarAbove}
-          monos={railMonos}
-          monoViewActive={monoViewActive}
+          irgats={railIrgats}
+          irgatViewActive={irgatViewActive}
         />
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
@@ -2286,6 +2378,11 @@ function SidebarComponent({
           notesActive={notesActive}
           onOpenAutomations={onOpenAutomations}
           automationsActive={automationsActive}
+          onOpenKanban={onOpenKanban}
+          onOpenFleet={onOpenFleet}
+          kanbanActive={kanbanActive}
+          fleetActive={fleetActive}
+          fleetNeedsYou={fleetNeedsYou}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2299,7 +2396,7 @@ function SidebarComponent({
           updateNotice={updateNotice}
           onOpenWhatsNew={onOpenWhatsNew}
           onDismissUpdate={onDismissUpdate}
-          monos={railMonos}
+          irgats={railIrgats}
         />
       ) : null}
       {sidebarVisible ? sidebarContent : null}
@@ -2363,10 +2460,15 @@ function SidebarProjectPicker({
   onOpenNotificationSettings,
   onOpenNotes,
   onOpenAutomations,
+  onOpenKanban,
+  onOpenFleet,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
   automationsActive = false,
+  kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   inboxUnseen = false,
 }: {
   cwd: string;
@@ -2381,10 +2483,16 @@ function SidebarProjectPicker({
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
+  onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
   automationsActive?: boolean;
+  kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   inboxUnseen?: boolean;
 }) {
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
@@ -2459,6 +2567,26 @@ function SidebarProjectPicker({
             <Zap className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
+        {onOpenKanban ? (
+          <IconButton label="Board" active={kanbanActive} onClick={onOpenKanban}>
+            <Kanban className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
+        {onOpenFleet ? (
+          <IconButton
+            label={fleetLabel(fleetNeedsYou)}
+            active={fleetActive}
+            onClick={onOpenFleet}
+          >
+            <span className="relative">
+              <Radar className="size-3.5" strokeWidth={1.75} />
+              <FleetNeedsYouCount
+                count={fleetNeedsYou}
+                className="absolute -right-2 -top-1.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            </span>
+          </IconButton>
+        ) : null}
       </div>
       {inboxMenu ? (
         <InboxNotificationMenu
@@ -2484,6 +2612,8 @@ function CompactProjectRail({
   tabShown,
   changesLabel,
   hasChanges,
+  artifactsLabel,
+  hasArtifacts,
   inboxUnseen,
   onSelectProject,
   onOpenProject,
@@ -2498,12 +2628,17 @@ function CompactProjectRail({
   notesActive,
   onOpenAutomations,
   automationsActive,
+  onOpenKanban,
+  onOpenFleet,
+  kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   onOpenSettings,
   onTogglePanel,
   onLeaveActive,
   titleBarAbove,
-  monos,
-  monoViewActive = false,
+  irgats,
+  irgatViewActive = false,
 }: {
   cwd: string;
   recents: RecentProject[];
@@ -2513,6 +2648,8 @@ function CompactProjectRail({
   tabShown: boolean;
   changesLabel: string;
   hasChanges: boolean;
+  artifactsLabel: string;
+  hasArtifacts: boolean;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -2527,36 +2664,42 @@ function CompactProjectRail({
   notesActive: boolean;
   onOpenAutomations?: () => void;
   automationsActive: boolean;
+  onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
+  kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   onOpenSettings?: () => void;
   onTogglePanel?: () => void;
   onLeaveActive?: () => void;
   titleBarAbove: boolean;
-  /** Monos have no row here, so the project button lists them too. */
-  monos?: MonoRailProps;
-  /** A Mono fills the main area: no workspace tab is the current one. */
-  monoViewActive?: boolean;
+  /** Irgats have no row here, so the project button lists them too. */
+  irgats?: IrgatRailProps;
+  /** A Irgat fills the main area: no workspace tab is the current one. */
+  irgatViewActive?: boolean;
 }) {
-  const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
+  const monosSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
   const monosPinned = useRailMonosPinned();
-  const monoItems = useMemo(() => {
-    if (!monos) return [];
-    return listMonos().map((mono) => ({
-      id: mono.id,
-      ...monoLook(mono),
-      status: monos.states.get(mono.id)?.status ?? "idle",
+  const irgatItems = useMemo(() => {
+    if (!irgats) return [];
+    return listIrgats().map((irgat) => ({
+      id: irgat.id,
+      ...irgatLook(irgat),
+      status: irgats.states.get(irgat.id)?.status ?? "idle",
     }));
     // The roster is read through its snapshot.
-  }, [monos, monosSnap]);
-  const pickerMonos = useMemo((): PickerMonos | undefined => {
-    if (!monos) return undefined;
+  }, [irgats, monosSnap]);
+  const pickerIrgats = useMemo((): PickerIrgats | undefined => {
+    if (!irgats) return undefined;
     return {
-      // Pinned Monos have their own buttons; the picker keeps "New mono".
-      items: monosPinned ? [] : monoItems,
-      activeId: monos.activeId,
-      onOpen: monos.onOpen,
-      onCreate: monos.onCreate,
+      // Pinned Irgats have their own buttons; the picker keeps "New irgat".
+      items: monosPinned ? [] : irgatItems,
+      activeId: irgats.activeId,
+      onOpen: irgats.onOpen,
+      onCreate: irgats.onCreate,
     };
-  }, [monos, monoItems, monosPinned]);
+  }, [irgats, irgatItems, monosPinned]);
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -2568,7 +2711,9 @@ function CompactProjectRail({
     !inboxActive &&
     !notesActive &&
     !automationsActive &&
-    !monoViewActive;
+    !kanbanActive &&
+    !fleetActive &&
+    !irgatViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
     onTabChange(nextTab);
@@ -2602,34 +2747,34 @@ function CompactProjectRail({
           icon={PanelLeft}
           onClick={onTogglePanel}
         />
-        {monos && monosPinned && monoItems.length ? (
+        {irgats && monosPinned && irgatItems.length ? (
           <>
             <div
               role="group"
-              aria-label="Monos"
-              data-compact-rail-monos
+              aria-label="Irgats"
+              data-compact-rail-irgats
               className="flex flex-col items-center gap-1.5"
             >
-              {monoItems.map((mono) => (
-                <CompactRailMono
-                  key={mono.id}
-                  name={mono.name}
-                  mascot={mono.mascot}
-                  color={mono.color}
-                  status={mono.status}
-                  active={mono.id === monos.activeId}
+              {irgatItems.map((irgat) => (
+                <CompactRailIrgat
+                  key={irgat.id}
+                  name={irgat.name}
+                  mascot={irgat.mascot}
+                  color={irgat.color}
+                  status={irgat.status}
+                  active={irgat.id === irgats.activeId}
                   unseen={
-                    mono.id === monos.activeId
+                    irgat.id === irgats.activeId
                       ? 0
-                      : (monos.unseenCounts?.get(mono.id) ?? 0)
+                      : (irgats.unseenCounts?.get(irgat.id) ?? 0)
                   }
-                  onClick={() => monos.onOpen(mono.id)}
+                  onClick={() => irgats.onOpen(irgat.id)}
                 />
               ))}
             </div>
             <span
               aria-hidden
-              data-compact-rail-monos-divider
+              data-compact-rail-irgats-divider
               className="h-px w-6 shrink-0 bg-stroke"
             />
           </>
@@ -2645,7 +2790,7 @@ function CompactProjectRail({
             onOpenProject={onOpenProject}
             onRemoveProject={onRemoveProject}
             onOpenNotificationSettings={onOpenNotificationSettings}
-            monos={pickerMonos}
+            irgats={pickerIrgats}
           />
         ) : null}
         <div
@@ -2658,10 +2803,19 @@ function CompactProjectRail({
             <CompactRailAction
               key={itemId}
               tab
-              label={itemId === "changes" ? changesLabel : TAB_LABELS[itemId]}
+              label={
+                itemId === "changes"
+                  ? changesLabel
+                  : itemId === "artifacts"
+                    ? artifactsLabel
+                    : TAB_LABELS[itemId]
+              }
               icon={COMPACT_TAB_ICONS[itemId]}
               active={workspaceActive && tabShown && activeTab === itemId}
-              dot={itemId === "changes" && hasChanges}
+              dot={
+                (itemId === "changes" && hasChanges) ||
+                (itemId === "artifacts" && hasArtifacts)
+              }
               onClick={() => openWorkspaceTab(itemId)}
             />
           ))}
@@ -2700,6 +2854,23 @@ function CompactProjectRail({
           active={automationsActive}
           onClick={action(automationsActive, onOpenAutomations)}
         />
+        {onOpenKanban ? (
+          <CompactRailAction
+            label="Board"
+            icon={Kanban}
+            active={kanbanActive}
+            onClick={action(kanbanActive, onOpenKanban)}
+          />
+        ) : null}
+        {onOpenFleet ? (
+          <CompactRailAction
+            label={fleetLabel(fleetNeedsYou)}
+            icon={Radar}
+            active={fleetActive}
+            count={fleetNeedsYou}
+            onClick={action(fleetActive, onOpenFleet)}
+          />
+        ) : null}
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
@@ -2724,7 +2895,12 @@ function CompactProjectRail({
   );
 }
 
-function CompactRailMono({
+function fleetLabel(needsYou: number): string {
+  if (!needsYou) return "Fleet";
+  return `Fleet, ${needsYou} ${needsYou === 1 ? "session needs" : "sessions need"} you`;
+}
+
+function CompactRailIrgat({
   name,
   mascot,
   color,
@@ -2736,20 +2912,20 @@ function CompactRailMono({
   name: string;
   mascot: string;
   color: string;
-  status: MonoStatus;
+  status: IrgatStatus;
   active: boolean;
   /** Replies the user has not read. */
   unseen: number;
   onClick: () => void;
 }) {
-  const label = `${name}, ${MONO_STATUS_LABEL[status]}`;
+  const label = `${name}, ${IRGAT_STATUS_LABEL[status]}`;
   return (
     <button
       type="button"
-      title={`${name}\n${MONO_STATUS_LABEL[status]}`}
+      title={`${name}\n${IRGAT_STATUS_LABEL[status]}`}
       aria-label={unseen ? `${label}, ${unreadLabel(unseen)}` : label}
       aria-current={active ? "true" : undefined}
-      data-compact-rail-mono
+      data-compact-rail-irgat
       onClick={onClick}
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
@@ -2757,11 +2933,11 @@ function CompactRailMono({
           : "opacity-65 hover:bg-content/10 hover:opacity-100"
       }`}
     >
-      <MonoRailMascot name={mascot} color={color} status={status} />
+      <IrgatRailMascot name={mascot} color={color} status={status} />
       {unseen ? (
         <span
           aria-hidden
-          data-mono-unread={unseen}
+          data-irgat-unread={unseen}
           className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-background-base px-0.5 text-[9px] font-medium tabular-nums leading-none text-content/80 ring-1 ring-content/15"
         >
           {unreadBadge(unseen)}
@@ -2777,6 +2953,7 @@ function CompactRailAction({
   tab = false,
   active = false,
   dot = false,
+  count = 0,
   onClick,
   onOpenContextMenu,
 }: {
@@ -2785,6 +2962,7 @@ function CompactRailAction({
   tab?: boolean;
   active?: boolean;
   dot?: boolean;
+  count?: number;
   onClick?: () => void;
   onOpenContextMenu?: (x: number, y: number) => void;
 }) {
@@ -2840,6 +3018,10 @@ function CompactRailAction({
           className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent"
         />
       ) : null}
+      <FleetNeedsYouCount
+        count={count}
+        className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+      />
     </button>
   );
 }
@@ -3225,6 +3407,7 @@ export const SessionCard = memo(function SessionCard({
   done,
   linkedUpdate,
   needsApproval,
+  interrupted = false,
   dropTarget,
   compact = false,
   modelInFooter = false,
@@ -3249,6 +3432,8 @@ export const SessionCard = memo(function SessionCard({
   done: boolean;
   linkedUpdate: boolean;
   needsApproval: boolean;
+  /** The agent went away mid-turn; the chat offers Resume. */
+  interrupted?: boolean;
   dropTarget?: boolean;
   compact?: boolean;
   /** Shows the model as its provider's mark beside the branch, so the title
@@ -3304,7 +3489,9 @@ export const SessionCard = memo(function SessionCard({
     ? "text-amber-400"
     : busy
       ? "text-accent"
-      : done
+      : interrupted
+        ? "text-rose-400"
+        : done
         ? "text-emerald-400"
         : draft
           ? "text-content/55"
@@ -3323,6 +3510,15 @@ export const SessionCard = memo(function SessionCard({
           <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
           <span>Working...</span>
         </>
+      ) : interrupted ? (
+        <span
+          className="flex items-center gap-1"
+          title="The agent stopped mid-turn. Open the chat to resume it."
+          data-session-interrupted-badge
+        >
+          <RotateCcw className="size-3" strokeWidth={1.75} />
+          <span>Interrupted</span>
+        </span>
       ) : done ? (
         <>
           <Check className="size-3" strokeWidth={2.25} />

@@ -32,6 +32,12 @@ import {
   type RecentProject,
 } from "../../projects/model/recents";
 import {
+  acceptSendToChat,
+  SEND_TO_CHAT_EVENT,
+  type SendToChatRequest,
+} from "../model/sendToChat";
+import {
+  harnessSupportsAttachments,
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionWorkCwd,
@@ -50,6 +56,10 @@ import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { AgentTranscript } from "./AgentTranscript";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
+import { SessionReferenceSourceContext } from "./SendToSessionButton";
+import { ArtifactSourceContext } from "../../artifacts/ui/artifactContext";
+import { PendingSessionMessages } from "./SessionMessagePills";
+import { CompletionGateBar } from "./CompletionGateBar";
 import { TranscriptFind } from "./TranscriptFind";
 import {
   TranscriptJumpToBottom,
@@ -62,37 +72,48 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import {
-  monoForSession,
-  monoLook,
+  irgatForSession,
+  irgatLook,
   monosSnapshot,
-  subscribeMonos,
-} from "../../monos/model/mono";
-import { MonoHeader } from "../../monos/ui/MonoHeader";
-import { MonoComposer } from "../../monos/ui/MonoComposer";
-import type { LaunchedSessionView } from "../../monos/model/monoSpawnedSessions";
+  subscribeIrgats,
+} from "../../irgats/model/irgat";
+import { IrgatHeader } from "../../irgats/ui/IrgatHeader";
+import {
+  irgatReviewScope,
+  projectReviewScope,
+} from "../../redline/model/reviewStore";
+import { RedlineReviewTray } from "../../redline/ui/RedlineReviewTray";
+import { IrgatComposer } from "../../irgats/ui/IrgatComposer";
+import type { LaunchedSessionView } from "../../irgats/model/irgatSpawnedSessions";
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
+import { AdhdModeChip } from "../../adhd/ui/AdhdModeChip";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
-import { MonoUsageLimitNotice } from "../../monos/ui/MonoUsageLimitNotice";
+import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
+import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
+import { sessionInterruption } from "../model/sessionInterruption";
+import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
 import { QuestionForm } from "./QuestionForm";
 import {
-  monoMessageDeliveries,
-  monoPendingTranscriptBlocks,
-  visibleMonoCompletionMessages,
-} from "../../monos/model/monoMessaging";
+  irgatMessageDeliveries,
+  irgatPendingTranscriptBlocks,
+  visibleIrgatCompletionMessages,
+} from "../../irgats/model/irgatMessaging";
 import { MessageQueue } from "./MessageQueue";
-import { useMonoTranscript } from "../../monos/hooks/useMonoTranscript";
-import { MONO_PAGE_TURNS } from "../data/sessionStore";
+import { useIrgatTranscript } from "../../irgats/hooks/useIrgatTranscript";
+import { IRGAT_PAGE_TURNS } from "../data/sessionStore";
 import { useComposerDockMotion } from "./useComposerDockMotion";
 import { MOD } from "../../../platform/tauri/platform";
 import {
   acknowledgeQuoteRequest,
   ADD_TO_CHAT_EVENT,
+  INSERT_INTO_CHAT_EVENT,
   type AddToChatRequest,
+  type InsertIntoChatRequest,
   type QuoteRequest,
 } from "../model/quoteDraft";
-import { createNote, noteTitle } from "../../notes";
+import { noteTitle, saveNoteOnce } from "../../notes";
 import {
   loadNotesEnabled,
   subscribeNotesEnabled,
@@ -105,6 +126,7 @@ import { AstraWelcome } from "./AstraWelcome";
 import { OpusWelcome } from "./OpusWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { canEditLastTurn, lastTurnRecall } from "../model/editLastTurn";
+import { latestReply } from "../../voice/model/spokenReply";
 import {
   loadProjectChatBackgroundSettings,
   projectChatBackgroundImageRevision,
@@ -112,7 +134,7 @@ import {
   subscribeProjectChatBackground,
 } from "../../projects/model/projectChatBackground";
 import { useProjectBackgroundEffect } from "../../projects/ui/useProjectBackgroundEffect";
-import { monoChatBackground } from "../../monos/model/monoBackground";
+import { irgatChatBackground } from "../../irgats/model/irgatBackground";
 import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
 import {
   loadChatBackgroundPath,
@@ -135,23 +157,23 @@ export type SessionPaneProps = {
   inSplit: boolean;
   composerFocused: boolean;
   composerFocusToken?: number;
-  onShowMonoActivity?: (
+  onShowIrgatActivity?: (
     sessionId: string,
     turnId: string,
     blocks: Block[],
   ) => void;
-  monoActivityTurnId?: string;
-  /** Open a session a Mono's turn launched, in the Mono's sidebar. */
-  onOpenMonoSession?: (
+  irgatActivityTurnId?: string;
+  /** Open a session a Irgat's turn launched, in the Irgat's sidebar. */
+  onOpenIrgatSession?: (
     sessionId: string,
     turnId: string,
     blocks: Block[],
     launchedId: string,
   ) => void;
-  /** Live status of the sessions this Mono launched, by id. */
-  monoLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
-  /** The launched session open in the Mono's sidebar. */
-  openMonoSessionId?: string;
+  /** Live status of the sessions this Irgat launched, by id. */
+  irgatLaunchedSessions?: ReadonlyMap<string, LaunchedSessionView>;
+  /** The launched session open in the Irgat's sidebar. */
+  openIrgatSessionId?: string;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
   onFocus: (sessionId: string) => void;
@@ -204,6 +226,11 @@ export type SessionPaneProps = {
   onUsageLimitResumeAtReset: (sessionId: string, enabled: boolean) => void;
   onUsageLimitDismiss: (sessionId: string) => void;
   onUsageLimitAccountChange?: (sessionId: string, accountId: string) => void;
+  /** Pick an interrupted conversation back up in one click. */
+  onResumeInterrupted?: (sessionId: string) => void;
+  onDismissInterrupted?: (sessionId: string) => void;
+  /** Send this session's queued prompts past its provider's quota hold. */
+  onRunQueueAnyway?: (sessionId: string) => void;
   onInboxCardDismiss?: (sessionId: string) => void;
   onLinkedWorkItemUpdateCardDismiss?: (sessionId: string) => void;
   onNoteCardDismiss?: (sessionId: string) => void;
@@ -339,6 +366,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
   onUsageLimitAccountChange,
+  onResumeInterrupted,
+  onDismissInterrupted,
+  onRunQueueAnyway,
   onInboxCardDismiss,
   onLinkedWorkItemUpdateCardDismiss,
   onNoteCardDismiss,
@@ -353,11 +383,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onOpenFile,
   onOpenDiff,
   onCommitChanges,
-  onShowMonoActivity,
-  monoActivityTurnId,
-  onOpenMonoSession,
-  monoLaunchedSessions,
-  openMonoSessionId,
+  onShowIrgatActivity,
+  irgatActivityTurnId,
+  onOpenIrgatSession,
+  irgatLaunchedSessions,
+  openIrgatSessionId,
   onOpenPlan,
   onBuildPlan,
   onSecondOpinion,
@@ -388,14 +418,29 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [session.blocks, session.busy],
   );
   const messageDeliveries = useMemo(
-    () => monoMessageDeliveries(session),
+    () => irgatMessageDeliveries(session),
     [session.queuedMessages, session.queueStatus],
   );
   const recallLastTurnRef = useRef<(() => void) | null>(null);
   const remote = remoteSession;
-  // A Mono's chat is a running conversation; what was said stays said.
+  const interruption =
+    !remote && onResumeInterrupted ? sessionInterruption(session) : undefined;
+  const interruptionBanner = (variant: "composer" | "irgat") =>
+    interruption && onResumeInterrupted ? (
+      <InterruptedSessionBanner
+        interruption={interruption}
+        variant={variant}
+        onResume={() => onResumeInterrupted(session.id)}
+        onDismiss={
+          onDismissInterrupted
+            ? () => onDismissInterrupted(session.id)
+            : undefined
+        }
+      />
+    ) : null;
+  // A Irgat's chat is a running conversation; what was said stays said.
   const editLastTurnSupported =
-    !remote && !monoForSession(session.id) && canEditLastTurn(session);
+    !remote && !irgatForSession(session.id) && canEditLastTurn(session);
   const turnRecall = editLastTurnSupported ? lastTurnRecall(session) : null;
   const draftBlock = sessionDraftBlock(session);
   useSyncExternalStore(
@@ -414,12 +459,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     loadNewThreadBackgroundEffect,
   );
   // Renames, instructions and mascot picks re-render the agent's look.
-  useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const mono = monoForSession(session.id);
-  const agent = mono ? monoLook(mono) : undefined;
-  // A Mono shows only its own background, never the project's or the app's.
-  const projectBackground = mono
-    ? monoChatBackground(mono.id)
+  useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const irgat = irgatForSession(session.id);
+  const agent = irgat ? irgatLook(irgat) : undefined;
+  // A Irgat shows only its own background, never the project's or the app's.
+  const projectBackground = irgat
+    ? irgatChatBackground(irgat.id)
     : loadProjectChatBackgroundSettings(projectKey(session.cwd));
   const projectBackgroundUrl = useProjectBackgroundEffect(
     projectBackground?.path ?? null,
@@ -522,9 +567,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const onJumpToBottomReady = useCallback((jump: () => void) => {
     jumpToBottomRef.current = jump;
   }, []);
-  const monoTranscript = useMonoTranscript(
+  const irgatTranscript = useIrgatTranscript(
     session,
-    !!monoForSession(session.id),
+    !!irgatForSession(session.id),
   );
   const revealBlockRef = useRef<((blockId: string) => boolean) | null>(null);
   const onRevealReady = useCallback((reveal: (blockId: string) => boolean) => {
@@ -549,13 +594,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
     async (blockId: string | null, query?: string) => {
       if (navigateBlockRef.current?.(blockId, query)) return true;
       if (!blockId) return false;
-      if (!(await monoTranscript.reveal(blockId))) return false;
+      if (!(await irgatTranscript.reveal(blockId))) return false;
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve()),
       );
       return navigateBlockRef.current?.(blockId, query) ?? false;
     },
-    [monoTranscript.reveal],
+    [irgatTranscript.reveal],
   );
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
@@ -596,7 +641,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const saveNote = useCallback(
     async (text: string) => {
       const sessionTitle = sessionDisplayTitle(session.title, session.harness);
-      await createNote({
+      await saveNoteOnce({
         title:
           sessionTitle && sessionTitle !== "New session"
             ? sessionTitle
@@ -610,7 +655,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const saveSelectionNote = useCallback(
     async (text: string) => {
-      await createNote({
+      await saveNoteOnce({
         title: noteTitle(text),
         body: text,
         sourceSessionId: session.id,
@@ -630,12 +675,50 @@ const LocalSessionPane = memo(function LocalSessionPane({
     window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
     return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
   }, [addSelectionToChat, addToChatTarget]);
+  // Unlike Add to Chat, this names its chat, so a pane in a hidden tab
+  // takes it too.
+  useEffect(() => {
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertIntoChatRequest>).detail;
+      if (!detail?.text || detail.handled || detail.sessionId !== session.id)
+        return;
+      detail.handled = true;
+      addSelectionToChat(detail.text, "plain");
+    };
+    window.addEventListener(INSERT_INTO_CHAT_EVENT, onInsert);
+    return () => window.removeEventListener(INSERT_INTO_CHAT_EVENT, onInsert);
+  }, [addSelectionToChat, session.id]);
+  const attachmentsSupported =
+    (!remote || !!remoteFeatures?.attachments) &&
+    harnessSupportsAttachments(session.harness);
+  useEffect(() => {
+    if (!addToChatTarget) return;
+    const onSend = (event: Event) => {
+      const request = (event as CustomEvent<SendToChatRequest>).detail;
+      if (!request?.text) return;
+      acceptSendToChat(request, {
+        sessionId: session.id,
+        title,
+        attachmentsSupported,
+        submit: (text, attachments) => onSubmit(session.id, text, attachments),
+      });
+    };
+    window.addEventListener(SEND_TO_CHAT_EVENT, onSend);
+    return () => window.removeEventListener(SEND_TO_CHAT_EVENT, onSend);
+  }, [addToChatTarget, attachmentsSupported, onSubmit, session.id, title]);
   const workCwd = sessionWorkCwd(session);
+  const artifactSource = useMemo(
+    () =>
+      remote || session.inboxAsk
+        ? null
+        : { sessionId: session.id, sessionTitle: title, cwd: workCwd },
+    [remote, session.inboxAsk, session.id, title, workCwd],
+  );
   const reviewHidden =
     remote ||
     !!session.inboxAsk ||
     !!session.worktreeRemoved ||
-    monoTranscript.viewingOlderPage ||
+    irgatTranscript.viewingOlderPage ||
     !!draftBlock;
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   // The agent's input always sits at the bottom, like a chat.
@@ -644,6 +727,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk || !!agent));
   const composerDockMotion = useComposerDockMotion(dockComposer);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  const voiceReply = useMemo(
+    () =>
+      session.busy
+        ? null
+        : latestReply(session.blocks, session.queuedMessages),
+    [session.blocks, session.busy, session.queuedMessages],
+  );
+  const reviewTray = session.inboxAsk ? null : (
+    <RedlineReviewTray
+      scope={
+        irgat ? irgatReviewScope(irgat.id) : projectReviewScope(session.cwd)
+      }
+      disabled={!!session.worktreeRemoved || !!draftBlock}
+      onSend={(text) => onSubmit(session.id, text, [])}
+      onInsert={(text) => addSelectionToChat(text, "plain")}
+    />
+  );
   const composer = (
     <Composer
       key={session.id}
@@ -663,6 +763,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       cwd={session.cwd}
       executionCwd={workCwd}
       sessionId={session.id}
+      live={!remoteSession}
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
       hideProjectPicker={
@@ -769,6 +870,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onResumeQueue={() => onResumeQueue(session.id)}
       usageLimit={session.usageLimit}
+      providerAccountId={session.providerAccountId}
+      hideQuotaHold={remote}
+      queueHoldOverride={session.queueHoldOverride}
+      onRunQueueAnyway={
+        onRunQueueAnyway ? () => onRunQueueAnyway(session.id) : undefined
+      }
       onUsageLimitResume={() => onUsageLimitResume(session.id)}
       onUsageLimitResumeAtReset={(enabled) =>
         onUsageLimitResumeAtReset(session.id, enabled)
@@ -776,13 +883,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onUsageLimitDismiss={() => onUsageLimitDismiss(session.id)}
       onOpenFile={onOpenFile}
       busy={!!session.busy}
+      voiceReply={voiceReply}
       editLastTurnSupported={editLastTurnSupported}
       lastTurnRecall={turnRecall}
       onRecallLastTurnReady={(recall) => {
         recallLastTurnRef.current = recall;
       }}
       onEditingLastTurnChange={setEditingLastTurn}
-    />
+    >
+      {interruptionBanner("composer")}
+      {reviewTray}
+    </Composer>
   );
 
   return (
@@ -901,7 +1012,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             {remoteSessionLoading ? null : isEmpty ? (
               agent ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
-                  <MonoHeader agent={agent} greeting />
+                  <IrgatHeader agent={agent} greeting />
                 </div>
               ) : session.inboxAsk ? (
                 <div className="scrollbar-none h-full min-h-0 overflow-y-auto">
@@ -932,163 +1043,172 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   sessionId={session.id}
                   onMouseDown={focusPane}
                 >
-                  <AgentTranscript
-                    blocks={
-                      agent && !monoTranscript.viewingOlderPage
-                        ? monoPendingTranscriptBlocks(
-                            session,
-                            monoTranscript.blocks,
-                          )
-                        : monoTranscript.blocks
+                  <SessionReferenceSourceContext.Provider
+                    value={
+                      !agent && !remote && !session.inboxAsk ? session.id : null
                     }
-                    historicalBlockIds={monoTranscript.historicalBlockIds}
-                    initialTurns={agent ? MONO_PAGE_TURNS : undefined}
-                    pageSize={agent ? MONO_PAGE_TURNS : undefined}
-                    hasEarlier={monoTranscript.hasEarlier}
-                    loadEarlierOnScroll={!!agent}
-                    onLoadEarlier={
-                      agent ? monoTranscript.loadEarlier : undefined
-                    }
-                    onReturnToLatest={
-                      monoTranscript.viewingOlderPage
-                        ? monoTranscript.latest
-                        : undefined
-                    }
-                    busy={!!session.busy && !monoTranscript.viewingOlderPage}
-                    visible={visible}
-                    cwd={workCwd}
-                    agentName={agent?.name}
-                    onOpenArtifact={
-                      onOpenArtifact
-                        ? (id) => onOpenArtifact(session.id, id)
-                        : undefined
-                    }
-                    agentMascot={agent}
-                    bottomAligned={!!agent}
-                    inlineWork={!!agent}
-                    messageDeliveries={agent ? messageDeliveries : undefined}
-                    onRetryMessage={
-                      agent ? () => onResumeQueue(session.id) : undefined
-                    }
-                    onShowWork={
-                      agent && onShowMonoActivity
-                        ? (turnId, blocks) =>
-                            onShowMonoActivity(session.id, turnId, blocks)
-                        : undefined
-                    }
-                    activeWorkTurnId={monoActivityTurnId}
-                    onOpenSession={
-                      agent && onOpenMonoSession
-                        ? (turnId, blocks, launchedId) =>
-                            onOpenMonoSession(
-                              session.id,
-                              turnId,
-                              blocks,
-                              launchedId,
+                  >
+                  <ArtifactSourceContext.Provider value={artifactSource}>
+                    <AgentTranscript
+                      blocks={
+                        agent && !irgatTranscript.viewingOlderPage
+                          ? irgatPendingTranscriptBlocks(
+                              session,
+                              irgatTranscript.blocks,
                             )
-                        : undefined
-                    }
-                    launchedSessions={monoLaunchedSessions}
-                    openSessionId={openMonoSessionId}
-                    // A Mono's turn keeps copy, save as note and the time.
-                    daySeparators={!!agent}
-                    hideTurnMetrics={!!agent}
-                    harness={session.harness}
-                    model={session.model}
-                    modelSettings={session.modelSettings}
-                    pendingQuestion={!!session.pendingQuestion}
-                    backgroundTasks={session.backgroundTasks}
-                    onApproval={session.worktreeRemoved ? undefined : approve}
-                    onAddToChat={addSelectionToChat}
-                    onSaveNote={notesEnabled ? saveNote : undefined}
-                    onSendDraft={
-                      draftBlock
-                        ? (block) =>
-                            onSubmit(
-                              session.id,
-                              block.text,
-                              block.attachments ?? [],
-                              {
-                                draftBlockId: block.id,
-                                ...(block.appRequestId
-                                  ? { appRequestId: block.appRequestId }
-                                  : {}),
-                              },
-                            )
-                        : undefined
-                    }
-                    onRemoveDraft={
-                      draftBlock
-                        ? (block) => onRemoveDraft(session.id, block.id)
-                        : undefined
-                    }
-                    onSaveSelectionNote={
-                      notesEnabled ? saveSelectionNote : undefined
-                    }
-                    onOpenFile={onOpenFile}
-                    onOpenDiff={onOpenDiff}
-                    onOpenPlan={openPlan}
-                    onBuildPlan={
-                      session.worktreeRemoved ? undefined : buildPlan
-                    }
-                    planBuildTargets={!remote}
-                    onSecondOpinion={
-                      !agent &&
-                      !session.inboxAsk &&
-                      !session.worktreeRemoved &&
-                      onSecondOpinion
-                        ? (target, turn) =>
-                            onSecondOpinion(session.id, target, turn)
-                        : undefined
-                    }
-                    onHandoff={
-                      !agent &&
-                      !session.inboxAsk &&
-                      !session.worktreeRemoved &&
-                      onHandoff
-                        ? (target, turn) => onHandoff(session.id, target, turn)
-                        : undefined
-                    }
-                    onJumpToBottomChange={jumpVisibility.setVisible}
-                    onJumpToBottomReady={onJumpToBottomReady}
-                    onRevealReady={onRevealReady}
-                    onNavigateReady={onNavigateReady}
-                    onScrollerChange={setTranscriptScroller}
-                    editingLastTurn={editingLastTurn}
-                    onEditLastTurn={
-                      editLastTurnSupported && !monoTranscript.viewingOlderPage
-                        ? () => {
-                            onFocus(session.id);
-                            recallLastTurnRef.current?.();
-                          }
-                        : undefined
-                    }
-                    latestTurnAccessory={
-                      reviewHidden || agent ? undefined : (
-                        <SessionReview
-                          sessionId={session.id}
-                          editedPaths={editedPaths}
-                          cwd={workCwd}
-                          enabled={visible}
-                          busy={!!session.busy}
-                          undoLocked={
-                            reviewUndoLocked ||
-                            orchestrationRuns.some(
-                              (run) =>
-                                (run.status === "active" ||
-                                  run.status === "paused") &&
-                                (run.leadId === session.id ||
-                                  run.tasks.some(
-                                    (task) => task.sessionId === session.id,
-                                  )),
-                            )
-                          }
-                          onOpenDiff={onOpenDiff}
-                          onCommit={onCommitChanges}
-                        />
-                      )
-                    }
-                  />
+                          : irgatTranscript.blocks
+                      }
+                      historicalBlockIds={irgatTranscript.historicalBlockIds}
+                      initialTurns={agent ? IRGAT_PAGE_TURNS : undefined}
+                      pageSize={agent ? IRGAT_PAGE_TURNS : undefined}
+                      hasEarlier={irgatTranscript.hasEarlier}
+                      loadEarlierOnScroll={!!agent}
+                      onLoadEarlier={
+                        agent ? irgatTranscript.loadEarlier : undefined
+                      }
+                      onReturnToLatest={
+                        irgatTranscript.viewingOlderPage
+                          ? irgatTranscript.latest
+                          : undefined
+                      }
+                      busy={!!session.busy && !irgatTranscript.viewingOlderPage}
+                      visible={visible}
+                      cwd={workCwd}
+                      agentName={agent?.name}
+                      onOpenArtifact={
+                        onOpenArtifact
+                          ? (id) => onOpenArtifact(session.id, id)
+                          : undefined
+                      }
+                      agentMascot={agent}
+                      bottomAligned={!!agent}
+                      inlineWork={!!agent}
+                      messageDeliveries={agent ? messageDeliveries : undefined}
+                      onRetryMessage={
+                        agent ? () => onResumeQueue(session.id) : undefined
+                      }
+                      onShowWork={
+                        agent && onShowIrgatActivity
+                          ? (turnId, blocks) =>
+                              onShowIrgatActivity(session.id, turnId, blocks)
+                          : undefined
+                      }
+                      activeWorkTurnId={irgatActivityTurnId}
+                      onOpenSession={
+                        agent && onOpenIrgatSession
+                          ? (turnId, blocks, launchedId) =>
+                              onOpenIrgatSession(
+                                session.id,
+                                turnId,
+                                blocks,
+                                launchedId,
+                              )
+                          : undefined
+                      }
+                      launchedSessions={irgatLaunchedSessions}
+                      openSessionId={openIrgatSessionId}
+                      // A Irgat's turn keeps copy, save as note and the time.
+                      daySeparators={!!agent}
+                      hideTurnMetrics={!!agent}
+                      harness={session.harness}
+                      model={session.model}
+                      modelSettings={session.modelSettings}
+                      pendingQuestion={!!session.pendingQuestion}
+                      backgroundTasks={session.backgroundTasks}
+                      onApproval={session.worktreeRemoved ? undefined : approve}
+                      onAddToChat={addSelectionToChat}
+                      onSaveNote={notesEnabled ? saveNote : undefined}
+                      onSendDraft={
+                        draftBlock
+                          ? (block) =>
+                              onSubmit(
+                                session.id,
+                                block.text,
+                                block.attachments ?? [],
+                                {
+                                  draftBlockId: block.id,
+                                  ...(block.appRequestId
+                                    ? { appRequestId: block.appRequestId }
+                                    : {}),
+                                },
+                              )
+                          : undefined
+                      }
+                      onRemoveDraft={
+                        draftBlock
+                          ? (block) => onRemoveDraft(session.id, block.id)
+                          : undefined
+                      }
+                      onSaveSelectionNote={
+                        notesEnabled ? saveSelectionNote : undefined
+                      }
+                      reviewLabel={session.inboxAsk ? undefined : title}
+                      onOpenFile={onOpenFile}
+                      onOpenDiff={onOpenDiff}
+                      onOpenPlan={openPlan}
+                      onBuildPlan={
+                        session.worktreeRemoved ? undefined : buildPlan
+                      }
+                      planBuildTargets={!remote}
+                      onSecondOpinion={
+                        !agent &&
+                        !session.inboxAsk &&
+                        !session.worktreeRemoved &&
+                        onSecondOpinion
+                          ? (target, turn) =>
+                              onSecondOpinion(session.id, target, turn)
+                          : undefined
+                      }
+                      onHandoff={
+                        !agent &&
+                        !session.inboxAsk &&
+                        !session.worktreeRemoved &&
+                        onHandoff
+                          ? (target, turn) => onHandoff(session.id, target, turn)
+                          : undefined
+                      }
+                      onJumpToBottomChange={jumpVisibility.setVisible}
+                      onJumpToBottomReady={onJumpToBottomReady}
+                      onRevealReady={onRevealReady}
+                      onNavigateReady={onNavigateReady}
+                      onScrollerChange={setTranscriptScroller}
+                      editingLastTurn={editingLastTurn}
+                      onEditLastTurn={
+                        editLastTurnSupported && !irgatTranscript.viewingOlderPage
+                          ? () => {
+                              onFocus(session.id);
+                              recallLastTurnRef.current?.();
+                            }
+                          : undefined
+                      }
+                      latestTurnAccessory={
+                        reviewHidden || agent ? undefined : (
+                          <SessionReview
+                            sessionId={session.id}
+                            editedPaths={editedPaths}
+                            cwd={workCwd}
+                            enabled={visible}
+                            busy={!!session.busy}
+                            undoLocked={
+                              reviewUndoLocked ||
+                              orchestrationRuns.some(
+                                (run) =>
+                                  (run.status === "active" ||
+                                    run.status === "paused") &&
+                                  (run.leadId === session.id ||
+                                    run.tasks.some(
+                                      (task) => task.sessionId === session.id,
+                                    )),
+                              )
+                            }
+                            onOpenDiff={onOpenDiff}
+                            onCommit={onCommitChanges}
+                          />
+                        )
+                      }
+                    />
+                  </ArtifactSourceContext.Provider>
+                  </SessionReferenceSourceContext.Provider>
                 </PooledTranscript>
                 {!session.inboxAsk ? (
                   <TranscriptFind
@@ -1096,7 +1216,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     visible={visible}
                     focused={focused}
                     onNavigate={navigateBlock}
-                    onSearch={monoTranscript.search}
+                    onSearch={irgatTranscript.search}
                     side={
                       session.linkedWorkItemUpdateCard &&
                       session.linkedWorkItemUpdateCard.status !== "loading"
@@ -1105,7 +1225,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     }
                   />
                 ) : null}
-                {/* One mark per message would crowd a Mono's endless chat. */}
+                {/* One mark per message would crowd a Irgat's endless chat. */}
                 {agent ? null : (
                   <PromptOutline
                     blocks={session.blocks}
@@ -1118,8 +1238,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 <TranscriptJumpToBottom
                   visibility={jumpVisibility}
                   onJump={() => {
-                    if (monoTranscript.viewingOlderPage) {
-                      monoTranscript.latest();
+                    if (irgatTranscript.viewingOlderPage) {
+                      irgatTranscript.latest();
                       requestAnimationFrame(() => jumpToBottomRef.current?.());
                     } else jumpToBottomRef.current?.();
                   }}
@@ -1137,7 +1257,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {agent ? (
                 <>
                   <MessageQueue
-                    messages={visibleMonoCompletionMessages(session)}
+                    messages={visibleIrgatCompletionMessages(session)}
                     status={session.queueStatus}
                     sendingId={session.sendingQueuedMessageId}
                     onDelete={(messageId) =>
@@ -1156,7 +1276,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     />
                   ) : null}
                   {session.usageLimit ? (
-                    <MonoUsageLimitNotice
+                    <IrgatUsageLimitNotice
                       session={session}
                       onModelChange={(harness, model) =>
                         onModelChange(session.id, harness, model)
@@ -1172,12 +1292,27 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         onUsageLimitResumeAtReset(session.id, enabled)
                       }
                     />
-                  ) : null}
-                  <MonoComposer
+                  ) : remote ? null : (
+                    <SessionProviderHold
+                      harness={session.harness}
+                      providerAccountId={session.providerAccountId}
+                      cwd={session.cwd}
+                      queuedCount={session.queuedMessages?.length}
+                      queueOverride={session.queueHoldOverride}
+                      variant="irgat"
+                    />
+                  )}
+                  {interruptionBanner("irgat")}
+                  {reviewTray}
+                  <IrgatComposer
                     key={session.id}
                     sessionId={session.id}
                     name={agent.name}
+                    live
                     enabled={visible}
+                    hotkeys={focused && !btw.open}
+                    busy={session.busy}
+                    voiceReply={voiceReply}
                     quoteRequest={quoteRequest}
                     onQuoteRequestConsumed={acknowledgeQuote}
                     onDraftChange={(text) => {
@@ -1193,12 +1328,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       onSubmit(session.id, text, attachments)
                     }
                     // The plan's usage, as the session footer shows it,
-                    // which a Mono in full view covers. Its account moves
+                    // which a Irgat in full view covers. Its account moves
                     // with the usage-limit notice, not here.
                     tools={
                       <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55">
                         <UsageChips
-                          providers={monoUsageProviders(session.harness)}
+                          providers={irgatUsageProviders(session.harness)}
                           session={{
                             id: session.id,
                             harness: session.harness,
@@ -1209,6 +1344,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           accountPicker={false}
                           variant="composer"
                         />
+                        <AdhdModeChip session={session} variant="composer" />
                       </div>
                     }
                     controls={
@@ -1238,7 +1374,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                             onModelSettingsChange(session.id, settings)
                           }
                         />
-                        {/* A Mono is one long conversation; this is how full
+                        {/* A Irgat is one long conversation; this is how full
                             its current thread is. It rotates threads itself,
                             so there is nothing to compact here. */}
                         <div className="grid size-6.5 place-items-center rounded-md transition-colors hover:bg-content/8">
@@ -1249,7 +1385,22 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   />
                 </>
               ) : (
-                composer
+                <>
+                  {!remote && !session.inboxAsk ? (
+                    <PendingSessionMessages sessionId={session.id} />
+                  ) : null}
+                  {!remote &&
+                  !session.inboxAsk &&
+                  !session.ephemeral &&
+                  !managed &&
+                  dockComposer ? (
+                    <CompletionGateBar
+                      sessionId={session.id}
+                      cwd={session.cwd}
+                    />
+                  ) : null}
+                  {composer}
+                </>
               )}
             </div>
           ) : null}
@@ -1272,8 +1423,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
 });
 
-/** The providers whose plan usage a Mono on `harness` shows by its composer. */
-function monoUsageProviders(harness: HarnessId): RateLimitProvider[] {
+/** The providers whose plan usage a Irgat on `harness` shows by its composer. */
+function irgatUsageProviders(harness: HarnessId): RateLimitProvider[] {
   return harness === "claude" ||
     harness === "codex" ||
     harness === "opencode" ||

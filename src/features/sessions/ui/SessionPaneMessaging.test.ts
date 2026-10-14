@@ -4,6 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionPane, type SessionPaneProps } from "./SessionPane";
 import { clearComposerDraft, setComposerDraft } from "../model/draftCache";
+import { requestSendToChat } from "../model/sendToChat";
+import { requestAddToChat, requestInsertIntoChat } from "../model/quoteDraft";
+import { appendNoteReference } from "../../notes/notes";
 
 const probes = vi.hoisted(() => ({
   pick: vi.fn(),
@@ -36,10 +39,10 @@ vi.mock("../../orchestration/model/orchestration", async (original) => ({
     hydrate: async () => {},
   },
 }));
-vi.mock("../../monos/model/mono", async (original) => ({
-  ...(await original<typeof import("../../monos/model/mono")>()),
-  monoForSession: () => ({
-    id: "mono",
+vi.mock("../../irgats/model/irgat", async (original) => ({
+  ...(await original<typeof import("../../irgats/model/irgat")>()),
+  irgatForSession: () => ({
+    id: "irgat",
     sessionId: "chat",
     name: "Captain",
     mascot: "cat",
@@ -194,7 +197,7 @@ it("keeps the same input, current draft and attachments when a question appears 
   ]);
 });
 
-it("routes transcript quotes to the Mono draft", () => {
+it("routes transcript quotes to the Irgat draft", () => {
   render(props());
   const quote = [
     ...container.querySelectorAll<HTMLButtonElement>("button"),
@@ -203,7 +206,7 @@ it("routes transcript quotes to the Mono draft", () => {
   expect(field().value).toBe("> Selected response\n\n");
 });
 
-it("shows usage recovery above the Mono input and routes the reset option", () => {
+it("shows usage recovery above the Irgat input and routes the reset option", () => {
   setComposerDraft("chat", "Keep my draft");
   const pane = props();
   pane.session.usageLimit = { resetsAt: Date.now() + 3600_000 };
@@ -251,7 +254,7 @@ it("shows pending messages in the conversation and routes retry from the bubble"
   expect(field()).not.toBeNull();
 });
 
-it("keeps a completion notification queued beside the Mono's composer", () => {
+it("keeps a completion notification queued beside the Irgat's composer", () => {
   const pane = props();
   pane.session = {
     ...pane.session,
@@ -261,7 +264,7 @@ it("keeps a completion notification queued beside the Mono's composer", () => {
         id: "notification",
         text: "Hidden completion review prompt",
         attachments: [],
-        monoSessionCompletion: {
+        irgatSessionCompletion: {
           sessionId: "worker",
           title: "API fix",
           status: "completed",
@@ -283,7 +286,7 @@ it("keeps ready completion notifications out of the composer while they deliver"
     id: "notification",
     text: "Hidden completion review prompt",
     attachments: [],
-    monoSessionCompletion: {
+    irgatSessionCompletion: {
       sessionId: "worker",
       title: "API fix",
       status: "completed" as const,
@@ -320,7 +323,7 @@ it("keeps failed completion notifications visible and lets the user retry them",
         text: "Hidden completion review prompt",
         attachments: [],
         error: "Connection lost",
-        monoSessionCompletion: {
+        irgatSessionCompletion: {
           sessionId: "worker",
           title: "API fix",
           status: "completed",
@@ -364,4 +367,66 @@ it("keeps rapid sends out of the queue and steer interface", () => {
     container.querySelector('[aria-label="Edit queued message"]'),
   ).toBeNull();
   expect(container.textContent).not.toContain("Steer");
+});
+
+it("takes Page to agent captures, screenshot included, and Add to Chat", () => {
+  const pane = props();
+  pane.onSubmit = vi.fn(() => true);
+  render({ ...pane, addToChatTarget: true });
+  const screenshot = {
+    id: "shot",
+    name: "page.png",
+    kind: "image" as const,
+    mimeType: "image/png",
+    size: 4,
+    data: "AAAA",
+  };
+  const delivery = requestSendToChat("Fix this button: Save", [screenshot]);
+  expect(pane.onSubmit).toHaveBeenCalledWith("chat", "Fix this button: Save", [
+    screenshot,
+  ]);
+  expect(delivery).toMatchObject({ status: "sent", sessionId: "chat" });
+
+  act(() => requestAddToChat("A note from the page"));
+  expect(field().value).toBe("> A note from the page\n\n");
+});
+
+it("leaves captures alone while it is not the chat that takes them", () => {
+  const pane = props();
+  pane.onSubmit = vi.fn(() => true);
+  render({ ...pane, addToChatTarget: false });
+  expect(requestSendToChat("Fix this button", [])).toBeNull();
+  expect(pane.onSubmit).not.toHaveBeenCalled();
+});
+
+it("adds a saved note to the open Irgat chat after what is already typed", () => {
+  setComposerDraft("chat", "Keep my draft");
+  render(props());
+  expect(field().value).toBe("Keep my draft");
+
+  let taken = false;
+  act(() => {
+    taken = requestInsertIntoChat(
+      "chat",
+      appendNoteReference("", "Auth plan", "Keep the cookie global."),
+    );
+  });
+
+  expect(taken).toBe(true);
+  expect(field().value).toBe(
+    "Keep my draft\n\nNote: Auth plan\n\nKeep the cookie global.\n\n",
+  );
+});
+
+it("leaves its draft alone when a note is meant for another chat", () => {
+  setComposerDraft("chat", "Keep my draft");
+  render(props());
+
+  let taken = true;
+  act(() => {
+    taken = requestInsertIntoChat("other-chat", "Note: Elsewhere");
+  });
+
+  expect(taken).toBe(false);
+  expect(field().value).toBe("Keep my draft");
 });

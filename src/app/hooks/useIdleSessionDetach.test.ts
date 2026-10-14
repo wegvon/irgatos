@@ -28,9 +28,9 @@ import {
 } from "../../features/workspace/model/layout";
 import { useIdleSessionDetach } from "./useIdleSessionDetach";
 import {
-  createMono,
-  saveMonoSessionId,
-} from "../../features/monos/model/mono";
+  createIrgat,
+  saveIrgatSessionId,
+} from "../../features/irgats/model/irgat";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -104,7 +104,7 @@ function run(status: OrchestrationRun["status"]): OrchestrationRun {
     status,
     allowedHarnesses: ["claude"],
     maxWorkers: 1,
-    cli: "monocode",
+    cli: "irgat",
     tasks: [],
     continuations: 0,
     requests: {},
@@ -219,7 +219,7 @@ it("keeps the resident conversation mounted independently of ordinary tabs", asy
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => values.set(key, value),
   });
-  saveMonoSessionId(createMono([agent.cwd]).id, agent.id);
+  saveIrgatSessionId(createIrgat([agent.cwd]).id, agent.id);
   const workspace = mountWorkspace({
     sessions: [agent, chat("other")],
     tabs: [newTab("other")],

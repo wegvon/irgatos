@@ -99,7 +99,7 @@ async function startTurn(
   emit({ type: "system", subtype: "init", session_id: "sess_1" });
   emit({
     type: "control_response",
-    response: { subtype: "success", request_id: "monocode_1" },
+    response: { subtype: "success", request_id: "irgat_1" },
   });
   await waitFor(() => parse().some((m) => m.type === "user"), "user prompt");
   return { events, turn };
@@ -1053,6 +1053,106 @@ describe("claude subagents", () => {
     await turn;
   });
 
+  it("auto-bypasses MemoryProxy session-init AskUserQuestion prompts without interrupting the session", async () => {
+    const { events, turn } = await startTurn("s1");
+    const rawPrompt =
+      "\u672c\u6b21\u5bf9\u8bdd\u662f\u5426\u8981\u5173\u8054\u56e2\u961f\u8d44\u4ea7\uff1f\uff08\u8bf7\u9009\u62e9\u6700\u5339\u914d\u7684\u9009\u9879\uff0c\u5f53\u524d\u6682\u4e0d\u652f\u6301\u81ea\u5b9a\u4e49\u8f93\u5165\u3002\u82e5\u9009\u62e9\u8df3\u8fc7\uff0c\u672c\u6b21 Session \u5c06\u4e0d\u6ce8\u5165\u56e2\u961f\u8d44\u4ea7\uff09";
+    const noWire = "\u5426\uff0c\u672c\u6b21\u4e0d\u5173\u8054";
+    const input = {
+      questions: [
+        {
+          header: "\u5173\u8054\u8d44\u4ea7",
+          question: rawPrompt,
+          multiSelect: false,
+          options: [
+            {
+              label: "\u662f\uff0c\u5173\u8054\u8d44\u4ea7",
+              description:
+                "\u9009\u62e9 Team / Agent / Task\uff0c\u6ce8\u5165\u56e2\u961f\u4e0a\u4e0b\u6587",
+            },
+            {
+              label: noWire,
+              description:
+                "\u4e0d\u6ce8\u5165\u4efb\u4f55\u5185\u5bb9\uff0c\u76f4\u63a5\u653e\u884c",
+            },
+          ],
+        },
+      ],
+    };
+
+    emit({
+      type: "stream_event",
+      session_id: "sess_1",
+      event: {
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "tool_use",
+          id: "toolu_cc_session_init_1700000000000",
+          name: "AskUserQuestion",
+          input: {},
+        },
+      },
+    });
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        id: "msg_cc_session_init_1700000000000",
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_cc_session_init_1700000000000",
+            name: "AskUserQuestion",
+            input,
+          },
+        ],
+      },
+    });
+    emit({
+      type: "control_request",
+      request_id: "proxy_init_req",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "AskUserQuestion",
+        tool_use_id: "toolu_cc_session_init_1700000000000",
+        input,
+      },
+    });
+
+    await waitFor(
+      () =>
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id ===
+            "proxy_init_req",
+        ),
+      "proxy bypass response",
+    );
+    expect(
+      parse().find(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id ===
+          "proxy_init_req",
+      ),
+    ).toMatchObject({
+      response: {
+        response: {
+          behavior: "allow",
+          updatedInput: {
+            answers: {
+              [rawPrompt]: noWire,
+            },
+          },
+        },
+      },
+    });
+    expect(events.some((event) => event.type === "question.asked")).toBe(false);
+    expect(events.some((event) => event.type === "tool.started")).toBe(false);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+  });
+
   it.each(["child_a", "child_b"])(
     "preserves the remaining question when %s is cancelled by the server",
     async (cancelled) => {
@@ -1387,7 +1487,7 @@ describe("claude subagents", () => {
       summary: "Found the tokens",
     });
     // The notification wakes Claude for a follow-up turn; that turn's result
-    // is what ends the MonoCode turn.
+    // is what ends the Irgatos turn.
     await new Promise((r) => setTimeout(r, 30));
     expect(settled).toBe(false);
     emitFollowUpTurn("The explorer found the tokens.");

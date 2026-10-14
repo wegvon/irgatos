@@ -1,13 +1,18 @@
 import { pathKey } from "../../../shared/lib/paths";
 import { loadSidebarTabOrder, type SidebarTabId } from "./appearance";
 
-const KEY = "monocode.projectSidebarTabs.v1";
+const KEY = "irgat.projectSidebarTabs.v1";
 
 type ProjectSidebarTab = Exclude<SidebarTabId, "inbox">;
 type StoredTabs = Record<string, ProjectSidebarTab>;
 
 function isProjectSidebarTab(value: unknown): value is ProjectSidebarTab {
-  return value === "sessions" || value === "files" || value === "changes";
+  return (
+    value === "sessions" ||
+    value === "files" ||
+    value === "changes" ||
+    value === "artifacts"
+  );
 }
 
 function readAll(): StoredTabs {

@@ -14,6 +14,7 @@ import {
 } from "../../../platform/tauri/fs";
 import {
   isAgentTab,
+  isArtifactTab,
   isChangesTab,
   isCommitTab,
   isFilesystemTab,
@@ -28,6 +29,7 @@ import { displayPath } from "../../../shared/lib/paths";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { releaseNotesTitle } from "../../../app/model/releaseNotes";
 import { terminalTabLabel } from "../../terminal/model/terminalTab";
+import { TerminalAgentBadge } from "../../terminal/ui/TerminalAgentBadge";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { useTabCloseMotion } from "../hooks/useTabCloseMotion";
@@ -151,6 +153,16 @@ export function surfaceTabPresentation(
       label: name,
       iconName: "AGENT",
       tooltip: `${name} — orchestration agent`,
+    };
+  }
+
+  if (isArtifactTab(file)) {
+    const name = file.artifact.title.trim() || "Artifact";
+    return {
+      name,
+      label: name,
+      iconName: file.artifact.fileName,
+      tooltip: `${name} — artifact`,
     };
   }
 
@@ -395,6 +407,7 @@ export function SurfaceTabs({
                 >
                   {label}
                 </TabLabel>
+                {terminal ? <TerminalAgentBadge terminalId={file.id} /> : null}
                 {dirty ? (
                   <span
                     className="size-1.5 shrink-0 rounded-full bg-content/70"

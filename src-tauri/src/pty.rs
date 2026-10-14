@@ -267,12 +267,15 @@ fn spawn_unix(
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
         .env("COLORFGBG", "15;0")
-        .env("TERM_PROGRAM", "MonoCode")
+        .env("TERM_PROGRAM", "Irgatos")
         .env("PATH", crate::harness::gui_search_path());
     if let Some(home) = dirs_home() {
         cmd.env("HOME", &home);
     }
     cmd.env("PWD", &workdir);
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
 
     // setsid() already creates a new session and process group. Calling
     // process_group(0) first makes the child a group leader, so setsid()
@@ -398,13 +401,16 @@ fn spawn_windows(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("COLORFGBG", "15;0");
-    cmd.env("TERM_PROGRAM", "MonoCode");
+    cmd.env("TERM_PROGRAM", "Irgatos");
     cmd.env("PATH", crate::harness::gui_search_path());
     if let Some(home) = dirs_home() {
         cmd.env("HOME", &home);
         cmd.env("USERPROFILE", &home);
     }
     cmd.env("PWD", workdir.to_string_lossy().as_ref());
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
 
     let mut child = crate::windows::spawn_pty(pair.slave.as_ref(), cmd)
         .map_err(|err| format!("Failed to start {shell}: {err}"))?;

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, PanelRightToggle, Trash2 } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { IconButton } from "../../../app/shell/TitleBar";
-import { MonoSidebarHeader } from "../../monos/ui/MonoSidebar";
-import { PageHeader } from "../../monos/ui/monoPanelParts";
+import { IrgatSidebarHeader } from "../../irgats/ui/IrgatSidebar";
+import { PageHeader } from "../../irgats/ui/irgatPanelParts";
 import { artifactLabel, deleteArtifact } from "../artifacts";
 import { ArtifactContent, useArtifact } from "./ArtifactContent";
 
@@ -93,7 +93,7 @@ export function ArtifactReader({
           </IconButton>
         </PageHeader>
       ) : (
-        <MonoSidebarHeader title={label} onClose={onClose} actions={actions} />
+        <IrgatSidebarHeader title={label} onClose={onClose} actions={actions} />
       )}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-7 py-6">
         {!loaded ? (

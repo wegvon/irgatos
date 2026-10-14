@@ -18,7 +18,7 @@ export default defineConfig(async ({ mode }) => {
         input: {
           main: "index.html",
           quickComposer: "quick-composer.html",
-          monoChat: "mono-chat.html",
+          irgatChat: "irgat-chat.html",
         },
       },
     },

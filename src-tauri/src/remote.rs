@@ -1,8 +1,9 @@
 //! Remote host connections. The renderer receives machine metadata, never the
 //! saved bearer credential. Workspace requests never fall back to local calls.
 use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
+use crate::state_file;
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -92,39 +93,14 @@ fn endpoint(value: &str) -> Result<String, String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
+/// A malformed store is kept aside as `<name>.corrupt-<millis>.bak` and the
+/// last good copy restored; with none, the machines must be added again.
 fn read(path: &Path) -> Result<Vec<StoredMachine>, String> {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            serde_json::from_slice(&bytes).map_err(|_| "Remote connection store is invalid".into())
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(error.to_string()),
-    }
+    state_file::read_json_or_recover(path).map(|(machines, _)| machines.unwrap_or_default())
 }
 
 fn write(path: &Path, machines: &[StoredMachine]) -> Result<(), String> {
-    let parent = path.parent().ok_or("Missing connection directory")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let temporary = parent.join(format!("remote-machines-{}.tmp", uuid::Uuid::new_v4()));
-    let result = (|| -> Result<(), String> {
-        let mut options = std::fs::OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let mut file = options.open(&temporary).map_err(|e| e.to_string())?;
-        file.write_all(&serde_json::to_vec(machines).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-        file.sync_all().map_err(|e| e.to_string())?;
-        std::fs::rename(&temporary, path).map_err(|e| e.to_string())?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(temporary);
-    }
-    result
+    state_file::write_json_atomic(path, &machines, false)
 }
 
 /// Hosts split large session syncs into pieces below this cap
@@ -238,7 +214,7 @@ pub fn remote_connect(
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
-        return Err("Enter the device token issued by monocode-host pair".into());
+        return Err("Enter the device token issued by irgat-host pair".into());
     }
     let descriptor = rpc(&endpoint, &token, None, "environment.describe", json!({}))?;
     if descriptor.get("protocolVersion").and_then(Value::as_u64) != Some(1) {
@@ -424,7 +400,7 @@ fn start_ssh_job(
             let mut machine = if let Some(mut existing) = existing {
                 if upgrade {
                     let platform = remote_ssh::detect_platform(&target, &job, &askpass)?;
-                    job.message("Updating MonoCode Host on the machine…");
+                    job.message("Updating Irgatos Host on the machine…");
                     let output = remote_ssh::run_script(
                         &target,
                         platform,
@@ -447,7 +423,7 @@ fn start_ssh_job(
                 existing
             } else {
                 let platform = remote_ssh::detect_platform(&target, &job, &askpass)?;
-                job.message("Installing or starting MonoCode Host…");
+                job.message("Installing or starting Irgatos Host…");
                 let output = remote_ssh::run_script(
                     &target,
                     platform,
@@ -530,7 +506,7 @@ fn start_ssh_job(
                     || !supports("files.create")
                     || !supports("files.searchContent")
                 {
-                    return Err("The installed host package still lacks Explorer and Changes. Install a newer MonoCode release with updated host packages.".into());
+                    return Err("The installed host package still lacks Explorer and Changes. Install a newer Irgatos release with updated host packages.".into());
                 }
             }
             if machine.name.trim().is_empty() {
@@ -711,6 +687,33 @@ mod tests {
             assert!(endpoint(url).is_err(), "{url}");
         }
     }
+    #[test]
+    fn a_malformed_connection_store_restores_its_last_good_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("remote-machines.json");
+        let machine = |name: &str| StoredMachine {
+            id: name.into(),
+            name: name.into(),
+            endpoint: "https://host.example".into(),
+            environment_id: "env".into(),
+            token: "secret".into(),
+            ssh: None,
+        };
+        write(&path, &[machine("one")]).unwrap();
+        write(&path, &[machine("one"), machine("two")]).unwrap();
+        std::fs::write(&path, b"[{\"id\":").unwrap();
+
+        let machines = read(&path).unwrap();
+        assert_eq!(machines.len(), 1);
+        assert_eq!(machines[0].name, "one");
+        assert_eq!(state_file::corrupt_copies(&path).len(), 1);
+
+        std::fs::write(&path, b"garbage").unwrap();
+        std::fs::remove_file(state_file::backup_path(&path)).unwrap();
+        assert!(read(&path).unwrap().is_empty());
+        assert_eq!(state_file::corrupt_copies(&path).len(), 2);
+    }
+
     #[test]
     fn public_machine_metadata_never_contains_the_token() {
         let stored = StoredMachine {

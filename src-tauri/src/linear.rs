@@ -710,7 +710,7 @@ fn delete_token(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> {
+pub(crate) fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::io::Write;

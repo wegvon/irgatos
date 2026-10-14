@@ -28,12 +28,12 @@ function edit(id: string, path = "src/App.tsx", status = "in_progress"): Block {
 }
 
 describe("liveAgentsFromSessions", () => {
-  it("excludes Mono activity while keeping regular working and finished sessions", () => {
+  it("excludes Irgat activity while keeping regular working and finished sessions", () => {
     const working = chat("/repo", { id: "working", busy: true });
     const done = chat("/repo", { id: "done" });
-    const monoWorking = chat("~", { id: "mono-working", busy: true });
-    const monoWaiting = chat("~", {
-      id: "mono-waiting",
+    const irgatWorking = chat("~", { id: "irgat-working", busy: true });
+    const irgatWaiting = chat("~", {
+      id: "irgat-waiting",
       blocks: [{
         id: "approval",
         role: "approval",
@@ -41,11 +41,11 @@ describe("liveAgentsFromSessions", () => {
         approval: { requestId: 1 },
       }],
     });
-    const monoDone = chat("~", { id: "mono-done" });
+    const irgatDone = chat("~", { id: "irgat-done" });
     const agents = liveAgentsFromSessions(
-      [monoWaiting, monoWorking, monoDone, done, working],
-      new Set([monoDone.id, done.id]),
-      new Set([monoWorking.id, monoWaiting.id, monoDone.id]),
+      [irgatWaiting, irgatWorking, irgatDone, done, working],
+      new Set([irgatDone.id, done.id]),
+      new Set([irgatWorking.id, irgatWaiting.id, irgatDone.id]),
     );
     expect(agents.map((agent) => agent.id)).toEqual([working.id, done.id]);
     expect(agents[1].done).toBe(true);

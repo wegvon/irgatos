@@ -29,6 +29,38 @@ it("persists sidebar visibility without making the session ephemeral", () => {
   expect(persistFingerprint(hidden)).not.toBe(persistFingerprint(session));
 });
 
+it("keeps what was said in a Live voice call across restarts", () => {
+  const session = newSession("codex", "/tmp");
+  session.blocks = [
+    { id: "u", role: "user", text: "is CI green?", liveVoice: { at: 5 } },
+    {
+      id: "a",
+      role: "assistant",
+      text: "Checking",
+      liveVoice: { at: 6, interrupted: true },
+    },
+    {
+      id: "t",
+      role: "tool",
+      text: "ls",
+      liveVoice: { at: 7 },
+    },
+    {
+      id: "bad",
+      role: "assistant",
+      text: "x",
+      liveVoice: { at: Number.NaN },
+    },
+  ];
+  const blocks = sanitizeSessionForPersist(session).blocks;
+  expect(blocks.map((block) => block.liveVoice)).toEqual([
+    { at: 5 },
+    { at: 6, interrupted: true },
+    undefined,
+    undefined,
+  ]);
+});
+
 it("fingerprints queued message edits, ordering, errors and pause state", () => {
   const session = newSession("codex", "/tmp");
   const first = { id: "first", text: "One", attachments: [] };
@@ -342,7 +374,7 @@ describe("persisting a subagent's trail", () => {
 });
 
 describe("sanitizeSessionForPersist", () => {
-  it("persists accepted Mono launches on user turns and fingerprints their addition", () => {
+  it("persists accepted Irgat launches on user turns and fingerprints their addition", () => {
     const session = newSession("codex", "/repo");
     session.blocks = [{ id: "user", role: "user", text: "Review" }];
     const before = persistFingerprint(session);
@@ -354,17 +386,17 @@ describe("sanitizeSessionForPersist", () => {
       model: "gpt-6",
     };
     session.blocks = [
-      { ...session.blocks[0], monoSpawnedSessions: [launch] },
+      { ...session.blocks[0], irgatSpawnedSessions: [launch] },
       {
         id: "reply",
         role: "assistant",
         text: "Started",
-        monoSpawnedSessions: [launch],
+        irgatSpawnedSessions: [launch],
       },
     ];
     const saved = sanitizeSessionForPersist(session);
-    expect(saved.blocks[0].monoSpawnedSessions).toEqual([launch]);
-    expect(saved.blocks[1].monoSpawnedSessions).toBeUndefined();
+    expect(saved.blocks[0].irgatSpawnedSessions).toEqual([launch]);
+    expect(saved.blocks[1].irgatSpawnedSessions).toBeUndefined();
     expect(persistFingerprint(session)).not.toBe(before);
     expect(
       sanitizeSessionForPersist({
@@ -379,13 +411,13 @@ describe("sanitizeSessionForPersist", () => {
       "list notes",
       [],
       {
-        monocode: true,
+        irgat: true,
       },
     );
     expect(sanitizeSessionForPersist(submitted).blocks[0]).toMatchObject({
       role: "user",
       text: "list notes",
-      monocode: true,
+      irgat: true,
     });
   });
 
@@ -721,7 +753,7 @@ describe("sanitizeSessionForPersist", () => {
       {
         id: "i1",
         role: "system",
-        text: "Turn interrupted when MonoCode quit.",
+        text: "Turn interrupted when Irgatos quit.",
         notice: "interrupt",
       },
       {

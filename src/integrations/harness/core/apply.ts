@@ -21,7 +21,7 @@ import { taskListText } from "../../../features/sessions/model/taskList";
 import { isReviewablePlan } from "../../../features/sessions/model/plan";
 import { resolveModel } from "../../../features/sessions/model/models";
 import type { HarnessEvent } from "./types";
-import { usageLimitFromError } from "../../../features/sessions/model/usageLimit";
+import { mergeUsageLimitError } from "../../../features/sessions/model/usageLimit";
 
 /** Apply one delivery batch without copying the transcript for every token. */
 export function applyHarnessEvents(
@@ -158,7 +158,7 @@ export function applyHarnessEvent(
       return appendBlock(
         failStreaming({
           ...session,
-          usageLimit: session.usageLimit ?? usageLimitFromError(event.message),
+          usageLimit: mergeUsageLimitError(session.usageLimit, event.message),
           // Do not drain remaining messages into the same failed connection.
           queueStatus: session.queuedMessages?.length
             ? "paused"
@@ -447,10 +447,10 @@ type UserTurnExtra = {
   noteCard?: Block["noteCard"];
   ciContext?: string;
   internal?: boolean;
-  monocode?: boolean;
+  irgat?: boolean;
   intent?: Block["intent"];
   appRequestId?: string;
-  monoSessionCompletion?: Block["monoSessionCompletion"];
+  irgatSessionCompletion?: Block["irgatSessionCompletion"];
 };
 
 function userTurnFields(extra?: UserTurnExtra) {
@@ -459,11 +459,11 @@ function userTurnFields(extra?: UserTurnExtra) {
     ...(extra?.noteCard ? { noteCard: extra.noteCard } : {}),
     ...(extra?.ciContext ? { ciContext: extra.ciContext } : {}),
     ...(extra?.internal ? { internal: true } : {}),
-    ...(extra?.monocode ? { monocode: true } : {}),
+    ...(extra?.irgat ? { irgat: true } : {}),
     ...(extra?.intent ? { intent: extra.intent } : {}),
     ...(extra?.appRequestId ? { appRequestId: extra.appRequestId } : {}),
-    ...(extra?.monoSessionCompletion
-      ? { monoSessionCompletion: extra.monoSessionCompletion }
+    ...(extra?.irgatSessionCompletion
+      ? { irgatSessionCompletion: extra.irgatSessionCompletion }
       : {}),
   };
 }
@@ -747,7 +747,7 @@ function upsertKeyedStatus(
   const trimmed = text.trim();
   const turnStart = lastMatchingBlock(
     session.blocks,
-    // Mono outbox bubbles and mid-turn follow-ups do not start a new turn.
+    // Irgat outbox bubbles and mid-turn follow-ups do not start a new turn.
     (block) =>
       block.role === "user" &&
       (block.sentAt == null || block.startedAt != null) &&

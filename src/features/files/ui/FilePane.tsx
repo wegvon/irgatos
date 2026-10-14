@@ -8,6 +8,7 @@ import {
 import { SurfaceTabs } from "../../workspace/ui/SurfaceTabs";
 import {
   isAgentTab,
+  isArtifactTab,
   isChangesTab,
   isCommitTab,
   isPlanTab,
@@ -19,7 +20,10 @@ import {
   type FilePaneTab,
 } from "../../workspace/model/layout";
 import { isImagePath, isVideoPath } from "../model/filePreview";
-import type { TerminalMetaPatch } from "../../terminal/model/terminalTab";
+import {
+  terminalTabLabel,
+  type TerminalMetaPatch,
+} from "../../terminal/model/terminalTab";
 import type { EditorNavigationTarget } from "../../search/model/search";
 import { editorPathsEqual } from "../../search/model/search";
 import type { PlanBuildTarget, Session } from "../../sessions/model/session";
@@ -31,6 +35,11 @@ import {
 } from "../../settings/model/settings";
 import { AgentTabView } from "../../sessions/ui/AgentTabView";
 import { MarkdownPreview } from "../../sessions/ui/AgentMarkdown";
+import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import {
+  ReviewableSelection,
+  selectionChatText,
+} from "../../redline/ui/TextSelectionReviewMenu";
 import { BinaryFileView } from "./BinaryFileView";
 import { ReleaseNotesSurface } from "../../../app/ui/ReleaseNotesSurface";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -38,6 +47,10 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 const CommitDiff = lazySurface(async () => {
   const module = await import("../../source-control/ui/CommitDiff");
   return { default: module.CommitDiff };
+});
+const ArtifactSurface = lazySurface(async () => {
+  const module = await import("../../artifacts/ui/ArtifactSurface");
+  return { default: module.ArtifactSurface };
 });
 const FileEditor = lazySurface(async () => {
   const module = await import("./FileEditor");
@@ -193,6 +206,8 @@ function FilePaneComponent({
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
                 />
+              ) : isArtifactTab(file) ? (
+                <ArtifactSurface source={file.artifact} />
               ) : isPlanTab(file) ? (
                 <PlanSurface
                   file={file}
@@ -208,6 +223,7 @@ function FilePaneComponent({
                   id={file.id}
                   cwd={file.cwd}
                   active={focused && file.id === pane.activeFileId}
+                  label={terminalTabLabel(file)}
                   onMetaChange={(patch) =>
                     onTerminalMetaChange?.(file.id, patch)
                   }
@@ -329,6 +345,7 @@ function PlanSurface({
     block.plan?.status === "streaming" ||
     block.plan?.status === "building" ||
     block.plan?.status === "built";
+  const planReviewTarget = `Plan “${plan.title.replace(/[\r\n]+/g, " ").trim() || "Untitled"}”`;
   const buildLabel =
     block.plan?.status === "building"
       ? "Building…"
@@ -342,12 +359,21 @@ function PlanSurface({
         mode={mode}
         onModeChange={setMode}
         preview={
-          <MarkdownPreview
-            text={block.text}
-            streaming={block.streaming}
-            cwd={file.cwd}
-            onOpenFile={onOpenFile}
-          />
+          <ReviewableSelection
+            source={block.text}
+            reviewSource="document"
+            targetPath={planReviewTarget}
+            onAddToChat={(text) =>
+              requestAddToChat(selectionChatText(planReviewTarget, text), "plain")
+            }
+          >
+            <MarkdownPreview
+              text={block.text}
+              streaming={block.streaming}
+              cwd={file.cwd}
+              onOpenFile={onOpenFile}
+            />
+          </ReviewableSelection>
         }
         actions={
           <div className="flex items-center font-sans">

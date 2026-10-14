@@ -2,13 +2,13 @@
 import { expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import {
-  MonoFileConflict,
+  IrgatFileConflict,
   type AgentFilePath,
-} from "../../monos/model/monoFiles";
+} from "../../irgats/model/irgatFiles";
 import {
   setHabitRunning,
   type Habit,
-} from "../../monos/model/monoHabits";
+} from "../../irgats/model/irgatHabits";
 import { handleAgentApp, type AgentAppHost } from "./agentApp";
 
 /** The agent's folder as a map, with a hash that changes on every write. */
@@ -19,18 +19,18 @@ function fixture(agent = true) {
   const versions = new Map<string, number>();
   const hash = (path: string) => `${path}@${versions.get(path) ?? 0}`;
   const write = vi.fn(
-    async (_monoId: string, path: AgentFilePath, text: string, expected: string) => {
-      if (expected !== hash(path)) throw new MonoFileConflict();
+    async (_irgatId: string, path: AgentFilePath, text: string, expected: string) => {
+      if (expected !== hash(path)) throw new IrgatFileConflict();
       files.set(path, text);
       versions.set(path, (versions.get(path) ?? 0) + 1);
       return hash(path);
     },
   );
   const host = {
-    isMono: (id: string) => agent && id === "agent",
-    monoOf: (id: string) =>
-      agent && id === "agent" ? { id: "mono-1", projects: [] } : undefined,
-    readAgentFile: async (_monoId: string, path: AgentFilePath) => ({
+    isIrgat: (id: string) => agent && id === "agent",
+    irgatOf: (id: string) =>
+      agent && id === "agent" ? { id: "irgat-1", projects: [] } : undefined,
+    readAgentFile: async (_irgatId: string, path: AgentFilePath) => ({
       text: files.get(path) ?? null,
       hash: hash(path),
     }),
@@ -95,12 +95,12 @@ it("retries over an edit the user saved in between", async () => {
   expect(files.get("MEMORY.md")).toBe("User note\n- 2026-10-04 · uses pnpm\n");
 });
 
-it("redacts secrets and refuses sessions that are not the Mono", async () => {
+it("redacts secrets and refuses sessions that are not the Irgat", async () => {
   const { files, run } = fixture();
   await run("memory.add", { fact: "deploy token=abc123secretvalue" });
   expect(files.get("MEMORY.md")).not.toContain("abc123secretvalue");
   await expect(fixture(false).run("memory.read")).rejects.toThrow(
-    "Mono",
+    "Irgat",
   );
 });
 
@@ -118,18 +118,18 @@ it("searches MEMORY.md, topics and the archive", async () => {
   });
 });
 
-function habitsFixture(mono = true) {
+function habitsFixture(irgat = true) {
   const source = newSession("codex", "/tmp/project", "codex:test");
   source.id = "agent";
   let stored: Habit[] = [];
   const host = {
-    isMono: (id: string) => mono && id === "agent",
-    monoOf: (id: string) =>
-      mono && id === "agent" ? { id: "mono-1", projects: [] } : undefined,
+    isIrgat: (id: string) => irgat && id === "agent",
+    irgatOf: (id: string) =>
+      irgat && id === "agent" ? { id: "irgat-1", projects: [] } : undefined,
     habits: {
       load: async () => stored,
       update: async <T,>(
-        _monoId: string,
+        _irgatId: string,
         change: (list: Habit[]) => { habits: Habit[]; result: T },
       ) => {
         const next = change(stored);
@@ -144,7 +144,7 @@ function habitsFixture(mono = true) {
   return { run, habits: () => stored };
 }
 
-it("lets the Mono add, pause, try and remove its habits", async () => {
+it("lets the Irgat add, pause, try and remove its habits", async () => {
   const { run, habits } = habitsFixture();
   const added = (await run("habits.add", {
     name: "Morning CI check",
@@ -171,9 +171,9 @@ it("lets the Mono add, pause, try and remove its habits", async () => {
   await expect(run("habits.remove", { id })).rejects.toThrow("No habit");
 });
 
-it("keeps habits to the Mono's own conversation", async () => {
+it("keeps habits to the Irgat's own conversation", async () => {
   await expect(habitsFixture(false).run("habits.list")).rejects.toThrow(
-    "Only a Mono",
+    "Only a Irgat",
   );
 });
 
@@ -199,9 +199,9 @@ function projectFixture(projects: string[], cwd = "/Users/me") {
   source.id = "agent";
   const sessions = vi.fn(async (_cwd: string) => []);
   const host = {
-    isMono: (id: string) => id === "agent",
-    monoOf: (id: string) =>
-      id === "agent" ? { id: "mono-1", projects } : undefined,
+    isIrgat: (id: string) => id === "agent",
+    irgatOf: (id: string) =>
+      id === "agent" ? { id: "irgat-1", projects } : undefined,
     sessions,
   } as unknown as AgentAppHost;
   const run = (action: string, input: Record<string, unknown> = {}) =>
@@ -209,7 +209,7 @@ function projectFixture(projects: string[], cwd = "/Users/me") {
   return { run, sessions };
 }
 
-it("lets a Mono choose which of its projects an action works in", async () => {
+it("lets a Irgat choose which of its projects an action works in", async () => {
   const { run, sessions } = projectFixture(["/code/app", "/code/site"]);
   await expect(run("sessions.list")).rejects.toThrow(
     'Pass "project" to choose one. Yours: app (/code/app), site (/code/site)',
@@ -229,7 +229,7 @@ it("lets a Mono choose which of its projects an action works in", async () => {
   ]);
 });
 
-it("uses a Mono's only project, or the one its chat started in", async () => {
+it("uses a Irgat's only project, or the one its chat started in", async () => {
   expect(await projectFixture(["/code/app"]).run("sessions.list")).toMatchObject({
     cwd: "/code/app",
   });
@@ -241,4 +241,57 @@ it("uses a Mono's only project, or the one its chat started in", async () => {
   await expect(projectFixture([]).run("sessions.list")).rejects.toThrow(
     "none yet",
   );
+});
+
+it("lets the Irgat add guards but only the user can stop approval", async () => {
+  const { run, habits } = habitsFixture();
+  const added = (await run("habits.add", {
+    name: "Deploy watch",
+    instructions: "Check the deploy.",
+    schedule: { kind: "daily", time: "09:00" },
+    requestApproval: true,
+    ifCondition: { kind: "expression", expression: "now.weekday != 0" },
+    delaySeconds: 120,
+  })) as { habit: { id: string } };
+  const id = added.habit.id;
+  expect(habits()[0]).toMatchObject({
+    requestApproval: true,
+    ifCondition: { kind: "expression", expression: "now.weekday != 0" },
+    delaySeconds: 120,
+  });
+  await expect(
+    run("habits.update", { id, requestApproval: false }),
+  ).rejects.toThrow("Only the user");
+  await expect(
+    run("habits.update", { id, ifCondition: { kind: "expression", expression: "eval(1)" } }),
+  ).rejects.toThrow("ifCondition");
+  await expect(
+    run("habits.update", { id, ifCondition: { shell: "ls" } }),
+  ).rejects.toThrow("ifCondition must be");
+  await expect(run("habits.update", { id, delaySeconds: 10 ** 6 })).rejects.toThrow(
+    "delaySeconds",
+  );
+  await run("habits.update", {
+    id,
+    ifCondition: null,
+    delaySeconds: 0,
+    name: "Deploy watcher",
+  });
+  expect(habits()[0]).toMatchObject({ name: "Deploy watcher", requestApproval: true });
+  expect(habits()[0].ifCondition).toBeUndefined();
+  expect(habits()[0].delaySeconds).toBeUndefined();
+
+  // The token never reaches the agent, and pausing drops a waiting run.
+  habits()[0].triggerToken = "s".repeat(43);
+  habits()[0].approval = { state: "pending", requestedAt: Date.now() };
+  habits()[0].runRequested = true;
+  const list = (await run("habits.list")) as { habits: Record<string, unknown>[] };
+  expect(list.habits[0]).toMatchObject({
+    hasTrigger: true,
+    waiting: "for the user's approval",
+  });
+  expect(JSON.stringify(list)).not.toContain("s".repeat(43));
+  await run("habits.update", { id, enabled: false });
+  expect(habits()[0].approval).toBeUndefined();
+  expect(habits()[0].runRequested).toBeUndefined();
 });

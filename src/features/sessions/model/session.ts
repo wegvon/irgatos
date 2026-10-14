@@ -54,8 +54,8 @@ export type BlockRole =
   | "system"
   | "handoff";
 
-/** A session created by a Mono during this conversation turn. */
-export type MonoSpawnedSession = {
+/** A session created by a Irgat during this conversation turn. */
+export type IrgatSpawnedSession = {
   sessionId: string;
   cwd: string;
   title: string;
@@ -259,27 +259,38 @@ export type Attachment = {
   data?: string;
   /** Object URL for in-session thumbnails. Not persisted. */
   previewUrl?: string;
+  /** What an attached folder held at its top level when it was attached. */
+  folder?: FolderSummary;
 };
 
-export type MonoSessionCompletion = {
+export type FolderSummary = {
+  /** Entries worth reading, directories ending in "/"; capped, so maybe partial. */
+  names: string[];
+  /** Every entry worth reading, including any `names` left out. */
+  total: number;
+  /** Version control, dependency, build and gitignored entries left out. */
+  skipped: number;
+};
+
+export type IrgatSessionCompletion = {
   sessionId: string;
   title: string;
   status: "completed" | "failed" | "cancelled";
-  /** A single report covering several sessions launched in one Mono turn. */
+  /** A single report covering several sessions launched in one Irgat turn. */
   sessionCount?: number;
 };
 
 export type QueuedMessage = {
   id: string;
-  /** User bubble already shown optimistically in a Mono's conversation. */
+  /** User bubble already shown optimistically in a Irgat's conversation. */
   blockId?: string;
   text: string;
   attachments: Attachment[];
   noteCard?: NoteComposerCard;
   handoffCard?: HandoffComposerCard;
   intent?: TurnIntent;
-  /** An app notification that must wait for an idle Mono, never steer its work. */
-  monoSessionCompletion?: MonoSessionCompletion;
+  /** An app notification that must wait for an idle Irgat, never steer its work. */
+  irgatSessionCompletion?: IrgatSessionCompletion;
   /** Delivery failed; the message remains available to retry or edit. */
   error?: string;
 };
@@ -330,8 +341,8 @@ export type Block = {
   providerTurnId?: string;
   /** User turn saved to the session but not submitted to the harness yet. */
   draft?: boolean;
-  /** This user turn activated MonoCode app access for its thread. */
-  monocode?: boolean;
+  /** This user turn activated Irgatos app access for its thread. */
+  irgat?: boolean;
   /** The Plan or Orchestrator mode this user turn was sent in. */
   intent?: Extract<TurnIntent, "plan" | "orchestrate">;
   /** Stable CLI request that submitted this turn, for safe retries. */
@@ -367,10 +378,10 @@ export type Block = {
    * conversation rather than the user narrating their own agents.
    */
   internal?: boolean;
-  /** Hidden app prompt that starts a separate completion report in a Mono chat. */
-  monoSessionCompletion?: MonoSessionCompletion;
+  /** Hidden app prompt that starts a separate completion report in a Irgat chat. */
+  irgatSessionCompletion?: IrgatSessionCompletion;
   /** Accepted session launches, kept on the originating user turn. */
-  monoSpawnedSessions?: MonoSpawnedSession[];
+  irgatSpawnedSessions?: IrgatSpawnedSession[];
   handoff?: HandoffMeta;
   secondOpinion?: SecondOpinionMeta;
   /** Independent read-only side conversations anchored to this user turn. */
@@ -388,15 +399,20 @@ export type Block = {
    */
   notice?: "error" | "interrupt";
   statusKey?: string;
-  /** Posted to a Mono's chat by one of its habits, outside any turn. */
-  monoHabit?: { id: string; name: string; at: number };
-  /** A card a Mono put in its chat; see `features/monos/model/monoCards`. */
-  monoCard?: import("../../monos/model/monoCards").MonoCard;
+  /** Posted to a Irgat's chat by one of its habits, outside any turn. */
+  irgatHabit?: { id: string; name: string; at: number };
   /**
-   * The emoji a Mono answered this user message with. Drawn from its reply
-   * when the chat renders; see `features/monos/model/monoReaction`.
+   * Said out loud in a Live voice call, outside any harness turn; the next
+   * typed turn hands it over. See `features/voice/live/liveTranscript`.
    */
-  monoReaction?: string;
+  liveVoice?: { at: number; interrupted?: boolean };
+  /** A card a Irgat put in its chat; see `features/irgats/model/irgatCards`. */
+  irgatCard?: import("../../irgats/model/irgatCards").IrgatCard;
+  /**
+   * The emoji a Irgat answered this user message with. Drawn from its reply
+   * when the chat renders; see `features/irgats/model/irgatReaction`.
+   */
+  irgatReaction?: string;
 };
 
 export type RuntimeMode =
@@ -454,8 +470,8 @@ export type Session = {
   /** Project / working directory for this session. */
   cwd: string;
   blocks: Block[];
-  /** Mono-only database window. Older blocks are fetched separately by the viewer. */
-  monoTranscript?: { before: number | null; firstBlockId: string | null };
+  /** Irgat-only database window. Older blocks are fetched separately by the viewer. */
+  irgatTranscript?: { before: number | null; firstBlockId: string | null };
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /** The provider has accepted this turn and can take live follow-ups. */
@@ -475,9 +491,13 @@ export type Session = {
   sendingQueuedMessageId?: string;
   /** Last turn hit a provider usage limit; cleared by the next send. In-memory only. */
   usageLimit?: UsageLimit;
+  /** The interruption notice whose Resume banner the user dismissed. In-memory only. */
+  dismissedInterruptionId?: string;
+  /** `since` of the quota hold the user chose Run anyway on for this queue. In-memory only. */
+  queueHoldOverride?: number;
   /**
    * Lives only in memory: never saved, never listed with the project's chats.
-   * A Mono's habit runs are, and disappear when the run ends.
+   * A Irgat's habit runs are, and disappear when the run ends.
    */
   ephemeral?: boolean;
   /** Provider-side conversation id (Cursor ACP session id). */

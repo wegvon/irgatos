@@ -15,13 +15,13 @@ let missingResume = false;
 const spawnChild = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]) => undefined),
 );
-const prepareCodexMonoContext = vi.hoisted(() =>
+const prepareCodexIrgatContext = vi.hoisted(() =>
   vi.fn(async (_input: unknown) => ({
-    config: { sqlite_home: "/private/mono" },
+    config: { sqlite_home: "/private/irgat" },
     hasThread: true,
   })),
 );
-vi.mock("./codexStore", () => ({ prepareCodexMonoContext }));
+vi.mock("./codexStore", () => ({ prepareCodexIrgatContext }));
 
 function receive(message: unknown) {
   onLine?.(JSON.stringify(message));
@@ -30,7 +30,7 @@ function receive(message: unknown) {
 vi.mock("../../core/child", () => ({
   resolveCodexBinary: async () => ({ path: "/fake/codex" }),
   spawnChild,
-  restoreMonoCodexAgentState: async () => undefined,
+  restoreIrgatxAgentState: async () => undefined,
   killChild: async () => undefined,
   unwatchChild: () => undefined,
   watchChild: (_id: string, line: (value: string) => void) => {
@@ -114,7 +114,7 @@ beforeEach(() => {
   failTurn = false;
   missingResume = false;
   spawnChild.mockClear();
-  prepareCodexMonoContext.mockClear();
+  prepareCodexIrgatContext.mockClear();
 });
 
 afterEach(async () => {
@@ -255,36 +255,36 @@ it("keeps a failed generation and its retry unsaved", async () => {
   ).toBe(true);
 });
 
-it("isolates Mono side questions from regular Codex threads and resumes them after restart", async () => {
+it("isolates Irgat side questions from regular Codex threads and resumes them after restart", async () => {
   await runCodexTextPrompt({
     cwd: "/repo",
     ephemeral: false,
     prompt: "Regular side question",
   });
   expect(spawnChild.mock.calls[0][6]).toBeUndefined();
-  expect(prepareCodexMonoContext).not.toHaveBeenCalled();
+  expect(prepareCodexIrgatContext).not.toHaveBeenCalled();
   await runCodexTextPrompt({
     cwd: "/repo",
     ephemeral: false,
-    codexStore: "mono",
-    prompt: "Mono side question",
+    codexStore: "irgat",
+    prompt: "Irgat side question",
   });
-  expect(spawnChild.mock.calls[1][6]).toBe("mono");
+  expect(spawnChild.mock.calls[1][6]).toBe("irgat");
   expect(threadStarts()[1].params).toMatchObject({
-    config: { sqlite_home: "/private/mono" },
+    config: { sqlite_home: "/private/irgat" },
   });
   expect(threadStarts()[1].params).not.toHaveProperty("ephemeral");
   await stopCodexTextPrompt();
   await runCodexTextPrompt({
     cwd: "/repo",
     ephemeral: false,
-    codexStore: "mono",
+    codexStore: "irgat",
     threadId: "thread_2",
     prompt: "Continue",
   });
   expect(sent.find((m) => m.method === "thread/resume")?.params).toMatchObject({
     threadId: "thread_2",
-    config: { sqlite_home: "/private/mono" },
+    config: { sqlite_home: "/private/irgat" },
   });
   expect(threadStarts()).toHaveLength(2);
 });
@@ -295,8 +295,8 @@ it("reports private side-question resume failures without replacing saved contex
     runCodexTextPrompt({
       cwd: "/repo",
       ephemeral: false,
-      codexStore: "mono",
-      threadId: "saved-mono",
+      codexStore: "irgat",
+      threadId: "saved-irgat",
       prompt: "Continue",
     }),
   ).rejects.toThrow("thread not found");

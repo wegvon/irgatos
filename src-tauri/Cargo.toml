@@ -1,19 +1,20 @@
 [package]
-name = "monocode"
+name = "irgat"
 version.workspace = true
 edition.workspace = true
-description = "MonoCode — one UI for every agent harness"
+description = "Irgatos — one UI for every agent harness"
 authors = ["Nick"]
-repository = "https://github.com/hardbeat920/monocode"
-homepage = "https://usemono.dev"
+repository = "https://github.com/wegvon/irgatos"
+homepage = "https://github.com/wegvon/irgatos"
 license.workspace = true
 
 [lib]
-name = "monocode_lib"
+name = "irgat_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+serde_json.workspace = true
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api"] }
@@ -35,6 +36,9 @@ time = { version = "0.3", features = ["parsing"] }
 tauri-plugin-process = "2"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 png = "0.18"
+tempfile = "3"
+wry = { version = "0.55", default-features = false, features = ["os-webview", "x11"] }
+tiny_http = "0.12"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -55,16 +59,25 @@ keyring = { version = "3.6", default-features = false, features = ["apple-native
 tauri = { version = "2", features = ["tray-icon"] }
 block2 = "0.6.2"
 objc2 = { version = "0.6", features = ["exception"] }
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSAttributedString", "NSBezierPath", "NSButton", "NSColor", "NSControl", "NSDockTile", "NSEvent", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSView", "NSVisualEffectView", "NSWindow", "block2", "objc2-core-foundation"] }
-objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSDictionary", "NSGeometry", "NSError", "NSString"] }
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSImageRep", "NSButton", "NSColor", "NSControl", "NSDockTile", "NSEvent", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSView", "NSVisualEffectView", "NSWindow", "block2", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSBundle", "NSData", "NSDictionary", "NSGeometry", "NSError", "NSLocale", "NSString"] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
+objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioEngine", "AVAudioFormat", "AVAudioIONode", "AVAudioNode", "AVAudioTime", "AVAudioTypes", "block2"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-web-kit = { version = "0.3", features = ["WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKWebView", "block2", "objc2-app-kit"] }
 objc2-user-notifications = { version = "0.3.2", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationAction", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationSound", "block2"] }
+objc2-speech = { version = "0.3", default-features = false, features = ["std", "SFSpeechRecognizer", "SFSpeechRecognitionRequest", "SFSpeechRecognitionResult", "SFSpeechRecognitionTask", "SFSpeechRecognitionTaskHint", "SFTranscription", "block2", "objc2-avf-audio"] }
 raw-window-handle = "0.6"
 tauri-plugin-global-shortcut = "2"
+rookie-cookies = "0.6.0"
+cookie = "0.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = ["linux-native-sync-persistent", "crypto-rust"] }
 notify-rust = "4.18"
+cairo-rs = "0.18"
+javascriptcore-rs = "1.1"
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

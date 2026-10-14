@@ -5,18 +5,18 @@ import {
   allowsProjectNotification,
   type NotificationSubject,
 } from "./notificationPreferences";
-import { monoReplyText } from "../../monos/model/monoReaction";
+import { irgatReplyText } from "../../irgats/model/irgatReaction";
 import { knownNotificationProject } from "./notificationProjects";
 
-const KEY = "monocode.notifications";
+const KEY = "irgat.notifications";
 
 /** Off until the user opts in; enabling asks the OS for permission. */
 export const NOTIFICATIONS_DEFAULT = false;
 
-export const NOTIFICATIONS_CHANGE_EVENT = "monocode:notifications-change";
+export const NOTIFICATIONS_CHANGE_EVENT = "irgat:notifications-change";
 
 /** Rust emits this with the session id when a notification is clicked. */
-export const NOTIFICATION_CLICK_EVENT = "monocode:notification-click";
+export const NOTIFICATION_CLICK_EVENT = "irgat:notification-click";
 
 export type NotificationPermission =
   "prompt" | "granted" | "denied" | "unsupported";
@@ -170,7 +170,7 @@ export function notificationText(
   session: Session,
   event: NotificationEvent,
 ): NotificationText {
-  const title = "MonoCode";
+  const title = "Irgatos";
   const subtitle = sessionDisplayTitle(session.title, session.harness);
   const harness = HARNESS_TITLE[session.harness];
   if (event !== "finished") {
@@ -204,7 +204,7 @@ export function notificationText(
   return {
     title,
     subtitle,
-    body: clip((reply && monoReplyText(reply.text)) || `${harness} finished`),
+    body: clip((reply && irgatReplyText(reply.text)) || `${harness} finished`),
   };
 }
 
@@ -270,18 +270,32 @@ async function notifyProjectSession(
   sessionVisible: boolean,
   subject: NotificationSubject,
 ): Promise<boolean> {
+  return deliverNotification(
+    session.id,
+    () => notificationText(session, event),
+    sessionVisible,
+    subject,
+  );
+}
+
+async function deliverNotification(
+  targetId: string,
+  text: () => NotificationText,
+  visible: boolean,
+  subject: NotificationSubject,
+): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
   const decision = shouldNotify({
     enabled: loadNotificationsEnabled(),
     permission,
     windowFocused,
-    sessionVisible,
+    sessionVisible: visible,
   });
   if (!decision) return false;
-  const { title, subtitle, body } = notificationText(session, event);
+  const { title, subtitle, body } = text();
   try {
     await invoke("show_notification", {
-      sessionId: session.id,
+      sessionId: targetId,
       title,
       subtitle,
       body,
@@ -291,4 +305,49 @@ async function notifyProjectSession(
   } catch {
     return false;
   }
+}
+
+/** A coding agent running in a raw terminal changed state. */
+export type TerminalAgentNotice = {
+  /** Click target; the app routes `terminal:` ids to the terminal tab. */
+  targetId: string;
+  cwd: string;
+  tabLabel: string;
+  agentLabel: string;
+  event: "blocked" | "done";
+};
+
+export function terminalAgentNotificationText(
+  notice: TerminalAgentNotice,
+): NotificationText {
+  return {
+    title: "Irgatos",
+    subtitle: `${notice.agentLabel} · ${notice.tabLabel}`,
+    body:
+      notice.event === "blocked"
+        ? `${notice.agentLabel} is waiting for your approval or answer in the terminal`
+        : `${notice.agentLabel} finished in the terminal`,
+  };
+}
+
+/** Banner for a terminal agent, under the same project rules as sessions. */
+export async function notifyTerminalAgent(
+  notice: TerminalAgentNotice,
+  visible: boolean,
+): Promise<boolean> {
+  const project = knownNotificationProject(notice.cwd);
+  if (!project) return false;
+  const subject: NotificationSubject = {
+    projectId: project.id,
+    category: notice.event === "done" ? "agentFinished" : "agentInput",
+    occurredAt: Date.now(),
+  };
+  const sent = await deliverNotification(
+    notice.targetId,
+    () => terminalAgentNotificationText(notice),
+    visible,
+    subject,
+  );
+  if (!sent && notice.event === "done" && !visible) playCue("turnFinished", subject);
+  return sent;
 }

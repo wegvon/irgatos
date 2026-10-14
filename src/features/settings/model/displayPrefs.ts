@@ -1,26 +1,26 @@
 import { useSyncExternalStore } from "react";
 import { readFlag, writeFlag } from "./storageFlags";
 
-const SHOW_REMAINING_USAGE_KEY = "monocode.showRemainingUsage";
-const MASK_EMAILS_KEY = "monocode.maskEmails";
-const COMPOSER_AUTOCORRECT_KEY = "monocode.composerAutocorrect";
-const RAIL_MONOS_PINNED_KEY = "monocode.railMonosPinned";
+const SHOW_REMAINING_USAGE_KEY = "irgat.showRemainingUsage";
+const MASK_EMAILS_KEY = "irgat.maskEmails";
+const COMPOSER_AUTOCORRECT_KEY = "irgat.composerAutocorrect";
+const RAIL_IRGATS_PINNED_KEY = "irgat.railMonosPinned";
 
 export const SHOW_REMAINING_USAGE_DEFAULT = false;
 export const MASK_EMAILS_DEFAULT = true;
 export const COMPOSER_AUTOCORRECT_DEFAULT = true;
-export const RAIL_MONOS_PINNED_DEFAULT = false;
+export const RAIL_IRGATS_PINNED_DEFAULT = false;
 
 /** Fired on `window` whenever the usage meter direction flips (detail: boolean). */
 export const SHOW_REMAINING_USAGE_CHANGE_EVENT =
-  "monocode:showremainingusagechange";
+  "irgat:showremainingusagechange";
 /** Fired on `window` whenever email masking flips (detail: boolean). */
-export const MASK_EMAILS_CHANGE_EVENT = "monocode:maskemailschange";
+export const MASK_EMAILS_CHANGE_EVENT = "irgat:maskemailschange";
 /** Fired on `window` whenever composer autocorrect flips (detail: boolean). */
 export const COMPOSER_AUTOCORRECT_CHANGE_EVENT =
-  "monocode:composerautocorrectchange";
-/** Fired on `window` whenever Monos are pinned to or unpinned from the icon rail (detail: boolean). */
-export const RAIL_MONOS_PINNED_CHANGE_EVENT = "monocode:railmonospinnedchange";
+  "irgat:composerautocorrectchange";
+/** Fired on `window` whenever Irgats are pinned to or unpinned from the icon rail (detail: boolean). */
+export const RAIL_IRGATS_PINNED_CHANGE_EVENT = "irgat:railmonospinnedchange";
 
 function flagStore(key: string, fallback: boolean, event: string) {
   // Holds a saved value only while storage failed to keep it, so the switch
@@ -68,9 +68,9 @@ const composerAutocorrect = flagStore(
   COMPOSER_AUTOCORRECT_CHANGE_EVENT,
 );
 const railMonosPinned = flagStore(
-  RAIL_MONOS_PINNED_KEY,
-  RAIL_MONOS_PINNED_DEFAULT,
-  RAIL_MONOS_PINNED_CHANGE_EVENT,
+  RAIL_IRGATS_PINNED_KEY,
+  RAIL_IRGATS_PINNED_DEFAULT,
+  RAIL_IRGATS_PINNED_CHANGE_EVENT,
 );
 
 /** Usage meters fill with what is left instead of what is used. */
@@ -85,13 +85,13 @@ export const saveMaskEmails = maskEmails.save;
 export const subscribeMaskEmails = maskEmails.subscribe;
 export const useMaskEmails = maskEmails.useFlag;
 
-/** Session and mono composers spell check and autocorrect what you type. */
+/** Session and irgat composers spell check and autocorrect what you type. */
 export const loadComposerAutocorrect = composerAutocorrect.load;
 export const saveComposerAutocorrect = composerAutocorrect.save;
 export const subscribeComposerAutocorrect = composerAutocorrect.subscribe;
 export const useComposerAutocorrect = composerAutocorrect.useFlag;
 
-/** Monos sit at the top of the icon rail instead of inside the project picker. */
+/** Irgats sit at the top of the icon rail instead of inside the project picker. */
 export const loadRailMonosPinned = railMonosPinned.load;
 export const saveRailMonosPinned = railMonosPinned.save;
 export const subscribeRailMonosPinned = railMonosPinned.subscribe;

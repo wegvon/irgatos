@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { diffCommentLocation, formatDiffComment } from "./diffComment";
+import {
+  diffCommentLocation,
+  diffCommentReviewTarget,
+  formatDiffComment,
+} from "./diffComment";
 
 describe("diff comments", () => {
   it("formats a comment on a current line for the composer", () => {
@@ -57,5 +61,42 @@ describe("diff comments", () => {
         " \n ",
       ),
     ).toBe("");
+  });
+});
+
+describe("diff review targets", () => {
+  it("anchors an added line to its new number", () => {
+    expect(
+      diffCommentReviewTarget({
+        path: "src\\auth.ts",
+        line: { kind: "add", text: "const t = 1;", oldNumber: null, newNumber: 8 },
+      }),
+    ).toEqual({
+      source: "diff",
+      targetPath: "src/auth.ts",
+      lineRange: { start: 8, end: 8 },
+      selection: "+const t = 1;",
+    });
+  });
+
+  it("anchors a deleted line to its old number and says so", () => {
+    expect(
+      diffCommentReviewTarget({
+        path: "src/auth.ts",
+        line: { kind: "del", text: "retry(5);", oldNumber: 41, newNumber: null },
+      }),
+    ).toMatchObject({
+      lineRange: { start: 41, end: 41 },
+      selection: "-retry(5);  (deleted line)",
+    });
+  });
+
+  it("leaves out a line range it does not know", () => {
+    const target = diffCommentReviewTarget({
+      path: "src/auth.ts",
+      line: { kind: "context", text: "}", oldNumber: null, newNumber: null },
+    });
+    expect(target.lineRange).toBeUndefined();
+    expect(target.selection).toBe(" }");
   });
 });

@@ -40,9 +40,21 @@ import {
 } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
+import { useAdhdState } from "../../adhd/ui/AdhdModeChip";
+import {
+  clearAdhdChatOverrides,
+  saveAdhdSettings,
+} from "../../adhd/model/adhdMode";
+import {
+  ADHD_RULES,
+  ADHD_RULE_TITLES,
+  ADHD_UPSTREAM,
+} from "../../adhd/model/adhdRules";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
+import { LightpandaSettings } from "./LightpandaSettings";
+import { AgentQuotaSettings } from "./AgentQuotaSettings";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
 import { RemoveProjectDialog } from "../../projects/ui/RemoveProjectDialog";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -195,7 +207,13 @@ import {
   projectName,
 } from "../../../shared/lib/paths";
 import { revealPath } from "../../../platform/tauri/fs";
-import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import {
+  IS_LINUX,
+  IS_MAC,
+  IS_WIN,
+  MOD,
+  SHIFT,
+} from "../../../platform/tauri/platform";
 import {
   loadArchivedProjects,
   looksLikeProject,
@@ -303,17 +321,17 @@ import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { PixelMascot } from "../../projects/ui/PixelMascot";
 import {
-  defaultMonoName,
-  listMonos,
-  monoLook,
-  monoProjectsPhrase,
+  defaultIrgatName,
+  listIrgats,
+  irgatLook,
+  irgatProjectsPhrase,
   monosSnapshot,
-  subscribeMonos,
-  updateMono,
-  type Mono,
-} from "../../monos/model/mono";
-import { resetMonoDefaults } from "../../monos/model/monoFiles";
-import { ConfirmReset } from "../../monos/ui/ConfirmReset";
+  subscribeIrgats,
+  updateIrgat,
+  type Irgat,
+} from "../../irgats/model/irgat";
+import { resetIrgatDefaults } from "../../irgats/model/irgatFiles";
+import { ConfirmReset } from "../../irgats/ui/ConfirmReset";
 import {
   filterKeybindings,
   currentKeybindings,
@@ -331,10 +349,11 @@ import {
   loadModelControls,
   loadNotesEnabled,
   loadMonosEnabled,
-  loadMonoMenuBarIcon,
+  loadIrgatMenuBarIcon,
   loadKeybindingOverrides,
-  saveMonoMenuBarIcon,
-  subscribeMonoMenuBarIcon,
+  keybindingShortcutLabel,
+  saveIrgatMenuBarIcon,
+  subscribeIrgatMenuBarIcon,
   loadQuickComposerEnabled,
   loadQuickComposerShortcut,
   loadTabAnimationsEnabled,
@@ -394,12 +413,20 @@ import {
 } from "../../notifications/model/notifications";
 import {
   installPendingUpdate,
-  packageManagedInstall,
+  isUpdateBusy,
+  loadUpdateRepo,
+  loadUpdateSourceDir,
+  openUpdateDialog,
   packageManagerHint,
-  readAppVersion,
+  readBuildInfo,
   runUpdateFlow,
-  type UpdaterSnapshot,
+  saveUpdateRepo,
+  saveUpdateSourceDir,
+  DEFAULT_UPDATE_REPOS,
 } from "../../../app/model/updater";
+import { formatVersion, shortCommit } from "../../../app/model/appVersion";
+import { updateActionLabel, updateHeadline } from "../../../app/model/updateStatus";
+import { useAppBuild, useUpdater } from "../../../app/model/useUpdater";
 
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
@@ -409,6 +436,42 @@ import {
   type RemoveWorktree,
 } from "../../source-control/model/worktrees";
 import type { Session } from "../../sessions/model/session";
+import {
+  openVoicePrivacySettings,
+  requestVoiceAccess,
+  saveTranscriptionKey,
+  speak,
+  systemVoices,
+  type SpeechHandle,
+  type SystemVoice,
+  voiceStatus,
+  type VoiceEngine,
+  type VoiceStatus,
+} from "../../../platform/tauri/voice";
+import {
+  DEFAULT_CLOUD_ENDPOINT,
+  DEFAULT_CLOUD_MODEL,
+  loadVoiceSettings,
+  saveVoiceSettings,
+  subscribeVoiceSettings,
+  CONVERSATION_PAUSES,
+  SPEECH_RATES,
+  VOICE_LANGUAGES,
+} from "../../voice/model/voiceSettings";
+import {
+  LIVE_MODELS,
+  LIVE_VOICE_HINTS,
+  LIVE_VOICES,
+  loadLiveSettings,
+  saveLiveSettings,
+  subscribeLiveSettings,
+  type LiveVoiceName,
+} from "../../voice/live/liveSettings";
+import {
+  liveKeyStatus,
+  saveLiveKey,
+  type LiveKeyStatus,
+} from "../../../platform/tauri/liveVoice";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -546,6 +609,7 @@ export function SettingsView({
           className="flex shrink-0 items-center gap-1.5 pr-2"
           data-tauri-drag-region="false"
         >
+          <SettingsVersionBadge />
           {section === "appearance" ? (
             <button
               type="button"
@@ -591,14 +655,17 @@ export function SettingsView({
                 <AppearancePage appearance={appearance} />
               ) : null}
               {section === "chat" ? <ChatPage /> : null}
+              {section === "voice" ? <VoicePage /> : null}
+              {section === "adhd" ? <AdhdPage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
-              {section === "monos" ? <MonosPage /> : null}
+              {section === "irgats" ? <MonosPage /> : null}
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
               ) : null}
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
+              {section === "usage" ? <AgentQuotaSettings /> : null}
               {section === "worktrees" ? (
                 <WorktreesPage
                   cwd={cwd}
@@ -849,7 +916,7 @@ function GeneralPage({
     <>
       <Group
         title="Alerts"
-        description="How MonoCode reaches you while you are looking somewhere else."
+        description="How Irgatos reaches you while you are looking somewhere else."
       >
         <Row
           id="sounds"
@@ -865,7 +932,7 @@ function GeneralPage({
         <Row
           id="notifications"
           label="Notifications"
-          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while MonoCode is in the background. Click the notification to open that session."
+          description="Notify when a reminder is due, or when an agent finishes or needs input in another session or while Irgatos is in the background. Click the notification to open that session."
         >
           {notificationsEnabled && notificationPermission === "denied" ? (
             <NotificationsBlocked />
@@ -924,7 +991,7 @@ function GeneralPage({
           <Row
             id="quick-composer"
             label="Quick composer"
-            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to MonoCode. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
+            description={`Press ${quickComposerShortcutLabel(loadQuickComposerShortcut())} in any app to float a prompt over it and start a session without switching to Irgatos. Change the shortcut in Keybindings. Return starts it in the background; ⌘Return starts it and brings the session forward.`}
           >
             {quickComposerError ? (
               <span className="text-[12px] text-content/45">
@@ -966,6 +1033,7 @@ function GeneralPage({
 
       <Group title="About">
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+        <UpdateSourceRow />
       </Group>
     </>
   );
@@ -1109,7 +1177,7 @@ function ChatPage() {
         <Row
           id="composer-autocorrect"
           label="Autocorrect"
-          description="Spell check and autocorrect prompts in session and mono composers. Turn this off to keep the text exactly as typed."
+          description="Spell check and autocorrect prompts in session and irgat composers. Turn this off to keep the text exactly as typed."
         >
           <Toggle
             label="Autocorrect"
@@ -1185,6 +1253,677 @@ function ChatPage() {
         </Row>
       </Group>
     </>
+  );
+}
+
+function voiceAccessLabel(status: VoiceStatus, engine: VoiceEngine): string {
+  const needed =
+    engine === "apple"
+      ? [status.microphone, status.speech]
+      : [status.microphone];
+  if (needed.includes("denied")) return "Blocked";
+  if (needed.includes("prompt")) return "Not asked yet";
+  return "Allowed";
+}
+
+function voiceLanguageNote(status: VoiceStatus | null): string {
+  if (!status?.supported) return "";
+  if (!status.languageAvailable)
+    return " Apple's recognizer does not support this language.";
+  if (status.onDevice) return " This language transcribes on this Mac.";
+  return " This language has no on-device model yet. Add it under System Settings › Keyboard › Dictation, or allow Apple servers.";
+}
+
+function AdhdPage() {
+  const adhd = useAdhdState();
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const exceptions = Object.keys(adhd.chats).length;
+
+  return (
+    <>
+      <Group
+        title="ADHD mode"
+        description="Every session and Irgat chat gets the i-have-adhd ruleset with its next message, once per conversation. Turning it off tells the agent once, too. The status bar switch does the same as this one."
+      >
+        <Row
+          id="adhd-mode"
+          label="ADHD mode"
+          description="Agents lead with the next action, number multi-step work, restate where things stand, give estimates in minutes, and drop the preamble, recaps and closers."
+        >
+          <Toggle
+            label="ADHD mode"
+            on={adhd.enabled}
+            onChange={(next) => saveAdhdSettings({ enabled: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-status-bar"
+          label="Show in status bar"
+          description="A one-click ADHD switch at the bottom of the window and under each Irgat's composer."
+        >
+          <Toggle
+            label="Show in status bar"
+            on={adhd.showInStatusBar}
+            onChange={(next) => saveAdhdSettings({ showInStatusBar: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-focus"
+          label="Next step in status bar"
+          description="Beside the switch, keep the step a working agent is on, or the Next: line its last reply ended with, so it stays on screen instead of in your head."
+        >
+          <Toggle
+            label="Next step in status bar"
+            on={adhd.showFocus}
+            disabled={!adhd.showInStatusBar}
+            onChange={(next) => saveAdhdSettings({ showFocus: next })}
+          />
+        </Row>
+        <Row
+          id="adhd-chats"
+          label="Per-chat control"
+          description={`In any composer, /i-have-adhd toggles the mode for that chat, and /i-have-adhd on or off sets it. While it is on, sending just "stop adhd mode" or "normal mode" turns it off for that chat. Irgatos handles these itself, so they never reach the agent. ${
+            exceptions
+              ? `${exceptions} ${exceptions === 1 ? "chat has its" : "chats have their"} own setting.`
+              : "No chat has its own setting."
+          }`}
+        >
+          {exceptions ? (
+            <SecondaryButton onClick={clearAdhdChatOverrides}>
+              Reset chats
+            </SecondaryButton>
+          ) : null}
+        </Row>
+      </Group>
+
+      <Group
+        id="adhd-rules"
+        title="The rules"
+        description={`From ${ADHD_UPSTREAM.name} ${ADHD_UPSTREAM.version} by ${ADHD_UPSTREAM.author}, ${ADHD_UPSTREAM.license} license. Irgatos sends the upstream ruleset unchanged.`}
+        action={
+          <SecondaryButton
+            onClick={() => void openUrl(ADHD_UPSTREAM.url).catch(() => {})}
+          >
+            View on GitHub
+          </SecondaryButton>
+        }
+      >
+        <ol className="list-decimal space-y-1 px-4 py-3.5 pl-9 text-[12px] leading-relaxed text-content/70">
+          {ADHD_RULE_TITLES.map((rule) => (
+            <li key={rule}>{rule}</li>
+          ))}
+        </ol>
+        <div className="border-t border-content/5 px-4 py-3">
+          <button
+            type="button"
+            aria-expanded={rulesOpen}
+            onClick={() => setRulesOpen((open) => !open)}
+            className="text-[12px] text-accent hover:underline"
+          >
+            {rulesOpen ? "Hide the full ruleset" : "Show the full ruleset"}
+          </button>
+          {rulesOpen ? (
+            <pre
+              data-testid="adhd-ruleset"
+              className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-content/5 p-3 font-mono text-[11px] leading-relaxed text-content/70"
+            >
+              {ADHD_RULES}
+            </pre>
+          ) : null}
+        </div>
+      </Group>
+    </>
+  );
+}
+
+function VoicePage() {
+  const voice = useSyncExternalStore(
+    subscribeVoiceSettings,
+    loadVoiceSettings,
+    loadVoiceSettings,
+  );
+  const [status, setStatus] = useState<VoiceStatus | null>(null);
+  const [endpoint, setEndpoint] = useState(voice.cloudEndpoint);
+  const [model, setModel] = useState(voice.cloudModel);
+  const [key, setKey] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyError, setKeyError] = useState<string | null>(null);
+  const [voices, setVoices] = useState<SystemVoice[]>([]);
+  const [previewing, setPreviewing] = useState(false);
+  const preview = useRef<SpeechHandle | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void systemVoices().then((list) => {
+      if (live) setVoices(list);
+    });
+    return () => {
+      live = false;
+      preview.current?.stop();
+    };
+  }, []);
+
+  const onPreview = () => {
+    if (previewing) {
+      preview.current?.stop();
+      return;
+    }
+    setPreviewing(true);
+    void speak("This is how Irgatos reads an agent's reply in voice mode.", {
+      voice: voice.speechVoice,
+      rate: voice.speechRate,
+    })
+      .then((handle) => {
+        preview.current = handle;
+        return handle.done;
+      })
+      .catch(() => {})
+      .finally(() => {
+        preview.current = null;
+        setPreviewing(false);
+      });
+  };
+
+  const refresh = useCallback(() => {
+    void voiceStatus(voice.locale).then(setStatus);
+  }, [voice.locale]);
+
+  useEffect(() => {
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh]);
+
+  const supported = status?.supported ?? false;
+  const blocked =
+    status != null && voiceAccessLabel(status, voice.engine) === "Blocked";
+  const unasked =
+    status != null &&
+    voiceAccessLabel(status, voice.engine) === "Not asked yet";
+
+  const onAllow = () => {
+    void requestVoiceAccess(voice.engine, voice.locale).then(setStatus);
+  };
+
+  const onSaveKey = async (next: string) => {
+    setKeyBusy(true);
+    setKeyError(null);
+    try {
+      await saveTranscriptionKey(next);
+      setKey("");
+      refresh();
+    } catch (reason) {
+      setKeyError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const commitEndpoint = () => {
+    const next = endpoint.trim();
+    if (next && next !== voice.cloudEndpoint)
+      saveVoiceSettings({ cloudEndpoint: next });
+    else setEndpoint(voice.cloudEndpoint);
+  };
+
+  const commitModel = () => {
+    const next = model.trim();
+    if (next && next !== voice.cloudModel)
+      saveVoiceSettings({ cloudModel: next });
+    else setModel(voice.cloudModel);
+  };
+
+  const inputClass =
+    "min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35";
+  const fieldClass =
+    "flex h-7 w-72 max-w-full shrink-0 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20";
+
+  return (
+    <>
+      <Group
+        title="Dictation"
+        description={`Speak into the composer instead of typing. Press ${keybindingShortcutLabel("Composer: Dictate", `${MOD}${SHIFT}E`) ?? "the microphone"} to start and again to finish, or Esc to throw it away. The text stays editable before you send.`}
+      >
+        <Row
+          id="voice-dictation"
+          label="Dictation"
+          description="Show the microphone in session composers."
+        >
+          <Toggle
+            label="Dictation"
+            on={voice.dictation}
+            onChange={(next) => saveVoiceSettings({ dictation: next })}
+          />
+        </Row>
+        <Row
+          id="voice-access"
+          label="Microphone and speech access"
+          description={
+            status == null
+              ? "Checking…"
+              : !supported
+                ? "Voice input is available on macOS for now."
+                : voice.engine === "apple"
+                  ? "macOS asks once for the microphone and once for speech recognition. Only System Settings can change a decision afterwards."
+                  : "macOS asks once for the microphone. Only System Settings can change the decision afterwards."
+          }
+        >
+          {status != null && supported ? (
+            <>
+              <span className="text-[12px] text-content/45">
+                {voiceAccessLabel(status, voice.engine)}
+              </span>
+              {unasked ? (
+                <SecondaryButton onClick={onAllow}>Allow</SecondaryButton>
+              ) : null}
+              {blocked ? (
+                <SecondaryButton
+                  onClick={() =>
+                    openVoicePrivacySettings(
+                      status.microphone === "denied" ? "microphone" : "speech",
+                    )
+                  }
+                >
+                  Open System Settings
+                </SecondaryButton>
+              ) : null}
+            </>
+          ) : null}
+        </Row>
+      </Group>
+
+      <Group
+        title="Voice mode"
+        description={`Talk with the agent hands-free. Press ${keybindingShortcutLabel("Composer: Voice Mode", `${MOD}${SHIFT}L`) ?? "the wave button"} in a composer: it listens, sends when you pause, reads the reply aloud, then listens again. Esc or typing interrupts a reply, and typing pauses listening until you send.`}
+      >
+        <Row
+          id="voice-mode-pause"
+          label="Pause before sending"
+          description="How long you stay quiet before what you said is sent. Longer leaves room to think mid-sentence."
+        >
+          <Segmented
+            label="Pause before sending"
+            value={String(voice.conversationPauseMs)}
+            options={CONVERSATION_PAUSES.map((ms) => ({
+              value: String(ms),
+              label: `${ms / 1000} s`,
+            }))}
+            onChange={(next) =>
+              saveVoiceSettings({ conversationPauseMs: Number(next) })
+            }
+          />
+        </Row>
+        <Row
+          id="voice-mode-read-replies"
+          label="Read replies aloud"
+          description="Read the agent's final message in each turn with the system voice. Code blocks and links are skipped, and long replies stop early."
+        >
+          <Toggle
+            label="Read replies aloud"
+            on={voice.readReplies}
+            onChange={(next) => saveVoiceSettings({ readReplies: next })}
+          />
+        </Row>
+        <Row
+          id="voice-mode-voice"
+          label="Reading voice"
+          description="Spoken Content follows System Settings › Accessibility › Spoken Content. Download more voices there."
+        >
+          <Select
+            label="Reading voice"
+            value={voice.speechVoice}
+            options={[
+              { value: "", label: "Spoken Content voice" },
+              ...voices.map((option) => ({
+                value: option.name,
+                label: `${option.name} · ${option.locale}`,
+              })),
+            ]}
+            onChange={(next) => saveVoiceSettings({ speechVoice: next })}
+          />
+          <SecondaryButton onClick={onPreview}>
+            {previewing ? "Stop" : "Preview"}
+          </SecondaryButton>
+        </Row>
+        <Row
+          id="voice-mode-rate"
+          label="Reading speed"
+          description="Normal uses the Spoken Content rate."
+        >
+          <Segmented
+            label="Reading speed"
+            value={String(voice.speechRate)}
+            options={SPEECH_RATES.map((rate) => ({
+              value: String(rate),
+              label: rate === 0 ? "Normal" : rate < 180 ? "Slower" : "Faster",
+            }))}
+            onChange={(next) => saveVoiceSettings({ speechRate: Number(next) })}
+          />
+        </Row>
+      </Group>
+
+      <LiveVoiceGroup fieldClass={fieldClass} inputClass={inputClass} />
+
+      <Group
+        title="Transcription"
+        description="Where speech becomes text. On this Mac uses Apple's recognizer with live text as you speak. A service uploads the recording when you finish."
+      >
+        <Row
+          id="voice-engine"
+          label="Transcription engine"
+          description={
+            voice.engine === "apple"
+              ? "Apple speech recognition. Audio stays on this Mac when the language is installed, and no key is needed."
+              : "Any OpenAI-compatible transcription endpoint, such as OpenAI, Groq, or a local whisper.cpp server. Audio leaves this Mac unless the endpoint is local."
+          }
+        >
+          <Segmented
+            label="Transcription engine"
+            value={voice.engine}
+            options={[
+              { value: "apple", label: "On this Mac" },
+              { value: "cloud", label: "Service" },
+            ]}
+            onChange={(next) => saveVoiceSettings({ engine: next })}
+          />
+        </Row>
+        <Row
+          id="voice-language"
+          label="Language"
+          description={`The language you speak. System language follows macOS.${
+            voice.engine === "apple" ? voiceLanguageNote(status) : ""
+          }`}
+        >
+          <Select
+            label="Language"
+            value={voice.locale}
+            options={VOICE_LANGUAGES}
+            onChange={(next) => saveVoiceSettings({ locale: next })}
+          />
+        </Row>
+        <Row
+          id="voice-allow-server"
+          label="Allow Apple servers"
+          description="When a language has no on-device model, let Apple's servers transcribe it. Off keeps audio on this Mac and asks you to install the language instead."
+        >
+          <Toggle
+            label="Allow Apple servers"
+            on={voice.allowServer}
+            disabled={voice.engine !== "apple"}
+            onChange={(next) => saveVoiceSettings({ allowServer: next })}
+          />
+        </Row>
+      </Group>
+
+      <Group
+        id="voice-service"
+        title="Transcription service"
+        description="Used when the engine is Service. Any OpenAI-compatible /v1/audio/transcriptions URL works. Plain http is only allowed for this machine, such as whisper.cpp's whisper-server on 127.0.0.1."
+      >
+        <Row label="Endpoint">
+          <label className={fieldClass}>
+            <input
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+              onBlur={commitEndpoint}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder={DEFAULT_CLOUD_ENDPOINT}
+              aria-label="Transcription endpoint"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </Row>
+        <Row label="Model" description="Sent as the model field.">
+          <label className={`${fieldClass} w-52`}>
+            <input
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              onBlur={commitModel}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder={DEFAULT_CLOUD_MODEL}
+              aria-label="Transcription model"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </Row>
+        <Row
+          label="API key"
+          description="Stored in Irgatos's app data, readable only by you. A local server usually needs none."
+        >
+          {status?.cloudKey ? (
+            <>
+              <span className="text-[12px] text-content/45">Saved</span>
+              <SecondaryButton
+                onClick={() => void onSaveKey("")}
+                disabled={keyBusy}
+              >
+                Remove
+              </SecondaryButton>
+            </>
+          ) : (
+            <div className="flex max-w-full flex-wrap items-center gap-2">
+              <label className={`${fieldClass} w-52`}>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(event) => setKey(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && key.trim())
+                      void onSaveKey(key.trim());
+                  }}
+                  placeholder="sk-…"
+                  aria-label="Transcription API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={inputClass}
+                />
+              </label>
+              <SecondaryButton
+                onClick={() => void onSaveKey(key.trim())}
+                disabled={keyBusy || !key.trim()}
+              >
+                {keyBusy ? "Saving" : "Save"}
+              </SecondaryButton>
+            </div>
+          )}
+        </Row>
+        {keyError ? (
+          <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+            {keyError}
+          </p>
+        ) : null}
+      </Group>
+    </>
+  );
+}
+
+/** Gemini Live: the key, the voice and the model a Live call uses. */
+function LiveVoiceGroup({
+  fieldClass,
+  inputClass,
+}: {
+  fieldClass: string;
+  inputClass: string;
+}) {
+  const live = useSyncExternalStore(
+    subscribeLiveSettings,
+    loadLiveSettings,
+    loadLiveSettings,
+  );
+  const [status, setStatus] = useState<LiveKeyStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [customModel, setCustomModel] = useState("");
+
+  const refresh = useCallback(() => {
+    void liveKeyStatus().then(setStatus);
+  }, []);
+  useEffect(refresh, [refresh]);
+
+  const onSave = async (next: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await saveLiveKey(next);
+      setKey("");
+      refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const known = LIVE_MODELS.some((option) => option.value === live.model);
+  const commitCustomModel = () => {
+    const next = customModel.trim();
+    if (next) saveLiveSettings({ model: next });
+    setCustomModel("");
+  };
+
+  return (
+    <Group
+      title="Live voice (Gemini)"
+      description="Talk with an agent in real time, both ways at once, like a phone call: press the Live button in a composer. Gemini's realtime model speaks for the agent, you can talk over it, and real work goes to the agent in the chat. Audio streams to Google while the call is open."
+    >
+      <Row
+        id="voice-live-key"
+        label="Gemini API key"
+        description={
+          status == null
+            ? "Checking…"
+            : status.stored
+              ? "Saved in Irgatos's app data, readable only by you. It wins over the environment."
+              : status.env
+                ? `Using ${status.env} from your environment. Save a key here to use another one.`
+                : "Create one in Google AI Studio. Irgatos also picks up GEMINI_API_KEY or GOOGLE_API_KEY from your shell."
+        }
+      >
+        {status?.stored ? (
+          <>
+            <span className="text-[12px] text-content/45">Saved</span>
+            <SecondaryButton onClick={() => void onSave("")} disabled={busy}>
+              Remove
+            </SecondaryButton>
+          </>
+        ) : (
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            {status?.env ? (
+              <span className="text-[12px] text-content/45">
+                From {status.env}
+              </span>
+            ) : null}
+            <label className={`${fieldClass} w-52`}>
+              <input
+                type="password"
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && key.trim())
+                    void onSave(key.trim());
+                }}
+                placeholder="AIza…"
+                aria-label="Gemini API key"
+                autoComplete="off"
+                spellCheck={false}
+                className={inputClass}
+              />
+            </label>
+            <SecondaryButton
+              onClick={() => void onSave(key.trim())}
+              disabled={busy || !key.trim()}
+            >
+              {busy ? "Saving" : "Save"}
+            </SecondaryButton>
+          </div>
+        )}
+      </Row>
+      {error ? (
+        <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+          {error}
+        </p>
+      ) : null}
+      <Row
+        id="voice-live-voice"
+        label="Live voice"
+        description="The voice the agent speaks with in a Live call."
+      >
+        <Select
+          label="Live voice"
+          value={live.voice}
+          options={LIVE_VOICES.map((name) => ({
+            value: name,
+            label: `${name} · ${LIVE_VOICE_HINTS[name]}`,
+          }))}
+          onChange={(next) => saveLiveSettings({ voice: next as LiveVoiceName })}
+        />
+      </Row>
+      <Row
+        id="voice-live-model"
+        label="Live model"
+        description="Native audio sounds most natural. Type another Live model id to try it."
+      >
+        <div className="flex max-w-full flex-wrap items-center gap-2">
+          <Select
+            label="Live model"
+            value={live.model}
+            options={[
+              ...LIVE_MODELS,
+              ...(known
+                ? []
+                : [{ value: live.model, label: live.model.replace(/^models\//, "") }]),
+            ]}
+            onChange={(next) => saveLiveSettings({ model: next })}
+          />
+          <label className={`${fieldClass} w-44`}>
+            <input
+              value={customModel}
+              onChange={(event) => setCustomModel(event.target.value)}
+              onBlur={commitCustomModel}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder="Other model id"
+              aria-label="Other Live model"
+              autoComplete="off"
+              spellCheck={false}
+              className={inputClass}
+            />
+          </label>
+        </div>
+      </Row>
+      <Row
+        id="voice-live-barge-in"
+        label="Interrupt when I talk"
+        description="Stop the agent the moment the microphone hears you, before Gemini notices. Turn off if speakers without echo cancellation cut it off."
+      >
+        <Toggle
+          label="Interrupt when I talk"
+          on={live.localBargeIn}
+          onChange={(next) => saveLiveSettings({ localBargeIn: next })}
+        />
+      </Row>
+      <Row
+        id="voice-live-transcript"
+        label="Save live calls to the chat"
+        description="Add what you and the agent said to the conversation, so the next typed message picks up from it."
+      >
+        <Toggle
+          label="Save live calls to the chat"
+          on={live.saveTranscript}
+          onChange={(next) => saveLiveSettings({ saveTranscript: next })}
+        />
+      </Row>
+    </Group>
   );
 }
 
@@ -1315,7 +2054,7 @@ function GithubSettings() {
   }, [checkStatus]);
 
   const description = status?.connected
-    ? "GitHub CLI is installed and authenticated. MonoCode uses it for GitHub inbox items."
+    ? "GitHub CLI is installed and authenticated. Irgatos uses it for GitHub inbox items."
     : status?.installed
       ? "Run gh auth login in a terminal, complete the sign-in flow, then check again."
       : "Install GitHub CLI from cli.github.com, run gh auth login in a terminal, then check again.";
@@ -1766,55 +2505,33 @@ function UpdateRow({
 }: {
   onOpenWhatsNew: (version: string) => void;
 }) {
-  const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({
-    phase: "idle",
-    currentVersion: "…",
-  });
+  const snapshot = useUpdater();
+  useAppBuild();
 
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([readAppVersion(), packageManagedInstall()]).then(
-      ([currentVersion, packageManaged]) => {
-        if (cancelled) return;
-        setSnapshot((current) => ({
-          ...current,
-          currentVersion,
-          packageManaged: packageManaged ?? undefined,
-        }));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const busy =
-    snapshot.phase === "checking" || snapshot.phase === "downloading";
-  const hasUpdate = snapshot.phase === "available";
+  const busy = snapshot.phase === "checking" || isUpdateBusy(snapshot);
+  const action = updateActionLabel(snapshot);
 
   const onClick = async () => {
     if (busy) return;
-    if (hasUpdate) {
-      await installPendingUpdate(setSnapshot);
+    if (action) {
+      openUpdateDialog();
+      await installPendingUpdate();
       return;
     }
-    await runUpdateFlow(true, setSnapshot);
+    await runUpdateFlow(true);
   };
 
   const status =
-    snapshot.phase === "available"
-      ? `Version ${snapshot.availableVersion} is available.`
-      : snapshot.phase === "downloading"
-        ? `Downloading${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-        : snapshot.phase === "checking"
-          ? "Checking for updates…"
-          : snapshot.phase === "current"
-            ? "You're on the latest version."
-            : snapshot.phase === "error"
-              ? (snapshot.error ?? "Update check failed.")
-              : snapshot.packageManaged
-                ? packageManagerHint(snapshot.packageManaged)
-                : "MonoCode updates itself from the release feed.";
+    snapshot.phase === "error"
+      ? (snapshot.error ?? "Update check failed.")
+      : snapshot.phase === "idle"
+        ? snapshot.packageManaged
+          ? packageManagerHint(snapshot.packageManaged)
+          : "Irgatos checks its GitHub Releases and the source checkout it was built from."
+        : [updateHeadline(snapshot), snapshot.phase === "current" ? snapshot.note : null]
+            .filter(Boolean)
+            .join(". ");
+  const commit = shortCommit(snapshot.currentCommit);
 
   return (
     <Row
@@ -1823,8 +2540,16 @@ function UpdateRow({
         <span className="flex items-baseline gap-2">
           Version
           <span className="font-mono text-[12px] text-content/45">
-            {snapshot.currentVersion}
+            {formatVersion(snapshot.currentVersion)}
           </span>
+          {commit ? (
+            <span
+              className="font-mono text-[11px] text-content/30"
+              title={snapshot.currentCommit}
+            >
+              {commit}
+            </span>
+          ) : null}
         </span>
       }
       description={status}
@@ -1839,15 +2564,110 @@ function UpdateRow({
         <SecondaryButton onClick={() => void onClick()} disabled={busy}>
           {busy ? (
             <Loader className="size-3.5 animate-spin" aria-hidden />
-          ) : hasUpdate ? (
+          ) : action ? (
             <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
           ) : (
             <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
           )}
-          {hasUpdate ? "Download" : "Check for updates"}
+          {action ?? "Check for updates"}
         </SecondaryButton>
       </div>
     </Row>
+  );
+}
+
+function UpdateSourceRow() {
+  const [repo, setRepo] = useState(() => loadUpdateRepo() ?? "");
+  const [sourceDir, setSourceDir] = useState(() => loadUpdateSourceDir() ?? "");
+  const [detectedDir, setDetectedDir] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readBuildInfo().then((info) => {
+      if (!cancelled) setDetectedDir(info?.sourceDir ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const commitRepo = () => {
+    try {
+      setRepo(saveUpdateRepo(repo) ?? "");
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const commitSourceDir = () => {
+    setSourceDir(saveUpdateSourceDir(sourceDir) ?? "");
+  };
+
+  const inputClass =
+    "min-w-0 flex-1 bg-transparent font-mono text-[12px] text-content outline-none placeholder:text-content/35";
+
+  return (
+    <Row
+      id="update-source"
+      label="Update source"
+      description={
+        error ??
+        `Releases come from ${repo || DEFAULT_UPDATE_REPOS.join(", falling back to ")}. Source updates fast-forward, rebuild, and reinstall ${
+          sourceDir || detectedDir || "the checkout this build came from"
+        }.`
+      }
+    >
+      <div className="flex w-56 max-w-full flex-col gap-1.5">
+        <label className="flex h-7 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
+          <input
+            value={repo}
+            onChange={(event) => setRepo(event.target.value)}
+            onBlur={commitRepo}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitRepo();
+            }}
+            placeholder={DEFAULT_UPDATE_REPOS[0]}
+            aria-label="Release repository"
+            spellCheck={false}
+            autoComplete="off"
+            className={inputClass}
+          />
+        </label>
+        <label className="flex h-7 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
+          <input
+            value={sourceDir}
+            onChange={(event) => setSourceDir(event.target.value)}
+            onBlur={commitSourceDir}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitSourceDir();
+            }}
+            placeholder={detectedDir ?? "~/src/irgatos"}
+            aria-label="Source checkout"
+            spellCheck={false}
+            autoComplete="off"
+            className={inputClass}
+          />
+        </label>
+      </div>
+    </Row>
+  );
+}
+
+function SettingsVersionBadge() {
+  const build = useAppBuild();
+  if (build.currentVersion === "…") return null;
+  const commit = shortCommit(build.currentCommit);
+  return (
+    <button
+      type="button"
+      onClick={() => void runUpdateFlow(true)}
+      title={`Irgatos ${formatVersion(build.currentVersion)}${commit ? ` (${commit})` : ""}. Check for updates`}
+      className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] text-content/40 hover:bg-content/10 hover:text-content"
+    >
+      {formatVersion(build.currentVersion)}
+    </button>
   );
 }
 
@@ -2226,7 +3046,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         description={
           glassDisabled
             ? "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved."
-            : "How much of the desktop shows through MonoCode. Blur costs more to composite the higher it goes."
+            : "How much of the desktop shows through Irgatos. Blur costs more to composite the higher it goes."
         }
       >
         <Row
@@ -3038,7 +3858,7 @@ function ProviderBinaryControl({
               />
               <p className="mt-1.5 text-[10px] text-content/40">
                 Enter the absolute path to the CLI executable. Changes apply
-                after restarting MonoCode.
+                after restarting Irgatos.
               </p>
               {error ? (
                 <span
@@ -3299,8 +4119,8 @@ function ProvidersPage({
         }
         description={
           project
-            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for MonoCode.`
-            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for MonoCode and apply to every project."
+            ? `These defaults apply to ${projectName(project)} only. A provider with Show in picker off is also kept out of new conversations started in this project. CLI paths remain global for Irgatos.`
+            : "A provider is listed as installed once its CLI is found on your PATH. Uninstalled CLIs stay listed but are left out of the model picker, as are installed ones with Show in picker off. The model beside a provider is what its new conversations start with; Use by default picks the provider itself. CLI paths are global for Irgatos and apply to every project."
         }
       >
         {HARNESSES.map((harness) => {
@@ -4031,7 +4851,7 @@ function formatDate(value: number): string {
   }
 }
 
-/** Monos on or off, and each Mono the user has. */
+/** Irgats on or off, and each Irgat the user has. */
 function MonosPage() {
   const enabled = useSyncExternalStore(
     subscribeMonosEnabled,
@@ -4039,31 +4859,31 @@ function MonosPage() {
     () => true,
   );
   const menuBarIcon = useSyncExternalStore(
-    subscribeMonoMenuBarIcon,
-    loadMonoMenuBarIcon,
+    subscribeIrgatMenuBarIcon,
+    loadIrgatMenuBarIcon,
     () => true,
   );
   const railPinned = useRailMonosPinned();
-  const snapshot = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  const monos = useMemo(() => listMonos(), [snapshot]);
+  const snapshot = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const irgats = useMemo(() => listIrgats(), [snapshot]);
 
   return (
     <>
-      <Group title="Monos">
+      <Group title="Irgats">
         <Row
-          id="monos-enabled"
-          label="Show monos"
+          id="irgats-enabled"
+          label="Show irgats"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show monos" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle label="Show irgats" on={enabled} onChange={saveMonosEnabled} />
         </Row>
         <Row
-          id="rail-monos-pinned"
-          label="Pin monos to the icon rail"
-          description="When the project rail is collapsed to icons, show each Mono at the top of the rail, above a divider, instead of inside the project picker."
+          id="rail-irgats-pinned"
+          label="Pin irgats to the icon rail"
+          description="When the project rail is collapsed to icons, show each Irgat at the top of the rail, above a divider, instead of inside the project picker."
         >
           <Toggle
-            label="Pin monos to the icon rail"
+            label="Pin irgats to the icon rail"
             on={railPinned}
             onChange={saveRailMonosPinned}
             disabled={!enabled}
@@ -4071,37 +4891,44 @@ function MonosPage() {
         </Row>
         {IS_MAC && (
           <Row
-            id="mono-menu-bar-icon"
+            id="irgat-menu-bar-icon"
             label="Menu bar icon"
-            description="Chat with a Mono or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
+            description="Chat with a Irgat or open the quick composer from the macOS menu bar. Turn this off to hide the icon."
           >
             <Toggle
               label="Menu bar icon"
               on={menuBarIcon}
-              onChange={saveMonoMenuBarIcon}
+              onChange={saveIrgatMenuBarIcon}
             />
           </Row>
         )}
       </Group>
       <Group
-        id="mono-list"
-        title="Your monos"
-        description="Choose whether new sessions started by each Mono appear in the sidebar. Hidden sessions remain saved and can be opened from the Mono's chat. Add a Mono with the plus on the rail and choose its projects from its details."
+        id="irgat-list"
+        title="Your irgats"
+        description="Choose whether new sessions started by each Irgat appear in the sidebar. Hidden sessions remain saved and can be opened from the Irgat's chat. Add a Irgat with the plus on the rail and choose its projects from its details."
       >
-        {monos.length ? (
-          monos.map((mono) => <MonoRow key={mono.id} mono={mono} />)
+        {irgats.length ? (
+          irgats.map((irgat) => <IrgatRow key={irgat.id} irgat={irgat} />)
         ) : (
           <p className="px-4 py-3.5 text-[12px] text-content/45">
-            No monos yet.
+            No irgats yet.
           </p>
         )}
       </Group>
+      <section
+        id={settingDomId("irgat-lightpanda")}
+        data-setting-id="irgat-lightpanda"
+        className="pt-8"
+      >
+        <LightpandaSettings variant="sidecar" />
+      </section>
     </>
   );
 }
 
-function MonoRow({ mono }: { mono: Mono }) {
-  const look = monoLook(mono);
+function IrgatRow({ irgat }: { irgat: Irgat }) {
+  const look = irgatLook(irgat);
   return (
     <Row
       label={
@@ -4117,30 +4944,30 @@ function MonoRow({ mono }: { mono: Mono }) {
       }
       description={
         look.projects.length
-          ? `Works on ${monoProjectsPhrase(look.projects)}`
+          ? `Works on ${irgatProjectsPhrase(look.projects)}`
           : "No projects yet"
       }
     >
       <span className="text-[12px] leading-5 text-content/50">
-        Show Mono spawned session on the sidebar
+        Show Irgat spawned session on the sidebar
       </span>
       <Toggle
         label={`Show sessions started by ${look.name} in sidebar`}
-        on={mono.showStartedSessionsInSidebar === true}
+        on={irgat.showStartedSessionsInSidebar === true}
         onChange={(on) =>
-          updateMono(mono.id, (entry) => ({
+          updateIrgat(irgat.id, (entry) => ({
             ...entry,
             showStartedSessionsInSidebar: on,
           }))
         }
       />
       <ConfirmReset
-        label="Reset Mono"
+        label="Reset Irgat"
         title={`Reset ${look.name} to its defaults?`}
-        body={`Its soul goes back to the default and its name to ${defaultMonoName(look.mascot)}. Changes to its soul can't be recovered.`}
+        body={`Its soul goes back to the default and its name to ${defaultIrgatName(look.mascot)}. Changes to its soul can't be recovered.`}
         kept="Its conversation, projects, memory and habits will be kept."
-        failure="Could not reset the Mono."
-        onConfirm={() => resetMonoDefaults(mono.id)}
+        failure="Could not reset the Irgat."
+        onConfirm={() => resetIrgatDefaults(irgat.id)}
       >
         {(open, ref) => (
           <button

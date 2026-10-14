@@ -13,6 +13,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: (...args: unknown[]) => ask(...args),
 }));
+vi.mock("./ComputerUseSettings", () => ({
+  ComputerUseSettings: () => null,
+}));
+vi.mock("./LightpandaSettings", () => ({
+  LightpandaSettings: () => null,
+}));
 
 let container: HTMLDivElement;
 let root: Root;

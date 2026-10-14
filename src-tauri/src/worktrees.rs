@@ -20,6 +20,10 @@ pub struct Worktree {
     pub dirty: Option<bool>,
     pub unpushed: Option<u64>,
     pub session_ids: Vec<String>,
+    /// `PORT` for processes in this linked worktree, once assigned.
+    pub port: Option<u16>,
+    /// Setup command started in the background for a newly created worktree.
+    pub setup_command: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -146,6 +150,9 @@ pub fn git_worktrees(cwd: String, store: State<'_, SessionStore>) -> Result<Work
             tree.unpushed = git(path, &["rev-list", "--count", "HEAD", "--not", "--remotes"])
                 .ok()
                 .and_then(|count| count.trim().parse().ok());
+            if !tree.is_main {
+                tree.port = crate::worktree_lifecycle::assigned_port(path);
+            }
         }
     }
     Ok(Worktrees {
@@ -231,13 +238,18 @@ fn create(root: &Path, branch: &str, base: &str, existing: bool) -> Result<Workt
 
 #[tauri::command(async)]
 pub async fn git_worktree_create(
+    app: tauri::AppHandle,
     cwd: String,
     branch: String,
     base: String,
     existing: bool,
 ) -> Result<Worktree, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        create(&expand_home(&cwd), &branch, &base, existing)
+        let mut tree = create(&expand_home(&cwd), &branch, &base, existing)?;
+        let path = PathBuf::from(&tree.path);
+        tree.port = crate::worktree_lifecycle::ensure_port(&path);
+        tree.setup_command = crate::worktree_lifecycle::start_setup(app, &path);
+        Ok(tree)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -412,7 +424,7 @@ fn rename_branch(root: &Path, path: &Path, branch: &str) -> Result<Worktree, Str
         return Err("The main working copy cannot be renamed here".into());
     }
     let current = tree.branch.as_deref().ok_or("The worktree is detached")?;
-    if !current.starts_with("mc/") && !current.starts_with("monocode/") {
+    if !current.starts_with("mc/") && !current.starts_with("irgat/") {
         return Err("Only automatically created worktree branches can be renamed".into());
     }
     if current == branch {
@@ -785,7 +797,7 @@ mod tests {
     }
     fn repo() -> Repo {
         let dir =
-            std::env::temp_dir().join(format!("monocode-worktree-test-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("irgat-worktree-test-{}", uuid::Uuid::new_v4()));
         let root = dir.join("repo");
         std::fs::create_dir_all(&root).unwrap();
         git_checked(&root, &["init", "-b", "main"]).unwrap();

@@ -1,7 +1,8 @@
+import "./shared/lib/legacyStorageBoot";
 import React, { useLayoutEffect } from "react";
 import ReactDOM from "react-dom/client";
-// TEMPORARY: remove with src/debugMonoScroll.ts.
-if (import.meta.env.DEV) void import("./debugMonoScroll");
+// TEMPORARY: remove with src/debugIrgatScroll.ts.
+if (import.meta.env.DEV) void import("./debugIrgatScroll");
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -24,7 +25,7 @@ import { initializeProviderBinaryPaths } from "./features/providers/model/provid
 import "./features/connections/model/remoteCommands";
 import "./styles/index.css";
 
-performance.mark("monocode:bootstrap");
+performance.mark("irgat:bootstrap");
 // Let local boot IPC overlap loading/evaluating the workspace UI.
 const appLoaded = import("./app/App");
 
@@ -49,10 +50,10 @@ function dismissBootSplash() {
     splash.classList.add("boot-splash-out");
     window.setTimeout(() => {
       splash.remove();
-      performance.mark("monocode:ui-ready");
-      performance.measure("monocode:navigation-to-ui", {
+      performance.mark("irgat:ui-ready");
+      performance.measure("irgat:navigation-to-ui", {
         start: 0,
-        end: "monocode:ui-ready",
+        end: "irgat:ui-ready",
       });
     }, 180);
   };
@@ -101,7 +102,7 @@ void Promise.all([
     { windowTransfer, resumed, history, historyCwd },
     { default: App },
   ]) => {
-    performance.mark("monocode:workspace-ready");
+    performance.mark("irgat:workspace-ready");
     const installedUpdate = windowTransfer ? null : consumeInstalledUpdate();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>

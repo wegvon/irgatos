@@ -5,6 +5,7 @@ import {
 import {
   closeLeaf,
   isAgentTab,
+  isArtifactTab,
   isTerminalTab,
   leafIds,
   newTab,
@@ -145,19 +146,23 @@ function parseProjectReturnTargets(raw: unknown): ProjectReturnMemory {
   return memory;
 }
 
+const isLiveOnlyTab = (file: FilePaneTab) =>
+  isAgentTab(file) || isArtifactTab(file);
+
 /**
  * Agent tabs watch a live worker, and a run does not outlive the window that
- * started it. Dropping them in `sanitizeFile` would strand an empty pane and
- * cost the whole workspace tab on restore, so the pane is closed here instead.
+ * started it; artifact tabs read the live artifact registry. Dropping them in
+ * `sanitizeFile` would strand an empty pane and cost the whole workspace tab
+ * on restore, so the pane is closed here instead.
  */
 function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
   return tabs.flatMap((tab) => {
-    if (!tab.editorPanes.some((pane) => pane.files.some(isAgentTab)))
+    if (!tab.editorPanes.some((pane) => pane.files.some(isLiveOnlyTab)))
       return [tab];
     let remaining: WorkspaceTab | null = tab;
     const panes: EditorPane[] = [];
     for (const pane of tab.editorPanes) {
-      const files = pane.files.filter((file) => !isAgentTab(file));
+      const files = pane.files.filter((file) => !isLiveOnlyTab(file));
       if (files.length === pane.files.length) {
         panes.push(pane);
       } else if (files.length === 0) {

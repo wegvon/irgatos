@@ -15,7 +15,7 @@ import {
 const prefs = [
   {
     name: "show remaining usage",
-    key: "monocode.showRemainingUsage",
+    key: "irgat.showRemainingUsage",
     defaultValue: false,
     load: loadShowRemainingUsage,
     save: saveShowRemainingUsage,
@@ -23,7 +23,7 @@ const prefs = [
   },
   {
     name: "mask emails",
-    key: "monocode.maskEmails",
+    key: "irgat.maskEmails",
     defaultValue: true,
     load: loadMaskEmails,
     save: saveMaskEmails,
@@ -31,7 +31,7 @@ const prefs = [
   },
   {
     name: "composer autocorrect",
-    key: "monocode.composerAutocorrect",
+    key: "irgat.composerAutocorrect",
     defaultValue: true,
     load: loadComposerAutocorrect,
     save: saveComposerAutocorrect,

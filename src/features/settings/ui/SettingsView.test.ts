@@ -4,7 +4,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsView } from "./SettingsView";
+import {
+  loadAdhdState,
+  setAdhdForChat,
+} from "../../adhd/model/adhdMode";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import {
   SETTINGS_INDEX,
@@ -25,11 +30,11 @@ import {
 } from "../../sessions/model/session";
 import { saveMaskEmails, saveShowRemainingUsage } from "../model/displayPrefs";
 import {
-  createMono,
-  findMono,
-  monoLook,
-  updateMono,
-} from "../../monos/model/mono";
+  createIrgat,
+  findIrgat,
+  irgatLook,
+  updateIrgat,
+} from "../../irgats/model/irgat";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -42,6 +47,14 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+const live = vi.hoisted(() => ({
+  status: vi.fn(async () => ({ stored: false, env: null as string | null })),
+  save: vi.fn(async (_key: string) => true),
+}));
+vi.mock("../../../platform/tauri/liveVoice", () => ({
+  liveKeyStatus: live.status,
+  saveLiveKey: live.save,
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn(async () => true) }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "claude" || id === "cursor",
@@ -120,29 +133,29 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
-  it("saves each Mono's session visibility and restores it when settings reopen", async () => {
-    const mono = createMono();
-    const other = createMono();
+  it("saves each Irgat's session visibility and restores it when settings reopen", async () => {
+    const irgat = createIrgat();
+    const other = createIrgat();
     const toggle = (id: string) =>
       container.querySelector<HTMLButtonElement>(
-        `[role="switch"][aria-label="Show sessions started by ${monoLook(findMono(id)!).name} in sidebar"]`,
+        `[role="switch"][aria-label="Show sessions started by ${irgatLook(findIrgat(id)!).name} in sidebar"]`,
       )!;
-    await render("monos");
-    // Off until turned on: a Mono's sessions stay in its overview.
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("false");
+    await render("irgats");
+    // Off until turned on: a Irgat's sessions stay in its overview.
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
     expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
-    await act(async () => toggle(mono.id).click());
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("true");
-    expect(findMono(mono.id)?.showStartedSessionsInSidebar).toBe(true);
+    await act(async () => toggle(irgat.id).click());
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
+    expect(findIrgat(irgat.id)?.showStartedSessionsInSidebar).toBe(true);
     expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
     await render("general");
-    await render("monos");
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("true");
-    await act(async () => updateMono(mono.id, (entry) => ({
+    await render("irgats");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
+    await act(async () => updateIrgat(irgat.id, (entry) => ({
       ...entry,
       showStartedSessionsInSidebar: false,
     })));
-    expect(toggle(mono.id).getAttribute("aria-checked")).toBe("false");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
   });
 
   it("blurs account emails by default and hides them when settings reopen", async () => {
@@ -264,7 +277,7 @@ describe("settings pages", () => {
 
   it("shows background effect choices above scope when artwork is available", async () => {
     localStorage.setItem(
-      "monocode.chatBackgroundPath",
+      "irgat.chatBackgroundPath",
       "/app-data/backgrounds/chat-background.png",
     );
     await render("appearance");
@@ -287,7 +300,7 @@ describe("settings pages", () => {
       vi.fn(async () => ({ ok: false })),
     );
     await act(async () => (effect as HTMLButtonElement).click());
-    expect(localStorage.getItem("monocode.newThreadBackgroundEffect")).toBe(
+    expect(localStorage.getItem("irgat.newThreadBackgroundEffect")).toBe(
       "dither",
     );
     expect(effect.getAttribute("aria-checked")).toBe("true");
@@ -297,8 +310,8 @@ describe("settings pages", () => {
   });
 
   it("previews and restores Haze with the existing empty-chat visibility", async () => {
-    localStorage.setItem("monocode.chatBackgroundPath", "/background.png");
-    localStorage.setItem("monocode.chatBackgroundEmptyOpacity", "0.4");
+    localStorage.setItem("irgat.chatBackgroundPath", "/background.png");
+    localStorage.setItem("irgat.chatBackgroundEmptyOpacity", "0.4");
     await render("appearance");
 
     const option = container.querySelector<HTMLButtonElement>(
@@ -313,7 +326,7 @@ describe("settings pages", () => {
     expect(option.getAttribute("aria-checked")).toBe("true");
     expect(preview.style.opacity).toBe("0.4");
     expect(preview.querySelectorAll("span")).toHaveLength(2);
-    expect(localStorage.getItem("monocode.newThreadBackgroundEffect")).toBe(
+    expect(localStorage.getItem("irgat.newThreadBackgroundEffect")).toBe(
       "gradient-blur",
     );
 
@@ -474,7 +487,7 @@ describe("settings pages", () => {
     await save("OpenCode", "/opt/opencode/bin/opencode");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ),
     ).toEqual({
       codex: "/opt/codex/bin/codex",
@@ -500,7 +513,7 @@ describe("settings pages", () => {
     expect(container.textContent).not.toContain("/opt/codex/bin/codex");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBe("/opt/codex/bin/codex");
     await act(async () =>
@@ -517,7 +530,7 @@ describe("settings pages", () => {
     );
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBe("/opt/codex/bin/codex");
 
@@ -525,7 +538,7 @@ describe("settings pages", () => {
     await save("Codex", "");
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.providerBinaryPaths.v1") ?? "{}",
+        localStorage.getItem("irgat.providerBinaryPaths.v1") ?? "{}",
       ).codex,
     ).toBeUndefined();
     await act(async () => details.click());
@@ -668,7 +681,7 @@ describe("settings pages", () => {
     await act(async () => topBar?.click());
 
     expect(topBar?.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.fileTabMode")).toBe("workspace");
+    expect(localStorage.getItem("irgat.fileTabMode")).toBe("workspace");
   });
 
   it("offers tab animations as an opt-in", async () => {
@@ -680,7 +693,119 @@ describe("settings pages", () => {
     expect(control.getAttribute("aria-checked")).toBe("false");
     await act(async () => control.click());
     expect(control.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.tabAnimationsEnabled")).toBe("1");
+    expect(localStorage.getItem("irgat.tabAnimationsEnabled")).toBe("1");
+  });
+
+  it("finds a Gemini key in the environment and saves one typed in", async () => {
+    live.status.mockResolvedValueOnce({ stored: false, env: "GEMINI_API_KEY" });
+    await render("voice");
+    const row = container.querySelector('[data-setting-id="voice-live-key"]')!;
+    expect(row.textContent).toContain("Using GEMINI_API_KEY from your environment");
+    const input = row.querySelector<HTMLInputElement>('input[aria-label="Gemini API key"]')!;
+    const props = Object.entries(input).find(([key]) =>
+      key.startsWith("__reactProps"),
+    )![1];
+    await act(async () => props.onChange({ target: { value: " AIza-typed " } }));
+    live.status.mockResolvedValueOnce({ stored: true, env: "GEMINI_API_KEY" });
+    const save = [...row.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    )!;
+    await act(async () => save.click());
+    expect(live.save).toHaveBeenCalledWith("AIza-typed");
+    expect(row.textContent).toContain("Saved");
+    expect(row.textContent).toContain("wins over the environment");
+  });
+
+  it("keeps the Live voice choices", async () => {
+    await render("voice");
+    const bargeIn = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Interrupt when I talk"]',
+    )!;
+    expect(bargeIn.getAttribute("aria-checked")).toBe("true");
+    await act(async () => bargeIn.click());
+    expect(JSON.parse(localStorage.getItem("irgat.liveVoice")!)).toMatchObject({
+      localBargeIn: false,
+      voice: "Puck",
+    });
+    const model = container.querySelector('[data-setting-id="voice-live-model"]')!;
+    const props = () => {
+      const other = model.querySelector<HTMLInputElement>(
+        'input[aria-label="Other Live model"]',
+      )!;
+      return Object.entries(other).find(([key]) =>
+        key.startsWith("__reactProps"),
+      )![1];
+    };
+    await act(async () => props().onChange({ target: { value: "gemini-live-next" } }));
+    await act(async () => props().onBlur());
+    expect(JSON.parse(localStorage.getItem("irgat.liveVoice")!).model).toBe(
+      "models/gemini-live-next",
+    );
+    expect(model.textContent).toContain("gemini-live-next");
+  });
+
+  it("turns ADHD mode on for every chat and keeps the choice", async () => {
+    await render("adhd");
+    const control = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[role="switch"][aria-label="ADHD mode"]',
+      )!;
+    expect(control().getAttribute("aria-checked")).toBe("false");
+    await act(async () => control().click());
+    expect(control().getAttribute("aria-checked")).toBe("true");
+    expect(JSON.parse(localStorage.getItem("irgat.adhdMode")!)).toMatchObject({
+      enabled: true,
+    });
+    await render("general");
+    await render("adhd");
+    expect(control().getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("ties the next step to the status bar switch and resets chat exceptions", async () => {
+    setAdhdForChat("chat-a", true);
+    await render("adhd");
+    const toggle = (label: string) =>
+      container.querySelector<HTMLButtonElement>(
+        `[role="switch"][aria-label="${label}"]`,
+      )!;
+    expect(toggle("Next step in status bar").disabled).toBe(false);
+    await act(async () => toggle("Show in status bar").click());
+    expect(toggle("Next step in status bar").disabled).toBe(true);
+
+    const chats = container.querySelector('[data-setting-id="adhd-chats"]')!;
+    expect(chats.textContent).toContain("/i-have-adhd");
+    expect(chats.textContent).toContain("stop adhd mode");
+    expect(chats.textContent).toContain("1 chat has its own setting.");
+    const reset = [...chats.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reset chats",
+    )!;
+    await act(async () => reset.click());
+    expect(chats.textContent).toContain("No chat has its own setting.");
+    expect(loadAdhdState().chats).toEqual({});
+  });
+
+  it("credits i-have-adhd and shows its rules", async () => {
+    await render("adhd");
+    const rules = container.querySelector('[data-setting-id="adhd-rules"]')!;
+    expect(rules.textContent).toContain("i-have-adhd 0.4.1 by Ayoub Ghriss");
+    expect(rules.textContent).toContain("MIT license");
+    expect(rules.querySelectorAll("li")).toHaveLength(10);
+    expect(container.querySelector('[data-testid="adhd-ruleset"]')).toBeNull();
+    const show = [...rules.querySelectorAll("button")].find(
+      (button) => button.textContent === "Show the full ruleset",
+    )!;
+    await act(async () => show.click());
+    expect(
+      container.querySelector('[data-testid="adhd-ruleset"]')?.textContent,
+    ).toContain("### 1. Lead with the next action");
+    const github = [...rules.querySelectorAll("button")].find(
+      (button) => button.textContent === "View on GitHub",
+    )!;
+    vi.mocked(openUrl).mockResolvedValueOnce(undefined);
+    await act(async () => github.click());
+    expect(openUrl).toHaveBeenCalledWith(
+      "https://github.com/ayghri/i-have-adhd",
+    );
   });
 
   it("defaults to the icon rail and lets users hide it", async () => {
@@ -698,7 +823,7 @@ describe("settings pages", () => {
     await act(async () => hidden?.click());
 
     expect(hidden?.getAttribute("aria-checked")).toBe("true");
-    expect(localStorage.getItem("monocode.collapsedProjectRailMode")).toBe(
+    expect(localStorage.getItem("irgat.collapsedProjectRailMode")).toBe(
       "hidden",
     );
 
@@ -732,7 +857,7 @@ describe("settings pages", () => {
     expect(option).toBeTruthy();
     await act(async () => option!.click());
 
-    expect(localStorage.getItem("monocode.uiScale")).toBe("1.5");
+    expect(localStorage.getItem("irgat.uiScale")).toBe("1.5");
     expect(trigger.getAttribute("aria-label")).toBe("Interface scale: 150%");
     document.documentElement.style.removeProperty("zoom");
   });
@@ -947,7 +1072,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Control+Shift+KeyM"}}',
     );
     expect(input.value).toBe("Ctrl+Shift+M");
@@ -984,7 +1109,7 @@ describe("settings search", () => {
         }),
       ),
     );
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Command+Delete"}}',
     );
   });
@@ -1036,7 +1161,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"shortcut":"Option+KeyM"}}',
     );
     expect(input.value).toBe("Alt+M");
@@ -1059,7 +1184,7 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBe(
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBe(
       '{"App: Search":{"disabled":true}}',
     );
     expect(input.value).toBe("Disabled");
@@ -1071,7 +1196,7 @@ describe("settings search", () => {
         )!
         .click(),
     );
-    expect(localStorage.getItem("monocode.keybindingOverrides")).toBeNull();
+    expect(localStorage.getItem("irgat.keybindingOverrides")).toBeNull();
   });
 
   it("reveals a setting on the current page", async () => {
@@ -1099,11 +1224,11 @@ describe("providers scope inheritance", () => {
 
   it("inherits the global default provider and picker visibility in project scope", async () => {
     localStorage.setItem(
-      "monocode.lastModel",
+      "irgat.lastModel",
       JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
     );
     localStorage.setItem(
-      "monocode.hiddenPickerProviders",
+      "irgat.hiddenPickerProviders",
       JSON.stringify(["cursor"]),
     );
     await render("providers");

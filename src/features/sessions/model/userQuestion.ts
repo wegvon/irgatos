@@ -5,6 +5,8 @@ export const CUSTOM_OPTION_ID = "__custom__";
 export type UserQuestionOption = {
   id: string;
   label: string;
+  /** Original wire label when `label` was translated for display. */
+  wireLabel?: string;
   description?: string;
 };
 
@@ -12,6 +14,8 @@ export type UserQuestion = {
   id: string;
   header?: string;
   prompt: string;
+  /** Original wire prompt when `prompt` was translated for display. */
+  wirePrompt?: string;
   multiSelect: boolean;
   allowCustom: boolean;
   options: UserQuestionOption[];
@@ -116,9 +120,189 @@ export function selectedAnswerLabels(
   return selected.flatMap((id) => {
     if (isCustomSelection(question, id)) return custom ? [custom] : [];
     const option = question.options.find((item) => item.id === id);
-    const label = option?.label.trim() || id.trim();
+    const label = (option?.wireLabel ?? option?.label)?.trim() || id.trim();
     return label ? [label] : [];
   });
+}
+
+const PROXY_SESSION_INIT_TOOL_ID_RE =
+  /^(?:toolu_(?:cc_)?session_init_|call_(?:codex|oc|wb|dsh)_session_init_)/;
+
+const PROXY_BYPASS_WIRE_LABELS = new Set([
+  "\u5426\uff0c\u672c\u6b21\u4e0d\u5173\u8054", // No, skip for this session
+  "\u8df3\u8fc7\uff0c\u4e0d\u5173\u8054", // Skip without linking
+  "\u4e0d\u9009\u62e9 Agent", // No Agent
+  "\u4e0d\u5173\u8054 Task", // No Task
+  "\u4e0d\u6253\u6807\u7b7e", // No tags
+]);
+
+const PROXY_HEADER_TRANSLATIONS: Record<string, string> = {
+  "\u5173\u8054\u8d44\u4ea7": "Link Team Assets",
+  "\u9009\u62e9\u56e2\u961f": "Select Team",
+  "\u5173\u8054\u914d\u7f6e": "Asset Configuration",
+  "\u9009\u62e9 Agent": "Select Agent",
+  "\u9009\u62e9 Task": "Select Task",
+  "\u5bf9\u8bdd\u6807\u7b7e": "Session Tags",
+};
+
+const PROXY_OPTION_LABEL_TRANSLATIONS: Record<string, string> = {
+  "\u662f\uff0c\u5173\u8054\u8d44\u4ea7": "Yes, link assets",
+  "\u662f\uff0c\u5173\u8054\u56e2\u961f\u8d44\u4ea7": "Yes, link assets",
+  "\u5426\uff0c\u672c\u6b21\u4e0d\u5173\u8054": "No, skip for this session",
+  "\u8df3\u8fc7\uff0c\u4e0d\u5173\u8054": "Skip without linking",
+  "\u4e0d\u9009\u62e9 Agent": "No Agent",
+  "\u4e0d\u5173\u8054 Task": "No Task",
+  "\u4e0d\u6253\u6807\u7b7e": "No tags",
+};
+
+const PROXY_OPTION_DESCRIPTION_TRANSLATIONS: Record<string, string> = {
+  "\u9009\u62e9 Team / Agent / Task\uff0c\u6ce8\u5165\u56e2\u961f\u4e0a\u4e0b\u6587":
+    "Select Team / Agent / Task to inject team context",
+  "\u4e0d\u6ce8\u5165\u4efb\u4f55\u5185\u5bb9\uff0c\u76f4\u63a5\u653e\u884c":
+    "Continue without injecting any team context",
+  "\u672c\u6b21\u4e0d\u6ce8\u5165\u4efb\u4f55\u5185\u5bb9\uff0c\u76f4\u63a5\u653e\u884c":
+    "Continue without injecting any team context",
+  "\u672c\u6b21\u4e0d\u6ce8\u5165\u56e2\u961f\u8d44\u4ea7\uff0c\u76f4\u63a5\u5f00\u59cb\u5bf9\u8bdd":
+    "Start the session without injecting team assets",
+  "\u4e0d\u6ce8\u5165 Agent Profile": "Do not inject an Agent Profile",
+  "\u4e0d\u6ce8\u5165 Task \u4e0a\u4e0b\u6587": "Do not inject Task context",
+  "\u8df3\u8fc7\u6807\u7b7e\u8bbe\u7f6e": "Skip tag selection",
+};
+
+function translateQuestionHeader(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return PROXY_HEADER_TRANSLATIONS[raw] ?? raw;
+}
+
+function translateQuestionPrompt(raw: string | undefined): {
+  prompt?: string;
+  wirePrompt?: string;
+} {
+  if (!raw) return {};
+  const stripped = raw.replace(/^\[MemoryProxy\]\s*/i, "");
+  let translated = raw;
+  if (
+    stripped.includes(
+      "\u672c\u6b21\u5bf9\u8bdd\u662f\u5426\u8981\u5173\u8054\u56e2\u961f\u8d44\u4ea7\uff1f",
+    )
+  ) {
+    translated =
+      "Link team assets to this session? (Choose the best matching option; custom input is not supported. If skipped, no team assets will be injected into this session.)";
+  } else if (
+    stripped.includes(
+      "\u8bf7\u9009\u62e9\u8981\u5173\u8054\u7684 Team\uff08\u56e2\u961f\uff09",
+    )
+  ) {
+    translated =
+      "Select the Team to link to this session (choose the best matching option; if skipped, no team assets will be injected).";
+  } else if (
+    stripped.includes(
+      "\u8bf7\u9009\u62e9\u8981\u6ce8\u5165\u7684 Agent Profile",
+    )
+  ) {
+    translated = "Select the Agent Profile to inject into this session.";
+  } else if (
+    stripped.includes(
+      "\u8bf7\u9009\u62e9\u8981\u5173\u8054\u7684 Task\uff08\u53ef\u591a\u9009\uff09",
+    )
+  ) {
+    translated =
+      "Select the Tasks to link to this session (multiple selection allowed).";
+  } else if (
+    stripped.includes(
+      "\u8bf7\u4e3a\u672c\u6b21\u5bf9\u8bdd\u9009\u62e9\u6807\u7b7e\uff08\u53ef\u591a\u9009",
+    )
+  ) {
+    translated =
+      "Select tags for this session (multiple selection allowed).";
+  } else if (PROXY_HEADER_TRANSLATIONS[stripped]) {
+    translated = PROXY_HEADER_TRANSLATIONS[stripped];
+  }
+  return translated !== raw
+    ? { prompt: translated, wirePrompt: raw }
+    : { prompt: raw };
+}
+
+function translateOptionLabel(raw: string): {
+  label: string;
+  wireLabel?: string;
+} {
+  const translated = PROXY_OPTION_LABEL_TRANSLATIONS[raw];
+  return translated && translated !== raw
+    ? { label: translated, wireLabel: raw }
+    : { label: raw };
+}
+
+function translateOptionDescription(
+  raw: string | undefined,
+): string | undefined {
+  if (!raw) return undefined;
+  const direct = PROXY_OPTION_DESCRIPTION_TRANSLATIONS[raw];
+  if (direct) return direct;
+  const countsMatch = raw.match(
+    /^\u5305\u542b\s*(\d+)\s*\u4e2a\s*Agent[\u3001,\uff0c]\s*(\d+)\s*\u4e2a\s*Task$/,
+  );
+  if (countsMatch) {
+    return `${countsMatch[1]} Agents, ${countsMatch[2]} Tasks`;
+  }
+  return raw;
+}
+
+/**
+ * True when a tool call ID belongs to TencentDB-Agent-Memory (`MemoryProxy`)
+ * synthetic session-initialization interception (`toolu_cc_session_init_*`, etc.).
+ */
+export function isProxySessionInitToolId(callId: string | undefined): boolean {
+  return typeof callId === "string" && PROXY_SESSION_INIT_TOOL_ID_RE.test(callId.trim());
+}
+
+/**
+ * True when a question batch comes from an upstream `MemoryProxy` session-init
+ * interception rather than the model.
+ */
+export function isProxySessionInitQuestions(
+  questions: readonly UserQuestion[],
+  callId?: string,
+): boolean {
+  if (isProxySessionInitToolId(callId)) return true;
+  if (questions.length === 0) return false;
+  return questions.some(
+    (question) =>
+      question.wirePrompt !== undefined ||
+      question.options.some((option) => option.wireLabel !== undefined),
+  );
+}
+
+export function isProxySessionInitInput(
+  input: unknown,
+  callId?: string,
+): boolean {
+  if (isProxySessionInitToolId(callId)) return true;
+  return isProxySessionInitQuestions(questionsFromUnknown(input), callId);
+}
+
+/**
+ * Build an automatic decline/bypass reply for `MemoryProxy` session-init prompts
+ * so proxy-intercepted turns (including cross-CLI handoffs) pass straight through
+ * to the model without interrupting the user.
+ */
+export function buildProxySessionInitBypassReply(
+  questions: readonly UserQuestion[],
+): UserQuestionReply {
+  const answers: Record<string, string[]> = {};
+  for (const question of questions) {
+    const bypassOption =
+      question.options.find(
+        (option) =>
+          (option.wireLabel && PROXY_BYPASS_WIRE_LABELS.has(option.wireLabel)) ||
+          /^(?:no\b|skip\b)/i.test(option.label.trim()),
+      ) ?? question.options[question.options.length - 1];
+    if (bypassOption) {
+      answers[question.id] = [bypassOption.id];
+    }
+  }
+  if (Object.keys(answers).length === 0) return { kind: "skipped" };
+  return { kind: "answered", answers };
 }
 
 export function isCustomSelection(
@@ -141,15 +325,17 @@ function questionFromUnknown(
 ): UserQuestion | null {
   const rec = asRecord(value);
   if (!rec) return null;
-  const prompt =
+  const rawPrompt =
     stringField(rec, "question") ??
     stringField(rec, "prompt") ??
     stringField(rec, "text") ??
     stringField(rec, "header");
+  const { prompt, wirePrompt } = translateQuestionPrompt(rawPrompt);
   const options = optionsFromUnknown(rec.options);
   const allowCustom = customAllowed(rec, options);
   if (!prompt && options.length === 0 && !allowCustom) return null;
-  const header = stringField(rec, "header") ?? stringField(rec, "title");
+  const rawHeader = stringField(rec, "header") ?? stringField(rec, "title");
+  const header = translateQuestionHeader(rawHeader);
   return {
     id: uniqueId(
       stringField(rec, "id") ?? prompt ?? header ?? `q${index + 1}`,
@@ -157,6 +343,7 @@ function questionFromUnknown(
     ),
     ...(header ? { header } : {}),
     prompt: prompt || header || `Question ${index + 1}`,
+    ...(wirePrompt ? { wirePrompt } : {}),
     multiSelect:
       rec.multiSelect === true ||
       rec.allowMultiple === true ||
@@ -171,18 +358,27 @@ function optionsFromUnknown(value: unknown): UserQuestionOption[] {
   const usedIds = new Set<string>();
   return value.flatMap((item) => {
     if (typeof item === "string" && item.trim()) {
-      const label = item.trim();
-      return [{ id: uniqueId(label, usedIds), label }];
+      const { label, wireLabel } = translateOptionLabel(item.trim());
+      return [
+        {
+          id: uniqueId(label, usedIds),
+          label,
+          ...(wireLabel ? { wireLabel } : {}),
+        },
+      ];
     }
     const rec = asRecord(item);
     if (!rec) return [];
-    const label =
+    const rawLabel =
       stringField(rec, "label") ??
       stringField(rec, "value") ??
       stringField(rec, "text") ??
       stringField(rec, "id");
-    if (!label) return [];
-    const description = stringField(rec, "description") ?? stringField(rec, "detail");
+    if (!rawLabel) return [];
+    const { label, wireLabel } = translateOptionLabel(rawLabel);
+    const description = translateOptionDescription(
+      stringField(rec, "description") ?? stringField(rec, "detail"),
+    );
     return [
       {
         id: uniqueId(
@@ -193,6 +389,7 @@ function optionsFromUnknown(value: unknown): UserQuestionOption[] {
           usedIds,
         ),
         label,
+        ...(wireLabel ? { wireLabel } : {}),
         ...(description ? { description } : {}),
       },
     ];

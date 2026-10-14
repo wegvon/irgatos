@@ -219,12 +219,12 @@ describe("UsageProviderChip", () => {
             saveShowRemainingUsage(remaining);
           } else {
             localStorage.setItem(
-              "monocode.showRemainingUsage",
+              "irgat.showRemainingUsage",
               remaining ? "1" : "0",
             );
             window.dispatchEvent(
               new StorageEvent("storage", {
-                key: "monocode.showRemainingUsage",
+                key: "irgat.showRemainingUsage",
               }),
             );
           }

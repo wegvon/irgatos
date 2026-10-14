@@ -1,10 +1,10 @@
 import type { Block } from "./session";
 import {
-  groupMonoChatTurns,
-  groupMonoTurnItems,
+  groupIrgatChatTurns,
+  groupIrgatTurnItems,
   groupTurnItems,
   groupTurns,
-  monoTurnRuns,
+  irgatTurnRuns,
   type TurnItem,
 } from "./transcriptActivity";
 
@@ -25,7 +25,7 @@ export class TranscriptTurnCache {
       return this.turns;
     const previous = new Map(this.turns.map((turn) => [turn[0].id, turn]));
     const grouped = inlineWork
-      ? groupMonoChatTurns(blocks, managed)
+      ? groupIrgatChatTurns(blocks, managed)
       : groupTurns(blocks, managed);
     const next = grouped.map((turn) => {
       const before = previous.get(turn[0].id);
@@ -73,11 +73,11 @@ export class TranscriptTurnCache {
       blocks.filter(
         (block) => !block.orchestration && (managed || !block.internal),
       );
-    // Each run in a merged Mono turn folds on its own: an earlier answer is
+    // Each run in a merged Irgat turn folds on its own: an earlier answer is
     // not narration for the work that the next run went on to do.
     const items = inlineWork
-      ? monoTurnRuns(turn).flatMap((run, index, runs) =>
-          groupMonoTurnItems(visible(run), {
+      ? irgatTurnRuns(turn).flatMap((run, index, runs) =>
+          groupIrgatTurnItems(visible(run), {
             live: !settled && index === runs.length - 1,
             undeliveredMessageIds,
           }),

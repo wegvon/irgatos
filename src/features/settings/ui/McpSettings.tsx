@@ -25,6 +25,9 @@ import {
   Check,
 } from "../../../shared/ui/icons";
 import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
+import { isComputerUseServer } from "../model/computerUse";
+import { ComputerUseSettings } from "./ComputerUseSettings";
+import { LightpandaSettings } from "./LightpandaSettings";
 import {
   getCachedMcpSettings,
   loadMcpSettings,
@@ -494,6 +497,20 @@ function McpConnections({
           </button>
         </div>
       </div>
+      <ComputerUseSettings
+        cwd={cwd}
+        servers={servers}
+        loading={loading}
+        onChanged={refresh}
+      />
+      <div id="setting-lightpanda" data-setting-id="lightpanda">
+        <LightpandaSettings
+          cwd={cwd}
+          servers={servers}
+          loading={loading}
+          onChanged={refresh}
+        />
+      </div>
       <div
         role="group"
         className="inline-flex max-w-full flex-wrap gap-0.5 rounded-md border border-content/10 p-0.5 text-[12px]"
@@ -552,8 +569,13 @@ function McpConnections({
                 <ProviderIcon provider={server.provider} />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-content">
+                <div className="flex items-center gap-2 text-[13px] font-medium text-content">
                   {server.name}
+                  {isComputerUseServer(server) ? (
+                    <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-px text-[10px] font-normal text-amber-300">
+                      Controls your desktop
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-1 text-[12px] leading-relaxed text-content/45">
                   {MCP_PROVIDER_LABELS[server.provider]} · {server.scope} ·{" "}

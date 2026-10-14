@@ -19,6 +19,7 @@ import {
 } from "../src/integrations/harness/core/child";
 import { HostChildBackend } from "./child-backend";
 import { HostStore } from "./store";
+import { importLegacyHostData, LEGACY_HOST_DIR } from "./legacy-data";
 import { acquireHostOwner } from "./owner";
 import { HostEngine } from "./engine";
 import { hostProviders } from "./providers";
@@ -47,7 +48,7 @@ const option = (name: string, fallback: string): string => {
   return args[i + 1];
 };
 const directory = resolve(
-  option("data-dir", join(homedir(), ".monocode-host")),
+  option("data-dir", join(homedir(), ".irgat-host")),
 );
 const port = Number(option("port", "3774"));
 const statePath = join(directory, "running.json");
@@ -75,7 +76,7 @@ async function main() {
     return;
   }
   if (command === "help" || command === "--help") {
-    console.log(`MonoCode Host (experimental; Node 24+; Windows/Linux/macOS)
+    console.log(`Irgatos Host (experimental; Node 24+; Windows/Linux/macOS)
   serve                 Run in foreground on 127.0.0.1
   start                 Run detached from this terminal
   service install       Install/start the persistent user service
@@ -95,6 +96,8 @@ Connect another computer using an SSH forward to the loopback port.`);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
+  if (!args.includes("--data-dir"))
+    importLegacyHostData(directory, join(homedir(), LEGACY_HOST_DIR));
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory)));
     return;
@@ -297,7 +300,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       void stop();
     });
     console.log(
-      `MonoCode Host ${store.environmentId} listening on 127.0.0.1:${port}`,
+      `Irgatos Host ${store.environmentId} listening on 127.0.0.1:${port}`,
     );
     console.log(
       `Providers: ${available.join(", ") || "none found; install and authenticate a supported provider on this host"}`,

@@ -1,9 +1,9 @@
 import { pathKey } from "../../../shared/lib/paths";
 import type { HarnessId } from "../../sessions/model/session";
 
-const ACCOUNTS_KEY = "monocode.providerAccounts.v1";
-const SELECTIONS_KEY = "monocode.providerAccountSelections.v1";
-const CHANGE_EVENT = "monocode-provider-accounts-changed";
+const ACCOUNTS_KEY = "irgat.providerAccounts.v1";
+const SELECTIONS_KEY = "irgat.providerAccountSelections.v1";
+const CHANGE_EVENT = "irgat-provider-accounts-changed";
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
 const DEFAULT_PROVIDER_ACCOUNT_LABEL = "Default account";

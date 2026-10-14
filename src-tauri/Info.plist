@@ -2,13 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>MonoCode opens project folders you choose, including Desktop.</string>
+	<string>Irgatos opens project folders you choose, including Desktop.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>MonoCode opens project folders you choose, including Documents.</string>
+	<string>Irgatos opens project folders you choose, including Documents.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>MonoCode opens project folders you choose, including Downloads.</string>
+	<string>Irgatos opens project folders you choose, including Downloads.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Irgatos listens while you dictate a message or talk to an agent in voice mode.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Irgatos turns what you say into text for the message composer, on this Mac when the language is installed.</string>
 </dict>
 </plist>

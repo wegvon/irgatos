@@ -215,7 +215,7 @@ fn request_usage(provider: PiUsageProvider, credentials: &PiOAuth, url: &str) ->
     let mut request = agent
         .get(url)
         .set("Authorization", &format!("Bearer {}", credentials.access))
-        .set("User-Agent", "monocode");
+        .set("User-Agent", "irgat");
     match provider {
         PiUsageProvider::Anthropic => request = request.set("anthropic-beta", "oauth-2025-04-20"),
         PiUsageProvider::OpenaiCodex => {
@@ -328,8 +328,7 @@ mod tests {
     struct Fixture(std::path::PathBuf);
     impl Fixture {
         fn new(value: serde_json::Value) -> Self {
-            let dir =
-                std::env::temp_dir().join(format!("monocode-pi-usage-{}", uuid::Uuid::new_v4()));
+            let dir = std::env::temp_dir().join(format!("irgat-pi-usage-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&dir).unwrap();
             fs::write(dir.join("auth.json"), value.to_string()).unwrap();
             Self(dir)

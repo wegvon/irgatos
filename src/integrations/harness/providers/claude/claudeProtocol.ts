@@ -16,6 +16,7 @@ import {
   taskListFromToolInput,
 } from "../../../../features/sessions/model/taskList";
 import {
+  isProxySessionInitInput,
   questionPromptTitle,
   questionsFromUnknown,
   selectedAnswerLabels,
@@ -264,7 +265,7 @@ export function buildClaudeSpawnArgs(input: {
   if (input.includePartialMessages !== false) {
     args.push("--include-partial-messages");
   }
-  // Isolated spawns are MonoCode's own helper calls (titles, summaries); the
+  // Isolated spawns are Irgatos's own helper calls (titles, summaries); the
   // user's hooks have no business firing there. Interactive sessions inherit
   // whatever the caller decided so `~/.claude` hooks keep working.
   const settings: ClaudeCliSettings = {
@@ -571,12 +572,14 @@ export function toolStartFromEvent(rec: Record<string, unknown>): {
   const id = stringField(block, "id");
   const name = stringField(block, "name");
   if (!id || !name) return null;
+  const input = asRecord(block.input) ?? {};
+  if (isProxySessionInitInput(input, id)) return null;
   const index = typeof event.index === "number" ? event.index : -1;
   return {
     index,
     id,
     name,
-    input: asRecord(block.input) ?? {},
+    input,
   };
 }
 
@@ -840,7 +843,9 @@ export function assistantToolUses(rec: Record<string, unknown>): Array<{
     const id = stringField(row, "id");
     const name = stringField(row, "name");
     if (!id || !name) return [];
-    return [{ id, name, input: asRecord(row.input) ?? {} }];
+    const input = asRecord(row.input) ?? {};
+    if (isProxySessionInitInput(input, id)) return [];
+    return [{ id, name, input }];
   });
 }
 
@@ -910,7 +915,7 @@ export function askUserQuestionAllowInput(
     for (const question of questions) {
       const labels = selectedAnswerLabels(question, reply);
       if (labels.length === 0) continue;
-      answers[question.prompt] = question.multiSelect
+      answers[question.wirePrompt ?? question.prompt] = question.multiSelect
         ? labels.join(", ")
         : (labels[0] ?? "");
     }

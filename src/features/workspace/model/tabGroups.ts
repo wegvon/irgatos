@@ -23,16 +23,16 @@ export function tabGroupColor(project: string): string {
   return TAB_GROUP_COLORS[(hash % (TAB_GROUP_COLORS.length - 1)) + 1];
 }
 
-const COLOR_KEY = "monocode:tab-group:colors";
-const CUSTOM_COLOR_KEY = "monocode:tab-group:custom-colors";
-const LABEL_KEY = "monocode:tab-group:labels";
-const LABELS_CHANGED = "monocode:tab-group-labels-changed";
-const LOGO_KEY = "monocode:tab-group:logos";
-const MASCOT_KEY = "monocode:tab-group:mascots";
+const COLOR_KEY = "irgat:tab-group:colors";
+const CUSTOM_COLOR_KEY = "irgat:tab-group:custom-colors";
+const LABEL_KEY = "irgat:tab-group:labels";
+const LABELS_CHANGED = "irgat:tab-group-labels-changed";
+const LOGO_KEY = "irgat:tab-group:logos";
+const MASCOT_KEY = "irgat:tab-group:mascots";
 
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-export const TAB_GROUP_LOGOS_CHANGED = "monocode:tab-group-logos-changed";
+export const TAB_GROUP_LOGOS_CHANGED = "irgat:tab-group-logos-changed";
 
 let logoDisplayRevision = 0;
 
@@ -75,7 +75,7 @@ const APPEARANCE_KEYS = [
   MASCOT_KEY,
 ] as const;
 
-const KEY_VERSION_KEY = "monocode:tab-group:key-version";
+const KEY_VERSION_KEY = "irgat:tab-group:key-version";
 const KEY_VERSION = "2";
 /** Guards the reads the migration itself makes. */
 let migrating = false;
@@ -720,7 +720,7 @@ export function insertTabInGroup<T extends GroupedTab>(
   return addTabToGroup([...without, tab], tab.id, groupId);
 }
 
-const COLLAPSED_KEY = "monocode:tab-groups:collapsed";
+const COLLAPSED_KEY = "irgat:tab-groups:collapsed";
 
 export function loadCollapsedTabGroups(): Set<string> {
   try {

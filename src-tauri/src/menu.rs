@@ -120,19 +120,18 @@ fn menu_item(
 pub fn dispatch(app: &AppHandle, id: &str) {
     match id {
         "help_website" => {
-            let _ = open::that("https://usemono.dev");
+            let _ = open::that("https://github.com/wegvon/irgatos");
         }
         "help_github" => {
-            let _ = open::that("https://github.com/hardbeat920/monocode");
+            let _ = open::that("https://github.com/wegvon/irgatos");
         }
         "help_report_bug" => {
-            let _ = open::that(
-                "https://github.com/hardbeat920/monocode/issues/new?template=bug_report.yml",
-            );
+            let _ =
+                open::that("https://github.com/wegvon/irgatos/issues/new?template=bug_report.yml");
         }
         "help_request_feature" => {
             let _ = open::that(
-                "https://github.com/hardbeat920/monocode/issues/new?template=feature_request.yml",
+                "https://github.com/wegvon/irgatos/issues/new?template=feature_request.yml",
             );
         }
         "new_window" => {
@@ -149,8 +148,7 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         | "split_right" | "split_down" | "focus_left" | "focus_right" | "focus_up"
         | "focus_down" | "sidebar_opacity" | "open_project" | "go_to_file" | "open_search"
         | "open_inbox" | "open_notes" | "find_in_project" | "find" | "new_terminal"
-        | "new_terminal_tab" | "toggle_terminal" | "open_model_picker" | "open_settings"
-        | "check_for_updates" => {
+        | "new_terminal_tab" | "toggle_terminal" | "open_model_picker" | "open_settings" => {
             let _ = app.emit(id, ());
         }
         // New Tab, Close Tab, Sidebar, Zoom, Reload, Command Palette, and Close All Tabs target
@@ -165,7 +163,9 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         | "zoom_reset"
         | "reload"
         | "open_command_palette"
-        | "close_all_tabs" => emit_to_focused(app, id),
+        | "close_all_tabs"
+        // One update dialog, not one per window racing to install.
+        | "check_for_updates" => emit_to_focused(app, id),
         _ => {}
     }
 }
@@ -513,10 +513,10 @@ fn build(
 
     #[cfg(target_os = "macos")]
     {
-        let quit = MenuItemBuilder::with_id("quit", "Quit MonoCode")
+        let quit = MenuItemBuilder::with_id("quit", "Quit Irgatos")
             .accelerator("CmdOrCtrl+Q")
             .build(app)?;
-        let app_menu = SubmenuBuilder::new(app, "MonoCode")
+        let app_menu = SubmenuBuilder::new(app, "Irgatos")
             .about(Some(AboutMetadata::default()))
             .separator()
             .item(&open_settings)
@@ -534,7 +534,7 @@ fn build(
             .minimize()
             .maximize()
             .build()?;
-        let website = MenuItemBuilder::with_id("help_website", "MonoCode Website").build(app)?;
+        let website = MenuItemBuilder::with_id("help_website", "Irgatos Website").build(app)?;
         let github = MenuItemBuilder::with_id("help_github", "View on GitHub").build(app)?;
         let report_bug = MenuItemBuilder::with_id("help_report_bug", "Report a Bug…").build(app)?;
         let request_feature =

@@ -2,7 +2,6 @@
 //! record what changed. Shared reviews require successful edit evidence for
 //! each displayed file, without inferring which process owns individual lines.
 use super::*;
-use std::io::Write;
 
 #[cfg(test)]
 mod tests;
@@ -233,7 +232,7 @@ impl CheckpointStore {
         if edited.is_empty() {
             return Ok(());
         }
-        let prefix = format!("refs/monocode/checkpoints/{session_id}/");
+        let prefix = format!("refs/irgat/checkpoints/{session_id}/");
         let refs = run_git(
             root,
             &[
@@ -511,7 +510,7 @@ impl CheckpointStore {
                 repos.insert(saved.repo);
             }
         }
-        let prefix = format!("refs/monocode/checkpoints/{session_id}/");
+        let prefix = format!("refs/irgat/checkpoints/{session_id}/");
         for repo in repos {
             if !Path::new(&repo).is_dir() {
                 continue;
@@ -560,7 +559,7 @@ fn completed_turn(review: &TurnReview) -> Result<&RecordedTurn, String> {
 }
 
 fn turn_ref(session: &str, turn: &str, side: &str) -> String {
-    format!("refs/monocode/checkpoints/{session}/{turn}/{side}")
+    format!("refs/irgat/checkpoints/{session}/{turn}/{side}")
 }
 
 // Git's NUL-delimited output already contains literal paths. Never trim them
@@ -646,16 +645,16 @@ fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
         return Err("Workspace checkpoints are unavailable for sparse checkouts".into());
     }
     let index = PrivateIndex(
-        std::env::temp_dir().join(format!("monocode-checkpoint-{}", uuid::Uuid::new_v4())),
+        std::env::temp_dir().join(format!("irgat-checkpoint-{}", uuid::Uuid::new_v4())),
     );
     let run = |args: &[&str]| {
         checked_output(
             git_command(root, args)
                 .env("GIT_INDEX_FILE", &index.0)
-                .env("GIT_AUTHOR_NAME", "MonoCode")
-                .env("GIT_AUTHOR_EMAIL", "checkpoint@monocode.local")
-                .env("GIT_COMMITTER_NAME", "MonoCode")
-                .env("GIT_COMMITTER_EMAIL", "checkpoint@monocode.local"),
+                .env("GIT_AUTHOR_NAME", "Irgatos")
+                .env("GIT_AUTHOR_EMAIL", "checkpoint@irgat.local")
+                .env("GIT_COMMITTER_NAME", "Irgatos")
+                .env("GIT_COMMITTER_EMAIL", "checkpoint@irgat.local"),
         )
     };
     if run_git(root, &["rev-parse", "--verify", "HEAD"]).is_ok() {
@@ -678,7 +677,7 @@ fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
             "commit-tree",
             tree.trim(),
             "-m",
-            "MonoCode workspace checkpoint",
+            "Irgatos workspace checkpoint",
         ],
     ]
     .concat())?)
@@ -884,13 +883,7 @@ fn read_blob(root: &Path, blob: Option<&Blob>) -> Result<FileState, String> {
 }
 
 fn read_review(dir: &Path) -> Result<Option<TurnReview>, String> {
-    match std::fs::read(dir.join("turn-review.json")) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
-    }
+    state_file::read_json_or_recover(&dir.join("turn-review.json")).map(|(review, _)| review)
 }
 
 fn write_review(dir: &Path, review: &TurnReview) -> Result<(), String> {
@@ -898,18 +891,5 @@ fn write_review(dir: &Path, review: &TurnReview) -> Result<(), String> {
 }
 
 fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
-    let parent = path.parent().ok_or("Invalid checkpoint metadata path")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let tmp = path.with_extension("json.tmp");
-    let mut file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-    file.write_all(&serde_json::to_vec(value).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    file.sync_all().map_err(|e| e.to_string())?;
-    drop(file);
-    std::fs::rename(tmp, path).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    std::fs::File::open(parent)
-        .and_then(|dir| dir.sync_all())
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    state_file::write_json_atomic(path, value, false)
 }

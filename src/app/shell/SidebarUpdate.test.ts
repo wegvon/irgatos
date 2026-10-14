@@ -69,6 +69,30 @@ describe("isSidebarUpdateActionable", () => {
     );
     expect(actionable).toEqual(["available", "downloading"]);
   });
+
+  it("keeps the row while an install is underway", () => {
+    for (const phase of ["installing", "building", "relaunching"] as const) {
+      expect(isSidebarUpdateActionable({ phase, currentVersion: "0.1.0" })).toBe(true);
+    }
+  });
+});
+
+describe("source updates", () => {
+  it("names the commits a rebuild would bring in", () => {
+    const markup = renderToStaticMarkup(
+      createElement(SidebarUpdate, {
+        snapshot: {
+          phase: "available",
+          channel: "source",
+          currentVersion: "0.1.0",
+          availableVersion: "0.1.0",
+          newCommits: 3,
+        },
+      }),
+    );
+    expect(markup).toContain("Rebuild with 3 new commits");
+    expect(markup).toContain("v0.1.0");
+  });
 });
 
 describe("SidebarUpdate", () => {
@@ -86,7 +110,7 @@ describe("SidebarUpdate", () => {
 
     expect(markup).toContain("Update to 0.1.38");
     expect(markup).toContain("v0.1.37");
-    expect(markup).not.toContain('disabled=""');
+    expect(markup).not.toContain("aria-disabled");
   });
 
   it("reports download progress and blocks a second click", () => {
@@ -102,8 +126,8 @@ describe("SidebarUpdate", () => {
       }),
     );
 
-    expect(markup).toContain("Downloading 42%");
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain("Downloading v0.1.38 42%");
+    expect(markup).toContain('aria-disabled="true"');
   });
 
   it("ignores a second click while readAppVersion is still pending", async () => {

@@ -1,12 +1,22 @@
-import { FilePlusCorner, MessageSquarePlus } from "../../../shared/ui/icons";
+import {
+  FilePlusCorner,
+  MessageSquarePlus,
+  Share,
+} from "../../../shared/ui/icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import { type TranscriptSelection } from "../model/transcriptSelection";
+import type { ReviewKind } from "../../redline/model/reviewNotes";
+import { ReviewKindButtons } from "../../redline/ui/ReviewKindButtons";
+import { ReviewNotePopover } from "../../redline/ui/ReviewNotePopover";
 
 type Props = {
   selection: TranscriptSelection | null;
   onAddToChat?: (text: string) => void;
   onAddToNotes?: (text: string) => void | Promise<void>;
+  onSendToSession?: (text: string, blockId: string) => void;
+  /** Names the message in a review note; without it there is no Add to Review. */
+  reviewTarget?: string;
   onDismiss: () => void;
 };
 
@@ -14,15 +24,24 @@ export function TranscriptSelectionMenu({
   selection,
   onAddToChat,
   onAddToNotes,
+  onSendToSession,
+  reviewTarget,
   onDismiss,
 }: Props) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  // Focus moving into the note form clears the page selection, so the form
+  // keeps its own copy of what was selected.
+  const [review, setReview] = useState<{
+    kind: ReviewKind;
+    text: string;
+    rect: DOMRect;
+  } | null>(null);
 
   // Scrolling or resizing moves the text out from under the menu, so the
   // selection it acts on is gone; drop it rather than chase the range.
   useEffect(() => {
-    if (!selection) return;
+    if (!selection || review) return;
     const dismiss = () => onDismissRef.current();
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
@@ -30,7 +49,26 @@ export function TranscriptSelectionMenu({
       window.removeEventListener("scroll", dismiss, true);
       window.removeEventListener("resize", dismiss);
     };
-  }, [selection]);
+  }, [selection, review]);
+
+  if (review && reviewTarget) {
+    return (
+      <ReviewNotePopover
+        anchor={review.rect}
+        kind={review.kind}
+        target={{
+          source: "message",
+          targetPath: reviewTarget,
+          selection: review.text,
+        }}
+        onDone={() => {
+          setReview(null);
+          window.getSelection()?.removeAllRanges();
+          onDismiss();
+        }}
+      />
+    );
+  }
 
   if (!selection) return null;
 
@@ -74,6 +112,22 @@ export function TranscriptSelectionMenu({
             />
           </SelectionAction>
         ) : null}
+        {onSendToSession && selection.blockId ? (
+          <SelectionAction
+            label="Send to session…"
+            onSelect={() => onSendToSession(selection.text, selection.blockId!)}
+            onDismiss={onDismiss}
+          >
+            <Share aria-hidden="true" className="size-3.5" strokeWidth={1.75} />
+          </SelectionAction>
+        ) : null}
+        {reviewTarget ? (
+          <ReviewKindButtons
+            onPick={(kind) =>
+              setReview({ kind, text: selection.text, rect: selection.rect })
+            }
+          />
+        ) : null}
       </div>
     </Popover>
   );
@@ -92,13 +146,17 @@ function SelectionAction({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const running = useRef(false);
   return (
     <>
       <button
         type="button"
         disabled={pending}
+        aria-busy={pending || undefined}
         onMouseDown={(event) => event.preventDefault()}
         onClick={async () => {
+          if (running.current) return;
+          running.current = true;
           setPending(true);
           setError(null);
           try {
@@ -109,6 +167,7 @@ function SelectionAction({
           } catch (error) {
             setError(error instanceof Error ? error.message : String(error));
           } finally {
+            running.current = false;
             setPending(false);
           }
         }}

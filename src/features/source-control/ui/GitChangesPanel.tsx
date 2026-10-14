@@ -38,6 +38,7 @@ import {
   loadGraphPanelHeight,
   saveGraphPanelHeight,
 } from "./GitHistoryGraph";
+import { CommitPushButton } from "./CommitPushButton";
 import {
   basename,
   gitCommit,
@@ -84,7 +85,7 @@ const GIT_POLL_MS = 2000;
 
 function confirmNative(message: string, okLabel?: string): Promise<boolean> {
   return ask(message, {
-    title: "MonoCode",
+    title: "Irgatos",
     kind: "warning",
     ...(okLabel ? { okLabel } : {}),
   });
@@ -603,7 +604,7 @@ function ChangedFiles({
   const confirmAmend = async () => {
     if (!amend || !index?.headPushed) return true;
     return confirmNative(
-      "Amend a commit that is already pushed? MonoCode cannot push the result. You will need a force push from the terminal.",
+      "Amend a commit that is already pushed? Irgatos cannot push the result. You will need a force push from the terminal.",
       "Amend",
     );
   };
@@ -826,6 +827,28 @@ function ChangedFiles({
             </div>
           ) : null}
         </div>
+        {isRemoteProjectPath(cwd) ? null : (
+          <CommitPushButton
+            cwd={cwd}
+            message={message}
+            target={index?.upstream ?? null}
+            busy={busy}
+            setBusy={setBusy}
+            disabledReason={
+              amend
+                ? "Turn off Amend Last Commit to commit and push in one click"
+                : index
+                  ? undefined
+                  : "Loading changes…"
+            }
+            onCommitted={() => setMessage("")}
+            onPushed={() => recordPrActivity()}
+            onSettled={() => {
+              onMutated();
+              reloadPr();
+            }}
+          />
+        )}
         {index ? (
           <GitSyncActions
             index={index}

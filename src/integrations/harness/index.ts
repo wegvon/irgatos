@@ -32,7 +32,7 @@ export {
   forgetCodexSession,
   bindCodexSession,
   hasLiveCodexSession,
-  migrateMonoCodexSession,
+  migrateIrgatxSession,
 } from "./providers/codex/codex";
 export {
   sendOpenCodeTurn,

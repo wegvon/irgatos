@@ -74,6 +74,8 @@ import {
 import { isAgentToolName } from "../../core/preview";
 import { joinStreamText, snapshotRemainder } from "../../core/streamText";
 import {
+  buildProxySessionInitBypassReply,
+  isProxySessionInitQuestions,
   questionPromptTitle,
   questionsFromUnknown,
   type UserQuestionReply,
@@ -145,7 +147,7 @@ type Live = {
   /**
    * Every task Claude still runs for this session, by id: subagents, shells it
    * backgrounded, monitors. Each one ends in a notification that wakes Claude
-   * for another turn, so the MonoCode turn stays open until they are done.
+   * for another turn, so the Irgatos turn stays open until they are done.
    */
   backgroundTasks: Map<string, BackgroundTask>;
   /** Rows shown for tasks still running when Claude yielded, by task id. */
@@ -1022,6 +1024,24 @@ async function handleControlRequest(
 
   if (toolName === "AskUserQuestion") {
     const questions = questionsFromUnknown(input);
+    if (isProxySessionInitQuestions(questions, control.toolUseId)) {
+      const bypass = buildProxySessionInitBypassReply(questions);
+      const response =
+        bypass.kind === "answered"
+          ? {
+              behavior: "allow",
+              updatedInput: askUserQuestionAllowInput(input, bypass),
+            }
+          : {
+              behavior: "deny",
+              message: "User cancelled tool execution.",
+            };
+      await writeJson(
+        sessionId,
+        buildControlResponse(control.requestId, response),
+      );
+      return;
+    }
     const uiId = live.nextApprovalUiId++;
     const pending = waitQuestion(live, uiId, control.requestId, {
       type: "question.asked",
@@ -1555,7 +1575,7 @@ function completeAgentTask(
 
 /**
  * A task is done. If Claude had already yielded, the notification about it
- * starts a follow-up turn, so hold the MonoCode turn open for that too rather
+ * starts a follow-up turn, so hold the Irgatos turn open for that too rather
  * than settling in the gap between the two.
  */
 function finishBackgroundTask(live: Live, taskId: string): void {
@@ -1572,9 +1592,9 @@ function finishBackgroundTask(live: Live, taskId: string): void {
 }
 
 /**
- * Claude began another turn inside this MonoCode turn: woken by a finished
+ * Claude began another turn inside this Irgatos turn: woken by a finished
  * task, or by a follow-up written in while it waited. Its own result, not the
- * earlier one, decides when the MonoCode turn ends.
+ * earlier one, decides when the Irgatos turn ends.
  */
 function noteClaudeTurnStarted(live: Live): void {
   if (!live.activeTurn || !live.turnResultSeen) return;
@@ -1744,7 +1764,7 @@ function waitForInit(live: Live, timeoutMs: number): Promise<void> {
 
 function nextControlId(live: Live): string {
   live.nextControlId += 1;
-  return `monocode_${live.nextControlId}`;
+  return `irgat_${live.nextControlId}`;
 }
 
 function writeJson(

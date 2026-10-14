@@ -8,6 +8,7 @@ import {
   CheckCircle,
   ChevronDown,
   CircleDot,
+  Clock,
   CircleX,
   Copy,
   ExternalLink,
@@ -22,6 +23,7 @@ import {
   LoaderCircle,
   MessageMultiple,
   PanelLeft,
+  PenLine,
   Plus,
   RefreshCw,
   Search,
@@ -125,6 +127,24 @@ import {
   rememberInboxItems,
   useInboxSeenTick,
 } from "../model/inboxSeen";
+import {
+  applyInboxTriage,
+  inboxTriageCounts,
+  inboxTriageFlags,
+  type InboxTriageContext,
+} from "../model/inboxTriage";
+import {
+  acknowledgeResurfaced,
+  formatSnoozeUntil,
+  updateInboxSnoozes,
+} from "../model/inboxSnooze";
+import {
+  useInboxDrafts,
+  useInboxSnoozes,
+  useInboxTriageFilter,
+} from "../hooks/useInboxTriageState";
+import { InboxTriagePills, inboxTriageEmptyText } from "./InboxTriagePills";
+import { InboxSnoozeControl } from "./InboxSnoozeControl";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
 import {
   LINEAR_CHANGE_EVENT,
@@ -752,16 +772,47 @@ export function InboxView({
     };
   }, [cwd, items, target, targetSelectionKey]);
 
+  const inboxSeenTick = useInboxSeenTick();
+  const snoozes = useInboxSnoozes();
+  const drafts = useInboxDrafts();
+  const [triage, setTriage] = useInboxTriageFilter();
+  const filteredItems = useMemo(
+    () =>
+      sourceAvailable
+        ? applyInboxFilters(
+            items,
+            activeFilters,
+            searchInput,
+            Date.now(),
+            source,
+          )
+        : [],
+    [activeFilters, items, searchInput, source, sourceAvailable],
+  );
+  const triageContext = useMemo<InboxTriageContext>(
+    () => ({
+      now: Date.now(),
+      snoozes,
+      drafts,
+      isUnseen: (item) =>
+        isInboxEntryUnseen({
+          key: inboxItemKey(item),
+          updatedAt: item.updatedAt,
+        }),
+      relatedSessionCount: (item) =>
+        relatedSessionsForInboxItem(item, sessions).length,
+    }),
+    // The seen tick invalidates isUnseen, which reads outside React.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drafts, inboxSeenTick, sessions, snoozes],
+  );
+  const triageCounts = useMemo(
+    () => inboxTriageCounts(filteredItems, triageContext),
+    [filteredItems, triageContext],
+  );
   const visibleItems = useMemo(() => {
-    if (!sourceAvailable) return [];
-    const visible = applyInboxFilters(
-      items,
-      activeFilters,
-      searchInput,
-      Date.now(),
-      source,
-    );
-    if (!target || source !== "github") return visible;
+    const visible = applyInboxTriage(filteredItems, triage, triageContext);
+    if (!sourceAvailable || !target || source !== "github") return visible;
     const targeted =
       items.find((item) => inboxItemMatchesLinkedWorkItem(item, target)) ??
       (targetItem && inboxItemMatchesLinkedWorkItem(targetItem, target)
@@ -770,16 +821,15 @@ export function InboxView({
     if (!targeted || visible.includes(targeted)) return visible;
     return [targeted, ...visible];
   }, [
-    activeFilters,
+    filteredItems,
     items,
-    searchInput,
     source,
     sourceAvailable,
     target,
     targetItem,
+    triage,
+    triageContext,
   ]);
-
-  const inboxSeenTick = useInboxSeenTick();
   useEffect(() => {
     rememberInboxItems(
       items.map((item) => ({
@@ -840,6 +890,7 @@ export function InboxView({
     linearHiddenTeamIds,
     searchInput,
     source,
+    triage,
   ]);
 
   useEffect(() => {
@@ -1005,6 +1056,13 @@ export function InboxView({
           </button>
         </div>
       )}
+      {noSourcesConnected || !sourceAvailable ? null : (
+        <InboxTriagePills
+          value={triage}
+          counts={triageCounts}
+          onChange={setTriage}
+        />
+      )}
       {readStatusError ? (
         <p role="alert" className="px-3 py-2 text-xs text-red-400">
           {readStatusError}
@@ -1023,6 +1081,19 @@ export function InboxView({
         ) : loading && items.length === 0 ? (
           <div className="flex justify-center py-10 text-content/40">
             <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+          </div>
+        ) : visibleItems.length === 0 &&
+          triage !== "all" &&
+          filteredItems.length > 0 ? (
+          <div className="flex flex-col items-start gap-1.5 px-3 py-2 text-[12px] text-content/50">
+            <p>{inboxTriageEmptyText(triage)}</p>
+            <button
+              type="button"
+              onClick={() => setTriage("all")}
+              className="rounded-md px-1.5 py-0.5 -ml-1.5 text-content/70 hover:bg-content/10 hover:text-content"
+            >
+              Show all items
+            </button>
           </div>
         ) : visibleItems.length === 0 ? (
           <p className="px-3 py-2 text-[12px] text-content/50">
@@ -1061,10 +1132,14 @@ export function InboxView({
                 item,
                 sessions,
               );
+              const flags = inboxTriageFlags(item, triageContext);
               return (
                 <li key={key}>
                   <InboxCard
                     item={item}
+                    snoozedUntil={flags.snoozedUntil}
+                    resurfaced={flags.resurfaced}
+                    hasDraft={flags.draft}
                     active={selected != null && key === inboxItemKey(selected)}
                     logoPath={resolveTabGroupLogo(projectId, logos)}
                     mascotName={resolveTabGroupMascot(projectId, groupMascots)}
@@ -1080,6 +1155,10 @@ export function InboxView({
                         key,
                         updatedAt: item.updatedAt,
                       });
+                      if (flags.resurfaced)
+                        updateInboxSnoozes((state) =>
+                          acknowledgeResurfaced(state, key),
+                        );
                       setSelectedKey(key);
                     }}
                   />
@@ -1504,6 +1583,9 @@ function InboxCard({
   mascotName,
   mascotColor,
   relatedSessionCount,
+  snoozedUntil,
+  resurfaced = false,
+  hasDraft = false,
   onSelect,
 }: {
   item: InboxItem;
@@ -1512,6 +1594,9 @@ function InboxCard({
   mascotName: string | null;
   mascotColor: string;
   relatedSessionCount: number;
+  snoozedUntil?: number;
+  resurfaced?: boolean;
+  hasDraft?: boolean;
   onSelect: () => void;
 }) {
   useInboxSeenTick();
@@ -1542,7 +1627,7 @@ function InboxCard({
       aria-current={active ? "true" : undefined}
       aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
         item,
-      )}: ${item.title}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
+      )}: ${item.title}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${resurfaced ? ", back from snooze" : ""}${snoozedUntil != null ? `, snoozed until ${formatSnoozeUntil(snoozedUntil)}` : ""}${hasDraft ? ", unsent reply" : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
       onClick={onSelect}
       className={`flex w-full flex-col rounded-md border px-2.5 py-2 text-left ${
         active
@@ -1565,8 +1650,35 @@ function InboxCard({
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
         </span>
-        {relatedSessionCount > 0 || time || unseen ? (
+        {relatedSessionCount > 0 ||
+        time ||
+        unseen ||
+        resurfaced ||
+        hasDraft ||
+        snoozedUntil != null ? (
           <span className="flex shrink-0 items-center gap-1.5">
+            {resurfaced ? (
+              <span
+                title="Back from snooze"
+                className="rounded-full bg-amber-400/15 px-1.5 py-px text-[10px] font-medium text-amber-400"
+              >
+                Back
+              </span>
+            ) : null}
+            {snoozedUntil != null ? (
+              <span
+                title={`Snoozed until ${formatSnoozeUntil(snoozedUntil)}`}
+                className="inline-flex items-center gap-0.5 text-[11px] text-amber-400/90"
+              >
+                <Clock className="size-3" strokeWidth={1.75} />
+                {formatSnoozeUntil(snoozedUntil)}
+              </span>
+            ) : null}
+            {hasDraft ? (
+              <span title="Unsent reply" className="text-content/50">
+                <PenLine className="size-3" strokeWidth={1.75} />
+              </span>
+            ) : null}
             {relatedSessionCount > 0 ? (
               <span
                 title={`${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}`}
@@ -2635,6 +2747,7 @@ export function InboxDetail({
         <span className="shrink-0 text-accent">{attentionLabel}</span>
       ) : null}
       {source ? <span className="min-w-0 truncate">{source}</span> : null}
+      {panel ? null : <InboxSnoozeControl item={item} />}
       {panel ? (
         <button
           type="button"
@@ -3054,6 +3167,8 @@ export function InboxDetail({
                   onReply={setReplyTo}
                 />
                 <InboxCommentForm
+                  key={inboxItemKey(item)}
+                  draftKey={inboxItemKey(item)}
                   replyTo={replyTo}
                   posting={posting}
                   error={postError}

@@ -585,6 +585,28 @@ pub(crate) fn add_mcp_via_cli(
     Ok(())
 }
 
+pub(crate) fn remove_mcp_via_cli(
+    provider: &str,
+    cwd: &str,
+    name: &str,
+    binary_path: Option<&str>,
+) -> Result<(), String> {
+    if provider != "codex" {
+        return Err("Unsupported MCP provider".into());
+    }
+    if !valid_mcp_name(name) {
+        return Err("Invalid MCP server name".into());
+    }
+    let binary = resolve_mcp_binary(provider, binary_path)?;
+    mcp_command(
+        binary,
+        vec!["mcp".into(), "remove".into(), name.into()],
+        cwd.to_owned(),
+        Duration::from_secs(30),
+    )?;
+    Ok(())
+}
+
 pub(crate) fn opencode_major_version(cwd: &str, binary_path: Option<&str>) -> Result<u32, String> {
     let binary = resolve_mcp_binary("opencode", binary_path)?;
     let version = mcp_command(
@@ -937,30 +959,34 @@ pub fn harness_spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, &command);
+    for (key, value) in crate::worktree_lifecycle::session_env(&workdir) {
+        cmd.env(key, value);
+    }
     apply_provider_account(&app, &mut cmd, account.as_ref())?;
     let codex_store = match codex_store.as_deref() {
         None => None,
-        Some("mono")
+        Some("irgat")
             if binary_provider.as_deref() == Some("codex")
                 && account.as_ref().is_some_and(|a| a.provider == "codex")
                 && args.first().is_some_and(|a| a == "app-server") =>
         {
             let store =
-                crate::codex_mono_store::prepare(&app, account.as_ref().map(|a| a.id.as_str()))?;
+                crate::codex_irgat_store::prepare(&app, account.as_ref().map(|a| a.id.as_str()))?;
             let private_path = serde_json::to_string(&store.home).map_err(|e| e.to_string())?;
             // Explicit config takes precedence over CODEX_SQLITE_HOME. Override
-            // both so a user's sqlite_home cannot index Monos in the Codex app.
+            // both so a user's sqlite_home cannot index Irgats in the Codex app.
             cmd.env("CODEX_HOME", &store.home)
                 .env("CODEX_SQLITE_HOME", &store.home)
                 .args(["-c", &format!("sqlite_home={private_path}")]);
             Some(Arc::new(store))
         }
         Some(_) => {
-            return Err("Private Mono storage is only supported for Codex app-server".into())
+            return Err("Private Irgat storage is only supported for Codex app-server".into())
         }
     };
 
     crate::control::configure_child(&app, &session_id, &mut cmd);
+    crate::lightpanda::configure_child(&app, &mut cmd);
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
@@ -1489,12 +1515,23 @@ pub(crate) fn exec_output(
     cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
+    exec_output_env(command, args, cwd, &[], timeout)
+}
+
+pub(crate) fn exec_output_env(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    envs: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
     let mut cmd = Command::new(command);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, command);
+    cmd.envs(envs.iter().copied());
     if let Some(dir) = cwd {
         let workdir = expand_home(dir);
         if workdir.is_dir() {
@@ -1526,7 +1563,7 @@ const KILL_ESCALATE: Duration = Duration::from_secs(2);
 const KILL_ALL_GRACE: Duration = Duration::from_millis(300);
 #[cfg(not(windows))]
 const KILL_ALL_KILL_WAIT: Duration = Duration::from_millis(150);
-const HARNESS_PARENT_ENV: &str = "MONOCODE_HARNESS_PARENT";
+const HARNESS_PARENT_ENV: &str = "IRGAT_HARNESS_PARENT";
 
 /// An interactive shell has to source the user's whole rc file; nvm alone can
 /// take a second.
@@ -1561,7 +1598,7 @@ fn isolate_child(cmd: &mut Command) {
     }
 }
 
-fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+pub(crate) fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
     #[cfg(windows)]
     {
         crate::windows::spawn_managed(cmd)
@@ -1748,7 +1785,7 @@ struct ProcessSnapshot {
     harness_parent: Option<u32>,
 }
 
-/// Kill harness trees left behind by a previous MonoCode that exited
+/// Kill harness trees left behind by a previous Irgatos that exited
 /// before SIGKILL ran (crash, force-quit, or the detached escalate thread).
 /// Off-thread: the sweep shells out to `ps` and then waits on a SIGKILL, and
 /// launch would otherwise hold the first window for both. Nothing this run
@@ -2770,7 +2807,7 @@ fn is_cursor_agent(path: &Path) -> bool {
 ///
 /// Reads the cached PATH rather than spawning a shell per lookup: six
 /// resolvers each asking `command -v` meant six shell startups per probe.
-fn which_via_login_shell(name: &str) -> Option<PathBuf> {
+pub(crate) fn which_via_login_shell(name: &str) -> Option<PathBuf> {
     which_in_path(&gui_search_path(), name)
 }
 
@@ -2783,7 +2820,7 @@ fn which_in_path(path: &str, name: &str) -> Option<PathBuf> {
     })
 }
 
-fn first_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+pub(crate) fn first_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
     candidates.into_iter().find_map(existing_binary)
 }
 
@@ -2816,7 +2853,7 @@ mod windows_launcher_tests {
 
     #[test]
     fn npm_shell_shim_does_not_hide_windows_launcher() {
-        let dir = std::env::temp_dir().join(format!("monocode-launcher-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-launcher-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let bare = dir.join("agent");
         let cmd = dir.join("agent.cmd");
@@ -2975,7 +3012,7 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
     }
 }
 
-fn prepare_child(cmd: &mut Command, command: &str) {
+pub(crate) fn prepare_child(cmd: &mut Command, command: &str) {
     apply_gui_env(cmd);
     if command_basename(command) == "fx" {
         apply_fx_env(cmd);
@@ -3021,20 +3058,22 @@ static LOGIN_SHELL_ENV: Mutex<Option<HashMap<String, String>>> = Mutex::new(None
 
 /// Keys worth keeping out of `printenv`. PATH is the important one: a
 /// Finder-launched app inherits only launchd's bare PATH.
-const LOGIN_SHELL_KEYS: [&str; 6] = [
+const LOGIN_SHELL_KEYS: [&str; 8] = [
     "PATH",
     "AI_GATEWAY_API_KEY",
     "FX_AI_GATEWAY_API_KEY",
     "VERCEL_OIDC_TOKEN",
     "XAI_API_KEY",
     "GROK_CODE_XAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
 ];
 
 fn login_shell_path() -> Option<String> {
     login_shell_env("PATH")
 }
 
-fn login_shell_env(name: &str) -> Option<String> {
+pub(crate) fn login_shell_env(name: &str) -> Option<String> {
     let mut cache = LOGIN_SHELL_ENV.lock().ok()?;
     if cache.is_none() {
         *cache = Some(load_login_shell_env());
@@ -3451,7 +3490,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let root =
-            std::env::temp_dir().join(format!("monocode-mcp-binaries-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("irgat-mcp-binaries-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let host = HarnessHost::new();
         let mut paths = HashMap::new();
@@ -3532,6 +3571,29 @@ mod tests {
             .unwrap();
         }
         assert_eq!(
+            remove_mcp_via_cli(
+                "codex",
+                &cwd,
+                "docs",
+                paths.get("codex").map(String::as_str)
+            ),
+            Ok(())
+        );
+        assert!(remove_mcp_via_cli(
+            "claude",
+            &cwd,
+            "docs",
+            paths.get("claude").map(String::as_str)
+        )
+        .is_err());
+        assert!(remove_mcp_via_cli(
+            "codex",
+            &cwd,
+            "../docs",
+            paths.get("codex").map(String::as_str)
+        )
+        .is_err());
+        assert_eq!(
             opencode_major_version(&cwd, paths.get("opencode").map(String::as_str)),
             Ok(2)
         );
@@ -3550,10 +3612,8 @@ mod tests {
     fn configured_binary_paths_fail_closed_and_stay_exact() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!(
-            "monocode-configured-binaries-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("irgat-configured-binaries-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let codex = dir.join("codex");
@@ -3613,6 +3673,14 @@ mod tests {
             ),
         )
         .unwrap();
+        // Same size and inode as before, and a coarse filesystem clock can give
+        // both writes the same mtime, so move it forward explicitly.
+        std::fs::File::options()
+            .write(true)
+            .open(&codex)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() + Duration::from_secs(5))
+            .unwrap();
         std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
         assert_eq!(
             resolve_harness_binary_override("codex", &codex_path),
@@ -3660,7 +3728,7 @@ mod tests {
     fn which_in_path_takes_the_first_executable_hit() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("monocode-which-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-which-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let (empty, unreadable, real) = (dir.join("a"), dir.join("b"), dir.join("c"));
         for sub in [&empty, &unreadable, &real] {
@@ -3727,7 +3795,7 @@ mod tests {
     fn resolve_gui_binary_finds_a_binary_on_the_gui_path() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("monocode-gui-bin-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-gui-bin-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let target = dir.join("gh");
@@ -3742,7 +3810,7 @@ mod tests {
 
     #[test]
     fn cursor_agent_accepts_symlink_named_agent() {
-        let dir = std::env::temp_dir().join(format!("monocode-agent-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-agent-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("cursor-agent-pack")).unwrap();
         let target = dir.join("cursor-agent-pack/cursor-agent");
@@ -3756,7 +3824,7 @@ mod tests {
 
     #[test]
     fn pi_accepts_coding_agent_and_rejects_other_pi() {
-        let dir = std::env::temp_dir().join(format!("monocode-pi-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-pi-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -3784,7 +3852,7 @@ mod tests {
 
     #[test]
     fn omp_accepts_rpc_capable_binary_and_rejects_other_names() {
-        let dir = std::env::temp_dir().join(format!("monocode-omp-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-omp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -3815,7 +3883,7 @@ mod tests {
 
     #[test]
     fn fx_accepts_vercel_agent_and_rejects_json_viewer() {
-        let dir = std::env::temp_dir().join(format!("monocode-fx-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-fx-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -3840,7 +3908,7 @@ mod tests {
     /// missed them and silently fell back to spawning `fx --help`.
     #[test]
     fn fx_marker_is_found_past_the_first_chunk() {
-        let dir = std::env::temp_dir().join(format!("monocode-fx-deep-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-fx-deep-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -3862,7 +3930,7 @@ mod tests {
 
     #[test]
     fn grok_accepts_official_install_path_and_markers() {
-        let dir = std::env::temp_dir().join(format!("monocode-grok-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-grok-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let home = dir.join(".grok/bin");
         std::fs::create_dir_all(&home).unwrap();
@@ -3887,7 +3955,7 @@ mod tests {
     #[cfg(unix)]
     fn antigravity_resolver_prefers_executable_wrapper_and_tracks_orphans() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("monocode-agy-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("irgat-agy-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         let wrapper = dir.join("bin/agy_acp_server.par");
         let server = dir.join("agy_acp_server.par");
@@ -4078,7 +4146,7 @@ mod windows_binary_tests {
     #[test]
     fn configured_binary_path_accepts_windows_shim_extension() {
         let dir = std::env::temp_dir().join(format!(
-            "monocode-configured-windows-binary-{}",
+            "irgat-configured-windows-binary-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
@@ -4130,7 +4198,7 @@ mod reap_logic_tests {
     #[test]
     fn parse_ps_row_reads_harness_parent_from_env_tail() {
         let parsed = parse_ps_row(
-            " 27129 21504 /Users/n/cursor-agent acp PATH=/usr/bin MONOCODE_HARNESS_PARENT=21504 HOME=/tmp",
+            " 27129 21504 /Users/n/cursor-agent acp PATH=/usr/bin IRGAT_HARNESS_PARENT=21504 HOME=/tmp",
         )
         .unwrap();
         assert_eq!(parsed.pid, 27129);
@@ -4217,7 +4285,7 @@ mod reap_logic_tests {
     #[test]
     fn parse_ps_pid_command_does_not_treat_the_binary_as_ppid() {
         let (pid, command) = parse_ps_pid_command(
-            " 27129 /Users/n/cursor-agent acp PATH=/usr/bin MONOCODE_HARNESS_PARENT=21504 HOME=/tmp",
+            " 27129 /Users/n/cursor-agent acp PATH=/usr/bin IRGAT_HARNESS_PARENT=21504 HOME=/tmp",
         )
         .unwrap();
         assert_eq!(pid, 27129);

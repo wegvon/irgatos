@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,6 +8,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::session_snapshots::{self, Snapshots};
 
 const MIGRATION_V1: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
@@ -31,17 +33,31 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 pub struct SessionStore {
     conn: Mutex<Connection>,
     read_conn: Mutex<Option<Connection>>,
+    snapshots: Option<Snapshots>,
+}
+
+fn open_writer(path: &Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    migrate(&conn)?;
+    Ok(conn)
 }
 
 impl SessionStore {
+    /// A database SQLite reports as corrupt is moved aside and replaced by
+    /// its newest good snapshot (see `session_snapshots`).
     pub fn open(path: PathBuf) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-        conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")
-            .map_err(|e| e.to_string())?;
-        migrate(&conn).map_err(|e| e.to_string())?;
+        let conn = match open_writer(&path) {
+            Ok(conn) => conn,
+            Err(error) if session_snapshots::is_corruption(&error) => {
+                session_snapshots::recover(&path)?;
+                open_writer(&path).map_err(|e| e.to_string())?
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         crate::worktrees::reconcile_removals(&conn)?;
         let read_conn = Connection::open(&path).map_err(|e| e.to_string())?;
         read_conn
@@ -50,6 +66,7 @@ impl SessionStore {
         Ok(Self {
             conn: Mutex::new(conn),
             read_conn: Mutex::new(Some(read_conn)),
+            snapshots: Some(Snapshots::new(path, session_snapshots::SNAPSHOT_INTERVAL)),
         })
     }
 
@@ -62,6 +79,7 @@ impl SessionStore {
         Ok(Self {
             conn: Mutex::new(conn),
             read_conn: Mutex::new(None),
+            snapshots: None,
         })
     }
 
@@ -88,7 +106,9 @@ fn init_with(
     open: impl FnOnce(PathBuf) -> Result<SessionStore, String>,
     manage: impl FnOnce(SessionStore),
 ) -> Result<(), String> {
-    let store = open(data_dir()?.join("monocode.db"))?;
+    let dir = data_dir()?;
+    crate::legacy_data::import_legacy_data(&dir);
+    let store = open(dir.join(crate::legacy_data::DB_FILE))?;
     manage(store);
     Ok(())
 }
@@ -246,6 +266,10 @@ pub fn session_upsert(
 
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
     let summary = upsert_session(&conn, &session).map_err(|e| e.to_string())?;
+    drop(conn);
+    if let Some(snapshots) = &store.snapshots {
+        snapshots.after_save();
+    }
     Ok(summary)
 }
 
@@ -302,6 +326,32 @@ fn rebase_project(conn: &Connection, from_cwd: &str, to_cwd: &str) -> rusqlite::
 pub fn session_list_linked(store: State<'_, SessionStore>) -> Result<Vec<SessionSummary>, String> {
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
     list_linked(&conn).map_err(|e| e.to_string())
+}
+
+const MAX_RECENT_SESSIONS: usize = 500;
+
+/// Chats across every project, newest first, for cross-session references.
+/// With `id_prefix`, archived chats are included so an existing reference to
+/// one still resolves.
+#[tauri::command(async)]
+pub fn session_list_recent(
+    store: State<'_, SessionStore>,
+    limit: Option<usize>,
+    id_prefix: Option<String>,
+) -> Result<Vec<SessionSummary>, String> {
+    let prefix = id_prefix.filter(|prefix| !prefix.is_empty());
+    if let Some(prefix) = &prefix {
+        if prefix.len() > 64
+            || !prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return Err("Invalid session id prefix".into());
+        }
+    }
+    let limit = limit.unwrap_or(200).clamp(1, MAX_RECENT_SESSIONS);
+    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+    list_recent(&conn, limit, prefix.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command(async)]
@@ -513,7 +563,7 @@ pub fn session_delete(
         .unwrap_or_default();
     image_paths.extend(persisted_paths);
     image_paths.extend(
-        crate::mono_transcript::generated_image_paths(&conn, &session_id)
+        crate::irgat_transcript::generated_image_paths(&conn, &session_id)
             .map_err(|e| e.to_string())?,
     );
     delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
@@ -991,7 +1041,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     crate::reminders::ensure_table(conn)?;
     crate::automations::ensure_tables(conn)?;
     ensure_orchestration_history(conn)?;
-    crate::mono_transcript::ensure_tables(conn)?;
+    crate::irgat_transcript::ensure_tables(conn)?;
+    crate::kanban::ensure_tables(conn)?;
     Ok(())
 }
 
@@ -1335,8 +1386,8 @@ fn search_sessions_sql(include_archived: bool, cwd_scoped: bool) -> String {
                  OR CASE WHEN octet_length(blocks_json) <= ?2
                          THEN LOWER(blocks_json) LIKE LOWER(?1) ESCAPE '\\'
                          ELSE 0 END
-                 OR EXISTS(SELECT 1 FROM mono_blocks
-                           WHERE mono_blocks.session_id = sessions.id
+                 OR EXISTS(SELECT 1 FROM irgat_blocks
+                           WHERE irgat_blocks.session_id = sessions.id
                              AND search_text LIKE LOWER(?1) ESCAPE '\\'))",
     );
     if !include_archived {
@@ -1461,8 +1512,8 @@ fn search_sessions_with_connection(
                 String::from_utf8_lossy(value.as_bytes().map_err(|e| e.to_string())?).into_owned()
             }
         };
-        let blocks = if crate::mono_transcript::is_indexed(conn, &id).map_err(|e| e.to_string())? {
-            crate::mono_transcript::matching_blocks(
+        let blocks = if crate::irgat_transcript::is_indexed(conn, &id).map_err(|e| e.to_string())? {
+            crate::irgat_transcript::matching_blocks(
                 conn,
                 &id,
                 &needle,
@@ -1722,6 +1773,55 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(17)?),
+        })
+    })?;
+    rows.collect()
+}
+
+fn list_recent(
+    conn: &Connection,
+    limit: usize,
+    id_prefix: Option<&str>,
+) -> rusqlite::Result<Vec<SessionSummary>> {
+    let mut statement = conn.prepare(
+        "SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
+                created_at, updated_at, branch, archived, pinned,
+                linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
+                automation_id, sidebar_hidden
+         FROM sessions
+         WHERE has_user_message = 1
+           AND (?1 IS NULL OR substr(lower(id), 1, length(?1)) = lower(?1))
+           AND (?1 IS NOT NULL OR (archived = 0 AND sidebar_hidden = 0))
+           AND id NOT IN (SELECT id FROM sessions WHERE inbox_ask IS NOT NULL)
+           AND id NOT IN (SELECT session_id FROM orchestration_workers)
+         ORDER BY updated_at DESC, id ASC
+         LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![id_prefix, limit as i64], |row| {
+        Ok(SessionSummary {
+            sidebar_hidden: row.get::<_, i64>(17)? != 0,
+            id: row.get(0)?,
+            orchestration_lead_id: None,
+            orchestration: None,
+            cwd: row.get(1)?,
+            harness: row.get(2)?,
+            model: row.get(3)?,
+            runtime_mode: row.get(4)?,
+            title: row.get(5)?,
+            provider_session_id: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            branch: nonempty(row.get(9)?),
+            worktree_cwd: row.get(13)?,
+            worktree_removed: row.get::<_, i64>(14)? != 0,
+            repo: None,
+            additions: 0,
+            deletions: 0,
+            archived: row.get::<_, i64>(10)? != 0,
+            pinned: row.get::<_, i64>(11)? != 0,
+            draft: row.get::<_, i64>(15)? != 0,
+            linked_work_item: optional_json(row.get(12)?),
+            automation_id: nonempty(row.get(16)?),
         })
     })?;
     rows.collect()
@@ -2083,20 +2183,20 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
 
     #[test]
-    fn search_keeps_older_mono_messages_available_after_conversion() {
+    fn search_keeps_older_irgat_messages_available_after_conversion() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.lock_conn().unwrap();
-        let mut mono = sample("mono", "/tmp/a", "Mono");
-        mono.blocks = json!([{ "id":"old", "role":"user", "text":"Archived needle" }, { "id":"answer", "role":"assistant", "text":"Done" }]);
-        upsert_session(&conn, &mono).unwrap();
-        crate::mono_transcript::migrate_transcript(&conn, "mono").unwrap();
+        let mut irgat = sample("irgat", "/tmp/a", "Irgat");
+        irgat.blocks = json!([{ "id":"old", "role":"user", "text":"Archived needle" }, { "id":"answer", "role":"assistant", "text":"Done" }]);
+        upsert_session(&conn, &irgat).unwrap();
+        crate::irgat_transcript::migrate_transcript(&conn, "irgat").unwrap();
         let result = search_sessions(
             &conn,
             &SessionSearchOptions {
                 query: "Archived needle".into(),
                 cwd: None,
                 include_archived: false,
-                search_owner: "mono-search".into(),
+                search_owner: "irgat-search".into(),
             },
         )
         .unwrap();
@@ -2105,16 +2205,76 @@ mod tests {
     }
 
     #[test]
+    fn a_corrupt_database_reopens_from_its_newest_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("irgat.db");
+        let saved = |id: &str| SessionUpsert {
+            sidebar_hidden: false,
+            id: id.into(),
+            cwd: "/code/app".into(),
+            harness: "codex".into(),
+            model: "test".into(),
+            model_settings: json!({}),
+            runtime_mode: "supervised".into(),
+            title: id.into(),
+            provider_session_id: None,
+            provider_account_id: None,
+            blocks: json!([{ "role": "user", "text": "hello" }]),
+            queued_messages: Vec::new(),
+            queue_status: None,
+            context_used: None,
+            context_window: None,
+            branch: None,
+            worktree_cwd: None,
+            worktree_removed: false,
+            linked_work_item: None,
+            automation_id: None,
+        };
+        {
+            let store = SessionStore::open(path.clone()).unwrap();
+            upsert_session(&store.lock_conn().unwrap(), &saved("kept")).unwrap();
+            session_snapshots::take_snapshot(&path).unwrap();
+            upsert_session(&store.lock_conn().unwrap(), &saved("after-snapshot")).unwrap();
+        }
+        std::fs::write(&path, vec![0x5a; 16384]).unwrap();
+
+        let store = SessionStore::open(path.clone()).unwrap();
+        let conn = store.lock_conn().unwrap();
+        assert!(get_session(&conn, "kept").unwrap().is_some());
+        assert!(get_session(&conn, "after-snapshot").unwrap().is_none());
+        assert_eq!(crate::state_file::corrupt_copies(&path).len(), 1);
+    }
+
+    #[test]
+    fn a_corrupt_database_without_snapshots_starts_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("irgat.db");
+        std::fs::write(&path, b"this is not a database").unwrap();
+        let store = SessionStore::open(path.clone()).unwrap();
+        let count: i64 = store
+            .lock_conn()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sessions", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        let corrupt = crate::state_file::corrupt_copies(&path);
+        assert_eq!(
+            std::fs::read(&corrupt[0]).unwrap(),
+            b"this is not a database"
+        );
+    }
+
+    #[test]
     fn startup_does_not_read_saved_transcripts() {
         let data_dir = std::env::temp_dir().join(format!(
-            "monocode-startup-transcripts-{}-{}",
+            "irgat-startup-transcripts-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
         ));
-        let path = data_dir.join("monocode.db");
+        let path = data_dir.join("irgat.db");
         {
             let store = SessionStore::open(path.clone()).unwrap();
             let conn = store.lock_conn().unwrap();
@@ -2607,6 +2767,43 @@ mod tests {
     }
 
     #[test]
+    fn list_recent_spans_projects_newest_first() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        upsert_session(&conn, &sample("a1b2c3d4-old", "/tmp/a", "Old")).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        upsert_session(&conn, &sample("e5f6a7b8-new", "/tmp/b", "New")).unwrap();
+        let mut empty = sample("c0ffee00-empty", "/tmp/a", "Empty");
+        empty.blocks = json!([]);
+        upsert_session(&conn, &empty).unwrap();
+        upsert_session(&conn, &sample("dead0000-archived", "/tmp/a", "Archived")).unwrap();
+        set_archived(&conn, "dead0000-archived", true).unwrap();
+
+        let rows = list_recent(&conn, 10, None).unwrap();
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+        assert_eq!(ids, vec!["e5f6a7b8-new", "a1b2c3d4-old"]);
+
+        let limited = list_recent(&conn, 1, None).unwrap();
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].id, "e5f6a7b8-new");
+    }
+
+    #[test]
+    fn list_recent_by_prefix_still_finds_archived_chats() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        upsert_session(&conn, &sample("dead0000-archived", "/tmp/a", "Archived")).unwrap();
+        upsert_session(&conn, &sample("beef0000-other", "/tmp/a", "Other")).unwrap();
+        set_archived(&conn, "dead0000-archived", true).unwrap();
+
+        let rows = list_recent(&conn, 10, Some("DEAD0000")).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "dead0000-archived");
+        assert!(rows[0].archived);
+        assert!(list_recent(&conn, 10, Some("0000")).unwrap().is_empty());
+    }
+
+    #[test]
     fn context_usage_is_absent_until_a_harness_reports() {
         let store = SessionStore::open_in_memory().unwrap();
         let conn = store.conn.lock().unwrap();
@@ -2983,7 +3180,7 @@ mod tests {
     #[test]
     fn upsert_snapshots_git_branch() {
         let dir = std::env::temp_dir().join(format!(
-            "monocode-session-git-{}-{}",
+            "irgat-session-git-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3188,7 +3385,7 @@ mod tests {
     #[test]
     fn migrate_creates_workspace_tables_when_versions_already_recorded() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-stale-migrations-{}-{}.db",
+            "irgat-stale-migrations-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3246,7 +3443,7 @@ mod tests {
     #[test]
     fn migrate_restores_the_covering_index_when_versions_already_recorded() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-stale-index-{}-{}.db",
+            "irgat-stale-index-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -3316,7 +3513,7 @@ mod tests {
     #[test]
     fn session_search_uses_a_query_only_read_connection() {
         let path = std::env::temp_dir().join(format!(
-            "monocode-session-read-conn-{}-{}.db",
+            "irgat-session-read-conn-{}-{}.db",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

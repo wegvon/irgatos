@@ -12,9 +12,9 @@ import {
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
 import {
-  createMono,
-  saveMonoSessionId,
-} from "../../features/monos/model/mono";
+  createIrgat,
+  saveIrgatSessionId,
+} from "../../features/irgats/model/irgat";
 
 // Keep native services out of these menu/input interaction tests.
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
@@ -23,7 +23,10 @@ vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
 }));
-vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
+vi.mock("./SidebarUpdate", () => ({
+  SidebarUpdateFooter: () => null,
+  AppVersionBadge: () => null,
+}));
 vi.mock("../../features/files/ui/FileTree", () => ({
   FileTree: ({ cwd, rootLabel }: { cwd: string; rootLabel?: string }) =>
     createElement("div", { "data-explorer-cwd": cwd }, rootLabel),
@@ -152,7 +155,7 @@ afterEach(() => {
 });
 
 it("leaves the resident agent and its description out of the session list", () => {
-  saveMonoSessionId(createMono(["/workspace/project"]).id, "resident");
+  saveIrgatSessionId(createIrgat(["/workspace/project"]).id, "resident");
   props.sessions = [
     ...props.sessions,
     {
@@ -164,15 +167,15 @@ it("leaves the resident agent and its description out of the session list", () =
   act(() => render());
   expect(card()).not.toBeNull();
   expect(container.querySelector('[data-session-card="resident"]')).toBeNull();
-  expect(container.querySelector("[data-mono]")).toBeNull();
+  expect(container.querySelector("[data-irgat]")).toBeNull();
   expect(container.textContent).not.toContain("Resident agent description");
 });
 
-it("omits hidden Mono launches from history, open sessions and folders", () => {
+it("omits hidden Irgat launches from history, open sessions and folders", () => {
   const hidden = {
     ...props.sessions[0],
     id: "hidden-launch",
-    title: "Mono background work",
+    title: "Irgat background work",
     sidebarHidden: true,
   };
   props.sessions = [...props.sessions, hidden];
@@ -265,23 +268,23 @@ describe("worktree explorer visibility", () => {
   });
 });
 
-describe.each([false, true])("Mono rail selection (compact: %s)", (compact) => {
+describe.each([false, true])("Irgat rail selection (compact: %s)", (compact) => {
   it.each([
     ["Inbox", "inboxActive", "onOpenInbox"],
     ["Notes", "notesActive", "onOpenNotes"],
     ["Automations", "automationsActive", "onOpenAutomations"],
     ["Search", "searchActive", "onSearch"],
-  ] as const)("selects only %s while it covers a Mono", async (label, active, open) => {
-    const mono = createMono();
+  ] as const)("selects only %s while it covers a Irgat", async (label, active, open) => {
+    const irgat = createIrgat();
     props = {
       ...props,
       projectRailOpen: !compact,
       compactProjectRail: compact,
       onSelectProject: vi.fn(),
       onOpenProject: vi.fn(),
-      monoViewActive: true,
-      monos: {
-        activeId: mono.id,
+      irgatViewActive: true,
+      irgats: {
+        activeId: irgat.id,
         states: new Map(),
         onOpen: vi.fn(),
         onCreate: vi.fn(),
@@ -293,25 +296,25 @@ describe.each([false, true])("Mono rail selection (compact: %s)", (compact) => {
       },
     };
     await act(async () => render());
-    const monoSelected = () => compact
+    const irgatSelected = () => compact
       ? container.querySelector('[aria-label^="Switch project"]')!
-          .getAttribute("aria-label")!.includes("current mono")
-      : !!container.querySelector('[data-mono-rail] [aria-current="true"]');
-    expect(monoSelected()).toBe(true);
+          .getAttribute("aria-label")!.includes("current irgat")
+      : !!container.querySelector('[data-irgat-rail] [aria-current="true"]');
+    expect(irgatSelected()).toBe(true);
 
     await act(async () =>
       container.querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`)!.click(),
     );
     expect(container.querySelector(`button[aria-label^="${label}"]`)!.classList)
       .toContain("bg-selection");
-    expect(monoSelected()).toBe(false);
-    expect(container.querySelector('[data-mono-rail] [data-selected="true"]')).toBeNull();
-    expect(props.monos?.activeId).toBe(mono.id);
+    expect(irgatSelected()).toBe(false);
+    expect(container.querySelector('[data-irgat-rail] [data-selected="true"]')).toBeNull();
+    expect(props.irgats?.activeId).toBe(irgat.id);
 
     // Back reveals the same conversation and restores its rail selection.
     props = { ...props, [active]: false };
     await act(async () => render());
-    expect(monoSelected()).toBe(true);
+    expect(irgatSelected()).toBe(true);
   });
 });
 
@@ -639,27 +642,27 @@ describe("sidebar session IDs", () => {
     await act(async () => copyHarnessId.click());
     expect(copyText).toHaveBeenNthCalledWith(1, "harness-session-2");
 
-    const monocodeMenu = openCopyIdMenu("session-2");
-    const copyMonoCodeId = Array.from(
-      monocodeMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
-    expect(copyMonoCodeId.disabled).toBe(false);
-    await act(async () => copyMonoCodeId.click());
+    const irgatMenu = openCopyIdMenu("session-2");
+    const copyIrgatId = Array.from(
+      irgatMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent === "Irgatos session ID")!;
+    expect(copyIrgatId.disabled).toBe(false);
+    await act(async () => copyIrgatId.click());
     expect(copyText).toHaveBeenNthCalledWith(2, "session-2");
   });
 
-  it("keeps the MonoCode ID available before the harness supplies an ID", async () => {
+  it("keeps the Irgatos ID available before the harness supplies an ID", async () => {
     act(() => render());
     const copyMenu = openCopyIdMenu("session-1");
     const copyHarnessId = Array.from(
       copyMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
     ).find((item) => item.textContent === "Harness session ID")!;
-    const copyMonoCodeId = Array.from(
+    const copyIrgatId = Array.from(
       copyMenu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent === "MonoCode session ID")!;
+    ).find((item) => item.textContent === "Irgatos session ID")!;
     expect(copyHarnessId.disabled).toBe(true);
-    expect(copyMonoCodeId.disabled).toBe(false);
-    await act(async () => copyMonoCodeId.click());
+    expect(copyIrgatId.disabled).toBe(false);
+    await act(async () => copyIrgatId.click());
     expect(copyText).toHaveBeenCalledExactlyOnceWith("session-1");
   });
 });
@@ -834,7 +837,7 @@ describe("sidebar reorder affordances", () => {
       },
     ];
     localStorage.setItem(
-      "monocode.sessionFolders",
+      "irgat.sessionFolders",
       JSON.stringify({
         "/workspace/project": [
           {
@@ -856,7 +859,7 @@ describe("sidebar reorder affordances", () => {
     act(() => render());
 
     const tabs = container.querySelectorAll<HTMLElement>('[role="tab"]');
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(4);
     for (const tab of tabs) {
       expect(tab.className).not.toContain("cursor-grab");
       expect(tab.parentElement?.className).not.toContain("cursor-grab");
@@ -960,7 +963,7 @@ describe("sidebar pinned sessions", () => {
     expect(group.querySelector('[data-session-card="session-1"]')).toBeNull();
     expect(
       JSON.parse(
-        localStorage.getItem("monocode.pinnedSessionsCollapsed") ?? "{}",
+        localStorage.getItem("irgat.pinnedSessionsCollapsed") ?? "{}",
       ),
     ).toEqual({ "/workspace/project": true });
   });
@@ -1616,6 +1619,7 @@ describe("collapsed rail Inbox actions", () => {
       "Sessions",
       "Explorer",
       "Changes",
+      "Artifacts",
       "Search",
       "Inbox",
       "Notes",
@@ -1630,7 +1634,7 @@ describe("collapsed rail Inbox actions", () => {
       Array.from(workspaceTabs.querySelectorAll('[role="tab"]'), (button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Sessions", "Explorer", "Changes"]);
+    ).toEqual(["Sessions", "Explorer", "Changes", "Artifacts"]);
     const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>(
       '[aria-label="Sessions"]',
     )!;

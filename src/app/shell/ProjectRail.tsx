@@ -5,11 +5,13 @@ import {
   FolderPlus,
   Internet,
   Inbox,
+  Kanban,
   MoreHorizontal,
   Pin,
   PinOff,
   File,
   Plus,
+  Radar,
   Search,
   Settings,
   Zap,
@@ -69,9 +71,9 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RailAction, RailSearch } from "./RailAction";
+import { FleetNeedsYouCount, RailAction, RailSearch } from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
-import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { SettingsNav } from "./SettingsRail";
 import { Shimmer } from "../../shared/ui/Shimmer";
@@ -89,7 +91,7 @@ import {
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
-import { MonoRailSection, type MonoRailProps } from "./MonoRailSection";
+import { IrgatRailSection, type IrgatRailProps } from "./IrgatRailSection";
 
 type Props = {
   visible?: boolean;
@@ -110,6 +112,12 @@ type Props = {
   notesActive?: boolean;
   onOpenAutomations?: () => void;
   automationsActive?: boolean;
+  onOpenKanban?: () => void;
+  onOpenFleet?: () => void;
+  kanbanActive?: boolean;
+  fleetActive?: boolean;
+  /** Sessions waiting on the user, shown as the Fleet badge. */
+  fleetNeedsYou?: number;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -126,8 +134,8 @@ type Props = {
   updateNotice?: InstalledUpdate | null;
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
-  /** The Monos section above the projects; absent while Monos are off. */
-  monos?: MonoRailProps;
+  /** The Irgats section above the projects; absent while Irgats are off. */
+  irgats?: IrgatRailProps;
 };
 
 export function ProjectRail({
@@ -149,6 +157,11 @@ export function ProjectRail({
   notesActive = false,
   onOpenAutomations,
   automationsActive = false,
+  onOpenKanban,
+  onOpenFleet,
+  kanbanActive = false,
+  fleetActive = false,
+  fleetNeedsYou = 0,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -165,7 +178,7 @@ export function ProjectRail({
   updateNotice = null,
   onOpenWhatsNew,
   onDismissUpdate,
-  monos,
+  irgats,
 }: Props) {
   const resize = useDragResize({
     min: PROJECT_RAIL_WIDTH_MIN,
@@ -335,7 +348,9 @@ export function ProjectRail({
     inboxActive ||
     notesActive ||
     automationsActive ||
-    !!monos?.activeId;
+    kanbanActive ||
+    fleetActive ||
+    !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
   const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y");
@@ -412,6 +427,29 @@ export function ProjectRail({
               active={automationsActive}
               ariaLabel="Automations"
             />
+            {onOpenKanban ? (
+              <RailAction
+                label="Board"
+                icon={Kanban}
+                onClick={onOpenKanban}
+                active={kanbanActive}
+                ariaLabel="Board"
+              />
+            ) : null}
+            {onOpenFleet ? (
+              <RailAction
+                label="Fleet"
+                icon={Radar}
+                onClick={onOpenFleet}
+                active={fleetActive}
+                ariaLabel={
+                  fleetNeedsYou
+                    ? `Fleet, ${fleetNeedsYou} ${fleetNeedsYou === 1 ? "session needs" : "sessions need"} you`
+                    : "Fleet"
+                }
+                meta={<FleetNeedsYouCount count={fleetNeedsYou} />}
+              />
+            ) : null}
           </div>
 
           <div
@@ -421,10 +459,10 @@ export function ProjectRail({
             }}
             className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
           >
-            {monos ? (
-              <MonoRailSection
-                {...monos}
-                introAvailable={visible && !!monos.introAvailable}
+            {irgats ? (
+              <IrgatRailSection
+                {...irgats}
+                introAvailable={visible && !!irgats.introAvailable}
               />
             ) : null}
 
@@ -542,6 +580,7 @@ export function ProjectRail({
               onClick={onOpenSettings}
               shortcut={`${MOD},`}
               ariaLabel={`Settings (${MOD},)`}
+              meta={<AppVersionBadge />}
             />
           </div>
         </>

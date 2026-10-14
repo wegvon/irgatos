@@ -6,9 +6,9 @@ import {
 import { planTurnKey } from "../../../features/sessions/model/plan";
 import { sanitizeSessionForPersist } from "../../../features/sessions/data/sessionStore";
 import {
-  acknowledgeMonoMessage,
-  enqueueMonoMessage,
-} from "../../../features/monos/model/monoMessaging";
+  acknowledgeIrgatMessage,
+  enqueueIrgatMessage,
+} from "../../../features/irgats/model/irgatMessaging";
 import { previewFromTool } from "../providers/claude/claudeProtocol";
 import {
   appendUser,
@@ -275,7 +275,7 @@ describe("streamed markdown", () => {
     let session = newSession("omp", "/tmp");
     session = applyHarnessEvent(session, {
       type: "message.delta",
-      text: "contributor（",
+      text: "contributor (",
     });
     const id = session.blocks[0].id;
     session = applyHarnessEvent(session, {
@@ -284,10 +284,10 @@ describe("streamed markdown", () => {
     });
     session = applyHarnessEvent(session, {
       type: "message.delta",
-      text: "邮箱归属链已验证）",
+      text: "email attribution chain verified)",
     });
     expect(session.blocks.map((block) => block.text)).toEqual([
-      "contributor（邮箱归属链已验证）",
+      "contributor (email attribution chain verified)",
       "Advisor reviewed this turn",
     ]);
     expect(session.blocks[0]).toMatchObject({ id, streaming: true });
@@ -337,7 +337,7 @@ describe("streamed markdown", () => {
       let session = newSession("omp", "/tmp");
       session = applyHarnessEvent(session, {
         type: "message.delta",
-        text: "contributor（",
+        text: "contributor (",
       });
       const id = session.blocks[0].id;
       if (status)
@@ -353,13 +353,13 @@ describe("streamed markdown", () => {
       expect(session.blocks[0]).toMatchObject({ id, streaming: false });
       session = applyHarnessEvent(session, {
         type: "message.delta",
-        text: "邮箱归属链已验证）",
+        text: "email attribution chain verified)",
       });
       expect(session.blocks.map((block) => block.text)).toEqual([
-        "contributor（",
+        "contributor (",
         ...(status ? ["Reviewed"] : []),
         "Review",
-        "邮箱归属链已验证）",
+        "email attribution chain verified)",
       ]);
       expect(session.blocks.at(-1)).toMatchObject({
         role: "assistant",
@@ -595,6 +595,40 @@ describe("usage limits", () => {
         .usageLimit,
     ).toEqual({});
   });
+
+  const NOW = 1_760_420_000_000;
+  const RESET_SECONDS = 1_760_430_000;
+
+  it("fills in the reset from a later error that names it", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      let session = applyHarnessEvent(newSession("claude", "/tmp"), {
+        type: "usage.limited",
+      });
+      session = applyHarnessEvent(session, {
+        type: "session.error",
+        message: `Claude AI usage limit reached|${RESET_SECONDS}`,
+      });
+      expect(session.usageLimit).toEqual({ resetsAt: RESET_SECONDS * 1_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("starts a limit from an error that names its reset", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(NOW);
+      const session = applyHarnessEvent(newSession("codex", "/tmp"), {
+        type: "session.error",
+        message: `usage limit reached|${RESET_SECONDS}`,
+      });
+      expect(session.usageLimit).toEqual({ resetsAt: RESET_SECONDS * 1_000 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("status blocks", () => {
@@ -674,7 +708,7 @@ describe("status blocks", () => {
     expect(session.blocks.map((block) => block.role)).toEqual(["user"]);
   });
 
-  it("keeps the same keyed status across pending and accepted Mono follow-ups", () => {
+  it("keeps the same keyed status across pending and accepted Irgat follow-ups", () => {
     let session = appendUser(newSession("pi", "/tmp"), "go");
     session = applyHarnessEvent(session, {
       type: "status",
@@ -682,7 +716,7 @@ describe("status blocks", () => {
       text: "Working",
     });
     const id = session.blocks[1].id;
-    session = enqueueMonoMessage(session, {
+    session = enqueueIrgatMessage(session, {
       id: "follow-up",
       text: "Check the fallback too",
       attachments: [],
@@ -695,7 +729,7 @@ describe("status blocks", () => {
     expect(session.blocks.filter((block) => block.statusKey === "caveman"))
       .toEqual([expect.objectContaining({ id, text: "Still working" })]);
 
-    session = acknowledgeMonoMessage(session, session.queuedMessages![0], {
+    session = acknowledgeIrgatMessage(session, session.queuedMessages![0], {
       mode: "follow-up",
     });
     session = applyHarnessEvent(session, {
@@ -715,19 +749,19 @@ describe("status blocks", () => {
       .toBe(false);
   });
 
-  it("starts a new keyed status after a queued Mono message starts a new turn", () => {
+  it("starts a new keyed status after a queued Irgat message starts a new turn", () => {
     let session = appendUser(newSession("pi", "/tmp"), "go");
     session = applyHarnessEvent(session, {
       type: "status",
       key: "caveman",
       text: "First turn",
     });
-    session = enqueueMonoMessage(stopStreaming(session), {
+    session = enqueueIrgatMessage(stopStreaming(session), {
       id: "next-turn",
       text: "again",
       attachments: [],
     });
-    session = acknowledgeMonoMessage(session, session.queuedMessages![0], {
+    session = acknowledgeIrgatMessage(session, session.queuedMessages![0], {
       mode: "new-turn",
     });
     session = applyHarnessEvent(session, {

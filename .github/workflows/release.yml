@@ -1,19 +1,105 @@
 name: Release
 
+# Publishes the GitHub Release that Irgatos' "Check for Updates" reads:
+#   Irgatos_<version>_aarch64.app.tar.gz / _x64.app.tar.gz   (in-app install)
+#   Irgatos_<version>_aarch64.dmg / _x64.dmg                 (manual install)
+#   latest.json + .sig files                                 (only with updater keys)
+# The release notes end with "Commit: <sha>" so the app can compare commits.
+#
+# No secret is required. When present they are used:
+#   APPLE_SIGNING_IDENTITY, APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD
+#       Developer ID signing (otherwise ad-hoc "-", which the in-app updater
+#       accepts after stripping quarantine)
+#   APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_P8
+#       notarization
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD, TAURI_UPDATER_PUBKEY
+#       Tauri updater signatures and latest.json for the native updater
+#   R2_*  mirror latest.json to R2 (required for beta updater feeds)
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish (defaults to v<package.json version>; created on this commit if missing)
+        required: false
+      all_platforms:
+        description: Also build Linux, Windows and standalone host packages
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    needs: [linux, linux-rpm, windows, host]
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.RELEASE_PRERELEASE }}
+      feed_key: ${{ steps.meta.outputs.UPDATER_FEED_KEY }}
+      all_platforms: ${{ steps.meta.outputs.all_platforms }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - id: meta
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ALL_PLATFORMS: ${{ inputs.all_platforms }}
+          ALL_PLATFORMS_VAR: ${{ vars.RELEASE_ALL_PLATFORMS }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="${INPUT_TAG:-v$VERSION}"
+          fi
+          # Fails unless package.json, Cargo.toml and tauri.conf.json all carry
+          # the tag's version and CHANGELOG.md has a section for it.
+          node scripts/bump-version.mjs --check "${TAG#v}"
+          RELEASE_TAG="$TAG" GITHUB_ENV="$GITHUB_OUTPUT" node scripts/release-channel.cjs
+          ALL=false
+          if [[ "$INPUT_ALL_PLATFORMS" == true || "$ALL_PLATFORMS_VAR" == true ]]; then ALL=true; fi
+          {
+            echo "tag=$TAG"
+            echo "version=${TAG#v}"
+            echo "all_platforms=$ALL"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG from $GITHUB_SHA (all platforms: $ALL)"
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: prepare
     runs-on: macos-latest
-    permissions:
-      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            arch: aarch64
+            lipo: arm64
+          - target: x86_64-apple-darwin
+            arch: x64
+            lipo: x86_64
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      IRGATOS_BUILD_COMMIT: ${{ github.sha }}
+      IRGATOS_BUILD_BRANCH: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,407 +110,131 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Select release channel
-        run: node scripts/release-channel.cjs
-
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Write Apple API key
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-        run: |
-          mkdir -p "$HOME/private_keys"
-          printf '%s\n' "$APPLE_API_KEY_P8" > "$HOME/private_keys/AuthKey_${APPLE_API_KEY}.p8"
-          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_${APPLE_API_KEY}.p8" >> "$GITHUB_ENV"
+          targets: ${{ matrix.target }}
 
       - run: npm ci
 
-      - name: Check tag matches app version
-        run: |
-          set -euo pipefail
-          TAG="${GITHUB_REF_NAME#v}"
-          CONF=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          PKG=$(node -p "require('./package.json').version")
-          CARGO=$(awk '/^\[workspace.package\]/{f=1} f && /^version = /{gsub(/"/, "", $3); print $3; exit}' Cargo.toml)
-          if [ "$TAG" != "$CONF" ] || [ "$TAG" != "$PKG" ] || [ "$TAG" != "$CARGO" ]; then
-            echo "Tag v$TAG does not match package.json ($PKG), Cargo.toml ($CARGO), or tauri.conf.json ($CONF)"
-            exit 1
-          fi
-          node - "$TAG" <<'NODE'
-          const { readFileSync } = require("node:fs");
-          const version = process.argv[2];
-          const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const heading = new RegExp(
-            `^## \\[${escaped}\\](?: - \\d{4}-\\d{2}-\\d{2})?$`,
-            "m",
-          );
-          if (!heading.test(readFileSync("CHANGELOG.md", "utf8"))) {
-            console.error(`CHANGELOG.md has no valid release section for ${version}`);
-            process.exit(1);
-          }
-          NODE
-
-      - name: Write release config
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
-          TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
-          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
-        run: |
-          node <<'NODE'
-          const { writeFileSync } = require("node:fs");
-          const identity = (process.env.APPLE_SIGNING_IDENTITY || "").trim();
-          if (!identity || identity === "-") {
-            console.error("APPLE_SIGNING_IDENTITY is required and must not be ad-hoc '-'");
-            process.exit(1);
-          }
-          const pubkey = process.env.TAURI_UPDATER_PUBKEY || "";
-          const { updaterEndpoint } = require("./scripts/release-channel.cjs");
-          const endpoint = updaterEndpoint(process.env);
-          if (!pubkey || !endpoint) {
-            console.error("TAURI_UPDATER_PUBKEY and an updater endpoint are required");
-            process.exit(1);
-          }
-          writeFileSync(
-            process.env.RUNNER_TEMP + "/tauri.release.conf.json",
-            JSON.stringify(
-              {
-                bundle: { macOS: { signingIdentity: identity } },
-                plugins: {
-                  updater: {
-                    pubkey,
-                    endpoints: endpoint ? [endpoint] : [],
-                  },
-                },
-              },
-              null,
-              2,
-            ),
-          );
-          NODE
-
-      - name: Build, sign, and notarize macOS packages
+      # Only non-empty secrets are exported: Tauri treats a set-but-empty
+      # APPLE_API_KEY or TAURI_SIGNING_PRIVATE_KEY as a request to use it.
+      - name: Configure signing
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          npx tauri build --target aarch64-apple-darwin --bundles app,dmg --config "$RUNNER_TEMP/tauri.release.conf.json"
-          npx tauri build --target x86_64-apple-darwin --bundles app,dmg --config "$RUNNER_TEMP/tauri.release.conf.json"
-
-      - name: Verify macOS package architectures and signatures
-        run: |
-          set -euo pipefail
-          verify_app() {
-            local app="$1"
-            local expected_arch="$2"
-            local executable
-            local actual_arch
-            executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
-            actual_arch=$(lipo -archs "$app/Contents/MacOS/$executable")
-            if [[ "$actual_arch" != "$expected_arch" ]]; then
-              echo "Expected $app to contain only $expected_arch, got: $actual_arch" >&2
-              exit 1
-            fi
-            codesign --verify --deep --strict --verbose=2 "$app"
-          }
-          verify_app "target/aarch64-apple-darwin/release/bundle/macos/MonoCode.app" arm64
-          verify_app "target/x86_64-apple-darwin/release/bundle/macos/MonoCode.app" x86_64
-
-      - name: Download Linux packages
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-packages
-          path: target/release/bundle/linux
-
-      - name: Download Linux rpm package
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-rpm-package
-          path: target/release/bundle/rpm
-
-      - name: Download Windows packages
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-packages
-          path: target/release/bundle/nsis
-
-      - name: Download host packages
-        uses: actions/download-artifact@v4
-        with:
-          name: host-packages
-          path: build/host-packages
-
-      - name: Upload updater packages to R2
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          BUNDLE="target/release/bundle"
-          ARM_BUNDLE="target/aarch64-apple-darwin/release/bundle"
-          INTEL_BUNDLE="target/x86_64-apple-darwin/release/bundle"
-          shopt -s nullglob
-          ARM_TARS=("$ARM_BUNDLE"/macos/*.app.tar.gz)
-          ARM_DMGS=("$ARM_BUNDLE"/dmg/*.dmg)
-          INTEL_TARS=("$INTEL_BUNDLE"/macos/*.app.tar.gz)
-          INTEL_DMGS=("$INTEL_BUNDLE"/dmg/*.dmg)
-          WINDOWS_INSTALLERS=("$BUNDLE"/nsis/*.exe)
-          WINDOWS_SIGNATURES=("$BUNDLE"/nsis/*.exe.sig)
-          LINUX_APPIMAGES=("$BUNDLE"/linux/*.AppImage)
-          LINUX_APPIMAGE_SIGNATURES=("$BUNDLE"/linux/*.AppImage.sig)
-          if (( ${#ARM_TARS[@]} != 1 || ${#ARM_DMGS[@]} != 1 )); then
-            echo "Expected exactly one Apple Silicon updater archive and DMG" >&2
-            exit 1
+          export_env() {
+            local name="$1"
+            [[ -n "${!name:-}" ]] || return 0
+            { echo "$name<<__IRGATOS_EOF__"; printf '%s\n' "${!name}"; echo "__IRGATOS_EOF__"; } >> "$GITHUB_ENV"
+          }
+          if [[ -n "${APPLE_CERTIFICATE:-}" ]]; then
+            export_env APPLE_CERTIFICATE
+            export_env APPLE_CERTIFICATE_PASSWORD
           fi
-          if (( ${#INTEL_TARS[@]} != 1 || ${#INTEL_DMGS[@]} != 1 )); then
-            echo "Expected exactly one Intel updater archive and DMG" >&2
-            exit 1
+          if [[ -n "${APPLE_API_KEY:-}" && -n "${APPLE_API_ISSUER:-}" && -n "${APPLE_API_KEY_P8:-}" ]]; then
+            mkdir -p "$HOME/private_keys"
+            printf '%s\n' "$APPLE_API_KEY_P8" > "$HOME/private_keys/AuthKey_${APPLE_API_KEY}.p8"
+            echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey_${APPLE_API_KEY}.p8" >> "$GITHUB_ENV"
+            export_env APPLE_API_KEY
+            export_env APPLE_API_ISSUER
+            echo "Notarization: on"
+          else
+            echo "Notarization: off (APPLE_API_KEY, APPLE_API_ISSUER and APPLE_API_KEY_P8 not all set)"
           fi
-          if (( ${#WINDOWS_INSTALLERS[@]} != 1 || ${#WINDOWS_SIGNATURES[@]} != 1 )); then
-            echo "Expected exactly one Windows installer and updater signature" >&2
-            exit 1
+          if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" && -n "${TAURI_UPDATER_PUBKEY:-}" ]]; then
+            export_env TAURI_SIGNING_PRIVATE_KEY
+            export_env TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            UPDATER=true
+          else
+            UPDATER=false
           fi
-          if (( ${#LINUX_APPIMAGES[@]} != 1 || ${#LINUX_APPIMAGE_SIGNATURES[@]} != 1 )); then
-            echo "Expected exactly one Linux AppImage and updater signature" >&2
-            exit 1
-          fi
-          ARM_TAR="${ARM_TARS[0]}"
-          ARM_SIG="${ARM_TAR}.sig"
-          ARM_DMG="${ARM_DMGS[0]}"
-          INTEL_TAR="${INTEL_TARS[0]}"
-          INTEL_SIG="${INTEL_TAR}.sig"
-          INTEL_DMG="${INTEL_DMGS[0]}"
-          WINDOWS_INSTALLER="${WINDOWS_INSTALLERS[0]}"
-          WINDOWS_SIGNATURE="${WINDOWS_SIGNATURES[0]}"
-          LINUX_APPIMAGE="${LINUX_APPIMAGES[0]}"
-          LINUX_APPIMAGE_SIGNATURE="${LINUX_APPIMAGE_SIGNATURES[0]}"
-          for artifact in "$ARM_SIG" "$INTEL_SIG"; do
-            if [[ ! -f "$artifact" ]]; then
-              echo "Missing release artifact: $artifact" >&2
-              exit 1
-            fi
-          done
-          BASE="${R2_PUBLIC_BASE_URL%/}"
-          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          RELEASE_PREFIX="releases/${VERSION}"
-          ARM_TAR_KEY="${RELEASE_PREFIX}/MonoCode.app.tar.gz"
-          ARM_SIG_KEY="${ARM_TAR_KEY}.sig"
-          ARM_DMG_KEY="${RELEASE_PREFIX}/MonoCode_${VERSION}_aarch64.dmg"
-          INTEL_TAR_KEY="${RELEASE_PREFIX}/MonoCode_x64.app.tar.gz"
-          INTEL_SIG_KEY="${INTEL_TAR_KEY}.sig"
-          INTEL_DMG_KEY="${RELEASE_PREFIX}/MonoCode_${VERSION}_x64.dmg"
-          WINDOWS_INSTALLER_KEY="${RELEASE_PREFIX}/MonoCode_${VERSION}_x64-setup.exe"
-          WINDOWS_SIGNATURE_KEY="${WINDOWS_INSTALLER_KEY}.sig"
-          LINUX_APPIMAGE_KEY="${RELEASE_PREFIX}/MonoCode_${VERSION}_amd64.AppImage"
-          LINUX_APPIMAGE_SIGNATURE_KEY="${LINUX_APPIMAGE_KEY}.sig"
-
-          VERSION="$VERSION" \
-            ARM_SIG="$ARM_SIG" \
-            ARM_TAR_URL="$BASE/$ARM_TAR_KEY" \
-            INTEL_SIG="$INTEL_SIG" \
-            INTEL_TAR_URL="$BASE/$INTEL_TAR_KEY" \
-            WINDOWS_SIGNATURE="$WINDOWS_SIGNATURE" \
-            WINDOWS_INSTALLER_URL="$BASE/$WINDOWS_INSTALLER_KEY" \
-            LINUX_APPIMAGE_SIGNATURE="$LINUX_APPIMAGE_SIGNATURE" \
-            LINUX_APPIMAGE_URL="$BASE/$LINUX_APPIMAGE_KEY" \
-            node <<'NODE'
-          const fs = require("fs");
-          fs.writeFileSync(
-            "latest.json",
-            JSON.stringify(
-              {
-                version: process.env.VERSION,
-                notes: `MonoCode ${process.env.VERSION}`,
-                pub_date: new Date().toISOString(),
-                platforms: {
-                  "darwin-aarch64": {
-                    signature: fs
-                      .readFileSync(process.env.ARM_SIG, "utf8")
-                      .trim(),
-                    url: process.env.ARM_TAR_URL,
-                  },
-                  "darwin-x86_64": {
-                    signature: fs
-                      .readFileSync(process.env.INTEL_SIG, "utf8")
-                      .trim(),
-                    url: process.env.INTEL_TAR_URL,
-                  },
-                  "windows-x86_64": {
-                    signature: fs
-                      .readFileSync(process.env.WINDOWS_SIGNATURE, "utf8")
-                      .trim(),
-                    url: process.env.WINDOWS_INSTALLER_URL,
-                  },
-                  // AppImage only: the installer-specific key keeps .deb and
-                  // .rpm installs (which have no `linux-x86_64` entry) on
-                  // their package manager instead of self-updating.
-                  "linux-x86_64-appimage": {
-                    signature: fs
-                      .readFileSync(process.env.LINUX_APPIMAGE_SIGNATURE, "utf8")
-                      .trim(),
-                    url: process.env.LINUX_APPIMAGE_URL,
-                  },
+          UPDATER="$UPDATER" node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          const identity = (process.env.APPLE_SIGNING_IDENTITY || "").trim() || "-";
+          const config = { bundle: { macOS: { signingIdentity: identity } } };
+          let updater = process.env.UPDATER === "true";
+          if (updater) {
+            try {
+              const { updaterEndpoint } = require("./scripts/release-channel.cjs");
+              config.plugins = {
+                updater: {
+                  pubkey: process.env.TAURI_UPDATER_PUBKEY,
+                  endpoints: [updaterEndpoint(process.env)],
                 },
-              },
-              null,
-              2,
-            ) + "\n",
-          );
-          NODE
-
-          brew list awscli >/dev/null 2>&1 || brew install awscli
-          IMMUTABLE_CACHE="public,max-age=31536000,immutable"
-          NO_CACHE="no-store,max-age=0,must-revalidate"
-          aws s3 cp "$ARM_DMG" "s3://${R2_BUCKET_NAME}/${ARM_DMG_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$ARM_TAR" "s3://${R2_BUCKET_NAME}/${ARM_TAR_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$ARM_SIG" "s3://${R2_BUCKET_NAME}/${ARM_SIG_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$INTEL_DMG" "s3://${R2_BUCKET_NAME}/${INTEL_DMG_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$INTEL_TAR" "s3://${R2_BUCKET_NAME}/${INTEL_TAR_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$INTEL_SIG" "s3://${R2_BUCKET_NAME}/${INTEL_SIG_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$WINDOWS_INSTALLER" "s3://${R2_BUCKET_NAME}/${WINDOWS_INSTALLER_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$WINDOWS_SIGNATURE" "s3://${R2_BUCKET_NAME}/${WINDOWS_SIGNATURE_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$LINUX_APPIMAGE" "s3://${R2_BUCKET_NAME}/${LINUX_APPIMAGE_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          aws s3 cp "$LINUX_APPIMAGE_SIGNATURE" "s3://${R2_BUCKET_NAME}/${LINUX_APPIMAGE_SIGNATURE_KEY}" --cache-control "$IMMUTABLE_CACHE" --endpoint-url "$ENDPOINT"
-          # Keep stable links for both architectures, but never let the CDN
-          # retain an older release under these mutable names.
-          if [[ "$RELEASE_PRERELEASE" != true ]]; then
-            aws s3 cp "$ARM_DMG" "s3://${R2_BUCKET_NAME}/MonoCode.dmg" --cache-control "$NO_CACHE" --endpoint-url "$ENDPOINT"
-            aws s3 cp "$INTEL_DMG" "s3://${R2_BUCKET_NAME}/MonoCode_x64.dmg" --cache-control "$NO_CACHE" --endpoint-url "$ENDPOINT"
-          fi
-
-      - name: GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          BUNDLE="target/release/bundle"
-          ARM_BUNDLE="target/aarch64-apple-darwin/release/bundle"
-          INTEL_BUNDLE="target/x86_64-apple-darwin/release/bundle"
-          ARM_TAR="$ARM_BUNDLE/macos/MonoCode.app.tar.gz"
-          ARM_SIG="${ARM_TAR}.sig"
-          ARM_DMG="$ARM_BUNDLE/dmg/MonoCode_${VERSION}_aarch64.dmg"
-          INTEL_TAR="$INTEL_BUNDLE/macos/MonoCode.app.tar.gz"
-          INTEL_SIG="${INTEL_TAR}.sig"
-          INTEL_DMG="$INTEL_BUNDLE/dmg/MonoCode_${VERSION}_x64.dmg"
-          DEB="$BUNDLE/linux/MonoCode_${VERSION}_amd64.deb"
-          APPIMAGE="$BUNDLE/linux/MonoCode_${VERSION}_amd64.AppImage"
-          APPIMAGE_SIG="${APPIMAGE}.sig"
-          shopt -s nullglob
-          RPMS=("$BUNDLE"/rpm/*.rpm)
-          if (( ${#RPMS[@]} != 1 )); then
-            echo "Expected exactly one .rpm" >&2
-            exit 1
-          fi
-          RPM="${RPMS[0]}"
-          NSIS="$BUNDLE/nsis/MonoCode_${VERSION}_x64-setup.exe"
-          NSIS_SIG="${NSIS}.sig"
-          for artifact in "$ARM_DMG" "$ARM_TAR" "$ARM_SIG" "$INTEL_DMG" "$INTEL_TAR" "$INTEL_SIG" "$DEB" "$APPIMAGE" "$APPIMAGE_SIG" "$RPM" "$NSIS" "$NSIS_SIG"; do
-            if [[ ! -f "$artifact" ]]; then
-              echo "Missing release artifact: $artifact" >&2
-              exit 1
-            fi
-          done
-          RELEASE_ASSETS="$RUNNER_TEMP/github-release-assets"
-          mkdir -p "$RELEASE_ASSETS"
-          cp "$ARM_TAR" "$RELEASE_ASSETS/MonoCode.app.tar.gz"
-          cp "$ARM_SIG" "$RELEASE_ASSETS/MonoCode.app.tar.gz.sig"
-          cp "$INTEL_TAR" "$RELEASE_ASSETS/MonoCode_x64.app.tar.gz"
-          cp "$INTEL_SIG" "$RELEASE_ASSETS/MonoCode_x64.app.tar.gz.sig"
-          HOST_ARCHIVES=(build/host-packages/*.tar.gz build/host-packages/*.zip)
-          if (( ${#HOST_ARCHIVES[@]} != 6 )); then
-            echo "Expected six host archives" >&2
-            exit 1
-          fi
-          HOST_FILES=("${HOST_ARCHIVES[@]}")
-          for archive in "${HOST_ARCHIVES[@]}"; do
-            if [[ ! -f "$archive.sha256" ]]; then
-              echo "Missing host checksum: $archive.sha256" >&2
-              exit 1
-            fi
-            HOST_FILES+=("$archive.sha256")
-          done
-          RELEASE_FILES=(
-            "$ARM_DMG" "$RELEASE_ASSETS/MonoCode.app.tar.gz" "$RELEASE_ASSETS/MonoCode.app.tar.gz.sig"
-            "$INTEL_DMG" "$RELEASE_ASSETS/MonoCode_x64.app.tar.gz" "$RELEASE_ASSETS/MonoCode_x64.app.tar.gz.sig"
-            "$DEB" "$APPIMAGE" "$APPIMAGE_SIG" "$RPM" "$NSIS" "$NSIS_SIG" "${HOST_FILES[@]}"
-          )
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              --draft \
-              --prerelease="$RELEASE_PRERELEASE" \
-              --title "MonoCode $VERSION" \
-              --notes "See CHANGELOG.md for details."
-          fi
-          verify_release() {
-            local expected_draft="$1"
-            gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,assets > "$RUNNER_TEMP/release-state.json"
-            node - "$RUNNER_TEMP/release-state.json" "$expected_draft" "${RELEASE_FILES[@]}" <<'NODE'
-          const fs = require("node:fs");
-          const path = require("node:path");
-          const release = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          if (release.isDraft !== (process.argv[3] === "true")) {
-            console.error("GitHub Release publication state is unexpected.");
-            process.exit(1);
-          }
-          if (release.isPrerelease !== (process.env.RELEASE_PRERELEASE === "true")) {
-            console.error("GitHub Release channel is unexpected.");
-            process.exit(1);
-          }
-          const names = new Set(release.assets.map((asset) => asset.name));
-          for (const file of process.argv.slice(4)) {
-            const name = path.basename(file);
-            if (!names.has(name)) {
-              console.error(`GitHub Release is missing ${name}.`);
-              process.exit(1);
+              };
+            } catch (error) {
+              console.log(`Native updater feed: off (${error.message})`);
+              updater = false;
             }
           }
+          config.bundle.createUpdaterArtifacts = updater;
+          console.log(`Code signing: ${identity === "-" ? "ad-hoc" : "Developer ID"}`);
+          console.log(`Tauri updater artifacts: ${updater ? "on" : "off"}`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/tauri.release.conf.json`, JSON.stringify(config, null, 2));
           NODE
-          }
-          IS_DRAFT=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)
-          if [[ "$IS_DRAFT" == true ]]; then
-            # Draft assets can be replaced after an interrupted upload. A
-            # published release is immutable, so only resume drafts.
-            gh release upload "$GITHUB_REF_NAME" "${RELEASE_FILES[@]}" --clobber
-            verify_release true
-            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease="$RELEASE_PRERELEASE"
-          elif [[ "$IS_DRAFT" != false ]]; then
-            echo "Unexpected GitHub Release state: $IS_DRAFT" >&2
-            exit 1
-          fi
-          verify_release false
 
-      - name: Publish updater feed
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      - name: Build
+        run: npx tauri build --target ${{ matrix.target }} --bundles app,dmg --config "$RUNNER_TEMP/tauri.release.conf.json"
+
+      - name: Verify architecture and signature
         run: |
           set -euo pipefail
-          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          aws s3 cp latest.json "s3://${R2_BUCKET_NAME}/${UPDATER_FEED_KEY}" \
-            --content-type "application/json" \
-            --cache-control "no-store,max-age=0,must-revalidate" \
-            --endpoint-url "$ENDPOINT"
+          APP="target/${{ matrix.target }}/release/bundle/macos/Irgatos.app"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")
+          ACTUAL=$(lipo -archs "$APP/Contents/MacOS/$EXECUTABLE")
+          if [[ "$ACTUAL" != "${{ matrix.lipo }}" ]]; then
+            echo "Expected $APP to contain only ${{ matrix.lipo }}, got: $ACTUAL" >&2
+            exit 1
+          fi
+          BUNDLE_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
+          if [[ "$BUNDLE_VERSION" != "$VERSION" ]]; then
+            echo "Expected bundle version $VERSION, got $BUNDLE_VERSION" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Stage assets
+        run: |
+          set -euo pipefail
+          BUNDLE="target/${{ matrix.target }}/release/bundle"
+          ARCHIVE="dist/Irgatos_${VERSION}_${{ matrix.arch }}.app.tar.gz"
+          mkdir -p dist
+          if [[ -f "$BUNDLE/macos/Irgatos.app.tar.gz" ]]; then
+            cp "$BUNDLE/macos/Irgatos.app.tar.gz" "$ARCHIVE"
+            cp "$BUNDLE/macos/Irgatos.app.tar.gz.sig" "$ARCHIVE.sig"
+          else
+            COPYFILE_DISABLE=1 tar -C "$BUNDLE/macos" -czf "$ARCHIVE" Irgatos.app
+          fi
+          shopt -s nullglob
+          DMGS=("$BUNDLE"/dmg/*.dmg)
+          if (( ${#DMGS[@]} != 1 )); then
+            echo "Expected exactly one DMG, found ${#DMGS[@]}" >&2
+            exit 1
+          fi
+          cp "${DMGS[0]}" "dist/Irgatos_${VERSION}_${{ matrix.arch }}.dmg"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
 
   host:
     name: Standalone host packages
+    needs: prepare
+    if: needs.prepare.outputs.all_platforms == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -432,6 +242,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -454,17 +266,22 @@ jobs:
 
   linux:
     name: Linux packages
+    needs: prepare
+    if: needs.prepare.outputs.all_platforms == 'true'
     runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      IRGATOS_BUILD_COMMIT: ${{ github.sha }}
+      IRGATOS_BUILD_BRANCH: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
-      - name: Select release channel
-        run: node scripts/release-channel.cjs
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -475,27 +292,24 @@ jobs:
 
       - name: Write updater release config
         env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
         run: |
           node <<'NODE'
           const { writeFileSync } = require("node:fs");
+          const config = { bundle: { createUpdaterArtifacts: false } };
           const pubkey = process.env.TAURI_UPDATER_PUBKEY || "";
-          const { updaterEndpoint } = require("./scripts/release-channel.cjs");
-          const endpoint = updaterEndpoint(process.env);
-          if (!pubkey || !endpoint) {
-            console.error("TAURI_UPDATER_PUBKEY and an updater endpoint are required");
-            process.exit(1);
+          if (pubkey && process.env.HAS_SIGNING_KEY === "true") {
+            try {
+              const { updaterEndpoint } = require("./scripts/release-channel.cjs");
+              config.plugins = { updater: { pubkey, endpoints: [updaterEndpoint(process.env)] } };
+            } catch (error) {
+              console.log(`Native updater feed: off (${error.message})`);
+            }
           }
-          writeFileSync(
-            process.env.RUNNER_TEMP + "/tauri.release.conf.json",
-            JSON.stringify(
-              { plugins: { updater: { pubkey, endpoints: [endpoint] } } },
-              null,
-              2,
-            ),
-          );
+          writeFileSync(`${process.env.RUNNER_TEMP}/tauri.release.conf.json`, JSON.stringify(config, null, 2));
           NODE
 
       # Same as `npm run build:linux`, with the updater config merged in.
@@ -517,6 +331,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY not set; publishing an unsigned AppImage"
+            exit 0
+          fi
           shopt -s nullglob
           appimage=(target/release/bundle/appimage/*.AppImage)
           if (( ${#appimage[@]} != 1 )); then
@@ -536,12 +354,9 @@ jobs:
             echo "Expected exactly one .deb and one AppImage" >&2
             exit 1
           fi
-          if [[ ! -s "${appimage[0]}.sig" ]]; then
-            echo "Missing AppImage updater signature" >&2
-            exit 1
-          fi
           mkdir -p release-artifacts
-          cp "${deb[0]}" "${appimage[0]}" "${appimage[0]}.sig" release-artifacts/
+          cp "${deb[0]}" "${appimage[0]}" release-artifacts/
+          if [[ -s "${appimage[0]}.sig" ]]; then cp "${appimage[0]}.sig" release-artifacts/; fi
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
@@ -552,6 +367,8 @@ jobs:
 
   linux-rpm:
     name: Linux rpm package
+    needs: prepare
+    if: needs.prepare.outputs.all_platforms == 'true'
     runs-on: ubuntu-latest
     # Build on EL 10 so the published rpm's glibc requirement matches the
     # oldest advertised target. Fedora 43 is newer and would install on EL 10
@@ -580,7 +397,7 @@ jobs:
       - run: npm ci
 
       - name: Build rpm package
-        run: npm run build:fedora
+        run: npx tauri build --bundles rpm --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Install and stage the generated rpm
         run: |
@@ -615,17 +432,22 @@ jobs:
 
   windows:
     name: Windows packages
+    needs: prepare
+    if: needs.prepare.outputs.all_platforms == 'true'
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      IRGATOS_BUILD_COMMIT: ${{ github.sha }}
+      IRGATOS_BUILD_BRANCH: ${{ needs.prepare.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
-      - name: Select release channel
-        run: node scripts/release-channel.cjs
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -633,29 +455,27 @@ jobs:
 
       - name: Write updater release config
         env:
+          HAS_SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           TAURI_UPDATER_ENDPOINT: ${{ secrets.TAURI_UPDATER_ENDPOINT }}
           R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+        shell: bash
         run: |
-          $endpoint = node -p "require('./scripts/release-channel.cjs').updaterEndpoint(process.env)"
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not select the updater endpoint"
-          }
-          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBKEY)) {
-            throw "TAURI_UPDATER_PUBKEY is required"
-          }
-          $config = @{
-            bundle = @{
-              createUpdaterArtifacts = $true
-            }
-            plugins = @{
-              updater = @{
-                pubkey = $env:TAURI_UPDATER_PUBKEY
-                endpoints = @($endpoint)
-              }
+          node <<'NODE'
+          const { writeFileSync } = require("node:fs");
+          const config = { bundle: { createUpdaterArtifacts: false } };
+          const pubkey = process.env.TAURI_UPDATER_PUBKEY || "";
+          if (pubkey && process.env.HAS_SIGNING_KEY === "true") {
+            try {
+              const { updaterEndpoint } = require("./scripts/release-channel.cjs");
+              config.plugins = { updater: { pubkey, endpoints: [updaterEndpoint(process.env)] } };
+              config.bundle.createUpdaterArtifacts = true;
+            } catch (error) {
+              console.log(`Native updater feed: off (${error.message})`);
             }
           }
-          $config | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\tauri.release.conf.json"
+          writeFileSync(`${process.env.RUNNER_TEMP}/tauri.release.conf.json`, JSON.stringify(config, null, 2));
+          NODE
 
       - name: Build Windows packages
         env:
@@ -668,12 +488,11 @@ jobs:
       - name: Stage Windows packages
         run: |
           $installers = @(Get-ChildItem "target/release/bundle/nsis" -Filter "*.exe")
-          $signatures = @(Get-ChildItem "target/release/bundle/nsis" -Filter "*.exe.sig")
-          if ($installers.Count -ne 1 -or $signatures.Count -ne 1) {
-            throw "Expected exactly one NSIS installer and one updater signature"
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one NSIS installer"
           }
           New-Item -ItemType Directory -Force "release-artifacts" | Out-Null
-          $artifacts = @($installers[0].FullName, $signatures[0].FullName)
+          $artifacts = @($installers[0].FullName) + @(Get-ChildItem "target/release/bundle/nsis" -Filter "*.exe.sig" | ForEach-Object { $_.FullName })
           Copy-Item -Path $artifacts -Destination "release-artifacts/"
 
       - name: Upload Windows packages
@@ -682,3 +501,124 @@ jobs:
           name: windows-packages
           path: release-artifacts/
           if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [prepare, macos, host, linux, linux-rpm, windows]
+    # Optional platforms may be skipped; none of the jobs that ran may fail.
+    if: >-
+      always() && needs.prepare.result == 'success' && needs.macos.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+      UPDATER_FEED_KEY: ${{ needs.prepare.outputs.feed_key }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write release notes and updater feed
+        run: |
+          set -euo pipefail
+          ls -l dist
+          node <<'NODE'
+          const fs = require("node:fs");
+          const { VERSION, TAG, GITHUB_SHA, GITHUB_REPOSITORY } = process.env;
+          const changelog = fs.readFileSync("CHANGELOG.md", "utf8");
+          const escaped = VERSION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const start = new RegExp(`^## \\[${escaped}\\][^\\n]*\\n`, "m").exec(changelog);
+          let body = "";
+          if (start) {
+            const rest = changelog.slice(start.index + start[0].length);
+            const next = /^## |^\[[^\]]+\]: /m.exec(rest);
+            body = rest.slice(0, next ? next.index : undefined).trim();
+          }
+          // The app reads this line to compare the release against its build.
+          fs.writeFileSync("release-notes.md", `${body || `Irgatos ${VERSION}`}\n\nCommit: ${GITHUB_SHA}\n`);
+
+          const files = fs.readdirSync("dist");
+          const url = (name) => `https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${name}`;
+          const platforms = {};
+          const add = (key, pattern) => {
+            const asset = files.find((name) => pattern.test(name) && files.includes(`${name}.sig`));
+            if (!asset) return;
+            platforms[key] = {
+              signature: fs.readFileSync(`dist/${asset}.sig`, "utf8").trim(),
+              url: url(asset),
+            };
+          };
+          add("darwin-aarch64", /_aarch64\.app\.tar\.gz$/);
+          add("darwin-x86_64", /_x64\.app\.tar\.gz$/);
+          add("windows-x86_64", /-setup\.exe$/);
+          // AppImage only: the installer-specific key keeps .deb and .rpm
+          // installs on their package manager instead of self-updating.
+          add("linux-x86_64-appimage", /\.AppImage$/);
+          if (Object.keys(platforms).length) {
+            const feed = { version: VERSION, notes: body || `Irgatos ${VERSION}`, pub_date: new Date().toISOString(), platforms };
+            fs.writeFileSync("dist/latest.json", `${JSON.stringify(feed, null, 2)}\n`);
+            console.log(`latest.json covers ${Object.keys(platforms).join(", ")}`);
+          } else {
+            console.log("No updater signatures; skipping latest.json (the in-app GitHub updater does not need it)");
+          }
+          NODE
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+
+      - name: Create or update the release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            IS_DRAFT=$(gh release view "$TAG" --json isDraft --jq .isDraft)
+            if [[ "$IS_DRAFT" != true ]]; then
+              # A published release is what installed apps already compared
+              # against; replacing its assets would change an existing version.
+              echo "Release $TAG is already published. Bump the version instead." >&2
+              exit 1
+            fi
+          else
+            gh release create "$TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --prerelease="$RELEASE_PRERELEASE" \
+              --title "Irgatos $VERSION" \
+              --notes-file release-notes.md
+          fi
+          gh release edit "$TAG" --notes-file release-notes.md
+          gh release upload "$TAG" dist/* --clobber
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort > uploaded.txt
+          (cd dist && ls -1) | sort > expected.txt
+          if ! diff -u expected.txt uploaded.txt; then
+            echo "GitHub Release is missing assets" >&2
+            exit 1
+          fi
+          gh release edit "$TAG" --draft=false --prerelease="$RELEASE_PRERELEASE"
+          echo "Published https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+
+      - name: Mirror updater feed to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f dist/latest.json || -z "${R2_BUCKET_NAME:-}" || -z "${R2_ACCOUNT_ID:-}" ]]; then
+            echo "Skipping R2 mirror"
+            exit 0
+          fi
+          aws s3 cp dist/latest.json "s3://${R2_BUCKET_NAME}/${UPDATER_FEED_KEY}" \
+            --content-type "application/json" \
+            --cache-control "no-store,max-age=0,must-revalidate" \
+            --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"

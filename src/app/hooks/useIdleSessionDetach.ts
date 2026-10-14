@@ -16,8 +16,8 @@ import {
   type WorkspaceTab,
 } from "../../features/workspace/model/layout";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
-import { isMonoSession } from "../../features/monos/model/mono";
-import { isHabitRun } from "../../features/monos/model/monoHabits";
+import { isIrgatSession } from "../../features/irgats/model/irgat";
+import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 
 const SESSION_DETACH_DELAY_MS = 250;
 
@@ -68,7 +68,7 @@ export function useIdleSessionDetach({
       // A habit's hidden run is removed by its scheduler when it ends.
       if (
         session.inboxAsk ||
-        isMonoSession(session.id) ||
+        isIrgatSession(session.id) ||
         isHabitRun(session.id)
       )
         visibleIds.add(session.id);

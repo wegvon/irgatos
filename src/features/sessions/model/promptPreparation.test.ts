@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   applyFileMentionsToTurn: vi.fn(),
   applyNotesToTurn: vi.fn(),
   applySkillsToTurn: vi.fn(),
+  applySessionReferencesToTurn: vi.fn(),
   events: [] as string[],
   warmNativeSkills: vi.fn(),
 }));
@@ -23,6 +24,10 @@ vi.mock("../../skills/model/skills", () => ({
     harness === "omp" && text.startsWith("/"),
 }));
 
+vi.mock("../data/sessionReferenceDirectory", () => ({
+  applySessionReferencesToTurn: mocks.applySessionReferencesToTurn,
+}));
+
 import { preparePrompt } from "./promptPreparation";
 
 function deferred<T>() {
@@ -39,6 +44,10 @@ beforeEach(() => {
   mocks.applyNotesToTurn.mockReset();
   mocks.applyNotesToTurn.mockImplementation(async (text: string) => text);
   mocks.applySkillsToTurn.mockReset();
+  mocks.applySessionReferencesToTurn.mockReset();
+  mocks.applySessionReferencesToTurn.mockImplementation(
+    async (_typed: string, prepared: string) => prepared,
+  );
   mocks.warmNativeSkills.mockReset();
   mocks.warmNativeSkills.mockImplementation(() => {
     mocks.events.push("warm");
@@ -57,6 +66,7 @@ describe("preparePrompt", () => {
     expect(mocks.applyFileMentionsToTurn).not.toHaveBeenCalled();
     expect(mocks.applyNotesToTurn).not.toHaveBeenCalled();
     expect(mocks.applySkillsToTurn).not.toHaveBeenCalled();
+    expect(mocks.applySessionReferencesToTurn).not.toHaveBeenCalled();
   });
   it("starts warmup before awaiting file mentions", async () => {
     const files = deferred<string>();
@@ -79,5 +89,31 @@ describe("preparePrompt", () => {
       harness: "pi",
       cwd: "/repo",
     });
+  });
+
+  it("expands session references from the typed text, after skills", async () => {
+    mocks.applyFileMentionsToTurn.mockImplementation(
+      async (text: string) => `${text} +files`,
+    );
+    mocks.applySkillsToTurn.mockImplementation(
+      async (text: string) => `${text} +skills`,
+    );
+    mocks.applySessionReferencesToTurn.mockImplementation(
+      async (_typed: string, prepared: string) => `${prepared} +sessions`,
+    );
+    const context = {
+      harness: "claude" as const,
+      cwd: "/repo",
+      sessionId: "s1",
+    };
+
+    await expect(
+      preparePrompt("see @session/fix-3f2a9c1e", context),
+    ).resolves.toBe("see @session/fix-3f2a9c1e +files +skills +sessions");
+    expect(mocks.applySessionReferencesToTurn).toHaveBeenCalledWith(
+      "see @session/fix-3f2a9c1e",
+      "see @session/fix-3f2a9c1e +files +skills",
+      context,
+    );
   });
 });

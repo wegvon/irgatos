@@ -2,7 +2,7 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { vi, describe, expect, it } from "vitest";
 import type { Block } from "../model/session";
-import { AgentTranscript } from "./AgentTranscript";
+import { AgentTranscript, transcriptReviewTarget } from "./AgentTranscript";
 
 function tool(id: string, approval?: Block["approval"]): Block {
   return {
@@ -43,25 +43,25 @@ describe("AgentTranscript collapsed work", () => {
 
   it("shows a /operator request without the command in its amber bubble", () => {
     const markup = render([
-      { id: "user", role: "user", text: "list my notes", monocode: true },
+      { id: "user", role: "user", text: "list my notes", irgat: true },
     ]);
-    expect(markup).toContain('data-monocode="true"');
+    expect(markup).toContain('data-irgat="true"');
     expect(markup).toContain("list my notes");
     expect(markup).not.toContain("/operator");
 
     const legacy = render([
-      { id: "old", role: "user", text: "/monocode list my notes" },
+      { id: "old", role: "user", text: "/irgat list my notes" },
     ]);
-    expect(legacy).toContain('data-monocode="true"');
-    expect(legacy).not.toContain("/monocode");
+    expect(legacy).toContain('data-irgat="true"');
+    expect(legacy).not.toContain("/irgat");
   });
 
-  it("shows MonoCode CLI actions instead of their long shell commands", () => {
+  it("shows Irgatos CLI actions instead of their long shell commands", () => {
     const command =
-      "/repo/target/debug/MonoCode.app/Contents/MacOS/monocode";
+      "/repo/target/debug/Irgatos.app/Contents/MacOS/irgat";
     const markup = render(
       [
-        { id: "user", role: "user", text: "/monocode list my notes" },
+        { id: "user", role: "user", text: "/irgat list my notes" },
         {
           id: "help",
           role: "tool",
@@ -77,19 +77,19 @@ describe("AgentTranscript collapsed work", () => {
       ],
       true,
     );
-    expect(markup).toContain("Using MonoCode");
-    expect(markup).toContain('data-monocode-tool-call="--help"');
-    expect(markup).toContain('data-monocode-tool-call="notes.list"');
-    expect(markup).toContain("monocode app --help");
-    expect(markup).toContain("monocode app notes.list");
+    expect(markup).toContain("Using Irgatos");
+    expect(markup).toContain('data-irgat-tool-call="--help"');
+    expect(markup).toContain('data-irgat-tool-call="notes.list"');
+    expect(markup).toContain("irgat app --help");
+    expect(markup).toContain("irgat app notes.list");
     expect(markup).toContain("Ran");
     expect(markup).toContain("Running");
-    expect(markup).not.toContain("Contents/MacOS/monocode");
-    expect(markup).not.toContain("Show error details for MonoCode");
+    expect(markup).not.toContain("Contents/MacOS/irgat");
+    expect(markup).not.toContain("Show error details for Irgatos");
   });
 
-  it("shows the full command before approving a MonoCode CLI call", () => {
-    const command = "monocode app sessions.send --json '{\"prompt\":\"private-marker\"}'";
+  it("shows the full command before approving an Irgatos CLI call", () => {
+    const command = "irgat app sessions.send --json '{\"prompt\":\"private-marker\"}'";
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks: [
@@ -106,7 +106,7 @@ describe("AgentTranscript collapsed work", () => {
         onApproval: () => {},
       }),
     );
-    expect(markup).toContain('data-monocode-tool-call="sessions.send"');
+    expect(markup).toContain('data-irgat-tool-call="sessions.send"');
     expect(markup).toContain("private-marker");
     expect(markup).toContain("Allow</button>");
 
@@ -117,7 +117,7 @@ describe("AgentTranscript collapsed work", () => {
           {
             id: "call",
             role: "tool",
-            text: "monocode app notes.list && echo extra",
+            text: "irgat app notes.list && echo extra",
             tool: { kind: "shell", status: "pending" },
             approval: { requestId: 2 },
           },
@@ -126,25 +126,25 @@ describe("AgentTranscript collapsed work", () => {
         onApproval: () => {},
       }),
     );
-    expect(compound).not.toContain("data-monocode-tool-call");
+    expect(compound).not.toContain("data-irgat-tool-call");
     expect(compound).toContain("echo extra");
     expect(compound).toContain("Allow</button>");
   });
 
-  it("keeps a failed MonoCode call compact until its error is opened", () => {
+  it("keeps a failed Irgatos call compact until its error is opened", () => {
     const markup = render([
-      { id: "user", role: "user", text: "/monocode list notes" },
+      { id: "user", role: "user", text: "/irgat list notes" },
       {
         id: "notes",
         role: "tool",
-        text: "monocode app notes.list",
+        text: "irgat app notes.list",
         tool: { kind: "shell", status: "failed", detail: "Connection refused" },
       },
     ]);
-    expect(markup).toContain('data-monocode-tool-call="notes.list"');
+    expect(markup).toContain('data-irgat-tool-call="notes.list"');
     expect(markup).toContain("Ran");
-    expect(markup).toContain("monocode app notes.list");
-    expect(markup).toContain("Show error details for MonoCode: List notes");
+    expect(markup).toContain("irgat app notes.list");
+    expect(markup).toContain("Show error details for Irgatos: List notes");
     expect(markup).not.toContain("Connection refused");
   });
 
@@ -324,7 +324,7 @@ describe("AgentTranscript collapsed work", () => {
     expect(markup).not.toContain("Claude Opus 5 worked for 9s");
   });
 
-  it("credits a Mono's turns to the Mono, whichever model ran them", () => {
+  it("credits a Irgat's turns to the Irgat, whichever model ran them", () => {
     const blocks: Block[] = [
       {
         id: "user",
@@ -342,17 +342,17 @@ describe("AgentTranscript collapsed work", () => {
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks,
-        agentName: "MonoCat",
+        agentName: "IrgatCat",
         harness: "claude",
         model: "claude:opus-5",
       }),
     );
 
-    expect(markup).toContain("MonoCat worked for 9s");
+    expect(markup).toContain("IrgatCat worked for 9s");
     expect(markup).not.toContain("Claude Sonnet 5 worked for 9s");
   });
 
-  it("marks when a Mono's messages were sent, and keeps its footer to copy, note and time", () => {
+  it("marks when a Irgat's messages were sent, and keeps its footer to copy, note and time", () => {
     const now = new Date(2026, 9, 5, 12).getTime();
     vi.setSystemTime(now);
     const turn = (id: string, startedAt: number): Block[] => [
@@ -374,7 +374,7 @@ describe("AgentTranscript collapsed work", () => {
     const markup = renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks,
-        agentName: "MonoCat",
+        agentName: "IrgatCat",
         daySeparators: true,
         hideTurnMetrics: true,
         onSaveNote: () => {},
@@ -833,14 +833,14 @@ describe("AgentTranscript collapsed work", () => {
   });
 });
 
-describe("Mono inline work", () => {
-  function renderMono(blocks: Block[], busy = false) {
+describe("Irgat inline work", () => {
+  function renderIrgat(blocks: Block[], busy = false) {
     return renderToStaticMarkup(
       createElement(AgentTranscript, {
         blocks,
         busy,
         inlineWork: true,
-        agentName: "MonoCat",
+        agentName: "IrgatCat",
         onApproval: () => {},
       }),
     );
@@ -877,16 +877,16 @@ describe("Mono inline work", () => {
             ]
           : []),
       ];
-      const markup = renderMono(blocks, busy);
+      const markup = renderIrgat(blocks, busy);
       const header = markup.indexOf(
-        busy ? "Running command…" : "MonoCat worked for 9s",
+        busy ? "Running command…" : "IrgatCat worked for 9s",
       );
-      expect(header).toBeGreaterThanOrEqual(markup.indexOf("MonoCat"));
+      expect(header).toBeGreaterThanOrEqual(markup.indexOf("IrgatCat"));
       expect(markup).not.toContain("I will check the first part.");
       expect(markup).not.toContain(
         "The first part passed. Checking the next part.",
       );
-      expect(markup.match(/data-mono-work/g)).toHaveLength(1);
+      expect(markup.match(/data-irgat-work/g)).toHaveLength(1);
       if (!busy)
         expect(markup.indexOf("Everything passed.")).toBeGreaterThan(header);
       expect(markup).not.toContain("hidden-detail-");
@@ -899,7 +899,7 @@ describe("Mono inline work", () => {
   it.each([true, false])(
     "keeps a single tool call in the activity trail (busy=%s)",
     (busy) => {
-      const markup = renderMono(
+      const markup = renderIrgat(
         [
           { id: "user", role: "user", text: "Run this", durationMs: 1_000 },
           {
@@ -910,7 +910,7 @@ describe("Mono inline work", () => {
         busy,
       );
       expect(markup).toContain(
-        busy ? "Running command…" : "MonoCat worked for 1s",
+        busy ? "Running command…" : "IrgatCat worked for 1s",
       );
       expect(markup).not.toContain("hidden-detail-single");
       expect(markup).not.toContain("aria-expanded");
@@ -925,13 +925,13 @@ describe("Mono inline work", () => {
       durationMs: 1_000,
     };
     const approval = tool("approval", { requestId: 1 });
-    const waiting = renderMono([user, approval], true);
+    const waiting = renderIrgat([user, approval], true);
     expect(waiting).toContain("hidden-detail-approval");
     expect(waiting).toContain("Allow</button>");
     expect(waiting).toContain("Deny</button>");
     expect(waiting).toContain("Waiting for approval…");
     expect(waiting).not.toContain('aria-label="Show the steps');
-    const approved = renderMono([
+    const approved = renderIrgat([
       user,
       {
         ...approval,
@@ -939,13 +939,13 @@ describe("Mono inline work", () => {
         tool: { kind: "shell", status: "completed" },
       },
     ]);
-    expect(approved).toContain("MonoCat worked for 1s");
+    expect(approved).toContain("IrgatCat worked for 1s");
     expect(approved).not.toContain("hidden-detail-approval");
     expect(approved).not.toContain("Allow</button>");
   });
 
   it("keeps delegated tool work compact, including failed runs", () => {
-    const markup = renderMono([
+    const markup = renderIrgat([
       { id: "user", role: "user", text: "Delegate this", durationMs: 1_000 },
       { id: "intro", role: "assistant", text: "I will ask for a review." },
       {
@@ -985,7 +985,7 @@ describe("worker assignment prompts", () => {
             id: "u1",
             role: "user",
             internal: true,
-            text: "Review the current branch against main.\n\n<monocode_assignment>\nYou are a worker managed by a MonoCode lead. Your assigned write scope is: src/App.tsx.\n</monocode_assignment>",
+            text: "Review the current branch against main.\n\n<irgat_assignment>\nYou are a worker managed by an Irgatos lead. Your assigned write scope is: src/App.tsx.\n</irgat_assignment>",
           },
           { id: "a1", role: "assistant", text: "Looking now" },
         ],
@@ -993,7 +993,22 @@ describe("worker assignment prompts", () => {
     );
     expect(markup).toContain("Review the current branch against main.");
     expect(markup).toContain("Looking now");
-    expect(markup).not.toContain("monocode_assignment");
-    expect(markup).not.toContain("You are a worker managed by a MonoCode lead");
+    expect(markup).not.toContain("irgat_assignment");
+    expect(markup).not.toContain("You are a worker managed by an Irgatos lead");
+  });
+});
+
+describe("transcriptReviewTarget", () => {
+  it("names replies, plans, and messages by their chat", () => {
+    expect(transcriptReviewTarget("assistant", "Fix login")).toBe(
+      "Reply in “Fix login”",
+    );
+    expect(transcriptReviewTarget("plan", "Fix login")).toBe(
+      "Plan in “Fix login”",
+    );
+    expect(transcriptReviewTarget("user", "Fix\nlogin")).toBe(
+      "Message in “Fix login”",
+    );
+    expect(transcriptReviewTarget(undefined, "  ")).toBe("Reply");
   });
 });

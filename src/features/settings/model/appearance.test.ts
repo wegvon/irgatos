@@ -44,17 +44,17 @@ import {
   isLightScheme,
 } from "./appearance";
 
-const KEY = "monocode.transcriptLayout";
-const ACCENT_COLOR_KEY = "monocode.accentColor";
-const SCHEME_KEY = "monocode.colorScheme";
-const ANCHOR_KEY = "monocode.transcriptAnchor";
-const SHOW_EXCLUDED_FILES_KEY = "monocode.showExcludedFiles";
-const CHAT_BACKGROUND_PATH_KEY = "monocode.chatBackgroundPath";
-const CHAT_BACKGROUND_OPACITY_KEY = "monocode.chatBackgroundOpacity";
-const CHAT_BACKGROUND_SCOPE_KEY = "monocode.chatBackgroundScope";
-const NEW_THREAD_BACKGROUND_EFFECT_KEY = "monocode.newThreadBackgroundEffect";
-const THEME_DARK_LIGHTNESS_KEY = "monocode.themeDarkLightness";
-const DIFF_PALETTE_KEY = "monocode.diffPalette";
+const KEY = "irgat.transcriptLayout";
+const ACCENT_COLOR_KEY = "irgat.accentColor";
+const SCHEME_KEY = "irgat.colorScheme";
+const ANCHOR_KEY = "irgat.transcriptAnchor";
+const SHOW_EXCLUDED_FILES_KEY = "irgat.showExcludedFiles";
+const CHAT_BACKGROUND_PATH_KEY = "irgat.chatBackgroundPath";
+const CHAT_BACKGROUND_OPACITY_KEY = "irgat.chatBackgroundOpacity";
+const CHAT_BACKGROUND_SCOPE_KEY = "irgat.chatBackgroundScope";
+const NEW_THREAD_BACKGROUND_EFFECT_KEY = "irgat.newThreadBackgroundEffect";
+const THEME_DARK_LIGHTNESS_KEY = "irgat.themeDarkLightness";
+const DIFF_PALETTE_KEY = "irgat.diffPalette";
 
 function mockLocalStorage() {
   const data = new Map<string, string>();

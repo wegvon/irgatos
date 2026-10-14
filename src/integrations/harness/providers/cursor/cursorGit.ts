@@ -67,7 +67,7 @@ export async function generateCursorPrContent(
     });
     parsed = parsePrContent(output);
   } catch (error) {
-    console.debug("[monocode] pr content", error);
+    console.debug("[irgat] pr content", error);
   }
   const title =
     parsed?.title ||
@@ -93,7 +93,7 @@ export async function generateCursorBranchName(
     });
     return parseBranchName(output);
   } catch (error) {
-    console.debug("[monocode] branch name", error);
+    console.debug("[irgat] branch name", error);
     return null;
   }
 }

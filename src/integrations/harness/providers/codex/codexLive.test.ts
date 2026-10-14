@@ -16,24 +16,24 @@ const deleteGeneratedImages = vi.hoisted(() => vi.fn(async () => undefined));
 const spawnChild = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]) => undefined),
 );
-const restoreMonoCodexAgentState = vi.hoisted(() =>
+const restoreIrgatxAgentState = vi.hoisted(() =>
   vi.fn(async (..._args: unknown[]) => undefined),
 );
-const prepareCodexMonoContext = vi.hoisted(() =>
+const prepareCodexIrgatContext = vi.hoisted(() =>
   vi.fn(async (_input: unknown) => ({
     config: {
-      sqlite_home: "/private/mono",
+      sqlite_home: "/private/irgat",
       instructions: "Account instructions",
     },
     hasThread: true,
   })),
 );
-vi.mock("./codexStore", () => ({ prepareCodexMonoContext }));
+vi.mock("./codexStore", () => ({ prepareCodexIrgatContext }));
 
 vi.mock("../../core/child", () => ({
   resolveCodexBinary: async () => ({ path: "/fake/codex" }),
   spawnChild,
-  restoreMonoCodexAgentState,
+  restoreIrgatxAgentState,
   killChild: async () => undefined,
   unwatchChild: () => undefined,
   watchChild: (_id: string, line: (l: string) => void) => {
@@ -119,7 +119,7 @@ async function startTurn(
     onAccepted?: () => void;
     controlsAgents?: boolean;
     ephemeral?: boolean;
-    codexStore?: "mono";
+    codexStore?: "irgat";
   } = {},
 ) {
   const events: HarnessEvent[] = [];
@@ -183,8 +183,8 @@ describe("codex live turn sequence", () => {
     saveGeneratedImage.mockClear();
     deleteGeneratedImages.mockClear();
     spawnChild.mockClear();
-    restoreMonoCodexAgentState.mockClear();
-    prepareCodexMonoContext.mockClear();
+    restoreIrgatxAgentState.mockClear();
+    prepareCodexIrgatContext.mockClear();
   });
 
   afterEach(async () => {
@@ -284,21 +284,21 @@ describe("codex live turn sequence", () => {
     ).not.toHaveProperty("ephemeral");
     expect(hasLiveCodexSession("codex-live", false)).toBe(true);
     expect(hasLiveCodexSession("codex-live", true)).toBe(false);
-    expect(prepareCodexMonoContext).not.toHaveBeenCalled();
+    expect(prepareCodexIrgatContext).not.toHaveBeenCalled();
     expect(spawnChild.mock.calls[0][6]).toBeUndefined();
-    expect(restoreMonoCodexAgentState).not.toHaveBeenCalled();
+    expect(restoreIrgatxAgentState).not.toHaveBeenCalled();
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
   });
 
-  it("persists Monos privately and resumes the same native thread after parking", async () => {
-    const first = await startTurn("codex-live", { codexStore: "mono" });
-    expect(spawnChild.mock.calls[0][6]).toBe("mono");
+  it("persists Irgats privately and resumes the same native thread after parking", async () => {
+    const first = await startTurn("codex-live", { codexStore: "irgat" });
+    expect(spawnChild.mock.calls[0][6]).toBe("irgat");
     const params = parse().find((m) => m.method === "thread/start")?.params;
     expect(params).not.toHaveProperty("ephemeral");
     expect(params).toMatchObject({
       config: {
-        sqlite_home: "/private/mono",
+        sqlite_home: "/private/irgat",
         instructions: "Account instructions",
       },
     });
@@ -307,27 +307,27 @@ describe("codex live turn sequence", () => {
     await stopCodexSession("codex-live");
     sent.length = 0;
     const next = await startTurn("codex-live", {
-      codexStore: "mono",
+      codexStore: "irgat",
       expectResume: true,
     });
     expect(
       parse().find((m) => m.method === "thread/resume")?.params,
     ).toMatchObject({
       threadId: "thr_1",
-      config: { sqlite_home: "/private/mono" },
+      config: { sqlite_home: "/private/irgat" },
     });
     expect(parse().some((m) => m.method === "thread/start")).toBe(false);
-    expect(prepareCodexMonoContext).toHaveBeenLastCalledWith(
+    expect(prepareCodexIrgatContext).toHaveBeenLastCalledWith(
       expect.objectContaining({ threadId: "thr_1" }),
     );
-    expect(restoreMonoCodexAgentState).toHaveBeenCalledWith(undefined, "thr_1");
+    expect(restoreIrgatxAgentState).toHaveBeenCalledWith(undefined, "thr_1");
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await next.turn;
   });
 
-  it("resumes a saved Mono after restart without rebuilding its context", async () => {
+  it("resumes a saved Irgat after restart without rebuilding its context", async () => {
     const { turn } = await startTurn("codex-live", {
-      codexStore: "mono",
+      codexStore: "irgat",
       resume: true,
       providerAccountId: "work",
       resumeProviderAccountId: "work",
@@ -336,30 +336,30 @@ describe("codex live turn sequence", () => {
       parse().find((m) => m.method === "thread/resume")?.params,
     ).toMatchObject({
       threadId: "thr_1",
-      config: { sqlite_home: "/private/mono" },
+      config: { sqlite_home: "/private/irgat" },
     });
     expect(parse().some((m) => m.method === "thread/start")).toBe(false);
-    expect(restoreMonoCodexAgentState).toHaveBeenCalledWith("work", "thr_1");
-    expect(prepareCodexMonoContext).toHaveBeenCalledWith(
+    expect(restoreIrgatxAgentState).toHaveBeenCalledWith("work", "thr_1");
+    expect(prepareCodexIrgatContext).toHaveBeenCalledWith(
       expect.objectContaining({ providerAccountId: "work", threadId: "thr_1" }),
     );
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
   });
 
-  it("does not discard a retained private Mono when resume fails", async () => {
+  it("does not discard a retained private Irgat when resume fails", async () => {
     bindCodexSession("codex-live", "thr_1", "/repo");
     const turn = sendCodexTurn({
       sessionId: "codex-live",
       cwd: "/repo",
       model: "codex:gpt-5.4",
       runtimeMode: "supervised",
-      codexStore: "mono",
+      codexStore: "irgat",
       text: "Continue",
       onEvent: () => undefined,
     });
     const rejected = expect(turn).rejects.toThrow(
-      "saved Mono Codex context could not be resumed",
+      "saved Irgat Codex context could not be resumed",
     );
     await waitFor(
       () => parse().some((m) => m.method === "initialize"),

@@ -10,6 +10,23 @@ export function diffCommentLocation({ path, line }: DiffCommentTarget): string {
   return number == null ? path : `${path}:${number}`;
 }
 
+/** A diff line as a review note's target: its file, line, and marked text. */
+export function diffCommentReviewTarget({ path, line }: DiffCommentTarget): {
+  source: "diff";
+  targetPath: string;
+  lineRange?: { start: number; end: number };
+  selection: string;
+} {
+  const number = line.kind === "del" ? line.oldNumber : line.newNumber;
+  const marker = line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ";
+  return {
+    source: "diff",
+    targetPath: path.replace(/\\/g, "/"),
+    ...(number != null ? { lineRange: { start: number, end: number } } : {}),
+    selection: `${marker}${line.text}${line.kind === "del" ? "  (deleted line)" : ""}`,
+  };
+}
+
 export function formatDiffComment(
   target: DiffCommentTarget,
   comment: string,

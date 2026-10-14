@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { IconComponent } from "../../shared/ui/icons";
 
 type Props = {
@@ -10,6 +11,8 @@ type Props = {
   dot?: boolean;
   shortcut?: string;
   ariaLabel?: string;
+  /** Quiet trailing detail, e.g. the app version beside Settings. */
+  meta?: ReactNode;
 };
 
 export function RailAction({
@@ -22,6 +25,7 @@ export function RailAction({
   dot = false,
   shortcut,
   ariaLabel,
+  meta,
 }: Props) {
   return (
     <button
@@ -74,6 +78,7 @@ export function RailAction({
       <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
         {label}
       </span>
+      {meta}
       {dot ? (
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-accent" />
       ) : shortcut ? (
@@ -82,6 +87,26 @@ export function RailAction({
         </span>
       ) : null}
     </button>
+  );
+}
+
+/** Live count of sessions waiting on the user; renders nothing at zero. */
+export function FleetNeedsYouCount({
+  count,
+  className = "",
+}: {
+  count: number;
+  className?: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden
+      data-fleet-needs-you={count}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-black tabular-nums ${className}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   CircleDashed,
   CursorMagicSelection,
   FilePlus,
+  FolderPlus,
   Plus,
   Share,
   Square,
@@ -28,6 +29,7 @@ import {
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
+  pickFolderAttachments,
   revokeAttachment,
 } from "../model/attachments";
 import { resizeComposer } from "../model/composerResize";
@@ -55,6 +57,7 @@ import {
   type MentionToken,
 } from "../../files/model/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
+import type { RankedFile } from "../../files/model/fileIndex";
 import {
   composeInboxMessage,
   type InboxComposerCard,
@@ -102,6 +105,7 @@ import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import { WorktreePicker } from "../../source-control/ui/WorktreePicker";
+import { WorktreePortBadge } from "../../source-control/ui/WorktreePortBadge";
 import {
   isWorkspaceModeShortcut,
   WorkspaceIdentity,
@@ -110,6 +114,34 @@ import {
 import type { Worktree } from "../../source-control/model/worktrees";
 import { CwdPicker } from "../../projects/ui/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
+import {
+  SessionReferencePicker,
+  type SessionReferencePickerHandle,
+} from "./SessionReferencePicker";
+import { SessionReferenceTray } from "./SessionReferenceTray";
+import {
+  useSessionReferenceCandidates,
+  useSessionReferencePlans,
+} from "../hooks/useSessionReferences";
+import {
+  isSessionMentionPath,
+  rankReferenceCandidates,
+  removeSessionReferenceToken,
+  SESSION_MENTION_PREFIX,
+  SESSION_PATH_PREFIX,
+  sessionReferenceLabel,
+  sessionReferenceParts,
+  sessionReferenceTokens,
+} from "../model/sessionReferences";
+import {
+  appendToDraft,
+  INSERT_SESSION_MESSAGE_EVENT,
+  INSERT_SESSION_REFERENCE_EVENT,
+  requestOpenReferencedSession,
+  type InsertSessionMessageRequest,
+  type InsertSessionReferenceRequest,
+} from "../model/sessionReferenceEvents";
+import { sessionDisplayTitle } from "../model/session";
 import { McpServerPicker } from "./McpServerPicker";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
@@ -144,6 +176,8 @@ import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
 import { useComposerSkills } from "./useComposerSkills";
 import { Popover } from "../../../shared/ui/Popover";
 import { UsageLimitNotice } from "./UsageLimitNotice";
+import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
+import { QueuedHoldNotice } from "../../quotas/ui/HeldWorkNotice";
 import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import {
   consumeOperatorCommand,
@@ -168,6 +202,7 @@ import {
   supportsBtwHarness,
 } from "../model/btw";
 import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
+import { ADHD_COMMAND } from "../../adhd/model/adhdMode";
 import {
   consumeSessionFolderCommand,
   isSessionFolderCommand,
@@ -198,6 +233,16 @@ import {
 } from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import { useComposerAutocorrect } from "../../settings/model/displayPrefs";
+import { useComposerVoice } from "../../voice/hooks/useComposerVoice";
+import type { Reply } from "../../voice/model/spokenReply";
+import {
+  ComposerVoiceButtons,
+  ComposerVoiceStatus,
+} from "../../voice/ui/ComposerVoiceControls";
+import {
+  LiveVoiceButton,
+  LiveVoicePill,
+} from "../../voice/live/ui/LiveVoiceControls";
 
 type Props = {
   enabled?: boolean;
@@ -217,6 +262,8 @@ type Props = {
   cwd?: string;
   executionCwd: string;
   sessionId?: string;
+  /** Offers a Live voice call with this session's agent. */
+  live?: boolean;
   branch?: string;
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
@@ -235,6 +282,8 @@ type Props = {
   handoffCard?: HandoffComposerCard;
   question?: UserQuestionPrompt;
   busy?: boolean;
+  /** The agent's last finished reply, which voice mode reads aloud. */
+  voiceReply?: Reply | null;
   /** Allow typed text to replace Stop with Send while a turn is running. */
   allowBusySubmit?: boolean;
   editLastTurnSupported?: boolean;
@@ -242,6 +291,14 @@ type Props = {
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
   usageLimit?: UsageLimit;
+  /** Account the session runs on, for the provider's quota-hold banner. */
+  providerAccountId?: string;
+  /** Hide the quota-hold banner, e.g. for remote host sessions. */
+  hideQuotaHold?: boolean;
+  /** The quota hold this queue was told to run anyway past. */
+  queueHoldOverride?: number;
+  /** Send queued prompts now although their provider is on quota hold. */
+  onRunQueueAnyway?: () => void;
   hotkeys?: boolean;
   onFocus: () => void;
   onCwdChange: (cwd: string) => void;
@@ -294,6 +351,45 @@ type Props = {
   children?: ReactNode;
 };
 
+const SESSION_PICKER_PATH = `${SESSION_PATH_PREFIX}*`;
+
+/** `@` offers the session picker, plus chats whose title contains the query. */
+function sessionMentionEntries(
+  candidates: Parameters<typeof rankReferenceCandidates>[0],
+  query: string,
+): RankedFile[] {
+  const needle = query.trim().toLowerCase();
+  const entries: RankedFile[] = [];
+  if (SESSION_MENTION_PREFIX.startsWith(needle)) {
+    entries.push({
+      name: "Reference another session…",
+      path: SESSION_PICKER_PATH,
+      relative: SESSION_MENTION_PREFIX,
+      score: 0,
+      positions: [],
+    });
+  }
+  if (needle.length < 3) return entries;
+  for (const { candidate, positions } of rankReferenceCandidates(
+    candidates,
+    needle,
+  )) {
+    const title = sessionDisplayTitle(candidate.title, candidate.harness);
+    if (!title.toLowerCase().includes(needle)) continue;
+    const label = sessionReferenceLabel(candidate);
+    if (!label) continue;
+    entries.push({
+      name: title,
+      path: `${SESSION_PATH_PREFIX}${candidate.id}`,
+      relative: label,
+      score: 0,
+      positions,
+    });
+    if (entries.length >= 4) break;
+  }
+  return entries;
+}
+
 function ToolButton({
   active,
   disabled,
@@ -343,6 +439,7 @@ export function Composer({
   cwd = "~",
   executionCwd,
   sessionId,
+  live = false,
   branch,
   recents = [],
   hideProjectPicker = false,
@@ -360,12 +457,17 @@ export function Composer({
   handoffCard,
   question,
   busy = false,
+  voiceReply = null,
   allowBusySubmit = true,
   editLastTurnSupported = false,
   lastTurnRecall = null,
   queuedMessages = [],
   queueStatus,
   usageLimit,
+  providerAccountId,
+  hideQuotaHold = false,
+  queueHoldOverride,
+  onRunQueueAnyway,
   onFocus,
   onCwdChange,
   onBranchChange,
@@ -521,8 +623,14 @@ export function Composer({
 
   attachmentsRef.current = attachments;
 
+  const sessionMentionQuery =
+    !remote && mention?.query.startsWith(SESSION_MENTION_PREFIX)
+      ? mention.query.slice(SESSION_MENTION_PREFIX.length)
+      : null;
   const mentionOpen =
-    !remote && mention !== null && (looksLikeProject(cwd) || notesEnabled);
+    !remote &&
+    mention !== null &&
+    (looksLikeProject(cwd) || notesEnabled || !!sessionId);
   const navigationEmpty =
     draft.length === 0 &&
     attachments.length === 0 &&
@@ -551,11 +659,16 @@ export function Composer({
             ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
+            ADHD_COMMAND,
             ...skills.filter(
               (skill) =>
-                ![OPERATOR_COMMAND.name, "mono", "monocode"].includes(
-                  skill.name,
-                ) &&
+                ![
+                  OPERATOR_COMMAND.name,
+                  "irgat",
+                  "mono",
+                  "monocode",
+                  ADHD_COMMAND.name,
+                ].includes(skill.name) &&
                 (skill.kind === "native" ||
                   (skill.name !== PLAN_COMMAND.name &&
                     skill.name !== COMPACT_COMMAND.name &&
@@ -603,8 +716,19 @@ export function Composer({
   );
   const mentionIndexRef = useRef<MentionIndex>(mentionIndex);
   mentionIndexRef.current = mentionIndex;
+  const { candidates: sessionCandidates } = useSessionReferenceCandidates(
+    mentionOpen && sessionMentionQuery == null && !!sessionId,
+    sessionId,
+  );
+  const sessionPickerRef = useRef<SessionReferencePickerHandle>(null);
+  const { plans: sessionReferencePlans, loading: sessionReferencesLoading } =
+    useSessionReferencePlans(
+      draft,
+      { sessionId, harness, cwd: executionCwd },
+      !remote,
+    );
   const rankedFiles = useMemo(() => {
-    if (!mentionOpen) return [];
+    if (!mentionOpen || sessionMentionQuery != null) return [];
     const fileHits = looksLikeProject(executionCwd)
       ? rankMentionFiles(
           files,
@@ -616,8 +740,25 @@ export function Composer({
       ? rankNoteFiles(notes, mention?.query ?? "")
       : [];
     const seen = new Set(noteHits.map((file) => file.path));
-    return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, mention?.query, mentionOpen, notes, notesEnabled]);
+    return [
+      ...sessionMentionEntries(
+        sessionId ? sessionCandidates : [],
+        mention?.query ?? "",
+      ),
+      ...noteHits,
+      ...fileHits.filter((file) => !seen.has(file.path)),
+    ];
+  }, [
+    executionCwd,
+    files,
+    mention?.query,
+    mentionOpen,
+    notes,
+    notesEnabled,
+    sessionCandidates,
+    sessionId,
+    sessionMentionQuery,
+  ]);
 
   const syncHasValue = useCallback(
     (text: string, files: Attachment[]) => {
@@ -631,6 +772,39 @@ export function Composer({
     },
     [inboxCard, noteCard, handoffCard],
   );
+
+  /** Writes dictated text the way typing would, without an input event. */
+  const writeDraft = useCallback(
+    (text: string, selectionStart: number, selectionEnd = selectionStart) => {
+      const el = ref.current;
+      if (!el) return;
+      el.value = text;
+      resizeComposer(el);
+      el.setSelectionRange(selectionStart, selectionEnd);
+      draftRevisionRef.current += 1;
+      setDraft(text);
+      onDraftChange?.(text);
+      syncHasValue(text, attachmentsRef.current);
+    },
+    [onDraftChange, syncHasValue],
+  );
+  const voice = useComposerVoice({
+    field: ref,
+    enabled: enabled && !disabled && !worktreeRemoved,
+    hotkeys,
+    busy,
+    draftEmpty: !draft.trim() && attachments.length === 0,
+    reply: voiceReply,
+    write: writeDraft,
+    submit: (text) => submit(text),
+    onBegin: () => {
+      setSlash(null);
+      setMention(null);
+    },
+    resetToken: draftResetToken,
+  });
+  const { dictation } = voice;
+  const detachDictation = dictation.detach;
 
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive =
@@ -1109,9 +1283,23 @@ export function Composer({
         setMention(null);
         return;
       }
-      const label = isNoteMentionPath(file.path)
-        ? file.relative
-        : mentionLabel(file, mentionIndexRef.current);
+      if (file.path === SESSION_PICKER_PATH) {
+        const next = `${el.value.slice(0, token.start)}@${SESSION_MENTION_PREFIX}${el.value.slice(token.end)}`;
+        const cursor = token.start + 1 + SESSION_MENTION_PREFIX.length;
+        el.value = next;
+        resizeComposer(el);
+        el.setSelectionRange(cursor, cursor);
+        setDraft(next);
+        onDraftChange?.(next);
+        syncHasValue(next, attachmentsRef.current);
+        setMention(mentionTokenAt(next, cursor));
+        el.focus();
+        return;
+      }
+      const label =
+        isNoteMentionPath(file.path) || isSessionMentionPath(file.path)
+          ? file.relative
+          : mentionLabel(file, mentionIndexRef.current);
       const next = replaceMentionToken(el.value, token, label);
       el.value = next;
       resizeComposer(el);
@@ -1119,12 +1307,81 @@ export function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
+      if (isSessionMentionPath(file.path)) onDraftChange?.(next);
       syncHasValue(next, attachmentsRef.current);
       setMention(null);
       el.focus();
     },
-    [syncHasValue],
+    [onDraftChange, syncHasValue],
   );
+
+  const removeSessionReference = useCallback(
+    (label: string) => {
+      const el = ref.current;
+      if (!el) return;
+      const token = sessionReferenceTokens(el.value).find(
+        (item) => item.label === label,
+      );
+      if (!token) return;
+      const next = removeSessionReferenceToken(el.value, token);
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(token.start, token.start);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+      setMention(null);
+      el.focus();
+    },
+    [onDraftChange, syncHasValue],
+  );
+
+  useEffect(() => {
+    if (!sessionId || remote) return;
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertSessionReferenceRequest>)
+        .detail;
+      const el = ref.current;
+      if (!el || detail?.targetSessionId !== sessionId || detail.handled)
+        return;
+      detail.handled = true;
+      const token = `@${detail.label}`;
+      const next = !el.value.trim()
+        ? `${token} `
+        : `${el.value}${/\s$/.test(el.value) ? "" : " "}${token} `;
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(next.length, next.length);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+    };
+    window.addEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
+    return () =>
+      window.removeEventListener(INSERT_SESSION_REFERENCE_EVENT, onInsert);
+  }, [onDraftChange, remote, sessionId, syncHasValue]);
+
+  useEffect(() => {
+    if (!sessionId || remote) return;
+    const onInsert = (event: Event) => {
+      const detail = (event as CustomEvent<InsertSessionMessageRequest>)
+        .detail;
+      const el = ref.current;
+      if (!el || detail?.targetSessionId !== sessionId || detail.handled)
+        return;
+      detail.handled = true;
+      const next = appendToDraft(el.value, detail.text);
+      el.value = next;
+      resizeComposer(el);
+      el.setSelectionRange(next.length, next.length);
+      setDraft(next);
+      onDraftChange?.(next);
+      syncHasValue(next, attachmentsRef.current);
+    };
+    window.addEventListener(INSERT_SESSION_MESSAGE_EVENT, onInsert);
+    return () =>
+      window.removeEventListener(INSERT_SESSION_MESSAGE_EVENT, onInsert);
+  }, [onDraftChange, remote, sessionId, syncHasValue]);
 
   useEffect(() => {
     if (!focused || disabled) return;
@@ -1270,6 +1527,8 @@ export function Composer({
 
   const submit = (value: string) => {
     if (disabled || worktreeRemoved || submitLockRef.current) return;
+    // Whatever was heard so far goes with the message.
+    detachDictation();
     submitLockRef.current = true;
     void completeSubmit(value).finally(() => {
       submitLockRef.current = false;
@@ -1468,6 +1727,7 @@ export function Composer({
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
     if (creatingSkill) return;
+    if (voice.handleKeyDown(e)) return;
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
@@ -1494,7 +1754,9 @@ export function Composer({
       return;
     }
 
-    if (mentionOpen) {
+    if (mentionOpen && sessionMentionQuery != null) {
+      if (sessionPickerRef.current?.handleKey(e)) return;
+    } else if (mentionOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
         if (rankedFiles.length === 0) return;
@@ -1711,6 +1973,16 @@ export function Composer({
     });
   };
 
+  // A folder travels as a local path, which a connected machine cannot open.
+  const foldersSupported = attachmentsSupported && !remote;
+  const attachFolderFromPicker = () => {
+    if (!foldersSupported) return;
+    void pickFolderAttachments().then((files) => {
+      addAttachments(files);
+      ref.current?.focus();
+    });
+  };
+
   return (
     <div
       data-composer
@@ -1733,10 +2005,29 @@ export function Composer({
           onResumeAtReset={onUsageLimitResumeAtReset}
           onDismiss={onUsageLimitDismiss}
         />
-      ) : null}
+      ) : hideQuotaHold ? null : (
+        <SessionProviderHold
+          harness={harness}
+          providerAccountId={providerAccountId}
+          cwd={cwd}
+          queuedCount={queuedMessages.length}
+          queueOverride={queueHoldOverride}
+        />
+      )}
       <MessageQueue
         messages={queuedMessages}
         status={queueStatus}
+        notice={
+          !usageLimit && !hideQuotaHold && onRunQueueAnyway ? (
+            <QueuedHoldNotice
+              harness={harness}
+              providerAccountId={providerAccountId}
+              cwd={cwd}
+              override={queueHoldOverride}
+              onRunAnyway={onRunQueueAnyway}
+            />
+          ) : undefined
+        }
         onDelete={onDeleteQueuedMessage}
         onEdit={onEditQueuedMessage}
         onEditingChange={onQueuedMessageEditingChange}
@@ -1793,7 +2084,7 @@ export function Composer({
               onManage={() => {
                 mcpInsertAt.current = null;
                 setMcpPickerOpen(false);
-                window.dispatchEvent(new Event("monocode:open-mcp-settings"));
+                window.dispatchEvent(new Event("irgat:open-mcp-settings"));
               }}
               onDismiss={(reason) => {
                 mcpInsertAt.current = null;
@@ -1888,7 +2179,24 @@ export function Composer({
             />
           </div>
         ) : null}
-        {mentionOpen && !pickerOpen ? (
+        {mentionOpen && !pickerOpen && sessionMentionQuery != null ? (
+          <div className="absolute inset-x-0 bottom-full z-30 mb-1">
+            <SessionReferencePicker
+              query={sessionMentionQuery}
+              currentSessionId={sessionId}
+              currentCwd={cwd}
+              handleRef={sessionPickerRef}
+              onPick={(label) =>
+                pickMention({
+                  name: label,
+                  path: `${SESSION_PATH_PREFIX}${label}`,
+                  relative: label,
+                })
+              }
+              onClose={() => setMention(null)}
+            />
+          </div>
+        ) : mentionOpen && !pickerOpen ? (
           <div className="absolute inset-x-0 bottom-full z-30 mb-1">
             <FileMentionPicker
               files={rankedFiles}
@@ -1904,6 +2212,7 @@ export function Composer({
             />
           </div>
         ) : null}
+        {live && sessionId ? <LiveVoicePill sessionId={sessionId} /> : null}
         <div
           ref={boxRef}
           data-composer-box
@@ -1922,7 +2231,7 @@ export function Composer({
         >
           {fileDrag ? (
             <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">
-              Drop files to attach
+              Drop files or folders to attach
             </div>
           ) : null}
           {hideTopBar ? null : (
@@ -1988,6 +2297,9 @@ export function Composer({
                     onChange={onBranchChange}
                     onClose={() => ref.current?.focus()}
                   />
+                  {!remote && pathKey(cwd) !== pathKey(executionCwd) ? (
+                    <WorktreePortBadge cwd={executionCwd} />
+                  ) : null}
                 </>
               )}
               <div className="ml-auto flex shrink-0 items-center">
@@ -2036,6 +2348,15 @@ export function Composer({
               onDismiss={onHandoffCardDismiss}
             />
           ) : null}
+
+          <SessionReferenceTray
+            plans={sessionReferencePlans}
+            loading={sessionReferencesLoading}
+            onRemove={removeSessionReference}
+            onOpen={(id, blockId) =>
+              requestOpenReferencedSession({ sessionId: id, blockId })
+            }
+          />
 
           <div className="relative">
             <div
@@ -2090,6 +2411,8 @@ export function Composer({
               onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
               onInput={(e) => {
                 const el = e.currentTarget;
+                // Typing takes over from dictation and keeps what was heard.
+                voice.noteInput();
                 if (enterBtwFromPrefix(el)) return;
                 resizeComposer(el);
                 draftRevisionRef.current += 1;
@@ -2114,6 +2437,8 @@ export function Composer({
               }}
             />
           </div>
+
+          <ComposerVoiceStatus voice={voice} />
 
           <div className="flex items-center gap-1 px-2 pb-2">
             <div
@@ -2162,6 +2487,30 @@ export function Composer({
                       </span>
                     </span>
                   </button>
+                  {!remote ? (
+                    <button
+                      type="button"
+                      disabled={!foldersSupported}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setPlusOpen(false);
+                        attachFolderFromPicker();
+                      }}
+                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <FolderPlus className="mt-0.5 size-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-[13px]">
+                          Attach folder…
+                        </span>
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                          {foldersSupported
+                            ? "Point the agent at a folder"
+                            : `${HARNESS_TITLE[harness]} does not support attachments`}
+                        </span>
+                      </span>
+                    </button>
+                  ) : null}
                   {!remote || remoteFeatures?.plan ? (
                     <button
                       type="button"
@@ -2212,7 +2561,7 @@ export function Composer({
                       <span className="min-w-0 flex-1">
                         <span className="block text-[13px]">Operator</span>
                         <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
-                          Give this thread access to MonoCode
+                          Give this thread access to Irgatos
                         </span>
                       </span>
                       {operatorActive ? (
@@ -2393,6 +2742,16 @@ export function Composer({
               </button>
             ) : null}
             <div className="flex shrink-0 items-center gap-1">
+              <ComposerVoiceButtons
+                voice={voice}
+                disabled={disabled || worktreeRemoved}
+              />
+              {live && sessionId ? (
+                <LiveVoiceButton
+                  sessionId={sessionId}
+                  disabled={disabled || worktreeRemoved}
+                />
+              ) : null}
               <ComposerAction
                 busy={busy}
                 disabled={disabled}
@@ -2493,6 +2852,22 @@ function FileMentionRuns({
   text: string;
   mentions: ReadonlyMap<string, ProjectFile>;
 }) {
+  const sessionParts = sessionReferenceParts(text);
+  if (sessionParts.some((part) => part.token)) {
+    return (
+      <>
+        {sessionParts.map((part, index) =>
+          part.token ? (
+            <span key={index} className="text-mention" data-session-reference>
+              {part.text}
+            </span>
+          ) : (
+            <FileMentionRuns key={index} text={part.text} mentions={mentions} />
+          ),
+        )}
+      </>
+    );
+  }
   const parts = fileMentionParts(text, mentions);
   return (
     <>

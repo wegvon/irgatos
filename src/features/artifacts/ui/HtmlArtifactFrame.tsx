@@ -93,7 +93,7 @@ export function HtmlArtifactFrame({
   const [contentHeight, setContentHeight] = useState<number | null>(null);
   const postTheme = () =>
     frameRef.current?.contentWindow?.postMessage(
-      { type: "monocode:theme", ...themeRef.current },
+      { type: "irgat:theme", ...themeRef.current },
       "*",
     );
   useEffect(postTheme, [theme]);
@@ -109,14 +109,14 @@ export function HtmlArtifactFrame({
       if (!frame || event.source !== frame.contentWindow) return;
       const data = event.data as { type?: unknown } | null;
       if (!data || typeof data !== "object") return;
-      if (data.type === "monocode:ready") {
+      if (data.type === "irgat:ready") {
         postTheme();
         setReady(true);
-      } else if (data.type === "monocode:height") {
+      } else if (data.type === "irgat:height") {
         const height = (data as { height?: unknown }).height;
         if (typeof height === "number" && Number.isFinite(height))
           setContentHeight(Math.max(MIN_HEIGHT, Math.ceil(height)));
-      } else if (data.type === "monocode:open-link") {
+      } else if (data.type === "irgat:open-link") {
         const url = (data as { url?: unknown }).url;
         // Only a link the reader just clicked: the frame holds focus then.
         if (

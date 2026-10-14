@@ -242,7 +242,7 @@ describe("Composer question focus", () => {
   it("opens a searchable MCP picker and sends selected context", async () => {
     const onSubmit = vi.fn();
     const onOpen = vi.fn();
-    window.addEventListener("monocode:open-mcp-settings", onOpen);
+    window.addEventListener("irgat:open-mcp-settings", onOpen);
     try {
       await renderComposer(
         undefined,
@@ -317,7 +317,7 @@ describe("Composer question focus", () => {
       expect(onOpen).not.toHaveBeenCalled();
       expect(textarea.value).toBe("");
     } finally {
-      window.removeEventListener("monocode:open-mcp-settings", onOpen);
+      window.removeEventListener("irgat:open-mcp-settings", onOpen);
     }
   });
 
@@ -511,6 +511,72 @@ describe("Composer question focus", () => {
       expect.any(Array),
       expect.any(Object),
     );
+  });
+
+  it("offers /i-have-adhd in the command list and submits it for the app", async () => {
+    const onSubmit = vi.fn();
+    await renderComposer(
+      undefined,
+      vi.fn(),
+      false,
+      0,
+      undefined,
+      undefined,
+      onSubmit,
+    );
+    const textarea = container.querySelector("textarea")!;
+    await typeInto(textarea, "/i-have");
+    const command = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-skill-picker] [role="option"]',
+      ),
+    ].filter((button) => button.textContent?.includes("/i-have-adhd"));
+    expect(command).toHaveLength(1);
+    expect(command[0]!.textContent).toContain("Toggle ADHD mode");
+    await act(async () => command[0]!.click());
+    expect(textarea.value).toBe("/i-have-adhd ");
+    await act(async () =>
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/i-have-adhd\s*$/),
+      [],
+      expect.any(Object),
+    );
+  });
+
+  it("shows the Live voice button only when the session offers a call", async () => {
+    const props = {
+      focused: true,
+      harness: "claude" as const,
+      model: "claude-sonnet",
+      runtimeMode: "supervised" as const,
+      executionCwd: "/repo",
+      sessionId: "live-chat",
+      hideProjectPicker: true,
+      hideBranchPicker: true,
+      onFocus: () => {},
+      onCwdChange: () => {},
+      onModelChange: () => {},
+      onRuntimeModeChange: () => {},
+      onSubmit: () => {},
+    };
+    await act(async () => root.render(createElement(Composer, props)));
+    expect(container.querySelector("[data-live-voice-button]")).toBeNull();
+    await act(async () =>
+      root.render(createElement(Composer, { ...props, live: true })),
+    );
+    expect(
+      container
+        .querySelector("[data-live-voice-button]")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
   });
 
   it("inserts an MCP tag beside existing composer text", async () => {
@@ -1690,7 +1756,7 @@ describe("Composer question focus", () => {
   it("opens the MCP picker in Save draft mode and offers Manage", async () => {
     const onSaveDraft = vi.fn();
     const onOpen = vi.fn();
-    window.addEventListener("monocode:open-mcp-settings", onOpen);
+    window.addEventListener("irgat:open-mcp-settings", onOpen);
     try {
       await act(async () =>
         root.render(
@@ -1745,7 +1811,7 @@ describe("Composer question focus", () => {
       await act(async () => manage.click());
       expect(onOpen).toHaveBeenCalledOnce();
     } finally {
-      window.removeEventListener("monocode:open-mcp-settings", onOpen);
+      window.removeEventListener("irgat:open-mcp-settings", onOpen);
     }
   });
 });

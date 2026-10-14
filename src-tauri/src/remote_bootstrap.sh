@@ -1,18 +1,18 @@
 set -eu
 umask 077
-BASE="$HOME/.monocode-host"
-ENTRY="$BASE/bin/monocode-host"
+BASE="$HOME/.irgat-host"
+ENTRY="$BASE/bin/irgat-host"
 VERSION=@@VERSION@@
 RELEASE=@@RELEASE@@
 EXISTED=0
 [ -x "$ENTRY" ] && EXISTED=1
-FORCE_UPGRADE=${MONOCODE_HOST_FORCE_UPGRADE:-0}
-HOST_PORT=${MONOCODE_HOST_PORT:-3774}
+FORCE_UPGRADE=${IRGAT_HOST_FORCE_UPGRADE:-0}
+HOST_PORT=${IRGAT_HOST_PORT:-3774}
 
 if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
-  case "$(uname -s)" in Darwin) OS=darwin ;; Linux) OS=linux ;; *) echo 'MonoCode Host supports Linux and macOS.' >&2; exit 1 ;; esac
+  case "$(uname -s)" in Darwin) OS=darwin ;; Linux) OS=linux ;; *) echo 'Irgatos Host supports Linux and macOS.' >&2; exit 1 ;; esac
   case "$(uname -m)" in arm64|aarch64) ARCH=arm64 ;; x86_64|amd64) ARCH=x64 ;; *) echo 'Unsupported host architecture.' >&2; exit 1 ;; esac
-  FILE="monocode-host-$OS-$ARCH.tar.gz"
+  FILE="irgat-host-$OS-$ARCH.tar.gz"
   mkdir -p "$BASE/runtime" "$BASE/bin"
   TMP=$(mktemp -d "$BASE/runtime/.install.XXXXXXXX")
   trap 'rm -rf "$TMP"' EXIT
@@ -27,7 +27,7 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
     fi
   }
   if ! download "$RELEASE/$FILE" "$TMP/$FILE" || ! download "$RELEASE/$FILE.sha256" "$TMP/checksum"; then
-    echo "The MonoCode Host package for version $VERSION is unavailable. Install a MonoCode release that includes host packages." >&2; exit 1
+    echo "The Irgatos Host package for version $VERSION is unavailable. Install an Irgatos release that includes host packages." >&2; exit 1
   fi
   EXPECTED=$(awk 'NR == 1 {print $1}' "$TMP/checksum")
   case "$EXPECTED" in *[!0-9a-f]*|'') echo 'Invalid host package checksum.' >&2; exit 1 ;; esac
@@ -39,14 +39,14 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
   else
     echo 'Install shasum or sha256sum on this host and reconnect.' >&2; exit 1
   fi
-  [ "$EXPECTED" = "$ACTUAL" ] || { echo 'MonoCode Host package checksum mismatch.' >&2; exit 1; }
+  [ "$EXPECTED" = "$ACTUAL" ] || { echo 'Irgatos Host package checksum mismatch.' >&2; exit 1; }
   mkdir "$TMP/unpacked"
   tar -xzf "$TMP/$FILE" -C "$TMP/unpacked"
-  [ "$("$TMP/unpacked/monocode-host" --version)" = "$VERSION" ] || { echo 'MonoCode Host version mismatch.' >&2; exit 1; }
+  [ "$("$TMP/unpacked/irgat-host" --version)" = "$VERSION" ] || { echo 'Irgatos Host version mismatch.' >&2; exit 1; }
   DEST="$BASE/runtime/$VERSION-$OS-$ARCH-$(basename "$TMP")"
   # Concurrent installations never replace a directory used by a running host.
   mv "$TMP/unpacked" "$DEST"
-  [ "$("$DEST/monocode-host" --version)" = "$VERSION" ] || exit 1
+  [ "$("$DEST/irgat-host" --version)" = "$VERSION" ] || exit 1
   # Keep a real wrapper (rather than a symlink): it resolves the packaged Node
   # relative to the versioned executable, not this bin directory.
   printf '%s\n' "$DEST" > "$TMP/runtime-path"
@@ -56,7 +56,7 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
 set -eu
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 RUNTIME=$(cat "$BASE/runtime-path")
-exec "$RUNTIME/monocode-host" "$@"
+exec "$RUNTIME/irgat-host" "$@"
 SH
   chmod 700 "$TMP/launcher"
   mv "$TMP/launcher" "$ENTRY"

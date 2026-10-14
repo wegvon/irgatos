@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   CornerDownRight,
@@ -22,6 +22,7 @@ export function MessageQueue({
   onResume,
   variant = "queue",
   sendingId,
+  notice,
 }: {
   messages: QueuedMessage[];
   status?: MessageQueueStatus;
@@ -32,6 +33,8 @@ export function MessageQueue({
   onResume?: () => void;
   variant?: "queue" | "messages";
   sendingId?: string;
+  /** Why an active queue is waiting, shown as its header row. */
+  notice?: ReactNode;
 }) {
   const [editingId, setEditingId] = useState<string>();
   const [editDraft, setEditDraft] = useState("");
@@ -90,7 +93,9 @@ export function MessageQueue({
               {failed ? "Retry" : "Resume"}
             </button>
           </div>
-        ) : null}
+        ) : (
+          notice
+        )}
         {variant === "messages" && !paused ? (
           <div role="status" className="py-1 text-[11px] text-content/50">
             {sendingId ? "Sending…" : "Waiting to send"}
@@ -100,10 +105,10 @@ export function MessageQueue({
           const sending = sendingId === message.id;
           const editing = editingId === message.id;
           const label =
-            (message.monoSessionCompletion
-              ? message.monoSessionCompletion.sessionCount
-                ? `${message.monoSessionCompletion.sessionCount} sessions finished`
-                : `Session ${message.monoSessionCompletion.status}: ${message.monoSessionCompletion.title}`
+            (message.irgatSessionCompletion
+              ? message.irgatSessionCompletion.sessionCount
+                ? `${message.irgatSessionCompletion.sessionCount} sessions finished`
+                : `Session ${message.irgatSessionCompletion.status}: ${message.irgatSessionCompletion.title}`
               : message.text.trim()) ||
             message.noteCard?.title ||
             message.handoffCard?.brief ||
@@ -170,7 +175,7 @@ export function MessageQueue({
                       </p>
                     ) : null}
                   </div>
-                  {onSteer && !message.monoSessionCompletion ? (
+                  {onSteer && !message.irgatSessionCompletion ? (
                     <button
                       type="button"
                       disabled={sending}
@@ -185,7 +190,7 @@ export function MessageQueue({
                     type="button"
                     title="Edit queued message"
                     aria-label="Edit queued message"
-                    disabled={sending || !!message.monoSessionCompletion}
+                    disabled={sending || !!message.irgatSessionCompletion}
                     onClick={() => startEdit(message)}
                     className="grid size-6 shrink-0 place-items-center rounded-md hover:bg-content/10 hover:text-content"
                   >

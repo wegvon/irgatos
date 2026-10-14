@@ -14,7 +14,7 @@ import {
   sessionWorkCwd,
   type Session,
 } from "../model/session";
-import { createNote, noteTitle } from "../../notes";
+import { noteTitle, saveNoteOnce } from "../../notes";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
 
 /**
@@ -77,7 +77,7 @@ export function AgentTabView({
     async (text: string) => {
       if (!session) return;
       const sessionTitle = sessionDisplayTitle(session.title, session.harness);
-      await createNote({
+      await saveNoteOnce({
         title:
           sessionTitle && sessionTitle !== "New session"
             ? sessionTitle
@@ -92,7 +92,7 @@ export function AgentTabView({
   const saveSelectionNote = useCallback(
     async (text: string) => {
       if (!session) return;
-      await createNote({
+      await saveNoteOnce({
         title: noteTitle(text),
         body: text,
         sourceSessionId: session.id,

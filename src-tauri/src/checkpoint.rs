@@ -14,6 +14,7 @@ use crate::fs::{
     expand_home, git_checked, git_diff_files_for, path_to_js, resolve_repo_path, GitChangedFile,
     GitDiffIndex, MAX_TEXT_FILE_BYTES,
 };
+use crate::state_file;
 
 const MAX_SNAPSHOT_FILES: usize = 500;
 
@@ -1391,21 +1392,11 @@ fn state_blob_path(blob_root: &Path, relative: &str) -> Result<PathBuf, String> 
 }
 
 fn read_manifest(dir: &Path) -> Result<Option<Manifest>, String> {
-    let path = dir.join("manifest.json");
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+    state_file::read_json_or_recover(&dir.join("manifest.json")).map(|(manifest, _)| manifest)
 }
 
 fn write_manifest(dir: &Path, manifest: &Manifest) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let dest = dir.join("manifest.json");
-    let tmp = dir.join("manifest.json.tmp");
-    let bytes = serde_json::to_vec_pretty(manifest).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
-    std::fs::rename(tmp, dest).map_err(|e| e.to_string())
+    state_file::write_json_atomic(&dir.join("manifest.json"), manifest, true)
 }
 
 fn project_root(cwd: &str) -> Result<PathBuf, String> {
@@ -1467,6 +1458,31 @@ mod tests {
 
     static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
+    #[test]
+    fn a_torn_manifest_recovers_its_last_good_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut manifest = Manifest {
+            cwd: "/code/app".into(),
+            files: BTreeMap::new(),
+            touched: BTreeSet::new(),
+            tracked: BTreeSet::new(),
+            prepared: BTreeSet::new(),
+            after: BTreeMap::new(),
+            stats: BTreeMap::new(),
+            diverged: BTreeSet::new(),
+        };
+        write_manifest(dir.path(), &manifest).unwrap();
+        let first = manifest.clone();
+        manifest.touched.insert("a.txt".into());
+        write_manifest(dir.path(), &manifest).unwrap();
+        let path = dir.path().join("manifest.json");
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::write(&path, &bytes[..bytes.len() / 2]).unwrap();
+
+        assert_eq!(read_manifest(dir.path()).unwrap(), Some(first));
+        assert_eq!(state_file::corrupt_copies(&path).len(), 1);
+    }
+
     struct Tmp(PathBuf);
     impl Drop for Tmp {
         fn drop(&mut self) {
@@ -1482,7 +1498,7 @@ mod tests {
                 .as_nanos();
             let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
             let dir = std::env::temp_dir().join(format!(
-                "monocode-checkpoint-{label}-{}-{stamp}-{seq}",
+                "irgat-checkpoint-{label}-{}-{stamp}-{seq}",
                 std::process::id()
             ));
             match std::fs::create_dir(&dir) {
@@ -1497,10 +1513,10 @@ mod tests {
         Command::new("git")
             .args(args)
             .current_dir(dir)
-            .env("GIT_AUTHOR_NAME", "monocode")
-            .env("GIT_AUTHOR_EMAIL", "monocode@test")
-            .env("GIT_COMMITTER_NAME", "monocode")
-            .env("GIT_COMMITTER_EMAIL", "monocode@test")
+            .env("GIT_AUTHOR_NAME", "irgat")
+            .env("GIT_AUTHOR_EMAIL", "irgat@test")
+            .env("GIT_COMMITTER_NAME", "irgat")
+            .env("GIT_COMMITTER_EMAIL", "irgat@test")
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
@@ -1510,8 +1526,8 @@ mod tests {
         if !git(dir, &["init", "-b", "main"]) && !git(dir, &["init"]) {
             return false;
         }
-        let _ = git(dir, &["config", "user.email", "monocode@test"]);
-        let _ = git(dir, &["config", "user.name", "monocode"]);
+        let _ = git(dir, &["config", "user.email", "irgat@test"]);
+        let _ = git(dir, &["config", "user.name", "irgat"]);
         let _ = git(dir, &["config", "core.autocrlf", "false"]);
         for (name, contents) in files {
             let path = dir.join(name);
@@ -1918,8 +1934,8 @@ mod tests {
     }
 
     #[test]
-    fn mono_changes_in_two_repositories_can_be_kept_independently() {
-        let home = tmp("mono-multiple-repos");
+    fn irgat_changes_in_two_repositories_can_be_kept_independently() {
+        let home = tmp("irgat-multiple-repos");
         for name in ["a", "b"] {
             let repo = home.0.join(name);
             std::fs::create_dir(&repo).unwrap();
@@ -1931,23 +1947,26 @@ mod tests {
             .map(|path| home.0.join(path).to_string_lossy().into_owned())
             .collect();
         let (_root, store) = store();
-        store.begin_turn("mono", &cwd, "turn").unwrap();
-        store.prepare("mono", &cwd, &paths).unwrap();
+        store.begin_turn("irgat", &cwd, "turn").unwrap();
+        store.prepare("irgat", &cwd, &paths).unwrap();
         for path in &paths {
-            std::fs::write(path, "mono change\n").unwrap();
+            std::fs::write(path, "irgat change\n").unwrap();
         }
-        store.capture("mono", &cwd, &paths).unwrap();
-        store.finish_turn("mono", &cwd, "turn").unwrap();
+        store.capture("irgat", &cwd, &paths).unwrap();
+        store.finish_turn("irgat", &cwd, "turn").unwrap();
         assert_eq!(
-            relatives(&store.status("mono", &cwd).unwrap()),
+            relatives(&store.status("irgat", &cwd).unwrap()),
             vec!["a/file.txt", "b/file.txt"]
         );
-        store.keep("mono", &cwd, Some("a/file.txt")).unwrap();
+        store.keep("irgat", &cwd, Some("a/file.txt")).unwrap();
         assert_eq!(
-            relatives(&store.status("mono", &cwd).unwrap()),
+            relatives(&store.status("irgat", &cwd).unwrap()),
             vec!["b/file.txt"]
         );
-        assert_eq!(std::fs::read_to_string(&paths[1]).unwrap(), "mono change\n");
+        assert_eq!(
+            std::fs::read_to_string(&paths[1]).unwrap(),
+            "irgat change\n"
+        );
     }
 
     #[test]

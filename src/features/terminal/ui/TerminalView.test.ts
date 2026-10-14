@@ -28,7 +28,7 @@ vi.mock("@xterm/xterm", () => ({
     options = {};
     parser = { registerOscHandler: () => ({ dispose() {} }) };
     buffer = {
-      active: { type: "normal" },
+      active: { type: "normal", baseY: 0, getLine: () => undefined },
       onBufferChange: () => ({ dispose() {} }),
     };
     open() {}
@@ -39,6 +39,9 @@ vi.mock("@xterm/xterm", () => ({
       return { dispose() {} };
     }
     onRender() {
+      return { dispose() {} };
+    }
+    onTitleChange() {
       return { dispose() {} };
     }
     attachCustomKeyEventHandler() {}

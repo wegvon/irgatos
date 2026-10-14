@@ -12,7 +12,7 @@ export type SessionStatusFilter = {
 
 export type SessionSidebarFilters = {
   showArchived: boolean;
-  /** Narrows a Mono's sessions to launches since deleted. */
+  /** Narrows a Irgat's sessions to launches since deleted. */
   showUnavailable?: boolean;
   hiddenHarnesses: HarnessId[];
   time: SessionTimeFilter;
@@ -32,7 +32,7 @@ export const DEFAULT_SESSION_SIDEBAR_FILTERS: SessionSidebarFilters = {
   status: DEFAULT_SESSION_STATUS_FILTER,
 };
 
-const FILTERS_KEY = "monocode.sessionSidebarFilters";
+const FILTERS_KEY = "irgat.sessionSidebarFilters";
 
 export function harnessesInSessions(rows: SessionSummary[]): HarnessId[] {
   const seen = new Set<HarnessId>();
@@ -45,7 +45,7 @@ export function loadSessionSidebarFilters(): SessionSidebarFilters {
     const raw = localStorage.getItem(FILTERS_KEY);
     if (!raw) {
       const legacyArchived =
-        localStorage.getItem("monocode.sessionsShowArchived") === "1";
+        localStorage.getItem("irgat.sessionsShowArchived") === "1";
       return legacyArchived
         ? { ...DEFAULT_SESSION_SIDEBAR_FILTERS, showArchived: true }
         : DEFAULT_SESSION_SIDEBAR_FILTERS;

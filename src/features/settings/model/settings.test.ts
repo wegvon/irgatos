@@ -50,21 +50,21 @@ import {
 } from "./settings";
 import { IS_MAC, MOD, SHIFT } from "../../../platform/tauri/platform";
 
-const KEY = "monocode.composerRunner";
-const MODEL_CONTROLS_KEY = "monocode.modelControls";
-const LEGACY_EFFORT_VISIBLE_KEY = "monocode.composerEffortVisible";
-const NOTES_KEY = "monocode.notesEnabled";
-const KEYBINDING_OVERRIDES_KEY = "monocode.keybindingOverrides";
-const QUICK_COMPOSER_SHORTCUT_KEY = "monocode.quickComposerShortcut";
-const LIVE_AGENTS_KEY = "monocode.liveAgentsEnabled";
-const GRID_ARCADE_KEY = "monocode.gridArcadeEnabled";
-const DIFF_VIEWER_KEY = "monocode.diffViewer";
-const FORMAT_ON_SAVE_KEY = "monocode.formatOnSave";
-const AUTOSAVE_KEY = "monocode.autosave";
-const FILE_TAB_MODE_KEY = "monocode.fileTabMode";
-const FOLLOW_UP_BEHAVIOR_KEY = "monocode.followUpBehavior";
-const TAB_ANIMATIONS_KEY = "monocode.tabAnimationsEnabled";
-const COLLAPSED_PROJECT_RAIL_MODE_KEY = "monocode.collapsedProjectRailMode";
+const KEY = "irgat.composerRunner";
+const MODEL_CONTROLS_KEY = "irgat.modelControls";
+const LEGACY_EFFORT_VISIBLE_KEY = "irgat.composerEffortVisible";
+const NOTES_KEY = "irgat.notesEnabled";
+const KEYBINDING_OVERRIDES_KEY = "irgat.keybindingOverrides";
+const QUICK_COMPOSER_SHORTCUT_KEY = "irgat.quickComposerShortcut";
+const LIVE_AGENTS_KEY = "irgat.liveAgentsEnabled";
+const GRID_ARCADE_KEY = "irgat.gridArcadeEnabled";
+const DIFF_VIEWER_KEY = "irgat.diffViewer";
+const FORMAT_ON_SAVE_KEY = "irgat.formatOnSave";
+const AUTOSAVE_KEY = "irgat.autosave";
+const FILE_TAB_MODE_KEY = "irgat.fileTabMode";
+const FOLLOW_UP_BEHAVIOR_KEY = "irgat.followUpBehavior";
+const TAB_ANIMATIONS_KEY = "irgat.tabAnimationsEnabled";
+const COLLAPSED_PROJECT_RAIL_MODE_KEY = "irgat.collapsedProjectRailMode";
 
 describe("follow-up behavior setting", () => {
   beforeEach(mockLocalStorage);
@@ -607,10 +607,13 @@ describe("settings navigation", () => {
       "appearance",
       "keybindings",
       "chat",
+      "voice",
+      "adhd",
       "providers",
+      "usage",
       "mcp",
       "skills",
-      "monos",
+      "irgats",
       "inbox",
       "archive",
       "worktrees",

@@ -1,24 +1,25 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
-import { readMonoConversation } from "../features/monos/model/monoConversation";
+import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
 import {
-  resumeMonoUsageLimit,
-  switchMonoUsageLimitAccount,
-} from "../features/monos/model/monoUsageLimit";
+  resumeIrgatUsageLimit,
+  switchIrgatUsageLimitAccount,
+} from "../features/irgats/model/irgatUsageLimit";
 import {
-  acknowledgeMonoMessage,
-  enqueueMonoMessage,
-} from "../features/monos/model/monoMessaging";
+  acknowledgeIrgatMessage,
+  enqueueIrgatMessage,
+} from "../features/irgats/model/irgatMessaging";
 import {
-  dismissQueuedMonoSessionCompletion,
-  enqueueMonoSessionCompletion,
-  monoSessionCompletionResult,
-  MonoSessionCompletionBatches,
-} from "../features/monos/model/monoSessionCompletion";
+  dismissQueuedIrgatSessionCompletion,
+  enqueueIrgatSessionCompletion,
+  irgatSessionCompletionResult,
+  IrgatSessionCompletionBatches,
+} from "../features/irgats/model/irgatSessionCompletion";
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import { HarnessEventQueue } from "./model/harnessFlush";
 import { updateSessionState } from "./model/sessionState";
+import { workspaceChatTarget } from "./model/chatTarget";
 import {
   handleAgentApp,
   canAccessAgentAppProject,
@@ -89,27 +90,28 @@ import { Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { WhatsNewDialog } from "./shell/WhatsNewDialog";
+import { UpdateDialog } from "./shell/UpdateDialog";
 import { ProviderSignInDialog } from "../features/sessions/ui/ProviderSignInDialog";
 import { TitleBar, type Tab as TitleTab } from "./shell/TitleBar";
 import { WindowControls } from "./shell/WindowControls";
 import {
-  MonoOverview,
-  type MonoOverviewTab,
-} from "../features/monos/ui/MonoOverview";
-import { MonoSettingsDialog } from "../features/monos/ui/MonoSettingsDialog";
-import { MonoActivityPanel } from "../features/monos/ui/MonoActivityPanel";
+  IrgatOverview,
+  type IrgatOverviewTab,
+} from "../features/irgats/ui/IrgatOverview";
+import { IrgatSettingsDialog } from "../features/irgats/ui/IrgatSettingsDialog";
+import { IrgatActivityPanel } from "../features/irgats/ui/IrgatActivityPanel";
 import {
   launchedSessionState,
-  monoSpawnedSessions,
-  recordMonoSpawnedSession,
+  irgatSpawnedSessions,
+  recordIrgatSpawnedSession,
   type LaunchedSessionState,
   type LaunchedSessionView,
-} from "../features/monos/model/monoSpawnedSessions";
-import { groupMonoTurns } from "../features/sessions/model/transcriptActivity";
+} from "../features/irgats/model/irgatSpawnedSessions";
+import { groupIrgatTurns } from "../features/sessions/model/transcriptActivity";
 import {
-  resolveMonoActivity,
-  type MonoActivitySelection,
-} from "../features/monos/model/monoActivity";
+  resolveIrgatActivity,
+  type IrgatActivitySelection,
+} from "../features/irgats/model/irgatActivity";
 import { MenuBar } from "./shell/MenuBar";
 import { FilePicker } from "../features/files/ui/FilePicker";
 import {
@@ -139,9 +141,25 @@ import {
   worktreeSessionIds,
   type Worktree,
 } from "../features/source-control/model/worktrees";
+import { OPEN_BROWSER_URL_EVENT } from "../features/source-control/model/worktreeEnv";
 import { UsageFooter } from "./shell/UsageFooter";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
+import { useKanbanSessions } from "../features/kanban/hooks/useKanbanSessions";
+import {
+  cardTitleFromText,
+  createKanbanCard,
+  createKanbanColumn,
+  DEFAULT_KANBAN_COLUMNS,
+  kanbanProject,
+  linkKanbanSession,
+  loadKanbanBoard,
+  syncKanbanSessions,
+  type KanbanCard,
+} from "../features/kanban/model/kanban";
+import { liveSessionStatus } from "../features/kanban/model/cardSession";
+import { countNeedsYou } from "../features/fleet/model/fleet";
+import type { KanbanFocusRequest } from "../features/kanban/ui/KanbanView";
 import {
   loadProjectRailOpen,
   loadSessionSidebarOpen,
@@ -198,6 +216,7 @@ import {
   leafIds,
   movePane,
   neighborLeafId,
+  newArtifactTab,
   newEditorWorkspaceTab,
   newFileTab,
   newPlanTab,
@@ -285,7 +304,7 @@ import {
   forgetHarnessSession,
   generateHarnessTitle,
   generateHarnessBranchName,
-  migrateMonoCodexSession,
+  migrateIrgatxSession,
   isLiveHarness,
   latestTurnNeedsHarnessLogin,
   probeHarnessAvailability,
@@ -430,8 +449,15 @@ import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorks
 import { newWorkspaceSession } from "./model/newWorkspaceSession";
 import {
   ADD_TO_CHAT_EVENT,
+  appendComposerInsert,
+  requestAddToChat,
+  requestInsertIntoChat,
   type AddToChatRequest,
 } from "../features/sessions/model/quoteDraft";
+import {
+  getComposerDraft,
+  setComposerDraft,
+} from "../features/sessions/model/draftCache";
 import { createSessionRemover } from "../features/sessions/model/sessionRemoval";
 import { shouldGenerateSessionTitle } from "../features/sessions/model/sessionTitle";
 import {
@@ -468,11 +494,15 @@ import {
   type RuntimeMode,
   type PlanStatus,
   type SecondOpinionMeta,
-  type MonoSpawnedSession,
+  type IrgatSpawnedSession,
   type Session,
   type UsageLimit,
   type WorkspaceMode,
 } from "../features/sessions/model/session";
+import {
+  activeTurnSnapshotDue,
+  persistDelay,
+} from "../features/sessions/model/persistSchedule";
 
 import {
   canDispatchQueuedHead,
@@ -487,10 +517,31 @@ import {
   usageLimitResumeDue,
 } from "../features/sessions/model/usageLimit";
 import {
+  dismissSessionInterruption,
+  planSessionResume,
+  sessionInterruption,
+} from "../features/sessions/model/sessionInterruption";
+import {
+  getAllRateLimits,
+  subscribeRateLimits,
+} from "../features/providers/model/rateLimitsCache";
+import {
+  holdAccountId,
+  usageLimitRegistry,
+} from "../features/quotas/model/usageLimitStore";
+import {
+  automationHoldId,
+  queueHold,
+} from "../features/quotas/model/usageLimitRegistry";
+import { useUsageLimitSnapshot } from "../features/quotas/hooks/useUsageLimitHold";
+import {
   fetchClaudeRateLimits,
   fetchCodexRateLimits,
 } from "../features/providers/model/rateLimitsFetch";
-import { exhaustedWindowResetAt } from "../features/providers/model/rateLimits";
+import {
+  exhaustedWindowResetAt,
+  type RateLimitProvider,
+} from "../features/providers/model/rateLimits";
 import { dropContextWindow } from "../features/sessions/model/contextUsage";
 import {
   discardDraftSessionRecord,
@@ -520,6 +571,17 @@ import { liveAgentsFromSessions } from "../features/sessions/model/liveAgents";
 import { hiddenApprovalNotices } from "../features/notifications/model/approvalToast";
 import { useSessionReminders } from "../features/notifications/hooks/useSessionReminders";
 import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
+import { InboxResurfaceNotices } from "../features/inbox/ui/InboxResurfaceNotices";
+import {
+  cancelCheckCommand,
+  createCompletionGateController,
+  gateAppliesToTurn,
+  loadProjectGate,
+  loadSessionGate,
+  registerCompletionGateController,
+  resolveCompletionGate,
+  runCheckCommand,
+} from "../features/sessions/model/completionGate";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
@@ -530,6 +592,8 @@ import {
   setWindowFocused,
 } from "../features/notifications/model/notifications";
 import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
+import { useTerminalAgentNotifications } from "../features/terminal/hooks/useTerminalAgentNotifications";
+import { terminalIdFromTarget } from "../features/terminal/model/agentDetection/terminalAgentStore";
 import { archiveFocusedSession } from "../features/sessions/model/archiveShortcut";
 import {
   adjacentItemId,
@@ -553,58 +617,90 @@ import {
 } from "../features/workspace/model/tabVisitHistory";
 import { preparePrompt } from "../features/sessions/model/promptPreparation";
 import {
+  adhdEnabledFor,
+  applyAdhdCommand,
+  parseAdhdCommand,
+  planAdhdContext,
+  recordAdhdContext,
+} from "../features/adhd/model/adhdMode";
+import {
   consumeOperatorCommand,
   operatorEnabledInThread,
 } from "../features/sessions/model/operatorCommand";
 import {
-  createMono,
-  findMono,
-  isMonoSession,
-  listMonos,
-  loadOpenMono,
-  monoForSession,
-  monoLook,
+  createIrgat,
+  findIrgat,
+  isIrgatSession,
+  listIrgats,
+  loadOpenIrgat,
+  irgatForSession,
+  irgatLook,
   monosSnapshot,
-  monoState,
-  removeMono,
-  saveOpenMono,
-  subscribeMonos,
-  type MonoState,
-} from "../features/monos/model/mono";
+  irgatState,
+  removeIrgat,
+  saveOpenIrgat,
+  subscribeIrgats,
+  type IrgatState,
+} from "../features/irgats/model/irgat";
 import {
-  loadMonoFiles,
-  MONO_PROMPT_VERSION,
+  loadIrgatFiles,
+  IRGAT_PROMPT_VERSION,
   planAgentContext,
-  monoContext,
-  monoTurn,
+  irgatContext,
+  irgatTurn,
   readAgentFile,
   recordAgentContext,
   writeAgentFile,
-} from "../features/monos/model/monoFiles";
-import { useMonoHabits } from "./hooks/useMonoHabits";
-import { useFloatingMono } from "./hooks/useFloatingMono";
+} from "../features/irgats/model/irgatFiles";
+import { useIrgatHabits } from "./hooks/useIrgatHabits";
+import { useHabitWebhooks } from "./hooks/useHabitWebhooks";
+import { useHabitApprovals } from "../features/irgats/hooks/useHabitApprovals";
+import { decideHabitApproval } from "../features/irgats/model/habitApprovals";
+import {
+  useIrgatGroupChat,
+  useIrgatGroupWatch,
+} from "./hooks/useIrgatGroupChat";
+import {
+  useActiveIrgatGroups,
+  useIrgatGroupRun,
+} from "../features/irgats/hooks/useIrgatGroup";
+import {
+  findIrgatGroup,
+  irgatGroupName,
+  irgatGroupOfView,
+  irgatGroupViewKey,
+  removeIrgatGroup,
+} from "../features/irgats/model/irgatGroups";
+import { IrgatGroupView } from "../features/irgats/ui/IrgatGroupView";
+import { useLightpandaAutostart } from "./hooks/useLightpandaAutostart";
+import { useFloatingIrgat } from "./hooks/useFloatingIrgat";
 import {
   dropRelays,
   habitPostsContext,
-  habitRunMono,
+  habitRunIrgat,
   isHabitRun,
   relayApproval,
   takeRelayedApproval,
   loadHabits,
   unseenHabitPosts,
   updateHabits,
-} from "../features/monos/model/monoHabits";
+} from "../features/irgats/model/irgatHabits";
+import { setLiveHost } from "../features/voice/live/liveHost";
 import {
-  loadMonoRotation,
+  liveTurnsContext,
+  unseenLiveTurns,
+} from "../features/voice/live/liveTranscript";
+import {
+  loadIrgatRotation,
   planRotation,
   rotationReason,
-  saveMonoRotation,
-} from "../features/monos/model/monoRotation";
+  saveIrgatRotation,
+} from "../features/irgats/model/irgatRotation";
 import {
-  detachMonoTabs,
-  ensureMonoSession,
-  resetMonoSession,
-} from "../features/monos/model/monoWorkspace";
+  detachIrgatTabs,
+  ensureIrgatSession,
+  resetIrgatSession,
+} from "../features/irgats/model/irgatWorkspace";
 import {
   warmNativeSkills,
   isNativeCommandPrompt,
@@ -619,12 +715,18 @@ import {
 import {
   ADD_NOTE_TO_CHAT_EVENT,
   NOTES_CHANGED_EVENT,
+  appendNoteReference,
   composeNoteMessage,
   loadNotes,
   noteCardMeta,
   upsertNote,
+  type AddNoteToChatRequest,
   type NoteComposerCard,
 } from "../features/notes";
+import {
+  noteChatPlacement,
+  openNoteChatTargets,
+} from "../features/notes/noteChatTargets";
 import {
   getArtifact,
   saveArtifact,
@@ -633,7 +735,40 @@ import {
   removeArtifactCard,
   ARTIFACT_DELETED_EVENT,
 } from "../features/artifacts/artifacts";
-import type { MonoChangesRequest } from "../features/monos/ui/MonoChangesView";
+import { useProjectArtifacts } from "../features/artifacts/hooks/useArtifacts";
+import {
+  OPEN_ARTIFACT_EVENT,
+  type OpenArtifactRequest,
+} from "../features/artifacts/model/artifactActions";
+import {
+  getRegisteredArtifact,
+  registerArtifacts,
+} from "../features/artifacts/model/artifactRegistry";
+import {
+  loadArtifactScope,
+  saveArtifactScope,
+} from "../features/artifacts/model/artifactScopePref";
+import {
+  irgatArtifactScope,
+  projectArtifactScope,
+} from "../features/artifacts/model/pinnedArtifacts";
+import {
+  artifactFileName,
+  type ArtifactScope,
+  type WorkspaceArtifact,
+} from "../features/artifacts/model/workspaceArtifacts";
+import {
+  ArtifactHostContext,
+  type ArtifactHost,
+} from "../features/artifacts/ui/artifactContext";
+import {
+  irgatReviewScope,
+  projectReviewScope,
+  setActiveReviewScope,
+} from "../features/redline/model/reviewStore";
+import { RedlineReviewBadge } from "../features/redline/ui/RedlineReviewBadge";
+import { ArtifactsList } from "../features/artifacts/ui/ArtifactsList";
+import type { IrgatChangesRequest } from "../features/irgats/ui/IrgatChangesView";
 import {
   claimDueAutomations,
   listAutomations,
@@ -660,6 +795,13 @@ import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock
 import { lazySurface } from "../shared/ui/lazySurface";
 import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
+import { publishLiveSessions } from "../features/sessions/data/sessionReferenceDirectory";
+import {
+  connectSessionMessageTransport,
+  startSessionMessageGuardTimer,
+  syncSessionMessages,
+} from "../features/sessions/model/sessionMessageRouter";
+import { SessionReferenceHost } from "../features/sessions/ui/SessionReferenceHost";
 import type { SettingsAnchor } from "../features/settings/ui/SettingsView";
 import {
   OPEN_CONNECTIONS_EVENT,
@@ -812,6 +954,10 @@ const LinkedWorkItemPanel = lazySurface(async () => {
   const module = await import("../features/inbox/ui/InboxView");
   return { default: module.LinkedWorkItemPanel };
 });
+const BrowserPanel = lazySurface(async () => {
+  const module = await import("../features/browser/ui/BrowserPanel");
+  return { default: module.BrowserPanel };
+});
 const NotesView = lazySurface(
   async () => {
     const module = await import("../features/notes/ui/NotesView");
@@ -823,6 +969,20 @@ const AutomationsView = lazySurface(
   async () => {
     const module = await import("../features/automations/ui/AutomationsView");
     return { default: module.AutomationsView };
+  },
+  { suspense: false },
+);
+const KanbanView = lazySurface(
+  async () => {
+    const module = await import("../features/kanban/ui/KanbanView");
+    return { default: module.KanbanView };
+  },
+  { suspense: false },
+);
+const FleetView = lazySurface(
+  async () => {
+    const module = await import("../features/fleet/ui/FleetView");
+    return { default: module.FleetView };
   },
   { suspense: false },
 );
@@ -847,10 +1007,14 @@ type SubmitOptions = ComposerTurnOptions & {
   managed?: boolean;
   orchestrationRetry?: OrchestrationProposal;
   appRequestId?: string;
-  monoSessionCompletion?: Block["monoSessionCompletion"];
+  irgatSessionCompletion?: Block["irgatSessionCompletion"];
+  /** An automatic retry after the Completion Gate's validator failed. */
+  completionGateBounce?: boolean;
   onSettled?: (outcome: ControlOutcome) => void;
   /** Generate a fresh title even when this is not the session's first turn. */
   refreshTitle?: boolean;
+  /** Transcript recap for an interrupted chat whose thread is gone. */
+  resumeContext?: string;
   /** Internal guard for the retry after resolving a renamed project. */
   projectLocationReady?: boolean;
 };
@@ -861,6 +1025,19 @@ type Submit = (
   attachments?: Attachment[],
   options?: SubmitOptions,
 ) => SubmissionAcceptance;
+
+/** The session's provider and account are waiting out a usage limit. */
+function sessionProviderHold(session: Session) {
+  return usageLimitRegistry.get(
+    session.harness,
+    holdAccountId(session.harness, session.providerAccountId, session.cwd),
+  );
+}
+
+/** Its queued prompts wait for the reset, unless the user ran them anyway. */
+function providerOnHold(session: Session): boolean {
+  return !!queueHold(sessionProviderHold(session), session.queueHoldOverride);
+}
 
 function withPlanStatus(
   session: Session,
@@ -987,12 +1164,13 @@ function filesInWorkspaceTabs(tabs: readonly WorkspaceTab[]): FilePaneTab[] {
   ]);
 }
 
-/** Stable empty tab list for the title bar while a Mono is in full view. */
+/** Stable empty tab list for the title bar while a Irgat is in full view. */
 const NO_TITLE_TABS: [] = [];
+const NO_USAGE_PROVIDERS: RateLimitProvider[] = [];
 
 /** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
 function confirmDiscardUnsaved(message: string): Promise<boolean> {
-  return ask(message, { title: "MonoCode", kind: "warning" });
+  return ask(message, { title: "Irgatos", kind: "warning" });
 }
 
 function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
@@ -1098,25 +1276,25 @@ function Workspace({
   const [activeTabId, setActiveTabIdState] = useState(
     () => windowTransfer?.activeTabId ?? resumed?.activeTabId ?? seed.tab.id,
   );
-  const [monoViewId, setMonoViewId] = useState<string | null>(null);
-  // A Mono opens with its overview beside the chat until it is hidden.
-  const [monoOverviewOpen, setMonoOverviewOpen] = useState(true);
-  const [monoOverviewTab, setMonoOverviewTab] =
-    useState<MonoOverviewTab>("sessions");
-  // The Mono whose settings dialog is open; another Mono's view closes it.
-  const [monoSettingsFor, setMonoSettingsFor] = useState<string | null>(null);
+  const [irgatViewId, setIrgatViewId] = useState<string | null>(null);
+  // A Irgat opens with its overview beside the chat until it is hidden.
+  const [irgatOverviewOpen, setIrgatOverviewOpen] = useState(true);
+  const [irgatOverviewTab, setIrgatOverviewTab] =
+    useState<IrgatOverviewTab>("all");
+  // The Irgat whose settings dialog is open; another Irgat's view closes it.
+  const [irgatSettingsFor, setIrgatSettingsFor] = useState<string | null>(null);
   // A document opened from the chat shows on the overview's Documents tab,
   // the same page the tab opens it on.
-  const onOpenMonoArtifact = useCallback((_sessionId: string, id: string) => {
-    setMonoActivity(null);
-    setMonoShownSession(null);
-    setMonoOverviewDocument(id);
-    setMonoOverviewTab("documents");
-    setMonoOverviewOpen(true);
+  const onOpenIrgatArtifact = useCallback((_sessionId: string, id: string) => {
+    setIrgatActivity(null);
+    setIrgatShownSession(null);
+    setIrgatOverviewDocument(id);
+    setIrgatOverviewTab((tab) => (tab === "all" ? tab : "documents"));
+    setIrgatOverviewOpen(true);
   }, []);
   // What the overview's Changes tab was last asked to show.
-  const [monoChangesRequest, setMonoChangesRequest] =
-    useState<MonoChangesRequest>({});
+  const [irgatChangesRequest, setIrgatChangesRequest] =
+    useState<IrgatChangesRequest>({});
   useEffect(() => {
     const listening = listen<string>(
       ARTIFACT_DELETED_EVENT,
@@ -1129,38 +1307,42 @@ function Workspace({
           sessionsRef.current = updated;
           setSessions(updated);
         }
-        setMonoOverviewDocument((current) => (current === id ? null : current));
+        setIrgatOverviewDocument((current) => (current === id ? null : current));
       },
     );
     return () => {
       void listening.then((unlisten) => unlisten());
     };
   }, []);
-  const [monoActivity, setMonoActivity] =
-    useState<MonoActivitySelection | null>(null);
+  const [irgatActivity, setIrgatActivity] =
+    useState<IrgatActivitySelection | null>(null);
   // A launched session or a document open over the overview's list. Hiding
   // the overview leaves them, so it opens on its list again.
-  const [monoShownSession, setMonoShownSession] = useState<string | null>(null);
-  const [monoOverviewDocument, setMonoOverviewDocument] = useState<
+  const [irgatShownSession, setIrgatShownSession] = useState<string | null>(null);
+  const [irgatOverviewDocument, setIrgatOverviewDocument] = useState<
+    string | null
+  >(null);
+  const [irgatOverviewArtifact, setIrgatOverviewArtifact] = useState<
     string | null
   >(null);
   useEffect(() => {
-    if (monoOverviewOpen) return;
-    setMonoShownSession(null);
-    setMonoOverviewDocument(null);
-  }, [monoOverviewOpen]);
-  // Whether the shown session, rather than the Mono's chat, holds focus.
-  const [monoShownSessionFocused, setMonoShownSessionFocused] = useState(false);
-  const shownMonoSessionId =
-    monoViewId && monoOverviewOpen && monoShownSession
-      ? monoShownSession
+    if (irgatOverviewOpen) return;
+    setIrgatShownSession(null);
+    setIrgatOverviewDocument(null);
+    setIrgatOverviewArtifact(null);
+  }, [irgatOverviewOpen]);
+  // Whether the shown session, rather than the Irgat's chat, holds focus.
+  const [irgatShownSessionFocused, setIrgatShownSessionFocused] = useState(false);
+  const shownIrgatSessionId =
+    irgatViewId && irgatOverviewOpen && irgatShownSession
+      ? irgatShownSession
       : undefined;
-  const shownMonoSessionIdRef = useRef(shownMonoSessionId);
-  shownMonoSessionIdRef.current = shownMonoSessionId;
-  const onShowMonoActivity = useCallback(
+  const shownIrgatSessionIdRef = useRef(shownIrgatSessionId);
+  shownIrgatSessionIdRef.current = shownIrgatSessionId;
+  const onShowIrgatActivity = useCallback(
     (sessionId: string, turnId: string, blocks: Block[]) => {
-      setMonoOverviewOpen(false);
-      setMonoActivity((previous) =>
+      setIrgatOverviewOpen(false);
+      setIrgatActivity((previous) =>
         previous?.sessionId === sessionId && previous.turnId === turnId
           ? null
           : { sessionId, turnId, blocks },
@@ -1168,15 +1350,15 @@ function Workspace({
     },
     [],
   );
-  const monoViewIdRef = useRef(monoViewId);
-  monoViewIdRef.current = monoViewId;
-  const monoViewRequest = useRef(0);
-  const closeMonoView = useCallback(() => {
-    monoViewRequest.current += 1;
-    monoViewIdRef.current = null;
-    saveOpenMono(undefined);
-    setMonoViewId(null);
-    setMonoActivity(null);
+  const irgatViewIdRef = useRef(irgatViewId);
+  irgatViewIdRef.current = irgatViewId;
+  const irgatViewRequest = useRef(0);
+  const closeIrgatView = useCallback(() => {
+    irgatViewRequest.current += 1;
+    irgatViewIdRef.current = null;
+    saveOpenIrgat(undefined);
+    setIrgatViewId(null);
+    setIrgatActivity(null);
   }, []);
   const [composerFocused, setComposerFocused] = useState(() => {
     if (windowTransfer) return true;
@@ -1207,6 +1389,31 @@ function Workspace({
   const [searchViewOpen, setSearchViewOpen] = useState(false);
   const [searchViewFocusToken, setSearchViewFocusToken] = useState(0);
   const [inboxViewOpen, setInboxViewOpen] = useState(false);
+  // Mounted on first open so the page survives hiding the panel.
+  const [browserMounted, setBrowserMounted] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const onToggleBrowser = useCallback(() => {
+    setBrowserMounted(true);
+    setBrowserOpen((open) => !open);
+  }, []);
+  const [browserRequest, setBrowserRequest] = useState<{
+    url: string;
+    token: number;
+  }>();
+  useEffect(() => {
+    const onOpenUrl = (event: Event) => {
+      const url = (event as CustomEvent<unknown>).detail;
+      if (typeof url !== "string" || !url) return;
+      setBrowserMounted(true);
+      setBrowserOpen(true);
+      setBrowserRequest((previous) => ({
+        url,
+        token: (previous?.token ?? 0) + 1,
+      }));
+    };
+    window.addEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
+    return () => window.removeEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
+  }, []);
   const [linkedWorkItemPanels, setLinkedWorkItemPanels] = useState<
     ReadonlyMap<string, LinkedWorkItemPanelState>
   >(() => new Map());
@@ -1225,6 +1432,14 @@ function Workspace({
   const openingInboxSessions = useRef(new Map<string, Promise<string>>());
   const [notesViewOpen, setNotesViewOpen] = useState(false);
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
+  const [kanbanViewOpen, setKanbanViewOpen] = useState(false);
+  const [fleetViewOpen, setFleetViewOpen] = useState(false);
+  const [kanbanFocus, setKanbanFocus] = useState<KanbanFocusRequest | null>(
+    null,
+  );
+  const kanbanSessions = useKanbanSessions(sessions);
+  const kanbanLinksRef = useRef(kanbanSessions.links);
+  kanbanLinksRef.current = kanbanSessions.links;
   const [inspectedWorkerId, setInspectedWorkerId] = useState<string | null>(
     null,
   );
@@ -1257,6 +1472,8 @@ function Workspace({
     inbox: false,
     notes: false,
     automations: false,
+    kanban: false,
+    fleet: false,
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
@@ -1265,11 +1482,11 @@ function Workspace({
     loadMonosEnabled,
     () => true,
   );
-  const monosSnap = useSyncExternalStore(subscribeMonos, monosSnapshot);
-  /** A Mono hides the terminal, so reaching for one leaves it. */
-  const leaveCoveringMono = useCallback(() => {
-    if (monoViewIdRef.current) closeMonoView();
-  }, [closeMonoView]);
+  const monosSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  /** A Irgat hides the terminal, so reaching for one leaves it. */
+  const leaveCoveringIrgat = useCallback(() => {
+    if (irgatViewIdRef.current) closeIrgatView();
+  }, [closeIrgatView]);
   const [providerSignInRequest, setProviderSignInRequest] = useState<{
     key: string;
     sessionId: string;
@@ -1350,6 +1567,7 @@ function Workspace({
   const linkedWorkItemActivityFetches = useRef(new Map<string, number>());
   const queueDispatchingRef = useRef(new Set<string>());
   const [queueDispatchVersion, setQueueDispatchVersion] = useState(0);
+  const usageLimitSnapshot = useUsageLimitSnapshot();
   const usageResumingRef = useRef(new Set<string>());
   const usageResetLookups = useRef(new WeakSet<UsageLimit>());
   const tabsRef = useRef(tabs);
@@ -1364,7 +1582,7 @@ function Workspace({
   activeTabIdRef.current = activeTabId;
 
   useLayoutEffect(() => {
-    const migration = detachMonoTabs(
+    const migration = detachIrgatTabs(
       tabs,
       sessions,
       activeTabId,
@@ -1378,8 +1596,8 @@ function Workspace({
     setSessions(sessionsRef.current);
     setActiveTabIdState(migration.activeTabId);
     if (migration.agentViewId) {
-      monoViewIdRef.current = migration.agentViewId;
-      setMonoViewId(migration.agentViewId);
+      irgatViewIdRef.current = migration.agentViewId;
+      setIrgatViewId(migration.agentViewId);
     }
   }, [tabs, sessions, activeTabId, projectCwd]);
 
@@ -1444,7 +1662,7 @@ function Workspace({
         activateTab(id, undefined, "workspace");
       } else {
         // A newly created tab has not rendered into tabsRef yet.
-        closeMonoView();
+        closeIrgatView();
         setActiveTabIdState(id);
         setComposerFocused(true);
       }
@@ -1456,10 +1674,10 @@ function Workspace({
   const setActiveTabId = useCallback(
     (id: string) => {
       workspaceNavigation.cancel();
-      closeMonoView();
+      closeIrgatView();
       setActiveTabIdState(id);
     },
-    [workspaceNavigation.cancel, closeMonoView],
+    [workspaceNavigation.cancel, closeIrgatView],
   );
 
   const projectCwdRef = useRef(projectCwd);
@@ -1471,7 +1689,7 @@ function Workspace({
   const foregroundSurfaceRef = useRef<{
     workspaceVisible: boolean;
     standaloneSessionId?: string;
-    /** A session shown beside the Mono's chat. */
+    /** A session shown beside the Irgat's chat. */
     sideSessionId?: string;
   }>({ workspaceVisible: true });
   foregroundSurfaceRef.current = {
@@ -1480,29 +1698,39 @@ function Workspace({
       !inboxViewOpen &&
       !notesViewOpen &&
       !automationsViewOpen &&
+      !kanbanViewOpen &&
+      !fleetViewOpen &&
       !settingsOpen &&
-      !monoViewId,
+      !irgatViewId,
     standaloneSessionId: inboxViewOpen
       ? inboxAskPortal?.sessionId
       : !searchViewOpen &&
           !notesViewOpen &&
           !automationsViewOpen &&
+          !kanbanViewOpen &&
+          !fleetViewOpen &&
           !settingsOpen
-        ? (monoViewId ?? undefined)
+        ? (irgatViewId ?? undefined)
         : undefined,
     sideSessionId:
       !inboxViewOpen &&
       !searchViewOpen &&
       !notesViewOpen &&
       !automationsViewOpen &&
+      !kanbanViewOpen &&
+      !fleetViewOpen &&
       !settingsOpen
-        ? shownMonoSessionId
+        ? shownIrgatSessionId
         : undefined,
   };
   const notesViewOpenRef = useRef(notesViewOpen);
   notesViewOpenRef.current = notesViewOpen;
   const automationsViewOpenRef = useRef(automationsViewOpen);
   automationsViewOpenRef.current = automationsViewOpen;
+  const kanbanViewOpenRef = useRef(kanbanViewOpen);
+  kanbanViewOpenRef.current = kanbanViewOpen;
+  const fleetViewOpenRef = useRef(fleetViewOpen);
+  fleetViewOpenRef.current = fleetViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -1578,6 +1806,8 @@ function Workspace({
   const workspaceSyncKey = useRef<string | null>(null);
   const observedSessions = useRef(new Map<string, Session>());
   const pendingPersist = useRef(new Map<string, Session>());
+  const pendingPersistSince = useRef<number | undefined>(undefined);
+  const activeTurnSnapshots = useRef(new Map<string, number>());
   const removingSessionIds = useRef(new Set<string>());
   const loadedSessionCache = useRef(new Map<string, Session>());
   const sessionLoads = useRef(new Map<string, Promise<Session | null>>());
@@ -1641,6 +1871,22 @@ function Workspace({
     new Map<string, ReturnType<typeof synchronizeProjectLocation>>(),
   );
   const submitAfterProjectSyncRef = useRef<Submit>(() => false);
+  const completionGateSubmitRef = useRef<Submit>(() => false);
+  const completionGate = useRef(
+    createCompletionGateController({
+      runCheck: runCheckCommand,
+      cancelCheck: cancelCheckCommand,
+      submitBounce: (sessionId, prompt) =>
+        completionGateSubmitRef.current(sessionId, prompt, [], {
+          completionGateBounce: true,
+        }),
+      isCurrent: (sessionId, turn) => turnGen.current.get(sessionId) === turn,
+    }),
+  ).current;
+  useEffect(() => {
+    registerCompletionGateController(completionGate);
+    return () => registerCompletionGateController(null);
+  }, [completionGate]);
 
   useEffect(() => {
     for (const project of recents) {
@@ -1726,16 +1972,16 @@ function Workspace({
 
   useEffect(() => {
     let cancelled = false;
-    // Retain known existing Mono threads before hiding their original entries.
+    // Retain known existing Irgat threads before hiding their original entries.
     // Sending a turn uses the same migration lock, so it can safely overlap.
     void (async () => {
-      for (const mono of listMonos()) {
+      for (const irgat of listIrgats()) {
         if (cancelled) return;
-        if (!mono.sessionId) continue;
+        if (!irgat.sessionId) continue;
         try {
           const session =
-            sessionsRef.current.find((s) => s.id === mono.sessionId) ??
-            (await getSession(mono.sessionId));
+            sessionsRef.current.find((s) => s.id === irgat.sessionId) ??
+            (await getSession(irgat.sessionId));
           if (
             !session ||
             cancelled ||
@@ -1758,7 +2004,7 @@ function Workspace({
           }
           for (const threadId of threadIds) {
             if (cancelled) return;
-            await migrateMonoCodexSession({
+            await migrateIrgatxSession({
               sessionId: session.id,
               threadId,
               cwd,
@@ -1767,7 +2013,7 @@ function Workspace({
           }
         } catch (error) {
           // Keep the original context intact; the next native operation retries.
-          console.warn("Could not migrate saved Mono Codex context", error);
+          console.warn("Could not migrate saved Irgat Codex context", error);
         }
       }
     })();
@@ -1810,10 +2056,26 @@ function Workspace({
     sessions.find(
       (session) => activeTab && leafIds(activeTab.layout).includes(session.id),
     );
-  const monoViewSession = monoViewId
-    ? sessions.find((session) => session.id === monoViewId)
+  const irgatViewSession = irgatViewId
+    ? sessions.find((session) => session.id === irgatViewId)
     : undefined;
-  const monoCovers = !!monoViewId;
+  const irgatCovers = !!irgatViewId;
+  const noteChatTargets = useMemo(() => {
+    if (!notesViewOpen) return [];
+    return openNoteChatTargets({
+      sessions,
+      tabs,
+      activeTabId,
+      ...(irgatViewId
+        ? {
+            irgat: {
+              sessionId: irgatViewId,
+              name: irgatForSession(irgatViewId)?.name,
+            },
+          }
+        : {}),
+    });
+  }, [notesViewOpen, irgatViewId, sessions, tabs, activeTabId]);
   const activeTabSessionIds = activeTab ? leafIds(activeTab.layout) : [];
   const activeLinkedWorkItemPanel = activeTab
     ? (linkedWorkItemPanels.get(activeTab.focusedId) ??
@@ -1842,6 +2104,8 @@ function Workspace({
     const openSessionForAddToChat = (event: Event) => {
       const detail = (event as CustomEvent<AddToChatRequest>).detail;
       if (!detail?.text) return;
+      // The Irgat in full view takes it; a new session would open out of sight.
+      if (irgatViewIdRef.current) return;
 
       const result = applyAddToChatRequest({
         sessions: sessionsRef.current,
@@ -1880,7 +2144,7 @@ function Workspace({
   }, [activeSkillCwd, active?.id, active?.harness]);
 
   const activeFile = activeTab ? focusedFileTab(activeTab) : undefined;
-  // A Mono belongs to no project, so its view keeps the project in place.
+  // A Irgat belongs to no project, so its view keeps the project in place.
   const sidebarCwd =
     activeFile?.projectCwd ?? activeFile?.cwd ?? active?.cwd ?? projectCwd;
   const sidebarCwdRef = useRef(sidebarCwd);
@@ -1904,6 +2168,9 @@ function Workspace({
       tab: tab === "inbox" ? "sessions" : tab,
     });
   }, []);
+  // The board opens on the project the sidebar shows; an Irgat chat or a
+  // file outside any project leaves it on the current one.
+  const boardCwd = looksLikeProject(sidebarCwd) ? sidebarCwd : projectCwd;
   const sidebarCwdKey =
     sidebarCwd && sidebarCwd !== "~" ? normalizeProjectPath(sidebarCwd) : null;
   const historyFailed =
@@ -2074,21 +2341,40 @@ function Workspace({
   }
   const approvalSessionIds = approvalSessionIdsRef.current;
 
+  const nextInterruptedSessionIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const session of sessions) {
+      if (sessionInterruption(session)) ids.add(session.id);
+    }
+    return ids;
+  }, [sessions]);
+  const interruptedSessionIdsRef = useRef(nextInterruptedSessionIds);
+  if (!setsEqual(interruptedSessionIdsRef.current, nextInterruptedSessionIds)) {
+    interruptedSessionIdsRef.current = nextInterruptedSessionIds;
+  }
+  const interruptedSessionIds = interruptedSessionIdsRef.current;
+
   const activeSessionId = inboxViewOpen
     ? inboxAskPortal?.sessionId
-    : shownMonoSessionId && monoShownSessionFocused
-      ? shownMonoSessionId
-      : (monoViewSession?.id ?? active?.id);
+    : shownIrgatSessionId && irgatShownSessionFocused
+      ? shownIrgatSessionId
+      : (irgatViewSession?.id ?? active?.id);
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
   // Sessions that belong in the UI: a habit's hidden run is not one of them,
-  // and asks through its Mono's chat rather than on its own.
+  // and asks through its Irgat's chat rather than on its own.
   const promptableSessions = useMemo(
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
   );
+  const habitApprovals = useHabitApprovals();
+  const fleetNeedsYouCount = useMemo(
+    () => countNeedsYou(promptableSessions) + habitApprovals.length,
+    [promptableSessions, habitApprovals],
+  );
   useInputNotifications(promptableSessions, activeSessionId);
+  useTerminalAgentNotifications();
 
   // Cache the OS decision so a turn ending later can skip a denied banner.
   useEffect(() => {
@@ -2099,17 +2385,17 @@ function Workspace({
     busySessionIds,
     activeSessionId,
   );
-  const monoSessionIds = useMemo(
+  const irgatSessionIds = useMemo(
     () =>
       new Set(
-        listMonos().flatMap((mono) => (mono.sessionId ? [mono.sessionId] : [])),
+        listIrgats().flatMap((irgat) => (irgat.sessionId ? [irgat.sessionId] : [])),
       ),
     // The roster is read through its snapshot.
     [monosSnap],
   );
-  // How many replies each Mono has that the user has not read, for the rail.
-  const monoReplies = useUnseenReplyCounts(
-    monoSessionIds,
+  // How many replies each Irgat has that the user has not read, for the rail.
+  const irgatReplies = useUnseenReplyCounts(
+    irgatSessionIds,
     busySessionIds,
     activeSessionId,
   );
@@ -2121,8 +2407,8 @@ function Workspace({
             promptableSessions,
             unseenFinishedIds,
             new Set(
-              listMonos().flatMap((mono) =>
-                mono.sessionId ? [mono.sessionId] : [],
+              listIrgats().flatMap((irgat) =>
+                irgat.sessionId ? [irgat.sessionId] : [],
               ),
             ),
           )
@@ -2135,10 +2421,10 @@ function Workspace({
   const hiddenApprovalToasts = useMemo(
     () =>
       hiddenApprovalNotices(
-        monoViewId
-          ? promptableSessions.filter((session) => session.id !== monoViewId)
+        irgatViewId
+          ? promptableSessions.filter((session) => session.id !== irgatViewId)
           : promptableSessions,
-        monoCovers ? "" : activeTabId,
+        irgatCovers ? "" : activeTabId,
         tabs,
         composerFocused,
       ),
@@ -2147,11 +2433,12 @@ function Workspace({
       activeTabId,
       tabs,
       composerFocused,
-      monoViewId,
-      monoCovers,
+      irgatViewId,
+      irgatCovers,
     ],
   );
   const [reminderNoticesHeight, setReminderNoticesHeight] = useState(0);
+  const [inboxResurfaceHeight, setInboxResurfaceHeight] = useState(0);
   const [harnessUpdateHeight, setHarnessUpdateHeight] = useState(0);
 
   useEffect(() => {
@@ -2173,6 +2460,8 @@ function Workspace({
             !inboxViewOpenRef.current &&
             !notesViewOpenRef.current &&
             !automationsViewOpenRef.current &&
+            !kanbanViewOpenRef.current &&
+            !fleetViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);
@@ -2204,13 +2493,15 @@ function Workspace({
     flushForegroundHarnessEvents();
   }, [
     activeTabId,
-    monoViewId,
+    irgatViewId,
     inboxViewOpen,
     inboxAskPortal?.sessionId,
-    shownMonoSessionId,
+    shownIrgatSessionId,
     searchViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    kanbanViewOpen,
+    fleetViewOpen,
     settingsOpen,
     flushForegroundHarnessEvents,
   ]);
@@ -2235,7 +2526,7 @@ function Workspace({
         event.preventDefault();
         if (
           IS_MAC &&
-          (await invoke<boolean>("mono_chat_keep_alive").catch(() => false))
+          (await invoke<boolean>("irgat_chat_keep_alive").catch(() => false))
         ) {
           flushHarnessEvents();
           void persistLiveTranscripts(sessionsRef.current);
@@ -2351,6 +2642,7 @@ function Workspace({
   useEffect(() => {
     const liveIds = new Set(sessions.map((session) => session.id));
     const visibleIds = openSessionIds(tabsRef.current);
+    const now = Date.now();
     for (const session of sessions) {
       if (
         removingSessionIds.current.has(session.id) ||
@@ -2392,18 +2684,35 @@ function Workspace({
           !lastPersisted.current.has(session.id))
       ) {
         pendingPersist.current.set(session.id, session);
+      } else if (shouldPersistSession(session)) {
+        // A running turn is saved every few seconds, so a crash mid-reply
+        // keeps what had streamed in.
+        const pending = pendingPersist.current.has(session.id);
+        const due = activeTurnSnapshotDue(
+          activeTurnSnapshots.current.get(session.id),
+          now,
+        );
+        if (due && !pending) activeTurnSnapshots.current.set(session.id, now);
+        if (due || pending) pendingPersist.current.set(session.id, session);
       }
+      if (!session.busy) activeTurnSnapshots.current.delete(session.id);
     }
     for (const sessionId of observedSessions.current.keys()) {
       if (liveIds.has(sessionId)) continue;
       observedSessions.current.delete(sessionId);
       pendingPersist.current.delete(sessionId);
+      activeTurnSnapshots.current.delete(sessionId);
     }
-    if (pendingPersist.current.size === 0) return;
+    if (pendingPersist.current.size === 0) {
+      pendingPersistSince.current = undefined;
+      return;
+    }
+    pendingPersistSince.current ??= now;
 
     const timer = window.setTimeout(() => {
       const dirty = [...pendingPersist.current.values()];
       pendingPersist.current.clear();
+      pendingPersistSince.current = undefined;
       void Promise.all(
         dirty.map(async (session) => {
           if (
@@ -2423,7 +2732,7 @@ function Workspace({
           }
         }),
       );
-    }, 650);
+    }, persistDelay(pendingPersistSince.current, now));
     return () => window.clearTimeout(timer);
   }, [persistSession, sessions]);
 
@@ -2532,7 +2841,7 @@ function Workspace({
       paneId?: string,
       reason: "session" | "workspace" = "session",
     ) => {
-      closeMonoView();
+      closeIrgatView();
       const tab = tabsRef.current.find((entry) => entry.id === id);
       const nextFocusedId =
         tab &&
@@ -2676,7 +2985,7 @@ function Workspace({
     if (!document) {
       void message(
         "Release notes for this version are not available in this build.",
-        { title: "MonoCode" },
+        { title: "Irgatos" },
       );
       return;
     }
@@ -2704,6 +3013,8 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     const cwd = sidebarCwd;
     const session = newWorkspaceSession(cwd, sessionDefaults?.runtimeMode);
     const tab = newTab(session.id);
@@ -2720,6 +3031,8 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       const existing = findRemoteSessionTab(
         tabsRef.current,
         sessionsRef.current,
@@ -2748,6 +3061,8 @@ function Workspace({
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setKanbanViewOpen(false);
+        setFleetViewOpen(false);
         const cwd =
           item.projectPath || active?.cwd || sessionDefaults?.cwd || projectCwd;
         setSidebarTab("sessions", cwd);
@@ -2787,6 +3102,9 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
+      if (irgatViewIdRef.current) closeIrgatView();
       const cwd =
         (card.sourceCwd && looksLikeProject(card.sourceCwd)
           ? card.sourceCwd
@@ -2810,21 +3128,12 @@ function Workspace({
     [
       active?.cwd,
       appendTab,
+      closeIrgatView,
       sessionDefaults?.cwd,
       sessionDefaults?.runtimeMode,
       projectCwd,
     ],
   );
-
-  useEffect(() => {
-    const onAdd = (event: Event) => {
-      const card = (event as CustomEvent<NoteComposerCard>).detail;
-      if (!card?.id) return;
-      onAddNoteToChat(card);
-    };
-    window.addEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
-    return () => window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
-  }, [onAddNoteToChat]);
 
   const onInboxCardDismiss = useCallback((sessionId: string) => {
     setSessions((prev) =>
@@ -2887,7 +3196,7 @@ function Workspace({
 
   const onSplit = useCallback(
     (dir: SplitDir) => {
-      closeMonoView();
+      closeIrgatView();
       if (!activeTab) return;
       const session = newDefaultSession(
         sessionDefaults?.cwd ?? projectCwd,
@@ -2997,7 +3306,7 @@ function Workspace({
   }, [terminalCwd, onOpenTerminal]);
 
   const onShowProjectTerminal = useCallback(() => {
-    leaveCoveringMono();
+    leaveCoveringIrgat();
     const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
     if (dock && dock.pane.files.length > 0) {
       if (!dock.open) {
@@ -3014,7 +3323,7 @@ function Workspace({
   }, [
     terminalCwd,
     focusProjectTerminal,
-    leaveCoveringMono,
+    leaveCoveringIrgat,
     onOpenTerminal,
     projectCwd,
   ]);
@@ -3036,7 +3345,7 @@ function Workspace({
 
   const onToggleProjectTerminal = useCallback(() => {
     if (!isLocalProject(projectCwd)) return;
-    leaveCoveringMono();
+    leaveCoveringIrgat();
     const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
     if (!dock) {
       openProjectTerminal(terminalCwd);
@@ -3053,7 +3362,7 @@ function Workspace({
   }, [
     terminalCwd,
     focusProjectTerminal,
-    leaveCoveringMono,
+    leaveCoveringIrgat,
     openProjectTerminal,
     projectCwd,
   ]);
@@ -3165,13 +3474,14 @@ function Workspace({
     [],
   );
 
-  const onToggleRunningTerminal = useCallback(
-    (fileId: string) => {
+  /** Bring a running terminal forward; with `toggle`, a showing one hides. */
+  const revealTerminal = useCallback(
+    (fileId: string, toggle: boolean) => {
       const dock = projectTerminalsRef.current.find((entry) =>
         entry.pane.files.some((file) => file.id === fileId),
       );
       if (dock) {
-        if (dock.open) {
+        if (toggle && dock.open) {
           setProjectTerminals((prev) =>
             mapProjectTerminal(prev, dock.projectPath, (entry) =>
               withDockOpen(entry, false),
@@ -3195,7 +3505,7 @@ function Workspace({
             activeTabIdRef.current === tab.id &&
             tab.focusedId === pane.id &&
             pane.activeFileId === fileId;
-          if (showing) {
+          if (toggle && showing) {
             setComposerFocused(true);
             setProjectTerminalFocused(false);
             return;
@@ -3222,6 +3532,11 @@ function Workspace({
       }
     },
     [focusProjectTerminal],
+  );
+
+  const onToggleRunningTerminal = useCallback(
+    (fileId: string) => revealTerminal(fileId, true),
+    [revealTerminal],
   );
 
   const onNewTerminalTab = useCallback(() => {
@@ -3678,7 +3993,7 @@ function Workspace({
   );
 
   const onCloseAllTabs = useCallback(() => {
-    closeMonoView();
+    closeIrgatView();
     const tab = tabsRef.current.find(
       (entry) => entry.id === activeTabIdRef.current,
     );
@@ -3814,8 +4129,8 @@ function Workspace({
 
   const onClosePane = useCallback(
     (sessionId?: string) => {
-      if (monoViewIdRef.current) {
-        closeMonoView();
+      if (irgatViewIdRef.current) {
+        closeIrgatView();
         setComposerFocused(true);
         return;
       }
@@ -3867,7 +4182,7 @@ function Workspace({
     },
     [
       activeTab,
-      closeMonoView,
+      closeIrgatView,
       onCloseFile,
       onCloseTab,
       onClearTabSession,
@@ -3906,7 +4221,7 @@ function Workspace({
 
   const onCloseTitleTab = useCallback(
     (id: string) => {
-      closeMonoView();
+      closeIrgatView();
       const closePlan = planWorkspaceTabClose({
         tabs: tabsRef.current,
         sessions: sessionsRef.current,
@@ -3964,7 +4279,7 @@ function Workspace({
   ]);
 
   const onNext = useCallback(() => {
-    if (monoViewIdRef.current) {
+    if (irgatViewIdRef.current) {
       activateTab(activeTabId);
       return;
     }
@@ -3974,7 +4289,7 @@ function Workspace({
   }, [activateTab, activeTabId, deckProjectTabs]);
 
   const onPrev = useCallback(() => {
-    if (monoViewIdRef.current) {
+    if (irgatViewIdRef.current) {
       activateTab(activeTabId);
       return;
     }
@@ -3989,7 +4304,7 @@ function Workspace({
   }, [activateTab, activeTabId, deckProjectTabs]);
 
   const onVisitBack = useCallback(() => {
-    if (monoViewIdRef.current) {
+    if (irgatViewIdRef.current) {
       activateTab(activeTabIdRef.current);
       return;
     }
@@ -4007,7 +4322,7 @@ function Workspace({
   }, [activateTab, commitTabVisit]);
 
   const onVisitForward = useCallback(() => {
-    if (monoViewIdRef.current) {
+    if (irgatViewIdRef.current) {
       activateTab(activeTabIdRef.current);
       return;
     }
@@ -4037,27 +4352,27 @@ function Workspace({
 
   const onFocusPane = useCallback(
     (paneId: string) => {
-      if (paneId === monoViewIdRef.current) {
-        setMonoShownSessionFocused(false);
+      if (paneId === irgatViewIdRef.current) {
+        setIrgatShownSessionFocused(false);
         setProjectTerminalFocused(false);
         setComposerFocused(true);
         return;
       }
-      if (paneId === shownMonoSessionIdRef.current) {
-        setMonoShownSessionFocused(true);
+      if (paneId === shownIrgatSessionIdRef.current) {
+        setIrgatShownSessionFocused(true);
         setProjectTerminalFocused(false);
         setComposerFocused(true);
         return;
       }
-      // Over the Mono, only its sidebar holds panes outside the workspace: a
+      // Over the Irgat, only its sidebar holds panes outside the workspace: a
       // launched session sliding away as another opens. Its late focus must
-      // not close the Mono and send that session to its project.
+      // not close the Irgat and send that session to its project.
       if (
-        monoViewIdRef.current &&
+        irgatViewIdRef.current &&
         !tabsRef.current.some((tab) => leafIds(tab.layout).includes(paneId))
       )
         return;
-      closeMonoView();
+      closeIrgatView();
       if (
         tabsRef.current.find((tab) => tab.id === activeTabIdRef.current)
           ?.focusedId !== paneId
@@ -4079,7 +4394,7 @@ function Workspace({
         sessionsRef.current.some((session) => session.id === paneId),
       );
     },
-    [activeTabId, inboxAskPortal, closeMonoView],
+    [activeTabId, inboxAskPortal, closeIrgatView],
   );
 
   const onOpenDiff = useCallback(
@@ -4139,29 +4454,29 @@ function Workspace({
     [activeTabId],
   );
 
-  // A Mono view covers the workspace, so its session changes open on the
+  // A Irgat view covers the workspace, so its session changes open on the
   // overview's Changes tab instead of in a project tab hidden behind it.
-  const openMonoChanges = useCallback((request: MonoChangesRequest) => {
-    setMonoActivity(null);
-    setMonoShownSession(null);
-    setMonoOverviewDocument(null);
-    setMonoChangesRequest(request);
-    setMonoOverviewTab("changes");
-    setMonoOverviewOpen(true);
+  const openIrgatChanges = useCallback((request: IrgatChangesRequest) => {
+    setIrgatActivity(null);
+    setIrgatShownSession(null);
+    setIrgatOverviewDocument(null);
+    setIrgatChangesRequest(request);
+    setIrgatOverviewTab("changes");
+    setIrgatOverviewOpen(true);
   }, []);
-  const onOpenMonoDiff = useCallback(
+  const onOpenIrgatDiff = useCallback(
     (path?: string, session?: { sessionId: string; cwd: string }) => {
       if (!session) {
         onOpenDiff(path);
         return;
       }
-      openMonoChanges({ path });
+      openIrgatChanges({ path });
     },
-    [onOpenDiff, openMonoChanges],
+    [onOpenDiff, openIrgatChanges],
   );
-  const onCommitMonoChanges = useCallback(
-    () => openMonoChanges({}),
-    [openMonoChanges],
+  const onCommitIrgatChanges = useCallback(
+    () => openIrgatChanges({}),
+    [openIrgatChanges],
   );
 
   const onOpenWorkingTreeDiff = useCallback(
@@ -4313,6 +4628,69 @@ function Workspace({
     setComposerFocused(true);
     return true;
   }, []);
+
+  /**
+   * Put a saved note into a chat that is already open, in front of the
+   * user, keeping whatever is typed there. False when that chat is gone.
+   */
+  const addNoteToOpenChat = useCallback(
+    (card: NoteComposerCard, sessionId: string) => {
+      const target = sessionsRef.current.find(
+        (session) => session.id === sessionId,
+      );
+      if (!target) return false;
+      const irgat = isIrgatSession(sessionId);
+      if (
+        irgat
+          ? irgatViewIdRef.current !== sessionId
+          : !findOpenSessionTab(tabsRef.current, sessionsRef.current, sessionId)
+      )
+        return false;
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      if (!irgat) {
+        if (irgatViewIdRef.current) closeIrgatView();
+        focusOpenSession(sessionId);
+      }
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
+      if (noteChatPlacement(target, card, irgat) === "card") {
+        const next = sessionsRef.current.map((session) =>
+          session.id === sessionId ? { ...session, noteCard: card } : session,
+        );
+        sessionsRef.current = next;
+        setSessions(next);
+        return true;
+      }
+      const text = appendNoteReference("", card.title, card.body);
+      if (!requestInsertIntoChat(sessionId, text)) {
+        setComposerDraft(
+          sessionId,
+          appendComposerInsert(getComposerDraft(sessionId) ?? "", text),
+        );
+      }
+      return true;
+    },
+    [closeIrgatView, focusOpenSession],
+  );
+
+  useEffect(() => {
+    const onAdd = (event: Event) => {
+      const request = (event as CustomEvent<AddNoteToChatRequest>).detail;
+      if (!request?.card?.id) return;
+      if (
+        request.targetSessionId &&
+        addNoteToOpenChat(request.card, request.targetSessionId)
+      )
+        return;
+      onAddNoteToChat(request.card);
+    };
+    window.addEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
+    return () => window.removeEventListener(ADD_NOTE_TO_CHAT_EVENT, onAdd);
+  }, [addNoteToOpenChat, onAddNoteToChat]);
 
   const replaceBlankPaneWithSession = useCallback((session: Session) => {
     const tab =
@@ -4678,21 +5056,23 @@ function Workspace({
     setComposerFocused(true);
   }, [inboxAskPortal, inboxViewOpen]);
 
-  /** The last Mono opened, which the shortcut brings back. */
-  const lastMonoIdRef = useRef<string | undefined>(undefined);
+  /** The last Irgat opened, which the shortcut brings back. */
+  const lastIrgatIdRef = useRef<string | undefined>(undefined);
 
-  /** A Mono's conversation is a view over the existing workspace tabs. */
-  const onOpenMono = useCallback(
-    async (monoId: string) => {
-      setMonoActivity(null);
+  /** A Irgat's conversation is a view over the existing workspace tabs. */
+  const onOpenIrgat = useCallback(
+    async (irgatId: string) => {
+      setIrgatActivity(null);
       workspaceNavigation.cancel();
-      const request = ++monoViewRequest.current;
+      const request = ++irgatViewRequest.current;
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
-      lastMonoIdRef.current = monoId;
-      const session = await ensureMonoSession(monoId, {
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
+      lastIrgatIdRef.current = irgatId;
+      const session = await ensureIrgatSession(irgatId, {
         home: homeDir,
         load: ensureOpenSession,
         create: (path) => newDefaultSession(path),
@@ -4701,17 +5081,18 @@ function Workspace({
           setSessions(sessionsRef.current);
         },
       });
-      if (!session || request !== monoViewRequest.current) return;
-      // What the last Mono had open over its overview is its own; another
-      // Mono opens on its list.
-      if (monoViewIdRef.current !== session.id) {
-        setMonoShownSession(null);
-        setMonoShownSessionFocused(false);
-        setMonoOverviewDocument(null);
+      if (!session || request !== irgatViewRequest.current) return;
+      // What the last Irgat had open over its overview is its own; another
+      // Irgat opens on its list.
+      if (irgatViewIdRef.current !== session.id) {
+        setIrgatShownSession(null);
+        setIrgatShownSessionFocused(false);
+        setIrgatOverviewDocument(null);
+        setIrgatOverviewArtifact(null);
       }
-      monoViewIdRef.current = session.id;
-      saveOpenMono(monoId);
-      setMonoViewId(session.id);
+      irgatViewIdRef.current = session.id;
+      saveOpenIrgat(irgatId);
+      setIrgatViewId(session.id);
       setProjectTerminalFocused(false);
       setComposerFocused(true);
       setComposerFocusToken((token) => token + 1);
@@ -4719,46 +5100,71 @@ function Workspace({
     [ensureOpenSession, workspaceNavigation.cancel],
   );
 
-  // A Mono open when the app last closed opens again; a moved window keeps
+  // A Irgat open when the app last closed opens again; a moved window keeps
   // what it carried.
-  const reopenedMono = useRef(false);
+  const reopenedIrgat = useRef(false);
   useEffect(() => {
-    if (reopenedMono.current) return;
-    reopenedMono.current = true;
+    if (reopenedIrgat.current) return;
+    reopenedIrgat.current = true;
     if (windowTransfer || !monosEnabled) return;
-    const monoId = loadOpenMono();
-    if (monoId && findMono(monoId)) void onOpenMono(monoId);
-    else if (monoId) saveOpenMono(undefined);
-  }, [monosEnabled, onOpenMono, windowTransfer]);
+    const irgatId = loadOpenIrgat();
+    if (irgatId && findIrgat(irgatId)) void onOpenIrgat(irgatId);
+    else if (irgatId) saveOpenIrgat(undefined);
+  }, [monosEnabled, onOpenIrgat, windowTransfer]);
 
-  /** The shortcut opens the last Mono, or the first on the rail. */
-  const onToggleMono = useCallback(() => {
-    if (monoViewIdRef.current) {
-      closeMonoView();
+  /** The shortcut opens the last Irgat, or the first on the rail. */
+  const onToggleIrgat = useCallback(() => {
+    if (irgatViewIdRef.current) {
+      closeIrgatView();
       setComposerFocused(true);
       return;
     }
     if (!monosEnabled) return;
-    const last = lastMonoIdRef.current;
-    const monoId =
-      (last && findMono(last) ? last : undefined) ?? listMonos()[0]?.id;
-    if (monoId) void onOpenMono(monoId);
-  }, [closeMonoView, monosEnabled, onOpenMono]);
+    const last = lastIrgatIdRef.current;
+    const irgatId =
+      (last && findIrgat(last) ? last : undefined) ?? listIrgats()[0]?.id;
+    if (irgatId) void onOpenIrgat(irgatId);
+  }, [closeIrgatView, monosEnabled, onOpenIrgat]);
 
-  /** A new Mono opens straight away, ready to be told what it works on. */
-  const onCreateMono = useCallback(() => {
-    const monoId = createMono().id;
-    setMonoSettingsFor(monoId);
-    void onOpenMono(monoId);
-  }, [onOpenMono]);
+  /**
+   * A group room covers the workspace the way an Irgat does, through the same
+   * view slot, so leaving it works everywhere leaving an Irgat does.
+   */
+  const onOpenIrgatGroup = useCallback(
+    (groupId: string) => {
+      setIrgatActivity(null);
+      workspaceNavigation.cancel();
+      irgatViewRequest.current += 1;
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      const key = irgatGroupViewKey(groupId);
+      irgatViewIdRef.current = key;
+      saveOpenIrgat(undefined);
+      setIrgatViewId(key);
+      setProjectTerminalFocused(false);
+      setComposerFocused(true);
+      setComposerFocusToken((token) => token + 1);
+    },
+    [workspaceNavigation.cancel],
+  );
 
-  const onResetMono = useCallback(
+  /** A new Irgat opens straight away, ready to be told what it works on. */
+  const onCreateIrgat = useCallback(() => {
+    const irgatId = createIrgat().id;
+    setIrgatSettingsFor(irgatId);
+    void onOpenIrgat(irgatId);
+  }, [onOpenIrgat]);
+
+  const onResetIrgat = useCallback(
     async (sessionId: string): Promise<void> => {
       const current = sessionsRef.current.find(
         (session) => session.id === sessionId,
       );
-      if (!current || !isMonoSession(sessionId))
-        throw new Error("This Mono's conversation is no longer available.");
+      if (!current || !isIrgatSession(sessionId))
+        throw new Error("This Irgat's conversation is no longer available.");
       if (removingSessionIds.current.has(sessionId))
         throw new Error("This conversation is already being reset.");
 
@@ -4766,7 +5172,7 @@ function Workspace({
       pendingPersist.current.delete(sessionId);
       invalidateLoadedSession(sessionId);
       try {
-        await resetMonoSession(current, {
+        await resetIrgatSession(current, {
           stop: async (id) => {
             const latest = (await stopSessionForRemoval(id)) ?? current;
             const stopped = {
@@ -4809,10 +5215,10 @@ function Workspace({
             setStoredLinkedSessions((history) =>
               history.filter((entry) => entry.id !== sessionId),
             );
-            if (monoViewIdRef.current === sessionId) {
-              monoViewRequest.current += 1;
-              monoViewIdRef.current = fresh.id;
-              setMonoViewId(fresh.id);
+            if (irgatViewIdRef.current === sessionId) {
+              irgatViewRequest.current += 1;
+              irgatViewIdRef.current = fresh.id;
+              setIrgatViewId(fresh.id);
               setComposerFocused(true);
               setComposerFocusToken((token) => token + 1);
             }
@@ -4830,9 +5236,9 @@ function Workspace({
       workspaceNavigation.cancel();
       let session = await ensureOpenSession(sessionId);
       if (!session || session.inboxAsk) return;
-      const mono = monoForSession(session.id);
-      if (mono) {
-        await onOpenMono(mono.id);
+      const irgat = irgatForSession(session.id);
+      if (irgat) {
+        await onOpenIrgat(irgat.id);
         return;
       }
       const parentId =
@@ -4863,61 +5269,61 @@ function Workspace({
     [
       appendTab,
       ensureOpenSession,
-      onOpenMono,
+      onOpenIrgat,
       focusOpenSession,
       replaceBlankPaneWithSession,
       revealLinkedSessionUpdate,
     ],
   );
 
-  const onOpenMonoLaunchedSession = useCallback(
+  const onOpenIrgatLaunchedSession = useCallback(
     async (sessionId: string) => {
       const session = await ensureOpenSession(sessionId);
       if (!session) throw new Error("This session is no longer available.");
-      closeMonoView();
+      closeIrgatView();
       setSidebarTab("sessions", session.cwd);
       await onSelectHistorySession(sessionId);
     },
-    [ensureOpenSession, closeMonoView, setSidebarTab, onSelectHistorySession],
+    [ensureOpenSession, closeIrgatView, setSidebarTab, onSelectHistorySession],
   );
 
   // A launched session opens over the overview, where it can be followed,
   // answered or stopped without leaving the chat. Back lands on every session
-  // the Mono started; opening the one already shown hides it again.
-  const showMonoLaunchedSession = useCallback(
-    async (monoSessionId: string, launchedId: string) => {
-      if (shownMonoSessionIdRef.current === launchedId) {
-        setMonoShownSession(null);
+  // the Irgat started; opening the one already shown hides it again.
+  const showIrgatLaunchedSession = useCallback(
+    async (irgatSessionId: string, launchedId: string) => {
+      if (shownIrgatSessionIdRef.current === launchedId) {
+        setIrgatShownSession(null);
         return;
       }
       // Load it first, then switch in one step: the overview goes straight
       // from what it shows to this session, never through the list.
       const session = await ensureOpenSession(launchedId).catch(() => null);
-      if (monoViewIdRef.current !== monoSessionId) return;
-      setMonoActivity(null);
-      setMonoOverviewTab("sessions");
-      setMonoOverviewDocument(null);
-      setMonoOverviewOpen(true);
+      if (irgatViewIdRef.current !== irgatSessionId) return;
+      setIrgatActivity(null);
+      setIrgatOverviewTab((tab) => (tab === "all" ? tab : "sessions"));
+      setIrgatOverviewDocument(null);
+      setIrgatOverviewOpen(true);
       // One that is gone leaves the sessions list open, which says so.
       if (!session) {
-        setMonoShownSession(null);
+        setIrgatShownSession(null);
         return;
       }
-      setMonoShownSession(launchedId);
-      setMonoShownSessionFocused(true);
+      setIrgatShownSession(launchedId);
+      setIrgatShownSessionFocused(true);
       setProjectTerminalFocused(false);
       setComposerFocused(true);
     },
     [ensureOpenSession],
   );
-  const onOpenMonoSession = useCallback(
+  const onOpenIrgatSession = useCallback(
     (
-      monoSessionId: string,
+      irgatSessionId: string,
       _turnId: string,
       _blocks: Block[],
       launchedId: string,
-    ) => showMonoLaunchedSession(monoSessionId, launchedId),
-    [showMonoLaunchedSession],
+    ) => showIrgatLaunchedSession(irgatSessionId, launchedId),
+    [showIrgatLaunchedSession],
   );
 
   const openReminderSession = useCallback(
@@ -4929,6 +5335,8 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSettingsOpen(false);
       setFilePickerOpen(false);
       setSidebarTab("sessions", session.cwd);
@@ -4938,6 +5346,16 @@ function Workspace({
     },
     [ensureOpenSession, onSelectHistorySession],
   );
+
+  const openReferencedSession = useCallback(
+    async (sessionId: string, blockId?: string) => {
+      if (blockId) requestTranscriptJump(sessionId, blockId);
+      await openReminderSession(sessionId);
+    },
+    [openReminderSession],
+  );
+
+  useEffect(() => publishLiveSessions(sessions), [sessions]);
 
   const ensureReminderSessionsSaved = useCallback(
     async (ids: readonly string[]) => {
@@ -5461,7 +5879,7 @@ function Workspace({
           } catch (error) {
             void message(
               `The session was deleted. Its worktree was kept.\n\n${String(error)}\n\nYou can manage it in Settings → Worktrees.`,
-              { title: "MonoCode", kind: "warning" },
+              { title: "Irgatos", kind: "warning" },
             );
           }
         }
@@ -5470,7 +5888,7 @@ function Workspace({
         if (origin === "cli") throw error;
         const detail = error instanceof Error ? error.message : String(error);
         void message(`Could not ${mode} this conversation.\n\n${detail}`, {
-          title: "MonoCode",
+          title: "Irgatos",
           kind: "error",
         });
         return false;
@@ -5506,7 +5924,7 @@ function Workspace({
         void message(
           `Could not unarchive this conversation.\n\n${String(error)}`,
           {
-            title: "MonoCode",
+            title: "Irgatos",
             kind: "error",
           },
         );
@@ -5526,11 +5944,13 @@ function Workspace({
           sessions: sessionsRef.current,
           projectTerminalFocused: projectTerminalFocusedRef.current,
           surfaceOpen: Boolean(
-            monoViewIdRef.current ||
+            irgatViewIdRef.current ||
             searchViewOpenRef.current ||
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            kanbanViewOpenRef.current ||
+            fleetViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             whatsNewVersionRef.current,
@@ -5636,7 +6056,7 @@ function Workspace({
           void refreshHistory(sidebarCwd);
           void message(
             `Could not update this conversation's GitHub link.\n\n${String(error)}`,
-            { title: "MonoCode", kind: "error" },
+            { title: "Irgatos", kind: "error" },
           );
         },
       );
@@ -5679,37 +6099,37 @@ function Workspace({
     [onRemoveHistorySession],
   );
 
-  /** Deletes the Mono's conversation, then the Mono. Its files stay on disk. */
-  const onDeleteMono = useCallback(
-    async (monoId: string) => {
-      const mono = findMono(monoId);
-      if (!mono) return;
-      const { name } = monoLook(mono);
+  /** Deletes the Irgat's conversation, then the Irgat. Its files stay on disk. */
+  const onDeleteIrgat = useCallback(
+    async (irgatId: string) => {
+      const irgat = findIrgat(irgatId);
+      if (!irgat) return;
+      const { name } = irgatLook(irgat);
       const confirmed = await ask(
         `Delete ${name}? Its conversation will be deleted and its habits stop. This can’t be undone.`,
-        { title: "MonoCode", kind: "warning" },
+        { title: "Irgatos", kind: "warning" },
       );
       if (!confirmed) return;
-      if (mono.sessionId) {
-        if (monoViewIdRef.current === mono.sessionId) closeMonoView();
+      if (irgat.sessionId) {
+        if (irgatViewIdRef.current === irgat.sessionId) closeIrgatView();
         if (
           sessionsRef.current.some(
-            (session) => session.id === mono.sessionId,
+            (session) => session.id === irgat.sessionId,
           ) ||
-          history.some((entry) => entry.id === mono.sessionId)
+          history.some((entry) => entry.id === irgat.sessionId)
         ) {
           const removed = await onRemoveHistorySession(
-            mono.sessionId,
+            irgat.sessionId,
             "delete",
             true,
           );
           if (!removed) return;
         }
       }
-      removeMono(monoId);
-      if (lastMonoIdRef.current === monoId) lastMonoIdRef.current = undefined;
+      removeIrgat(irgatId);
+      if (lastIrgatIdRef.current === irgatId) lastIrgatIdRef.current = undefined;
     },
-    [closeMonoView, history, onRemoveHistorySession],
+    [closeIrgatView, history, onRemoveHistorySession],
   );
 
   const onDeleteHistorySessions = useCallback(
@@ -6071,11 +6491,11 @@ function Workspace({
 
   const onSelectWorkspace = useCallback(
     (focus?: WorktreeFocus) => {
-      closeMonoView();
+      closeIrgatView();
       setProjectCwd(sidebarCwdRef.current);
       workspaceNavigation.selectWorkspace(sidebarCwdRef.current, focus);
     },
-    [workspaceNavigation.selectWorkspace, closeMonoView],
+    [workspaceNavigation.selectWorkspace, closeIrgatView],
   );
 
   /**
@@ -6105,6 +6525,8 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
 
       // At most one folder can take the blank session, and it keeps the
       // retargeting rules `onCwdChange` already owns.
@@ -6160,17 +6582,38 @@ function Workspace({
 
   const onSelectProject = useCallback(
     (path: string) => {
-      closeMonoView();
+      closeIrgatView();
       workspaceNavigation.cancel();
       openProjects([path]);
       workspaceNavigation.selectProject(path);
     },
     [
       openProjects,
-      closeMonoView,
+      closeIrgatView,
       workspaceNavigation.cancel,
       workspaceNavigation.selectProject,
     ],
+  );
+
+  const onShowTerminal = useCallback(
+    (fileId: string) => {
+      const dock = projectTerminalsRef.current.find((entry) =>
+        entry.pane.files.some((file) => file.id === fileId),
+      );
+      if (dock && dock.projectPath !== projectCwdRef.current) {
+        onSelectProject(dock.projectPath);
+      } else {
+        closeIrgatView();
+      }
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setSettingsOpen(false);
+      revealTerminal(fileId, false);
+    },
+    [onSelectProject, closeIrgatView, revealTerminal],
   );
 
   const pickProject = useCallback(async () => {
@@ -6448,7 +6891,7 @@ function Workspace({
 
   const onOpenFile = useCallback<OpenFileFn>(
     (path, navigation, options) => {
-      closeMonoView();
+      closeIrgatView();
       void (async () => {
         const fileCwd = gitCwdRef.current;
         const fileProjectCwd = sidebarCwdRef.current;
@@ -6525,7 +6968,7 @@ function Workspace({
         setComposerFocused(false);
       })();
     },
-    [activateTab, insertBesideActive, closeMonoView],
+    [activateTab, insertBesideActive, closeIrgatView],
   );
 
   const onOpenPlan = useCallback(
@@ -6554,6 +6997,91 @@ function Workspace({
     },
     [activeTabId],
   );
+
+  // The Irgat in front and the sessions whose artifacts belong to it.
+  const artifactIrgatRef = useRef<{ scope: string; sessionIds: Set<string> } | null>(null);
+  const openArtifact = useCallback(
+    (artifact: WorkspaceArtifact, pin = false) => {
+      // A block opened from the transcript is already listed under its turn's time.
+      if (!getRegisteredArtifact(artifact.id)) registerArtifacts([artifact]);
+      const irgat = irgatViewIdRef.current ? artifactIrgatRef.current : null;
+      if (
+        irgat &&
+        (artifact.scope === irgat.scope ||
+          (!!artifact.sessionId && irgat.sessionIds.has(artifact.sessionId)))
+      ) {
+        setIrgatActivity(null);
+        setIrgatShownSession(null);
+        setIrgatOverviewDocument(null);
+        setIrgatOverviewArtifact(artifact.id);
+        setIrgatOverviewTab("artifacts");
+        setIrgatOverviewOpen(true);
+        return;
+      }
+      closeIrgatView();
+      const projectCwd = sidebarCwdRef.current;
+      const cwd = artifact.cwd ?? projectCwd;
+      const file = {
+        ...newArtifactTab(
+          {
+            id: artifact.id,
+            title: artifact.title,
+            fileName: artifactFileName(artifact),
+          },
+          cwd,
+        ),
+        ...(projectCwd && projectCwd !== cwd ? { projectCwd } : {}),
+      };
+      setSidebarTab("artifacts", projectCwd);
+      setProjectTerminalFocused(false);
+      setComposerFocused(false);
+      if (loadFileTabMode() === "workspace") {
+        const created = newEditorWorkspaceTab(
+          pin ? file : { ...file, preview: true },
+        );
+        let target: { tabId: string; paneId?: string } | undefined;
+        flushSync(() => {
+          setTabs((prev) => {
+            const result = openWorkspaceFile(
+              prev,
+              file,
+              created,
+              (tabs, tab) => insertBesideActive(tabs, tab, projectCwd),
+              pin,
+            );
+            target = result;
+            return result.tabs;
+          });
+        });
+        if (target?.paneId) activateTab(target.tabId, target.paneId);
+        else if (target) setActiveTabId(target.tabId);
+        return;
+      }
+      const tab = tabsRef.current.find(
+        (entry) => entry.id === activeTabIdRef.current,
+      );
+      if (!tab) {
+        appendTab(newEditorWorkspaceTab(file), projectCwd);
+        return;
+      }
+      setTabs((prev) =>
+        prev.map((entry) =>
+          entry.id === tab.id
+            ? openEditorTab(entry, file, { split: "right", pin })
+            : entry,
+        ),
+      );
+    },
+    [activateTab, appendTab, closeIrgatView, insertBesideActive, setSidebarTab],
+  );
+  useEffect(() => {
+    const onOpen = (event: Event) => {
+      const detail = (event as CustomEvent<OpenArtifactRequest>).detail;
+      if (detail?.artifact) openArtifact(detail.artifact, !!detail.pin);
+    };
+    window.addEventListener(OPEN_ARTIFACT_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_ARTIFACT_EVENT, onOpen);
+  }, [openArtifact]);
 
   const onPinFile = useCallback((fileId: string) => {
     setTabs((prev) => {
@@ -6592,7 +7120,7 @@ function Workspace({
   );
 
   const onSelectFileSurface = useCallback((paneId: string, fileId: string) => {
-    closeMonoView();
+    closeIrgatView();
     setTabs((prev) =>
       prev.map((tab) => {
         const found = findSurfacePane(tab, paneId);
@@ -6652,8 +7180,8 @@ function Workspace({
             next = { ...next, pendingSwitch: undefined };
           }
           return recoverLimit
-            ? isMonoSession(sessionId)
-              ? resumeMonoUsageLimit(next)
+            ? isIrgatSession(sessionId)
+              ? resumeIrgatUsageLimit(next)
               : resumeUsageLimitedSession(next)
             : next;
         }),
@@ -6792,6 +7320,23 @@ function Workspace({
       // Output already received belongs before the submitted user message.
       // Flush before reading the session too, since pending errors can settle it.
       flushHarnessEvents();
+      const adhdCommand =
+        !options?.managed &&
+        !options?.irgatSessionCompletion &&
+        !options?.queuedMessageId &&
+        !options?.resendEdited &&
+        (options?.intent ?? "default") === "default" &&
+        attachments.length === 0
+          ? parseAdhdCommand(text)
+          : null;
+      const adhdReply = adhdCommand
+        ? applyAdhdCommand(sessionId, adhdCommand)
+        : null;
+      if (adhdReply) {
+        enqueueHarnessEvent(sessionId, { type: "status", text: adhdReply });
+        flushHarnessEvents();
+        return true;
+      }
       const controlError = orchestrator.submissionError(
         sessionId,
         options?.managed,
@@ -6927,6 +7472,7 @@ function Workspace({
         ? (current.providerAccountId ??
           selectedProviderAccountId(accountProvider, current.cwd))
         : undefined;
+      const turnStartedAt = Date.now();
       if (
         accountProvider &&
         providerAccountId &&
@@ -6956,24 +7502,24 @@ function Workspace({
         flushHarnessEvents();
         return false;
       }
-      // The Mono has app access in every turn, without the command.
-      const mono = isMonoSession(sessionId);
-      const queuedMonoMessage =
-        mono && options?.queuedMessageId
+      // The Irgat has app access in every turn, without the command.
+      const irgat = isIrgatSession(sessionId);
+      const queuedIrgatMessage =
+        irgat && options?.queuedMessageId
           ? current.queuedMessages?.find(
               (message) => message.id === options.queuedMessageId,
             )
           : undefined;
       const operatorAccess =
         operatorCommand.matched ||
-        mono ||
+        irgat ||
         operatorEnabledInThread(current.blocks);
-      const monoFirstTurn =
-        mono &&
+      const irgatFirstTurn =
+        irgat &&
         !current.blocks.some((block) => block.role === "user" && !block.draft);
       const promptText = operatorCommand.matched
         ? operatorCommand.text.trim() ||
-          "Explain what you can do in MonoCode with the app CLI."
+          "Explain what you can do in Irgatos with the app CLI."
         : submittedText;
       const rawCommand =
         !operatorCommand.matched &&
@@ -6985,16 +7531,16 @@ function Workspace({
 
       const pendingSwitch = pendingComposerSwitch(current);
 
-      // A Mono accepts consecutive messages before its provider is connected.
+      // A Irgat accepts consecutive messages before its provider is connected.
       // The pending head is delivered once ready; later messages cannot overtake it.
       if (
-        mono &&
+        irgat &&
         !options?.queuedMessageId &&
         (current.busy || current.queuedMessages?.length)
       ) {
         const next = sessionsRef.current.map((session) =>
           session.id === sessionId
-            ? enqueueMonoMessage(
+            ? enqueueIrgatMessage(
                 {
                   ...session,
                   inboxCard: rawCommand ? session.inboxCard : undefined,
@@ -7019,7 +7565,7 @@ function Workspace({
         return true;
       }
 
-      if (mono && current.busy && options?.queuedMessageId) {
+      if (irgat && current.busy && options?.queuedMessageId) {
         const message = current.queuedMessages?.find(
           (entry) => entry.id === options.queuedMessageId,
         );
@@ -7072,7 +7618,7 @@ function Workspace({
             }),
           delivered: () => {
             change((session) =>
-              acknowledgeMonoMessage(session, message, {
+              acknowledgeIrgatMessage(session, message, {
                 mode: "follow-up",
                 text: submittedText,
                 attachments: displayAttachments(attachments),
@@ -7120,9 +7666,9 @@ function Workspace({
               // behind it, so hand it to the agent now.
               current.backgroundTasks?.length
               ? "steer"
-              : // Messaging a Mono mid-reply is like texting a friend twice:
+              : // Messaging a Irgat mid-reply is like texting a friend twice:
                 // it reads the new message now, or right after if it can't.
-                mono
+                irgat
                 ? steerable
                   ? "steer"
                   : "queue"
@@ -7276,24 +7822,26 @@ function Workspace({
         });
       }
 
-      // A Mono's chat never ends, but the provider session behind it does:
+      // A Irgat's chat never ends, but the provider session behind it does:
       // once it fills most of the model's context window, this turn starts
       // a fresh one, briefed on where the conversation was.
-      const monoRotationReason =
-        mono && !pendingSwitch && !editedResend
+      const irgatRotationReason =
+        irgat && !pendingSwitch && !editedResend
           ? rotationReason(current)
           : undefined;
-      const monoRotation = monoRotationReason
+      const irgatRotation = irgatRotationReason
         ? planRotation(
             current.blocks,
-            loadMonoRotation(sessionId),
-            monoRotationReason,
+            loadIrgatRotation(sessionId),
+            irgatRotationReason,
             Date.now(),
           )
         : undefined;
 
       const gen = (turnGen.current.get(sessionId) ?? 0) + 1;
       turnGen.current.set(sessionId, gen);
+      if (!options?.completionGateBounce)
+        completionGate.noteUserTurn(sessionId);
       const proposalId =
         intent === "orchestrate" ? crypto.randomUUID() : undefined;
       let proposalDraft: OrchestrationProposal | undefined = proposalId
@@ -7347,17 +7895,17 @@ function Workspace({
       const cards = {
         ...(rawCommand ? undefined : userTurnCards(noteCard, card)),
         ...(ciContext ? { ciContext } : {}),
-        ...(operatorCommand.matched ? { monocode: true } : {}),
+        ...(operatorCommand.matched ? { irgat: true } : {}),
         ...(intent === "plan" || intent === "orchestrate" ? { intent } : {}),
         ...(options?.appRequestId
           ? { appRequestId: options.appRequestId }
           : {}),
         // The orchestrator writes these turns, not the user; hide them.
-        ...(options?.managed || options?.monoSessionCompletion
+        ...(options?.managed || options?.irgatSessionCompletion
           ? { internal: true }
           : {}),
-        ...(options?.monoSessionCompletion
-          ? { monoSessionCompletion: options.monoSessionCompletion }
+        ...(options?.irgatSessionCompletion
+          ? { irgatSessionCompletion: options.irgatSessionCompletion }
           : {}),
       };
       const live = isLiveHarness(current.harness);
@@ -7430,7 +7978,7 @@ function Workspace({
                 busy: false,
                 blocks: [
                   ...next.blocks,
-                  ...(queuedMonoMessage?.blockId
+                  ...(queuedIrgatMessage?.blockId
                     ? []
                     : [
                         {
@@ -7463,8 +8011,8 @@ function Workspace({
                 pendingSwitch.from,
                 next.harness,
               );
-              return queuedMonoMessage
-                ? acknowledgeMonoMessage(prepared, queuedMonoMessage, {
+              return queuedIrgatMessage
+                ? acknowledgeIrgatMessage(prepared, queuedIrgatMessage, {
                     mode: "new-turn",
                     text: visibleText,
                     attachments: visible,
@@ -7472,10 +8020,10 @@ function Workspace({
                   })
                 : appendUser(prepared, visibleText, visible, cards);
             }
-            return queuedMonoMessage
-              ? acknowledgeMonoMessage(
+            return queuedIrgatMessage
+              ? acknowledgeIrgatMessage(
                   { ...next, title: titled },
-                  queuedMonoMessage,
+                  queuedIrgatMessage,
                   {
                     mode: "new-turn",
                     text: visibleText,
@@ -7855,7 +8403,7 @@ function Workspace({
                 providerAccountId,
                 runtimeMode: current.runtimeMode,
                 ephemeral: current.ephemeral === true,
-                codexStore: mono ? "mono" : undefined,
+                codexStore: irgat ? "irgat" : undefined,
                 controlsAgents:
                   operatorAccess ||
                   orchestrator.run(sessionId)?.status === "active",
@@ -7909,7 +8457,7 @@ function Workspace({
               providerAccountId,
               runtimeMode: current.runtimeMode,
               ephemeral: current.ephemeral === true,
-              codexStore: mono ? "mono" : undefined,
+              codexStore: irgat ? "irgat" : undefined,
               intent: intent === "orchestrate" ? "plan" : intent,
               // A /operator user turn enables app access for this thread;
               // orchestration leads retain their separate control access.
@@ -7936,9 +8484,9 @@ function Workspace({
                 : turnPrompt,
             ),
           );
-          if (monoRotation) {
+          if (irgatRotation) {
             if (current.harness === "codex" && current.providerSessionId) {
-              await migrateMonoCodexSession({
+              await migrateIrgatxSession({
                 sessionId,
                 threadId: current.providerSessionId,
                 cwd: workCwd,
@@ -7957,14 +8505,14 @@ function Workspace({
             current = fresh(current);
             sessionsRef.current = sessionsRef.current.map(fresh);
             setSessions((prev) => prev.map(fresh));
-            saveMonoRotation(sessionId, monoRotation.rotation);
+            saveIrgatRotation(sessionId, irgatRotation.rotation);
           }
           // The agent's soul and memory live in its folder. A native session
           // is handed them once, and memory again only when it changes.
-          const monoRecord = mono ? monoForSession(sessionId) : undefined;
-          const agentLook = monoRecord ? monoLook(monoRecord) : undefined;
-          const agentFiles = monoRecord
-            ? await loadMonoFiles(monoRecord.id).catch(() => undefined)
+          const irgatRecord = irgat ? irgatForSession(sessionId) : undefined;
+          const agentLook = irgatRecord ? irgatLook(irgatRecord) : undefined;
+          const agentFiles = irgatRecord
+            ? await loadIrgatFiles(irgatRecord.id).catch(() => undefined)
             : undefined;
           // Who it is counts as part of its soul: a rename or a change to its
           // projects is handed over too, and so is a change to the fixed rules.
@@ -7973,7 +8521,7 @@ function Workspace({
               ...agentFiles,
               soulHash: `${agentFiles.soulHash}:${agentLook.name}:${agentLook.projects
                 .map((project) => project.path)
-                .join("|")}:${MONO_PROMPT_VERSION}`,
+                .join("|")}:${IRGAT_PROMPT_VERSION}`,
             };
           const agentPlan = handedFiles
             ? planAgentContext(
@@ -7982,38 +8530,61 @@ function Workspace({
                 handedFiles,
               )
             : undefined;
-          const handAgent = agentPlan ? agentPlan.soul : monoFirstTurn;
+          const handAgent = agentPlan ? agentPlan.soul : irgatFirstTurn;
           // What the app adds to the user's message rather than them.
           const appContext: string[] = [];
-          if (monoRotation) {
-            appContext.push(monoRotation.brief(sessionId));
+          if (options?.resumeContext) appContext.push(options.resumeContext);
+          if (irgatRotation) {
+            appContext.push(irgatRotation.brief(sessionId));
           }
-          // Habit posts land in the chat outside any turn, so the Mono's
+          // Habit posts land in the chat outside any turn, so the Irgat's
           // session has not seen them; the next message carries them once.
-          const habitPosts = mono ? unseenHabitPosts(current.blocks) : [];
+          const habitPosts = irgat ? unseenHabitPosts(current.blocks) : [];
           if (habitPosts.length) {
             appContext.push(habitPostsContext(habitPosts));
           }
+          // Likewise what was said in a Live voice call since the last turn.
+          const liveTurns = unseenLiveTurns(current.blocks);
+          if (liveTurns.length) appContext.push(liveTurnsContext(liveTurns));
           if (
             agentFiles &&
             agentLook &&
             agentPlan &&
             (agentPlan.soul || agentPlan.memory)
           ) {
-            appContext.push(monoContext(agentLook, agentFiles, agentPlan));
+            appContext.push(irgatContext(agentLook, agentFiles, agentPlan));
           }
+          // A command owns its arguments, and a plan proposal has a fixed shape.
+          const adhdPlan =
+            rawCommand || proposalDraft
+              ? {}
+              : planAdhdContext(
+                  sessionId,
+                  current.providerSessionId,
+                  adhdEnabledFor(sessionId),
+                  { force: !!editedResend },
+                );
+          if (adhdPlan.context) appContext.push(adhdPlan.context);
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
-              `<monocode_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read, continue, stop, archive or delete other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</monocode_app>`,
+              `<irgat_app>\n${handAgent ? "App access is always enabled in this thread." : "The user's Operator command enables app access in this thread, including later turns without the command."} You can start session tabs or split session panes right or down, list and create project worktrees, choose a new session's checkout, read, continue, stop, archive or delete other project sessions, save unsent drafts, organize session folders, and read or write saved notes through its local CLI. Run \`${cli} --help\` when you need the exact commands and JSON fields. When reading another session, start with its latest two or three user/assistant exchanges. Request older exchanges with nextBefore or a larger excerpt only if needed. The CLI uses a session credential already in your environment; never print it. New sessions inherit this session's permission mode unless runtimeMode is set explicitly. For a new session with a draft, call sessions.start with its prompt and draft:true; do not submit a seed prompt. The returned ID can be used as besideSessionId to split its pane again or moved into a folder immediately. A normal sessions.start submits its prompt but returns after acceptance, so do not wait for that agent to finish before organizing it.\n</irgat_app>`,
             );
           }
-          // A Mono reads who it is ahead of the message, so it never takes it
+          // A Irgat reads who it is ahead of the message, so it never takes it
           // for something the user pasted. A command must stay first.
-          if (mono && !rawCommand) sendText = monoTurn(sendText, appContext);
+          if (irgat && !rawCommand) sendText = irgatTurn(sendText, appContext);
           else if (appContext.length)
             sendText += `\n\n${appContext.join("\n\n")}`;
           await sendTurn(sendText);
+          if (adhdPlan.state && !providerFailureSeen) {
+            recordAdhdContext(
+              sessionId,
+              sessionsRef.current.find((session) => session.id === sessionId)
+                ?.providerSessionId ?? current.providerSessionId,
+              adhdPlan.state,
+            );
+          }
           if (agentFiles) {
             recordAgentContext(
               sessionId,
@@ -8098,6 +8669,13 @@ function Workspace({
             text: controlText.trim(),
             ...(providerFailureSeen ? { error: controlOutcome.error } : {}),
           };
+          // The provider answered in full, so whatever held it is over.
+          if (controlOutcome.status === "completed")
+            usageLimitRegistry.noteSuccess(
+              current.harness,
+              providerAccountId,
+              turnStartedAt,
+            );
           await flushSessionCheckpoint(sessionId);
           setSessions((prev) =>
             prev.map((s) => {
@@ -8141,7 +8719,7 @@ function Workspace({
               (s) => s.id === sessionId,
             );
             const visible = sessionId === activeSessionIdRef.current;
-            // A habit's hidden run speaks through its Mono's chat instead.
+            // A habit's hidden run speaks through its Irgat's chat instead.
             if (finished && !isHabitRun(sessionId))
               void announceSessionFinished(finished, visible);
           }, 0);
@@ -8194,6 +8772,39 @@ function Workspace({
               ? { status: "cancelled", text: controlText }
               : controlOutcome,
           );
+          if (turnGen.current.get(sessionId) !== gen) return;
+          const ended = sessionsRef.current.find((s) => s.id === sessionId);
+          const gate = ended
+            ? resolveCompletionGate(
+                loadProjectGate(ended.cwd),
+                loadSessionGate(sessionId),
+              )
+            : null;
+          if (
+            ended &&
+            gate &&
+            gateAppliesToTurn({
+              completed: controlOutcome.status === "completed",
+              remote: false,
+              ephemeral: !!ended.ephemeral,
+              inboxAsk: !!ended.inboxAsk,
+              habitRun: isHabitRun(sessionId),
+              managed: !!options?.managed,
+              appRequest: !!options?.appRequestId,
+              plan: intent === "plan",
+              orchestration: !!proposalId,
+            })
+          ) {
+            void completionGate.afterTurn({
+              sessionId,
+              turn: gen,
+              cwd: sessionWorkCwd(ended),
+              gate,
+              bounce: !!options?.completionGateBounce,
+            });
+          } else if (options?.completionGateBounce) {
+            completionGate.clear(sessionId);
+          }
         });
       return true;
     },
@@ -8205,6 +8816,7 @@ function Workspace({
     ],
   );
   submitAfterProjectSyncRef.current = submitSession;
+  completionGateSubmitRef.current = submitSession;
   // Interactive callers use the immediate result to clear their composer. The
   // queued-launch receiver uses submitSession to await the actual acceptance.
   const onSubmit = useCallback(
@@ -8219,46 +8831,59 @@ function Workspace({
     },
     [submitSession],
   );
+  useEffect(
+    () =>
+      connectSessionMessageTransport({
+        sessions: () => sessionsRef.current,
+        submit: (sessionId, text) => onSubmit(sessionId, text, []),
+      }),
+    [onSubmit],
+  );
+  useEffect(() => syncSessionMessages(sessions), [sessions]);
+  useEffect(
+    () => startSessionMessageGuardTimer(() => sessionsRef.current),
+    [],
+  );
 
   // onApproval is created once; it reaches the current helper through this.
-  const decideMonoBlockRef = useRef<
+  const decideIrgatBlockRef = useRef<
     (
-      monoId: string,
+      irgatId: string,
       blockId: string,
       decided: "allow" | "deny" | "cancelled",
     ) => void
   >(() => {});
-  /** Adds a block to a Mono's chat outside any turn, once no reply is streaming. */
-  const appendToMono = (
-    monoId: string,
+  /** Adds a block to a Irgat's chat outside any turn, once no reply is streaming. */
+  const appendToIrgat = (
+    irgatId: string,
     block: Block,
-    then?: (mono: Session) => void,
+    then?: (irgat: Session) => void,
     attempt = 0,
   ) => {
-    const mono = sessionsRef.current.find((session) => session.id === monoId);
-    if (!mono) return;
-    if (mono.busy && attempt < 120) {
+    const irgat = sessionsRef.current.find((session) => session.id === irgatId);
+    if (!irgat) return;
+    if (irgat.busy && attempt < 120) {
       window.setTimeout(
-        () => appendToMono(monoId, block, then, attempt + 1),
+        () => appendToIrgat(irgatId, block, then, attempt + 1),
         5_000,
       );
       return;
     }
-    const next: Session = { ...mono, blocks: [...mono.blocks, block] };
+    const next: Session = { ...irgat, blocks: [...irgat.blocks, block] };
     sessionsRef.current = sessionsRef.current.map((session) =>
-      session.id === monoId ? next : session,
+      session.id === irgatId ? next : session,
     );
     setSessions(sessionsRef.current);
     persistSession(next);
     then?.(next);
   };
-  const decideMonoBlock = (
-    monoId: string,
+  const decideIrgatBlock = (
+    irgatId: string,
     blockId: string,
     decided: "allow" | "deny" | "cancelled",
   ) => {
     const decide = (session: Session) =>
-      session.id === monoId
+      session.id === irgatId
         ? {
             ...session,
             blocks: session.blocks.map((block) =>
@@ -8271,12 +8896,54 @@ function Workspace({
     sessionsRef.current = sessionsRef.current.map(decide);
     setSessions(sessionsRef.current);
     persistSession(
-      sessionsRef.current.find((session) => session.id === monoId),
+      sessionsRef.current.find((session) => session.id === irgatId),
     );
   };
-  decideMonoBlockRef.current = decideMonoBlock;
+  decideIrgatBlockRef.current = decideIrgatBlock;
+  const appendLiveRef = useRef(appendToIrgat);
+  appendLiveRef.current = appendToIrgat;
+  useEffect(
+    () =>
+      setLiveHost({
+        session: (sessionId) => {
+          const session = sessionsRef.current.find(
+            (candidate) => candidate.id === sessionId,
+          );
+          return session
+            ? {
+                id: session.id,
+                title: irgatForSession(session.id)
+                  ? irgatLook(irgatForSession(session.id)!).name
+                  : session.title,
+                cwd: session.cwd,
+                blocks: session.blocks,
+              }
+            : undefined;
+        },
+        append: (sessionId, block) => appendLiveRef.current(sessionId, block),
+        delegate: async (sessionId, prompt) => {
+          let settle!: (text: string | undefined) => void;
+          const done = new Promise<string | undefined>((resolve) => {
+            settle = resolve;
+          });
+          const accepted = await submitSessionRef.current(sessionId, prompt, [], {
+            onSettled: (outcome) =>
+              settle(outcome.status === "completed" ? outcome.text : undefined),
+          });
+          return accepted
+            ? { started: true, done }
+            : {
+                started: false,
+                reason: "The agent could not take the work right now",
+              };
+        },
+      }),
+    [],
+  );
 
-  useMonoHabits({
+  useLightpandaAutostart();
+  useHabitWebhooks();
+  useIrgatHabits({
     sessions: () => sessionsRef.current,
     open: async (id) => (await ensureOpenSession(id)) ?? undefined,
     add: (session) => {
@@ -8305,50 +8972,61 @@ function Workspace({
       );
       setSessions(sessionsRef.current);
     },
-    post: (monoId, habit, text, name, artifacts) =>
-      appendToMono(
-        monoId,
+    post: (irgatId, habit, text, name, artifacts) =>
+      appendToIrgat(
+        irgatId,
         {
           id: crypto.randomUUID(),
           role: "assistant",
           text,
-          monoHabit: { id: habit.id, name: habit.name, at: Date.now() },
+          irgatHabit: { id: habit.id, name: habit.name, at: Date.now() },
           ...(artifacts?.length ? { artifactCards: artifacts } : {}),
         },
         (posted) => {
-          monoReplies.noteReply(monoId);
+          irgatReplies.noteReply(irgatId);
           void announceSessionFinished(
             { ...posted, title: name },
-            monoId === activeSessionIdRef.current,
+            irgatId === activeSessionIdRef.current,
           );
         },
       ),
     // The chat shows it like any approval, and the usual approval banner
-    // fires for the Mono; the answer is routed back in onApproval.
-    askApproval: (monoId, habit, runId, block) => {
+    // fires for the Irgat; the answer is routed back in onApproval.
+    askApproval: (irgatId, habit, runId, block) => {
       const blockId = crypto.randomUUID();
       const requestId = relayApproval({
-        monoId,
+        irgatId,
         runId,
         requestId: block.approval!.requestId,
         blockId,
       });
-      appendToMono(monoId, {
+      appendToIrgat(irgatId, {
         id: blockId,
         role: "approval",
         text: block.text,
         ...(block.tool ? { tool: block.tool } : {}),
         approval: { requestId },
-        monoHabit: { id: habit.id, name: habit.name, at: Date.now() },
+        irgatHabit: { id: habit.id, name: habit.name, at: Date.now() },
       });
     },
     endApprovals: (runId) => {
       for (const relay of dropRelays(runId))
-        decideMonoBlock(relay.monoId, relay.blockId, "cancelled");
+        decideIrgatBlock(relay.irgatId, relay.blockId, "cancelled");
     },
   });
 
   const automationSessionReservations = useRef(new Set<string>());
+  const heldAutomationRuns = useRef(
+    new Map<
+      string,
+      {
+        automation: Automation;
+        run: AutomationRun;
+        prompt: string;
+        sourceWorkItem?: LinkedWorkItem;
+      }
+    >(),
+  );
   const automationRecoveryRef = useRef<Promise<void> | null>(null);
   const automationRecoveryCutoffRef = useRef(Date.now());
 
@@ -8359,7 +9037,36 @@ function Workspace({
       reveal = false,
       prompt = run.prompt ?? automation.prompt,
       sourceWorkItem?: LinkedWorkItem,
+      /** Run anyway, or the hold this run waited on has ended. */
+      force = false,
     ) => {
+      // A scheduled run whose provider is out of quota waits, still pending,
+      // for the reset instead of failing. A manual run is the user's call.
+      if (!force && run.trigger !== "manual") {
+        const accountId = holdAccountId(
+          automation.harness,
+          undefined,
+          automation.cwd,
+        );
+        if (usageLimitRegistry.get(automation.harness, accountId)) {
+          const id = automationHoldId(run.id);
+          heldAutomationRuns.current.set(id, {
+            automation,
+            run,
+            prompt,
+            ...(sourceWorkItem ? { sourceWorkItem } : {}),
+          });
+          usageLimitRegistry.holdWork({
+            id,
+            kind: "automation",
+            harness: automation.harness,
+            accountId,
+            label: automation.name,
+            ownerId: automation.id,
+          });
+          return;
+        }
+      }
       let reservationId: string | undefined;
       let releaseAfterSettle = false;
       const releaseReservation = () => {
@@ -8460,6 +9167,8 @@ function Workspace({
           setInboxViewOpen(false);
           setNotesViewOpen(false);
           setAutomationsViewOpen(false);
+          setKanbanViewOpen(false);
+          setFleetViewOpen(false);
           setSidebarTab("sessions", session.cwd);
         }
 
@@ -8504,25 +9213,46 @@ function Workspace({
     [appendTab, focusOpenSession, submitSession],
   );
 
-  const queueMonoSessionCompletion = useCallback(
+  // Held runs go once their hold ends, or right away on Run anyway.
+  useEffect(() => {
+    const drain = () => {
+      for (const item of usageLimitRegistry.takeReadyWork()) {
+        const held = heldAutomationRuns.current.get(item.id);
+        heldAutomationRuns.current.delete(item.id);
+        if (!held) continue;
+        void launchAutomation(
+          held.automation,
+          held.run,
+          false,
+          held.prompt,
+          held.sourceWorkItem,
+          true,
+        ).catch(() => undefined);
+      }
+    };
+    drain();
+    return usageLimitRegistry.subscribe(drain);
+  }, [launchAutomation]);
+
+  const queueIrgatSessionCompletion = useCallback(
     async (
-      monoId: string,
+      irgatId: string,
       message: QueuedMessage,
       current: () => QueuedMessage | undefined = () => message,
     ) => {
-      if (!isMonoSession(monoId) || removingSessionIds.current.has(monoId))
+      if (!isIrgatSession(irgatId) || removingSessionIds.current.has(irgatId))
         return;
       if (
-        !(await ensureOpenSession(monoId)) ||
-        removingSessionIds.current.has(monoId)
+        !(await ensureOpenSession(irgatId)) ||
+        removingSessionIds.current.has(irgatId)
       )
         return;
       setSessions((previous) => {
         const latest = current();
         return latest
           ? previous.map((session) =>
-              session.id === monoId
-                ? enqueueMonoSessionCompletion(session, latest)
+              session.id === irgatId
+                ? enqueueIrgatSessionCompletion(session, latest)
                 : session,
             )
           : previous;
@@ -8530,21 +9260,21 @@ function Workspace({
     },
     [ensureOpenSession],
   );
-  const queueMonoSessionCompletionRef = useRef(queueMonoSessionCompletion);
-  queueMonoSessionCompletionRef.current = queueMonoSessionCompletion;
-  const monoCompletionBatches = useRef<MonoSessionCompletionBatches | null>(
+  const queueIrgatSessionCompletionRef = useRef(queueIrgatSessionCompletion);
+  queueIrgatSessionCompletionRef.current = queueIrgatSessionCompletion;
+  const irgatCompletionBatches = useRef<IrgatSessionCompletionBatches | null>(
     null,
   );
-  if (!monoCompletionBatches.current) {
-    monoCompletionBatches.current = new MonoSessionCompletionBatches(
-      (monoId, message, current) =>
-        queueMonoSessionCompletionRef.current(monoId, message, current),
+  if (!irgatCompletionBatches.current) {
+    irgatCompletionBatches.current = new IrgatSessionCompletionBatches(
+      (irgatId, message, current) =>
+        queueIrgatSessionCompletionRef.current(irgatId, message, current),
     );
   }
   useEffect(() => {
-    monoCompletionBatches.current!.closeInactive(({ monoId, turn }) => {
-      const mono = sessionsRef.current.find((session) => session.id === monoId);
-      return !!mono?.busy && turnGen.current.get(monoId) === turn;
+    irgatCompletionBatches.current!.closeInactive(({ irgatId, turn }) => {
+      const irgat = sessionsRef.current.find((session) => session.id === irgatId);
+      return !!irgat?.busy && turnGen.current.get(irgatId) === turn;
     });
   }, [sessions]);
 
@@ -8606,6 +9336,8 @@ function Workspace({
             setInboxViewOpen(false);
             setNotesViewOpen(false);
             setAutomationsViewOpen(false);
+            setKanbanViewOpen(false);
+            setFleetViewOpen(false);
             setSidebarTab("sessions", cwd);
           },
           submit: (id, text, attachments, options) =>
@@ -8809,10 +9541,12 @@ function Workspace({
         );
         continue;
       }
+      // Its provider is out of quota: the prompt waits for the reset.
+      if (!session.busy && providerOnHold(session)) continue;
       if (
         !(
           canDispatchQueuedHead(session) ||
-          (monoForSession(session.id) &&
+          (irgatForSession(session.id) &&
             canSteerQueuedHead(session) &&
             canSteerHarness(session.harness) &&
             !consumeOperatorCommand(queued[0].text).matched)
@@ -8837,9 +9571,10 @@ function Workspace({
             !latest ||
             !head ||
             head.id !== next.id ||
+            (!latest.busy && providerOnHold(latest)) ||
             !(
               canDispatchQueuedHead(latest) ||
-              (monoForSession(latest.id) &&
+              (irgatForSession(latest.id) &&
                 canSteerQueuedHead(latest) &&
                 canSteerHarness(latest.harness) &&
                 !consumeOperatorCommand(head.text).matched)
@@ -8868,16 +9603,16 @@ function Workspace({
                 noteCard: head.noteCard,
                 handoffCard: head.handoffCard,
                 intent: head.intent,
-                ...(head.monoSessionCompletion
+                ...(head.irgatSessionCompletion
                   ? {
-                      monoSessionCompletion: head.monoSessionCompletion,
+                      irgatSessionCompletion: head.irgatSessionCompletion,
                       appRequestId: head.id,
                     }
                   : {}),
               },
             );
             // A preflight rejection must not repeatedly retry or hide the message.
-            if (!accepted && monoForSession(session.id)) {
+            if (!accepted && irgatForSession(session.id)) {
               const current = sessionsRef.current.find(
                 (entry) => entry.id === session.id,
               );
@@ -8952,7 +9687,7 @@ function Workspace({
       for (const timer of timers) window.clearTimeout(timer);
       for (const id of scheduled) queueDispatchingRef.current.delete(id);
     };
-  }, [submitSession, sessions, queueDispatchVersion]);
+  }, [submitSession, sessions, queueDispatchVersion, usageLimitSnapshot]);
 
   const onDeleteQueuedMessage = useCallback(
     (sessionId: string, messageId: string) => {
@@ -9036,18 +9771,18 @@ function Workspace({
       );
       if (
         !session ||
-        (session.busy && !monoForSession(sessionId)) ||
+        (session.busy && !irgatForSession(sessionId)) ||
         session.queueStatus !== "paused" ||
         !session.queuedMessages?.length
       ) {
         return;
       }
-      if (monoForSession(sessionId)) {
+      if (irgatForSession(sessionId)) {
         setSessions((prev) =>
           prev.map((entry) =>
             entry.id === sessionId
               ? entry.usageLimit
-                ? resumeMonoUsageLimit(entry)
+                ? resumeIrgatUsageLimit(entry)
                 : {
                     ...entry,
                     queueStatus: "active",
@@ -9107,10 +9842,23 @@ function Workspace({
         (entry) => entry.id === sessionId,
       );
       if (!session?.usageLimit || session.busy) return;
-      if (isMonoSession(sessionId)) {
+      usageLimitRegistry.release(
+        session.harness,
+        holdAccountId(session.harness, session.providerAccountId, session.cwd),
+      );
+      if (isIrgatSession(sessionId)) {
         setSessions((prev) =>
           prev.map((entry) =>
-            entry.id === sessionId ? resumeMonoUsageLimit(entry) : entry,
+            entry.id === sessionId ? resumeIrgatUsageLimit(entry) : entry,
+          ),
+        );
+        return;
+      }
+      // Held prompts are the work to resume: send them rather than Continue.
+      if (session.queuedMessages?.length) {
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId ? resumeUsageLimitedSession(entry) : entry,
           ),
         );
         return;
@@ -9121,6 +9869,118 @@ function Workspace({
     [onSubmit, onUsageLimitDismiss],
   );
 
+  // Every usage limit a session runs into holds its provider for all of them.
+  const heldUsageLimits = useRef(new WeakSet<UsageLimit>());
+  useEffect(() => {
+    const armed = new Set<string>();
+    for (const session of sessions) {
+      const limit = session.usageLimit;
+      if (!limit || heldUsageLimits.current.has(limit)) continue;
+      heldUsageLimits.current.add(limit);
+      const hold = usageLimitRegistry.hold({
+        harness: session.harness,
+        accountId: holdAccountId(
+          session.harness,
+          session.providerAccountId,
+          session.cwd,
+        ),
+        resetAt: limit.resetsAt,
+        source: "session",
+        sessionId: session.id,
+      });
+      // Unattended or queued work fires on its own once the window resets.
+      if (
+        hold &&
+        limit.resumeAtReset == null &&
+        !session.ephemeral &&
+        (session.automationId || session.queuedMessages?.length)
+      )
+        armed.add(session.id);
+    }
+    if (!armed.size) return;
+    setSessions((prev) =>
+      prev.map((entry) => {
+        const limit = entry.usageLimit;
+        if (!armed.has(entry.id) || !limit || limit.resumeAtReset != null)
+          return entry;
+        const resetsAt =
+          limit.resetsAt ??
+          usageLimitRegistry.get(
+            entry.harness,
+            holdAccountId(entry.harness, entry.providerAccountId, entry.cwd),
+          )?.resetAt;
+        return {
+          ...entry,
+          usageLimit: {
+            ...limit,
+            resumeAtReset: true,
+            ...(resetsAt != null ? { resetsAt } : {}),
+          },
+        };
+      }),
+    );
+  }, [sessions]);
+
+  // An exhausted usage meter holds its provider too, with the exact reset.
+  useEffect(() => {
+    const sync = () => usageLimitRegistry.syncQuota(getAllRateLimits());
+    sync();
+    return subscribeRateLimits(sync);
+  }, []);
+
+  const onResumeInterrupted = useCallback(
+    (sessionId: string) => {
+      const session = sessionsRef.current.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (!session || session.busy) return;
+      const plan = planSessionResume(session, isLiveHarness(session.harness));
+      if (!plan) return;
+      if (plan.releaseQueue) {
+        // Like Resume queue: the paused follow-ups go once this turn ends.
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId
+              ? {
+                  ...entry,
+                  queueStatus: "resuming",
+                  queuedMessages: entry.queuedMessages?.map((message) => ({
+                    ...message,
+                    error: undefined,
+                  })),
+                }
+              : entry,
+          ),
+        );
+      }
+      onSubmit(
+        sessionId,
+        plan.prompt,
+        plan.attachments,
+        plan.context ? { resumeContext: plan.context } : undefined,
+      );
+    },
+    [onSubmit],
+  );
+
+  const onDismissInterrupted = useCallback((sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId ? dismissSessionInterruption(session) : session,
+      ),
+    );
+  }, []);
+
+  const onRunQueueAnyway = useCallback((sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((session) => {
+        if (session.id !== sessionId) return session;
+        const hold = sessionProviderHold(session);
+        return hold ? { ...session, queueHoldOverride: hold.since } : session;
+      }),
+    );
+  }, []);
+
   const onUsageLimitAccountChange = useCallback(
     (sessionId: string, accountId: string) => {
       const session = sessionsRef.current.find(
@@ -9128,7 +9988,7 @@ function Workspace({
       );
       if (
         !session ||
-        !isMonoSession(sessionId) ||
+        !isIrgatSession(sessionId) ||
         !supportsProviderAccounts(session.harness) ||
         !providerAccountExists(session.harness, accountId)
       )
@@ -9136,7 +9996,7 @@ function Workspace({
       setSessions((prev) =>
         prev.map((entry) =>
           entry.id === sessionId
-            ? switchMonoUsageLimitAccount(entry, accountId)
+            ? switchIrgatUsageLimitAccount(entry, accountId)
             : entry,
         ),
       );
@@ -9463,7 +10323,7 @@ function Workspace({
         model: model || undefined,
         modelSettings: input.thread.modelSettings ?? input.source.modelSettings,
         ephemeral: false,
-        codexStore: isMonoSession(input.source.id) ? "mono" : undefined,
+        codexStore: isIrgatSession(input.source.id) ? "irgat" : undefined,
         threadId: input.thread.providerThreadId,
         onThreadId: (providerThreadId) => {
           if (controller.signal.aborted) return;
@@ -9997,9 +10857,9 @@ function Workspace({
               : undefined,
             runtimeMode: current.runtimeMode,
             ephemeral: current.ephemeral === true,
-            codexStore: isMonoSession(sessionId) ? "mono" : undefined,
+            codexStore: isIrgatSession(sessionId) ? "irgat" : undefined,
             controlsAgents:
-              isMonoSession(sessionId) ||
+              isIrgatSession(sessionId) ||
               operatorEnabledInThread(current.blocks) ||
               orchestrator.run(sessionId)?.status === "active",
             onEvent: (event) => {
@@ -10099,7 +10959,7 @@ function Workspace({
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       const focusedBusySessionId = () => {
-        const agentId = monoViewIdRef.current;
+        const agentId = irgatViewIdRef.current;
         if (agentId) {
           return sessionsRef.current.find((session) => session.id === agentId)
             ?.busy
@@ -10114,7 +10974,7 @@ function Workspace({
         );
       };
       const target = event.target instanceof Element ? event.target : null;
-      const inTerminal = Boolean(target?.closest(".monocode-terminal"));
+      const inTerminal = Boolean(target?.closest(".irgat-terminal"));
       const activeTabId = activeTabIdRef.current;
       const sessionId = focusedBusySessionId();
       if (
@@ -10150,10 +11010,10 @@ function Workspace({
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.worktreeRemoved) return;
       // An approval a habit's hidden run asked for, put to the user in the
-      // Mono's chat: answer the run, and settle the question in the chat.
-      if (isMonoSession(sessionId)) {
+      // Irgat's chat: answer the run, and settle the question in the chat.
+      if (isIrgatSession(sessionId)) {
         const asked = session.blocks.find(
-          (block) => block.monoHabit && block.approval?.requestId === requestId,
+          (block) => block.irgatHabit && block.approval?.requestId === requestId,
         );
         if (asked) {
           const relay = takeRelayedApproval(sessionId, requestId);
@@ -10167,7 +11027,7 @@ function Workspace({
               relay.requestId,
               decision,
             );
-          decideMonoBlockRef.current(
+          decideIrgatBlockRef.current(
             sessionId,
             asked.id,
             relay && run
@@ -10612,6 +11472,78 @@ function Workspace({
 
   const stopSessionRef = useRef(onStop);
   stopSessionRef.current = onStop;
+
+  const irgatGroups = useIrgatGroupChat({
+    sessions: () => sessionsRef.current,
+    memberSession: (irgatId) =>
+      ensureIrgatSession(irgatId, {
+        home: homeDir,
+        load: ensureOpenSession,
+        create: (path) => newDefaultSession(path),
+        add: (created) => {
+          sessionsRef.current = [...sessionsRef.current, created];
+          setSessions(sessionsRef.current);
+        },
+      }),
+    add: (session) => {
+      sessionsRef.current = [...sessionsRef.current, session];
+      setSessions(sessionsRef.current);
+    },
+    run: (id, prompt, attachments) =>
+      new Promise((resolve) => {
+        void submitWithSettlement({
+          submit: (onSettled) =>
+            submitSession(id, prompt, attachments, { onSettled }),
+          onSettled: resolve,
+          rejectionMessage: "The group reply could not start.",
+        });
+      }),
+    stop: async (id) => {
+      await stopSessionRef.current(id);
+    },
+    remove: async (id) => {
+      const open = await stopSessionForRemoval(id);
+      if (open)
+        await Promise.all(
+          sessionChildHarnesses(open).map((harness) =>
+            forgetHarnessSession(harness, id),
+          ),
+        );
+      await deleteSession(id, []);
+      sessionsRef.current = sessionsRef.current.filter(
+        (session) => session.id !== id,
+      );
+      setSessions(sessionsRef.current);
+    },
+  });
+  useIrgatGroupWatch(irgatGroups, sessions, () => sessionsRef.current);
+  const activeIrgatGroups = useActiveIrgatGroups(irgatGroups);
+  const openIrgatGroupId = irgatGroupOfView(irgatViewId);
+  const openIrgatGroupRun = useIrgatGroupRun(
+    irgatGroups,
+    openIrgatGroupId ?? "",
+  );
+  const openIrgatGroupSeatId = openIrgatGroupRun.speaking?.seatId;
+  const openIrgatGroupSeat = openIrgatGroupSeatId
+    ? sessions.find((session) => session.id === openIrgatGroupSeatId)
+    : undefined;
+  /** Deletes the room and what was said in it; its members stay. */
+  const onDeleteIrgatGroup = useCallback(
+    async (groupId: string) => {
+      const group = findIrgatGroup(groupId);
+      if (!group) return;
+      const confirmed = await ask(
+        `Delete the group chat “${irgatGroupName(group)}”? What was said in it will be deleted. Its Irgats stay. This can’t be undone.`,
+        { title: "Irgatos", kind: "warning" },
+      );
+      if (!confirmed) return;
+      await irgatGroups.stop(groupId);
+      if (irgatViewIdRef.current === irgatGroupViewKey(groupId))
+        closeIrgatView();
+      removeIrgatGroup(groupId);
+    },
+    [irgatGroups, closeIrgatView],
+  );
   const removeSessionRef = useRef(onRemoveHistorySession);
   removeSessionRef.current = onRemoveHistorySession;
 
@@ -10623,7 +11555,7 @@ function Workspace({
       requestId: string;
       action: string;
       input: Record<string, unknown>;
-    }>("monocode-control-request", ({ payload }) => {
+    }>("irgat-control-request", ({ payload }) => {
       const handle = async () => {
         if (payload.namespace === "control") {
           return orchestrator.handle(
@@ -10644,7 +11576,7 @@ function Workspace({
           source.orchestrationLeadId ||
           orchestrator.run(source.id)
         )
-          throw new Error("This session cannot use the MonoCode app CLI");
+          throw new Error("This session cannot use the Irgatos app CLI");
         const key = `${source.id}:${payload.requestId}`;
         const signature = JSON.stringify([payload.action, payload.input]);
         const previous = appReceipts.current.get(key);
@@ -10653,20 +11585,20 @@ function Workspace({
             throw new Error("Request ID was already used with different input");
           return previous.promise;
         }
-        const sourceMono =
-          monoForSession(source.id) ?? findMono(habitRunMono(source.id) ?? "");
+        const sourceIrgat =
+          irgatForSession(source.id) ?? findIrgat(habitRunIrgat(source.id) ?? "");
         const canAccessProject = (cwd: string) =>
-          canAccessAgentAppProject(source, cwd, sourceMono?.projects);
+          canAccessAgentAppProject(source, cwd, sourceIrgat?.projects);
         const sourceTurn = turnGen.current.get(source.id) ?? 0;
-        const sourceTurns = isMonoSession(source.id)
-          ? groupMonoTurns(source.blocks)
+        const sourceTurns = isIrgatSession(source.id)
+          ? groupIrgatTurns(source.blocks)
           : [];
         const sourceTurnId = sourceTurns[sourceTurns.length - 1]?.[0]?.id;
-        const rememberSession = (entry: MonoSpawnedSession) => {
+        const rememberSession = (entry: IrgatSpawnedSession) => {
           if (!sourceTurnId) return;
           const next = sessionsRef.current.map((session) =>
             session.id === source.id
-              ? recordMonoSpawnedSession(session, sourceTurnId, entry)
+              ? recordIrgatSpawnedSession(session, sourceTurnId, entry)
               : session,
           );
           if (
@@ -10679,14 +11611,14 @@ function Workspace({
           setSessions(next);
         };
         const monitorCompletion = (
-          monoId: string,
+          irgatId: string,
           sessionId: string,
           requestId: string,
           project: string,
           prompt: string,
         ) => {
-          const settle = monoCompletionBatches.current!.watch(
-            { monoId, turn: sourceTurn },
+          const settle = irgatCompletionBatches.current!.watch(
+            { irgatId, turn: sourceTurn },
             requestId,
             sessionId,
             { awaitAcceptance: true },
@@ -10694,7 +11626,7 @@ function Workspace({
           return Object.assign(
             (outcome: ControlOutcome) =>
               settle(
-                monoSessionCompletionResult({
+                irgatSessionCompletionResult({
                   requestId,
                   sessionId,
                   project,
@@ -10709,13 +11641,13 @@ function Workspace({
           );
         };
         const dismissCompletion = (sessionId: string) => {
-          if (!isMonoSession(source.id)) return;
-          monoCompletionBatches.current!.dismissSession(source.id, sessionId);
+          if (!isIrgatSession(source.id)) return;
+          irgatCompletionBatches.current!.dismissSession(source.id, sessionId);
           flushSync(() =>
             setSessions((previous) =>
               previous.map((session) =>
                 session.id === source.id
-                  ? dismissQueuedMonoSessionCompletion(session, sessionId)
+                  ? dismissQueuedIrgatSessionCompletion(session, sessionId)
                   : session,
               ),
             ),
@@ -10727,7 +11659,7 @@ function Workspace({
           payload.action,
           payload.input,
           {
-            start: async (launch, id, placement, notifyMonoId) => {
+            start: async (launch, id, placement, notifyIrgatId) => {
               const rememberLaunch = () => {
                 const created =
                   sessionsRef.current.find((session) => session.id === id) ??
@@ -10771,9 +11703,9 @@ function Workspace({
               }
               if (existing && sessionDraftBlock(existing))
                 throw new Error("Session ID already has a different draft");
-              const onSettled = notifyMonoId
+              const onSettled = notifyIrgatId
                 ? monitorCompletion(
-                    notifyMonoId,
+                    notifyIrgatId,
                     id,
                     id,
                     launch.cwd,
@@ -10781,14 +11713,14 @@ function Workspace({
                   )
                 : undefined;
               try {
-                // A Mono's sessions open from its chat, not as workspace
+                // A Irgat's sessions open from its chat, not as workspace
                 // tabs, unless it places one beside an open pane.
                 await launchQuickSessionRef.current(
                   launch,
                   id,
                   placement,
                   onSettled,
-                  !isMonoSession(source.id) || !!placement,
+                  !isIrgatSession(source.id) || !!placement,
                 );
                 rememberLaunch();
                 onSettled?.accept();
@@ -10842,10 +11774,10 @@ function Workspace({
                 : null;
             },
             readConversation: async (target, options) =>
-              isMonoSession(target.id)
-                ? readMonoConversation(target, options)
+              isIrgatSession(target.id)
+                ? readIrgatConversation(target, options)
                 : sessionConversationPage(target, options),
-            send: async (id, prompt, requestId, notifyMonoId) => {
+            send: async (id, prompt, requestId, notifyIrgatId) => {
               const target = await ensureOpenSessionRef.current(id);
               if (
                 !target ||
@@ -10885,9 +11817,9 @@ function Workspace({
                 throw new Error(
                   "Session already has a draft; send or remove it first",
                 );
-              const onSettled = notifyMonoId
+              const onSettled = notifyIrgatId
                 ? monitorCompletion(
-                    notifyMonoId,
+                    notifyIrgatId,
                     id,
                     requestId,
                     target.cwd,
@@ -10965,7 +11897,7 @@ function Workspace({
               if (
                 target.orchestrationLeadId ||
                 !canAccessProject(target.cwd) ||
-                isMonoSession(id) ||
+                isIrgatSession(id) ||
                 isHabitRun(id)
               )
                 throw new Error("Session is unavailable in this project");
@@ -10979,7 +11911,7 @@ function Workspace({
                 !target ||
                 target.orchestrationLeadId ||
                 !canAccessProject(target.cwd) ||
-                isMonoSession(id) ||
+                isIrgatSession(id) ||
                 isHabitRun(id)
               )
                 throw new Error("Session is unavailable in this project");
@@ -11033,22 +11965,22 @@ function Workspace({
               setSessions(sessionsRef.current);
               if (!isHabitRun(sessionId)) await upsertSession(updated);
             },
-            isMono: (id) => isMonoSession(id),
+            isIrgat: (id) => isIrgatSession(id),
             isHabitRun: (id) => isHabitRun(id),
-            monoOf: (id) => {
-              const mono =
-                monoForSession(id) ?? findMono(habitRunMono(id) ?? "");
+            irgatOf: (id) => {
+              const irgat =
+                irgatForSession(id) ?? findIrgat(habitRunIrgat(id) ?? "");
               return (
-                mono && {
-                  id: mono.id,
-                  projects: mono.projects,
+                irgat && {
+                  id: irgat.id,
+                  projects: irgat.projects,
                   showStartedSessionsInSidebar:
-                    mono.showStartedSessionsInSidebar,
-                  ...(mono.useSidebarFolders
+                    irgat.showStartedSessionsInSidebar,
+                  ...(irgat.useSidebarFolders
                     ? {
                         folder: {
-                          name: monoLook(mono).name,
-                          color: mono.color,
+                          name: irgatLook(irgat).name,
+                          color: irgat.color,
                         },
                       }
                     : {}),
@@ -11056,10 +11988,10 @@ function Workspace({
               );
             },
             habits: { load: loadHabits, update: updateHabits },
-            agentFiles: (monoId) => loadMonoFiles(monoId),
-            readAgentFile: (monoId, path) => readAgentFile(monoId, path),
-            writeAgentFile: (monoId, path, text, hash) =>
-              writeAgentFile(monoId, path, text, hash),
+            agentFiles: (irgatId) => loadIrgatFiles(irgatId),
+            readAgentFile: (irgatId, path) => readAgentFile(irgatId, path),
+            writeAgentFile: (irgatId, path, text, hash) =>
+              writeAgentFile(irgatId, path, text, hash),
           },
         );
         appReceipts.current.set(key, { signature, promise });
@@ -11286,12 +12218,27 @@ function Workspace({
     ],
   );
 
+  const onOpenFleetSession = useCallback(
+    (sessionId: string) => {
+      setFleetViewOpen(false);
+      const irgat = irgatForSession(sessionId);
+      if (irgat) {
+        void onOpenIrgat(irgat.id);
+        return;
+      }
+      onOpenApprovalSession(sessionId);
+    },
+    [onOpenApprovalSession, onOpenIrgat],
+  );
+
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       onOpenApprovalSession(sessionId);
     },
     [onOpenApprovalSession],
@@ -11442,6 +12389,8 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setFilePickerInitialQuery("");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -11451,6 +12400,8 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setFilePickerInitialQuery(">");
     setFilePickerResetToken((token) => token + 1);
     setFilePickerOpen(true);
@@ -11467,6 +12418,8 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     setSidebarTab("files");
     setFilesSearchOpen(true);
     setSearchFocusToken((token) => token + 1);
@@ -11480,6 +12433,8 @@ function Workspace({
       setInboxViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSearchViewOpen(true);
       setSearchViewFocusToken((token) => token + 1);
     });
@@ -11497,6 +12452,8 @@ function Workspace({
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setInboxViewOpen(true);
     });
   }, []);
@@ -11510,6 +12467,8 @@ function Workspace({
       setSearchViewOpen(false);
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setInboxViewOpen(false);
       const cwd =
         sessionsRef.current.find((session) => session.id === sessionId)?.cwd ??
@@ -11613,6 +12572,8 @@ function Workspace({
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setNotesViewOpen(true);
     });
   }, []);
@@ -11620,6 +12581,120 @@ function Workspace({
   const onLeaveNotes = useCallback(() => {
     setNotesViewOpen(false);
   }, []);
+
+  const [artifactScope, setArtifactScopeState] =
+    useState<ArtifactScope>(loadArtifactScope);
+  const setArtifactScope = useCallback((scope: ArtifactScope) => {
+    saveArtifactScope(scope);
+    setArtifactScopeState(scope);
+  }, []);
+  // "This session" stays on the last chat while an artifact tab is in front.
+  const lastChatSessionRef = useRef<string | undefined>(undefined);
+  if (active?.id && !active.ephemeral) lastChatSessionRef.current = active.id;
+  const projectArtifacts = useProjectArtifacts({
+    cwd: sidebarCwd,
+    sessions: promptableSessions,
+    history: projectHistory,
+    activeSessionId: active?.id ?? lastChatSessionRef.current,
+    scope: artifactScope,
+    enabled: sidebarTab === "artifacts" && !irgatCovers,
+  });
+  const selectedArtifactId = activeFile?.artifact?.id;
+  const artifactsPanel = useMemo(
+    () =>
+      sidebarCwd && sidebarCwd !== "~" ? (
+        <ArtifactsList
+          artifacts={projectArtifacts.artifacts}
+          selectedId={selectedArtifactId}
+          onOpen={openArtifact}
+          scope={artifactScope}
+          onScopeChange={setArtifactScope}
+          hasActiveSession={projectArtifacts.hasActiveSession}
+          loading={projectArtifacts.loading}
+          error={projectArtifacts.error}
+          onRetry={projectArtifacts.retry}
+          createScope={projectArtifactScope(sidebarCwd)}
+        />
+      ) : undefined,
+    [
+      sidebarCwd,
+      projectArtifacts,
+      selectedArtifactId,
+      openArtifact,
+      artifactScope,
+      setArtifactScope,
+    ],
+  );
+  const artifactChatTargets = useCallback(() => {
+    const open = new Set(tabsRef.current.flatMap((tab) => leafIds(tab.layout)));
+    const current = activeSessionIdRef.current ?? lastChatSessionRef.current;
+    return sessionsRef.current
+      .filter(
+        (session) =>
+          open.has(session.id) && !session.ephemeral && !session.inboxAsk,
+      )
+      .map((session) => ({
+        sessionId: session.id,
+        title: sessionDisplayTitle(session.title, session.harness),
+        active: session.id === current,
+      }));
+  }, []);
+  const addArtifactToChat = useCallback(
+    (text: string, sessionId?: string) => {
+      const activeEntry = tabsRef.current.find(
+        (entry) => entry.id === activeTabIdRef.current,
+      );
+      const chatInFront =
+        !!activeEntry &&
+        leafIds(activeEntry.layout).some((id) =>
+          sessionsRef.current.some((session) => session.id === id),
+        );
+      const targetId =
+        sessionId ??
+        (irgatViewIdRef.current || chatInFront
+          ? undefined
+          : lastChatSessionRef.current);
+      const owner = targetId
+        ? tabsRef.current.find((entry) =>
+            leafIds(entry.layout).includes(targetId),
+          )
+        : undefined;
+      if (!owner || !targetId) {
+        requestAddToChat(text, "plain");
+        return;
+      }
+      // The pane only listens once it is the target, after this render.
+      flushSync(() => activateTab(owner.id, targetId));
+      setComposerFocused(true);
+      window.setTimeout(() => requestAddToChat(text, "plain"), 0);
+    },
+    [activateTab],
+  );
+  const artifactHost = useMemo<ArtifactHost>(
+    () => ({
+      chatTargets: artifactChatTargets,
+      addToChat: addArtifactToChat,
+      openFile: (path) => onOpenFile(path, undefined, { pin: true }),
+      revealInExplorer: (path) => {
+        setSidebarTab("files");
+        onOpenFile(path);
+      },
+      openNotes: notesEnabled ? onOpenNotes : undefined,
+      defaultScope:
+        sidebarCwd && sidebarCwd !== "~"
+          ? projectArtifactScope(sidebarCwd)
+          : undefined,
+    }),
+    [
+      artifactChatTargets,
+      addArtifactToChat,
+      onOpenFile,
+      setSidebarTab,
+      notesEnabled,
+      onOpenNotes,
+      sidebarCwd,
+    ],
+  );
 
   const onOpenAutomations = useCallback(() => {
     workspaceNavigation.cancel();
@@ -11629,6 +12704,8 @@ function Workspace({
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setAutomationsViewOpen(true);
     });
   }, []);
@@ -11637,12 +12714,153 @@ function Workspace({
     setAutomationsViewOpen(false);
   }, []);
 
+  const onOpenKanban = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setFleetViewOpen(false);
+      setKanbanFocus(null);
+      setKanbanViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveKanban = useCallback(() => {
+    setKanbanViewOpen(false);
+  }, []);
+
+  const onOpenFleet = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveFleet = useCallback(() => {
+    setFleetViewOpen(false);
+  }, []);
+
+  const onStartCardSession = useCallback(
+    (card: KanbanCard, project: string) => {
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
+      setSettingsOpen(false);
+      setFilePickerOpen(false);
+      const notes = card.notes.trim();
+      const session = {
+        ...newDefaultSession(project, sessionDefaults?.runtimeMode),
+        title: card.title,
+        composerSeed: notes ? `${card.title}\n\n${notes}` : card.title,
+      };
+      const tab = newTab(session.id);
+      setSidebarTab("sessions", project);
+      setProjectCwd(project);
+      setRecents(rememberProject(project));
+      setSessions((prev) => [...prev, session]);
+      appendTab(tab, project);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
+      linkKanbanSession(card.id, session.id).catch(console.error);
+    },
+    [appendTab, sessionDefaults?.runtimeMode],
+  );
+
+  const onSessionBoard = useCallback(
+    async (sessionId: string) => {
+      const showCard = (project: string, cardId: string) => {
+        workspaceNavigation.cancel();
+        startTransition(() => {
+          setFilePickerOpen(false);
+          setSettingsOpen(false);
+          setSearchViewOpen(false);
+          setInboxViewOpen(false);
+          setNotesViewOpen(false);
+          setAutomationsViewOpen(false);
+          setFleetViewOpen(false);
+          setKanbanFocus({ project, cardId, token: Date.now() });
+          setKanbanViewOpen(true);
+        });
+      };
+      const link = kanbanLinksRef.current.get(sessionId);
+      if (link) {
+        showCard(link.project, link.cardId);
+        return;
+      }
+      const session =
+        sessionsRef.current.find((item) => item.id === sessionId) ??
+        sidebarHistory.find((item) => item.id === sessionId);
+      if (!session) return;
+      const project = kanbanProject(session.cwd);
+      const title =
+        cardTitleFromText(sessionDisplayTitle(session.title, session.harness)) ||
+        "Untitled session";
+      const loaded = sessionsRef.current.find((item) => item.id === sessionId);
+      try {
+        await syncKanbanSessions(project, [
+          {
+            sessionId,
+            title,
+            status: loaded ? liveSessionStatus(loaded) : null,
+            force: true,
+          },
+        ]);
+        const board = await loadKanbanBoard(project);
+        const filed = board.columns
+          .flatMap((column) => column.cards)
+          .find((card) => card.session?.id === sessionId);
+        if (filed) {
+          showCard(project, filed.id);
+          return;
+        }
+        // Never saved, so there was no transcript to file it from.
+        const column =
+          board.columns[0] ??
+          (await createKanbanColumn(
+            board.id,
+            crypto.randomUUID(),
+            DEFAULT_KANBAN_COLUMNS[0],
+          ));
+        const card = await createKanbanCard(column.id, {
+          id: crypto.randomUUID(),
+          title,
+          notes: "",
+          labels: [],
+        });
+        await linkKanbanSession(card.id, sessionId);
+        // The board view opens from the cached copy, which must hold the new card.
+        await loadKanbanBoard(project);
+        showCard(project, card.id);
+      } catch (error) {
+        console.error(error);
+        showCard(project, "");
+      }
+    },
+    [sidebarHistory],
+  );
+
   const onOpenAutomationSession = useCallback(
     async (sessionId: string) => {
       const session = await ensureOpenSession(sessionId);
       if (!session)
         throw new Error("This conversation is no longer available.");
       setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
       setSearchViewOpen(false);
       setInboxViewOpen(false);
       setNotesViewOpen(false);
@@ -11665,6 +12883,8 @@ function Workspace({
           inbox: inboxViewOpenRef.current,
           notes: notesViewOpenRef.current,
           automations: automationsViewOpenRef.current,
+          kanban: kanbanViewOpenRef.current,
+          fleet: fleetViewOpenRef.current,
         };
       }
       startTransition(() => {
@@ -11673,6 +12893,8 @@ function Workspace({
         setInboxViewOpen(false);
         setNotesViewOpen(false);
         setAutomationsViewOpen(false);
+        setKanbanViewOpen(false);
+        setFleetViewOpen(false);
         if (section) {
           setSettingsSection(section);
           saveSettingsSection(section);
@@ -11701,9 +12923,9 @@ function Workspace({
 
   useEffect(() => {
     const onOpenMcp = () => openSettings("mcp");
-    window.addEventListener("monocode:open-mcp-settings", onOpenMcp);
+    window.addEventListener("irgat:open-mcp-settings", onOpenMcp);
     return () =>
-      window.removeEventListener("monocode:open-mcp-settings", onOpenMcp);
+      window.removeEventListener("irgat:open-mcp-settings", onOpenMcp);
   }, [openSettings]);
 
   const onOpenNotificationSettings = useCallback(
@@ -11726,6 +12948,8 @@ function Workspace({
     setInboxViewOpen(returnView.inbox);
     setNotesViewOpen(returnView.notes && loadNotesEnabled());
     setAutomationsViewOpen(returnView.automations);
+    setKanbanViewOpen(returnView.kanban);
+    setFleetViewOpen(returnView.fleet);
     setSettingsOpen(false);
   }, []);
 
@@ -11763,8 +12987,16 @@ function Workspace({
       setAutomationsViewOpen(false);
       return;
     }
-    if (monoViewIdRef.current) {
-      closeMonoView();
+    if (kanbanViewOpen) {
+      setKanbanViewOpen(false);
+      return;
+    }
+    if (fleetViewOpen) {
+      setFleetViewOpen(false);
+      return;
+    }
+    if (irgatViewIdRef.current) {
+      closeIrgatView();
       setComposerFocused(true);
       return;
     }
@@ -11772,12 +13004,14 @@ function Workspace({
   }, [
     onCloseSettings,
     onVisitBack,
-    closeMonoView,
+    closeIrgatView,
     searchViewOpen,
     settingsOpen,
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
+    kanbanViewOpen,
+    fleetViewOpen,
   ]);
 
   const onRailForward = useCallback(() => {
@@ -11786,6 +13020,8 @@ function Workspace({
     setInboxViewOpen(false);
     setNotesViewOpen(false);
     setAutomationsViewOpen(false);
+    setKanbanViewOpen(false);
+    setFleetViewOpen(false);
     onVisitForward();
   }, [onVisitForward]);
 
@@ -11923,7 +13159,7 @@ function Workspace({
     onFocusDir,
     onToggleSidebar,
     onToggleSessionSidebar,
-    onToggleMono,
+    onToggleIrgat,
     onGoToFile,
     onOpenCommandPalette,
     onReload,
@@ -11939,6 +13175,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onShowTerminal,
   });
   actions.current = {
     onNewFocused,
@@ -11955,7 +13192,7 @@ function Workspace({
     onFocusDir,
     onToggleSidebar,
     onToggleSessionSidebar,
-    onToggleMono,
+    onToggleIrgat,
     onGoToFile,
     onOpenCommandPalette,
     onReload,
@@ -11971,6 +13208,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onShowTerminal,
   };
 
   const debounce = useRef({ name: "", at: 0 });
@@ -12046,7 +13284,7 @@ function Workspace({
         if (listNavigation) {
           const blockedTarget = Boolean(
             target?.closest(
-              'input, textarea, select, [contenteditable="true"], .cm-editor, .monocode-terminal, [role="dialog"], [data-model-picker], [data-file-picker], [data-branch-picker], [data-skill-picker], [data-mention-picker], [data-app-search]',
+              'input, textarea, select, [contenteditable="true"], .cm-editor, .irgat-terminal, [role="dialog"], [data-model-picker], [data-file-picker], [data-branch-picker], [data-skill-picker], [data-mention-picker], [data-app-search]',
             ),
           );
           const emptyComposerTarget = Boolean(
@@ -12057,6 +13295,8 @@ function Workspace({
             inboxViewOpenRef.current ||
             notesViewOpenRef.current ||
             automationsViewOpenRef.current ||
+            kanbanViewOpenRef.current ||
+            fleetViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
             Boolean(whatsNewVersionRef.current);
@@ -12071,7 +13311,7 @@ function Workspace({
           }
         }
         if (
-          target?.closest(".monocode-terminal") &&
+          target?.closest(".irgat-terminal") &&
           e.ctrlKey &&
           !e.metaKey &&
           (cmd === "back" ||
@@ -12140,6 +13380,8 @@ function Workspace({
         !inboxViewOpenRef.current &&
         !notesViewOpenRef.current &&
         !automationsViewOpenRef.current &&
+        !kanbanViewOpenRef.current &&
+        !fleetViewOpenRef.current &&
         !(
           e.target instanceof Element &&
           e.target.closest("[data-session-drop], [data-agent-tab]")
@@ -12154,7 +13396,7 @@ function Workspace({
         if (
           shortcut === "App: Search" &&
           e.target instanceof Element &&
-          e.target.closest(".monocode-terminal") &&
+          e.target.closest(".irgat-terminal") &&
           e.ctrlKey &&
           !e.metaKey
         ) {
@@ -12171,8 +13413,8 @@ function Workspace({
           run("toggle_sidebar", a.onToggleSidebar);
         else if (shortcut === "App: Toggle Session Sidebar")
           run("toggle_session_sidebar", a.onToggleSessionSidebar);
-        else if (shortcut === "App: Toggle Mono")
-          run("toggle_mono", a.onToggleMono);
+        else if (shortcut === "App: Toggle Irgat")
+          run("toggle_irgat", a.onToggleIrgat);
         else if (shortcut === "App: Go to File")
           run("go_to_file", a.onGoToFile);
         else if (shortcut === "App: Command Palette")
@@ -12271,15 +13513,27 @@ function Workspace({
         window.dispatchEvent(new Event("open_model_picker"));
       }),
       // Every window hears the click; only the one holding the session acts.
-      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: sessionId }) => {
-        if (!sessionsRef.current.some((s) => s.id === sessionId)) return;
+      listen<string>(NOTIFICATION_CLICK_EVENT, ({ payload: target }) => {
+        const terminalId = terminalIdFromTarget(target);
+        const holds = terminalId
+          ? projectTerminalsRef.current.some((entry) =>
+              entry.pane.files.some((file) => file.id === terminalId),
+            ) ||
+            tabsRef.current.some((tab) =>
+              (tab.terminalPanes ?? []).some((pane) =>
+                pane.files.some((file) => file.id === terminalId),
+              ),
+            )
+          : sessionsRef.current.some((s) => s.id === target);
+        if (!holds) return;
         const win = getCurrentWindow();
         // Windows leaves a minimized window minimized when it is only focused.
         void win
           .unminimize()
           .then(() => win.setFocus())
           .catch(() => {});
-        actions.current.onOpenApprovalSession(sessionId);
+        if (terminalId) actions.current.onShowTerminal(terminalId);
+        else actions.current.onOpenApprovalSession(target);
       }),
       listen("zoom_in", () => {
         const next = zoomInUiScale(loadUiScale());
@@ -12309,7 +13563,7 @@ function Workspace({
       projectCwdRef.current,
     );
     const el = dockGridRef.current;
-    if (!dock || !el || monoViewIdRef.current) return;
+    if (!dock || !el || irgatViewIdRef.current) return;
     dockDragSize.current = size;
     applyDockGridStyle(el, dock.side, size);
   }, []);
@@ -12321,18 +13575,18 @@ function Workspace({
     [onProjectTerminalSize],
   );
   useLayoutEffect(() => {
-    if (monoCovers) dockDragSize.current = null;
+    if (irgatCovers) dockDragSize.current = null;
     if (dockDragSize.current != null) return;
     const el = dockGridRef.current;
     if (!el) return;
     applyDockGridStyle(
       el,
-      dockVisible && !monoCovers && currentProjectDock
+      dockVisible && !irgatCovers && currentProjectDock
         ? currentProjectDock.side
         : null,
       currentProjectDock?.size ?? 0,
     );
-  }, [currentProjectDock, dockVisible, monoCovers]);
+  }, [currentProjectDock, dockVisible, irgatCovers]);
 
   const lastRemoteSnapshot = useRef(new Map<string, HostSession>());
   const onRemoteSnapshot = useCallback(
@@ -12375,9 +13629,9 @@ function Workspace({
     [openSettings],
   );
 
-  useFloatingMono(sessions, monosSnap, monosEnabled, {
-    open: (monoId) =>
-      ensureMonoSession(monoId, {
+  useFloatingIrgat(sessions, monosSnap, monosEnabled, {
+    open: (irgatId) =>
+      ensureIrgatSession(irgatId, {
         home: homeDir,
         load: ensureOpenSession,
         create: newDefaultSession,
@@ -12391,15 +13645,15 @@ function Workspace({
     approval: onApproval,
     question: onQuestionReply,
     questionInteraction: onQuestionInteraction,
-    reveal: onOpenMono,
-    openArtifact: async (monoId, id) => {
-      await onOpenMono(monoId);
-      const sessionId = findMono(monoId)?.sessionId;
-      if (sessionId) onOpenMonoArtifact(sessionId, id);
+    reveal: onOpenIrgat,
+    openArtifact: async (irgatId, id) => {
+      await onOpenIrgat(irgatId);
+      const sessionId = findIrgat(irgatId)?.sessionId;
+      if (sessionId) onOpenIrgatArtifact(sessionId, id);
     },
     openFile: onOpenFile,
     resume: onUsageLimitResume,
-    create: () => createMono().id,
+    create: () => createIrgat().id,
   });
 
   const sessionPaneProps = {
@@ -12435,6 +13689,9 @@ function Workspace({
     onUsageLimitResumeAtReset,
     onUsageLimitDismiss,
     onUsageLimitAccountChange,
+    onResumeInterrupted,
+    onDismissInterrupted,
+    onRunQueueAnyway,
     onInboxCardDismiss,
     onLinkedWorkItemUpdateCardDismiss,
     onNoteCardDismiss,
@@ -12460,63 +13717,74 @@ function Workspace({
   };
 
   // Renames, mascot picks and new projects show up on the rail.
-  const monoViewMono = monoViewId ? monoForSession(monoViewId) : undefined;
-  const selectedMonoActivity = resolveMonoActivity(
-    monoActivity,
-    monoViewSession,
+  const irgatViewIrgat = irgatViewId ? irgatForSession(irgatViewId) : undefined;
+  const reviewIrgat =
+    irgatViewIrgat ??
+    (active && !activeFile ? irgatForSession(active.id) : undefined);
+  const activeReviewScope = reviewIrgat
+    ? irgatReviewScope(reviewIrgat.id)
+    : sidebarCwd && sidebarCwd !== "~"
+      ? projectReviewScope(sidebarCwd)
+      : null;
+  useEffect(() => {
+    setActiveReviewScope(activeReviewScope);
+  }, [activeReviewScope]);
+  const selectedIrgatActivity = resolveIrgatActivity(
+    irgatActivity,
+    irgatViewSession,
   );
-  const monoSidebarOpen = monoOverviewOpen || !!selectedMonoActivity;
-  const monoViewBlocks = monoViewSession?.blocks;
-  const monoViewBusy = !!monoViewSession?.busy;
-  const monoViewCwd = monoViewSession ? sessionWorkCwd(monoViewSession) : "";
-  const monoEditedPaths = useMemo(
+  const irgatSidebarOpen = irgatOverviewOpen || !!selectedIrgatActivity;
+  const irgatViewBlocks = irgatViewSession?.blocks;
+  const irgatViewBusy = !!irgatViewSession?.busy;
+  const irgatViewCwd = irgatViewSession ? sessionWorkCwd(irgatViewSession) : "";
+  const irgatEditedPaths = useMemo(
     () =>
-      monoViewBlocks && !monoViewBusy
-        ? sessionEditPaths(monoViewBlocks)
+      irgatViewBlocks && !irgatViewBusy
+        ? sessionEditPaths(irgatViewBlocks)
         : undefined,
-    [monoViewBlocks, monoViewBusy],
+    [irgatViewBlocks, irgatViewBusy],
   );
   // The session's changes, on the overview's tab instead of under a message.
-  const monoChangeTotals = useSessionChangeTotals(
-    monoViewSession?.id ?? "",
-    monoViewCwd,
+  const irgatChangeTotals = useSessionChangeTotals(
+    irgatViewSession?.id ?? "",
+    irgatViewCwd,
     {
-      enabled: !monoViewSession?.worktreeRemoved,
-      busy: monoViewBusy,
-      editedPaths: monoEditedPaths,
+      enabled: !irgatViewSession?.worktreeRemoved,
+      busy: irgatViewBusy,
+      editedPaths: irgatEditedPaths,
     },
   );
-  const monoLaunches = useMemo(
-    () => (monoViewBlocks ? monoSpawnedSessions(monoViewBlocks) : []),
-    [monoViewBlocks],
+  const irgatLaunches = useMemo(
+    () => (irgatViewBlocks ? irgatSpawnedSessions(irgatViewBlocks) : []),
+    [irgatViewBlocks],
   );
-  const monoDocuments = useMemo(
-    () => (monoViewBlocks ? artifactCards(monoViewBlocks) : []),
-    [monoViewBlocks],
+  const irgatDocuments = useMemo(
+    () => (irgatViewBlocks ? artifactCards(irgatViewBlocks) : []),
+    [irgatViewBlocks],
   );
   // Another sidebar opened over it hides the overview until that one closes.
-  const monoOverviewShown = monoOverviewOpen && !selectedMonoActivity;
-  const monoActivityPanel =
-    monoViewMono && monoViewSession && selectedMonoActivity ? (
-      <MonoActivityPanel
-        key={`${monoViewMono.id}:${selectedMonoActivity.turnId}`}
-        agent={monoLook(monoViewMono)}
-        blocks={selectedMonoActivity.blocks}
-        live={selectedMonoActivity.live}
-        cwd={sessionWorkCwd(monoViewSession)}
-        onClose={() => setMonoActivity(null)}
+  const irgatOverviewShown = irgatOverviewOpen && !selectedIrgatActivity;
+  const irgatActivityPanel =
+    irgatViewIrgat && irgatViewSession && selectedIrgatActivity ? (
+      <IrgatActivityPanel
+        key={`${irgatViewIrgat.id}:${selectedIrgatActivity.turnId}`}
+        agent={irgatLook(irgatViewIrgat)}
+        blocks={selectedIrgatActivity.blocks}
+        live={selectedIrgatActivity.live}
+        cwd={sessionWorkCwd(irgatViewSession)}
+        onClose={() => setIrgatActivity(null)}
         onApproval={
-          monoViewSession.worktreeRemoved
+          irgatViewSession.worktreeRemoved
             ? undefined
             : (requestId, decision) =>
-                onApproval(monoViewSession.id, requestId, decision)
+                onApproval(irgatViewSession.id, requestId, decision)
         }
         onOpenFile={onOpenFile}
         onOpenDiff={onOpenDiff}
-        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+        windowControls={irgatCovers && !IS_MAC ? <WindowControls /> : undefined}
       />
     ) : null;
-  // Status for the cards of the sessions the open Mono launched, rebuilt only
+  // Status for the cards of the sessions the open Irgat launched, rebuilt only
   // when one changes state or title rather than on every streamed token. One
   // that is no longer open cannot be running, so it reads as done.
   // A card names its session as the sidebar does. One that is not open has
@@ -12526,7 +13794,7 @@ function Workspace({
     ReadonlyMap<string, string>
   >(() => new Map());
   const unopenedLaunchesKey = JSON.stringify(
-    monoLaunches.flatMap((launch) =>
+    irgatLaunches.flatMap((launch) =>
       storedLaunchTitles.has(launch.sessionId) ||
       sessions.some((entry) => entry.id === launch.sessionId)
         ? []
@@ -12553,8 +13821,8 @@ function Workspace({
       current = false;
     };
   }, [unopenedLaunchesKey]);
-  const monoLaunchesKey = JSON.stringify(
-    monoLaunches.map((launch) => {
+  const irgatLaunchesKey = JSON.stringify(
+    irgatLaunches.map((launch) => {
       const live = sessions.find((entry) => entry.id === launch.sessionId);
       return live
         ? [launch.sessionId, launchedSessionState(live), live.title]
@@ -12565,48 +13833,48 @@ function Workspace({
           ];
     }),
   );
-  const monoLaunchedSessions = useMemo(
+  const irgatLaunchedSessions = useMemo(
     () =>
       new Map<string, LaunchedSessionView>(
         (
-          JSON.parse(monoLaunchesKey) as [
+          JSON.parse(irgatLaunchesKey) as [
             string,
             LaunchedSessionState,
             string,
           ][]
         ).map(([id, state, title]) => [id, { state, title }]),
       ),
-    [monoLaunchesKey],
+    [irgatLaunchesKey],
   );
-  const monoShownSessionPane = shownMonoSessionId
-    ? sessions.find((session) => session.id === shownMonoSessionId)
+  const irgatShownSessionPane = shownIrgatSessionId
+    ? sessions.find((session) => session.id === shownIrgatSessionId)
     : undefined;
-  const monoShownSessionActive =
-    !!monoShownSessionPane && monoShownSessionFocused;
-  const monoShownSessionView = monoShownSessionPane
+  const irgatShownSessionActive =
+    !!irgatShownSessionPane && irgatShownSessionFocused;
+  const irgatShownSessionView = irgatShownSessionPane
     ? {
-        sessionId: monoShownSessionPane.id,
+        sessionId: irgatShownSessionPane.id,
         title: sessionDisplayTitle(
-          monoShownSessionPane.title,
-          monoShownSessionPane.harness,
+          irgatShownSessionPane.title,
+          irgatShownSessionPane.harness,
         ),
         pane: (
           <SessionPane
             {...sessionPaneProps}
-            session={monoShownSessionPane}
-            // The Mono view covers the workspace, so a review opens
+            session={irgatShownSessionPane}
+            // The Irgat view covers the workspace, so a review opens
             // beside the chat rather than in a hidden tab.
-            onOpenDiff={onOpenMonoDiff}
-            // The Mono runs this session; handing it off or asking for a
+            onOpenDiff={onOpenIrgatDiff}
+            // The Irgat runs this session; handing it off or asking for a
             // second opinion belongs in its own tab.
             onSecondOpinion={undefined}
             onHandoff={undefined}
-            visible={monoCovers}
-            focused={monoShownSessionActive && !projectTerminalFocused}
+            visible={irgatCovers}
+            focused={irgatShownSessionActive && !projectTerminalFocused}
             inSplit={false}
             addToChatTarget={false}
             composerFocused={
-              monoShownSessionActive &&
+              irgatShownSessionActive &&
               composerFocused &&
               !projectTerminalFocused
             }
@@ -12615,132 +13883,174 @@ function Workspace({
         ),
       }
     : undefined;
-  const monoOverviewPanel =
-    monoViewMono && monoViewSession ? (
-      <MonoOverview
-        key={monoViewMono.id}
-        open={monoOverviewShown}
-        monoId={monoViewMono.id}
-        cwd={monoViewSession.cwd}
-        agent={monoLook(monoViewMono)}
-        state={monoState(monoViewSession)}
-        launches={monoLaunches}
+  artifactIrgatRef.current =
+    irgatViewIrgat && irgatViewSession
+      ? {
+          scope: irgatArtifactScope(irgatViewIrgat.id),
+          sessionIds: new Set([
+            irgatViewSession.id,
+            ...irgatLaunches.map((launch) => launch.sessionId),
+          ]),
+        }
+      : null;
+  const irgatOverviewPanel =
+    irgatViewIrgat && irgatViewSession ? (
+      <IrgatOverview
+        key={irgatViewIrgat.id}
+        open={irgatOverviewShown}
+        irgatId={irgatViewIrgat.id}
+        cwd={irgatViewSession.cwd}
+        agent={irgatLook(irgatViewIrgat)}
+        state={irgatState(irgatViewSession)}
+        launches={irgatLaunches}
         sessions={sessions}
         history={history}
-        documents={monoDocuments}
+        documents={irgatDocuments}
         changes={{
-          sessionId: monoViewSession.id,
-          cwd: monoViewCwd,
-          totals: monoChangeTotals,
-          request: monoChangesRequest,
-          textHarness: monoViewSession.harness,
-          projects: monoViewMono.projects,
+          sessionId: irgatViewSession.id,
+          cwd: irgatViewCwd,
+          totals: irgatChangeTotals,
+          request: irgatChangesRequest,
+          textHarness: irgatViewSession.harness,
+          projects: irgatViewIrgat.projects,
         }}
-        tab={monoOverviewTab}
-        onTabChange={setMonoOverviewTab}
+        tab={irgatOverviewTab}
+        onTabChange={setIrgatOverviewTab}
         onOpenSession={(sessionId) =>
-          showMonoLaunchedSession(monoViewSession.id, sessionId)
+          showIrgatLaunchedSession(irgatViewSession.id, sessionId)
         }
-        shownSession={monoShownSessionView}
+        shownSession={irgatShownSessionView}
         // Back lands on every session it started.
         onBackFromSession={() => {
-          setMonoShownSession(null);
-          setMonoShownSessionFocused(false);
+          setIrgatShownSession(null);
+          setIrgatShownSessionFocused(false);
         }}
-        onOpenSessionInWorkspace={onOpenMonoLaunchedSession}
+        onOpenSessionInWorkspace={onOpenIrgatLaunchedSession}
         onOpenDocument={(id) => {
-          setMonoShownSession(null);
-          setMonoOverviewDocument(id);
+          setIrgatShownSession(null);
+          setIrgatOverviewDocument(id);
         }}
-        shownDocumentId={monoOverviewDocument ?? undefined}
-        onBackFromDocument={() => setMonoOverviewDocument(null)}
+        shownDocumentId={irgatOverviewDocument ?? undefined}
+        onBackFromDocument={() => setIrgatOverviewDocument(null)}
+        irgatSessionId={irgatViewSession.id}
+        shownArtifactId={
+          irgatOverviewTab === "artifacts"
+            ? (irgatOverviewArtifact ?? undefined)
+            : undefined
+        }
+        onOpenArtifact={(id) => {
+          setIrgatShownSession(null);
+          setIrgatOverviewDocument(null);
+          setIrgatOverviewArtifact(id);
+        }}
+        onBackFromArtifact={() => setIrgatOverviewArtifact(null)}
         onOpenFile={onOpenFile}
-        onClose={() => setMonoOverviewOpen(false)}
-        windowControls={monoCovers && !IS_MAC ? <WindowControls /> : undefined}
+        onClose={() => setIrgatOverviewOpen(false)}
+        windowControls={irgatCovers && !IS_MAC ? <WindowControls /> : undefined}
       />
     ) : null;
-  const monoSettingsDialog =
-    monoCovers &&
-    monoViewMono &&
-    monoViewSession &&
-    monoSettingsFor === monoViewMono.id ? (
-      <MonoSettingsDialog
-        key={monoViewMono.id}
-        monoId={monoViewMono.id}
-        agent={monoLook(monoViewMono)}
-        status={monoState(monoViewSession).status}
-        cwd={monoViewSession.cwd}
-        harness={monoViewSession.harness}
-        model={monoViewSession.model}
-        modelSettings={monoViewSession.modelSettings}
-        runtimeMode={monoViewSession.runtimeMode}
-        busy={!!monoViewSession.busy}
+  const irgatSettingsDialog =
+    irgatCovers &&
+    irgatViewIrgat &&
+    irgatViewSession &&
+    irgatSettingsFor === irgatViewIrgat.id ? (
+      <IrgatSettingsDialog
+        key={irgatViewIrgat.id}
+        irgatId={irgatViewIrgat.id}
+        agent={irgatLook(irgatViewIrgat)}
+        status={irgatState(irgatViewSession).status}
+        cwd={irgatViewSession.cwd}
+        harness={irgatViewSession.harness}
+        model={irgatViewSession.model}
+        modelSettings={irgatViewSession.modelSettings}
+        runtimeMode={irgatViewSession.runtimeMode}
+        busy={!!irgatViewSession.busy}
         onModelChange={(harness, model) =>
-          onModelChange(monoViewSession.id, harness, model)
+          onModelChange(irgatViewSession.id, harness, model)
         }
         onModelSettingsChange={(settings) =>
-          onModelSettingsChange(monoViewSession.id, settings)
+          onModelSettingsChange(irgatViewSession.id, settings)
         }
         onRuntimeModeChange={(mode) =>
-          onRuntimeModeChange(monoViewSession.id, mode)
+          onRuntimeModeChange(irgatViewSession.id, mode)
         }
-        onReset={() => onResetMono(monoViewSession.id)}
-        onClose={() => setMonoSettingsFor(null)}
+        onReset={() => onResetIrgat(irgatViewSession.id)}
+        onClose={() => setIrgatSettingsFor(null)}
       />
     ) : null;
-  const monoRailState = useMemo(() => {
-    const states = new Map<string, MonoState>();
+  const irgatRailState = useMemo(() => {
+    const states = new Map<string, IrgatState>();
     const unseen = new Map<string, number>();
-    for (const mono of listMonos()) {
-      const session = mono.sessionId
-        ? sessions.find((entry) => entry.id === mono.sessionId)
+    for (const irgat of listIrgats()) {
+      const session = irgat.sessionId
+        ? sessions.find((entry) => entry.id === irgat.sessionId)
         : undefined;
-      if (session) states.set(mono.id, monoState(session));
-      const count = mono.sessionId
-        ? monoReplies.counts.get(mono.sessionId)
+      if (session) states.set(irgat.id, irgatState(session));
+      const count = irgat.sessionId
+        ? irgatReplies.counts.get(irgat.sessionId)
         : undefined;
-      if (count) unseen.set(mono.id, count);
+      if (count) unseen.set(irgat.id, count);
     }
     return { states, unseen };
     // The roster is read through its snapshot.
-  }, [monosSnap, sessions, monoReplies.counts]);
-  const monoRail = useStableValue(monoRailState);
+  }, [monosSnap, sessions, irgatReplies.counts]);
+  const irgatRail = useStableValue(irgatRailState);
   const busyProjectPaths = useStableValue(
     promptableSessions.flatMap((session) =>
       session.busy && session.cwd ? [session.cwd] : [],
     ),
   );
-  const onOpenRailMono = useCallback(
-    (monoId: string) => void onOpenMono(monoId),
-    [onOpenMono],
+  const onOpenRailIrgat = useCallback(
+    (irgatId: string) => void onOpenIrgat(irgatId),
+    [onOpenIrgat],
   );
-  const onDeleteRailMono = useCallback(
-    (monoId: string) => void onDeleteMono(monoId),
-    [onDeleteMono],
+  const onDeleteRailIrgat = useCallback(
+    (irgatId: string) => void onDeleteIrgat(irgatId),
+    [onDeleteIrgat],
+  );
+  const onDeleteRailIrgatGroup = useCallback(
+    (groupId: string) => void onDeleteIrgatGroup(groupId),
+    [onDeleteIrgatGroup],
+  );
+  const sidebarIrgatGroups = useMemo(
+    () => ({
+      activeId: openIrgatGroupId,
+      busy: activeIrgatGroups,
+      onOpen: onOpenIrgatGroup,
+      onDelete: onDeleteRailIrgatGroup,
+    }),
+    [
+      openIrgatGroupId,
+      activeIrgatGroups,
+      onOpenIrgatGroup,
+      onDeleteRailIrgatGroup,
+    ],
   );
   // The memoized sidebar only skips a streamed batch if this keeps identity.
-  const sidebarMonos = useMemo(
+  const sidebarIrgats = useMemo(
     () =>
       monosEnabled
         ? {
-            activeId: monoViewMono?.id,
-            states: monoRail.states,
-            unseenCounts: monoRail.unseen,
-            onOpen: onOpenRailMono,
-            onCreate: onCreateMono,
-            onDelete: onDeleteRailMono,
+            activeId: irgatViewIrgat?.id,
+            states: irgatRail.states,
+            unseenCounts: irgatRail.unseen,
+            onOpen: onOpenRailIrgat,
+            onCreate: onCreateIrgat,
+            onDelete: onDeleteRailIrgat,
             // Release notes come first; the intro waits its turn.
             introAvailable: !whatsNewVersion,
+            groups: sidebarIrgatGroups,
           }
         : undefined,
     [
       monosEnabled,
-      monoViewMono?.id,
-      monoRail,
-      onOpenRailMono,
-      onCreateMono,
-      onDeleteRailMono,
+      irgatViewIrgat?.id,
+      irgatRail,
+      onOpenRailIrgat,
+      onCreateIrgat,
+      onDeleteRailIrgat,
       whatsNewVersion,
+      sidebarIrgatGroups,
     ],
   );
   const onDismissUpdate = useCallback(() => setUpdateNotice(null), []);
@@ -12750,42 +14060,44 @@ function Workspace({
     settingsOpen ||
     inboxViewOpen ||
     notesViewOpen ||
-    automationsViewOpen;
+    automationsViewOpen ||
+    kanbanViewOpen ||
+    fleetViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
   const compactTitleNavigation =
     IS_MAC && compactRailActive && !chromeSurfaceOpen;
-  const compactTitleBar = compactTitleNavigation && !monoCovers;
+  const compactTitleBar = compactTitleNavigation && !irgatCovers;
   const workspaceTitleBar = (
     <TitleBar
-      // A Mono in full view stands apart from the project's tabs.
-      tabs={monoCovers ? NO_TITLE_TABS : titleTabs}
-      mono={
-        monoCovers && monoViewMono && monoViewSession
-          ? { look: monoLook(monoViewMono), state: monoState(monoViewSession) }
+      // A Irgat in full view stands apart from the project's tabs.
+      tabs={irgatCovers ? NO_TITLE_TABS : titleTabs}
+      irgat={
+        irgatCovers && irgatViewIrgat && irgatViewSession
+          ? { look: irgatLook(irgatViewIrgat), state: irgatState(irgatViewSession) }
           : undefined
       }
-      onToggleMonoOverview={
-        monoCovers
+      onToggleIrgatOverview={
+        irgatCovers && irgatViewIrgat
           ? () => {
-              setMonoActivity(null);
-                      setMonoOverviewOpen(!monoOverviewShown);
+              setIrgatActivity(null);
+                      setIrgatOverviewOpen(!irgatOverviewShown);
             }
           : undefined
       }
-      monoOverviewOpen={monoOverviewShown}
-      onOpenMonoSettings={
-        monoCovers && monoViewMono
-          ? () => setMonoSettingsFor(monoViewMono.id)
+      irgatOverviewOpen={irgatOverviewShown}
+      onOpenIrgatSettings={
+        irgatCovers && irgatViewIrgat
+          ? () => setIrgatSettingsFor(irgatViewIrgat.id)
           : undefined
       }
-      hideWindowControls={monoCovers && monoSidebarOpen && !!monoOverviewPanel}
-      activeId={monoViewSession ? "" : activeTabId}
+      hideWindowControls={irgatCovers && irgatSidebarOpen && !!irgatOverviewPanel}
+      activeId={irgatViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
       projectRailOpen={projectRailOpen}
       sessionSidebarOpen={sessionSidebarOpen}
       compactRail={compactTitleNavigation}
-      canGoBack={!!monoViewId || tabVisitNav.canBack}
+      canGoBack={!!irgatViewId || tabVisitNav.canBack}
       canGoForward={tabVisitNav.canForward}
       onGoBack={onRailBack}
       onGoForward={onRailForward}
@@ -12805,10 +14117,16 @@ function Workspace({
       onPinFile={onPinFile}
       recents={recents}
       onSelectProject={onSelectProject}
+      reviewBadge={
+        activeReviewScope ? (
+          <RedlineReviewBadge scope={activeReviewScope} />
+        ) : undefined
+      }
     />
   );
 
   return (
+    <ArtifactHostContext.Provider value={artifactHost}>
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
         <div
@@ -12844,6 +14162,7 @@ function Workspace({
               sessions={sidebarHistory}
               busySessionIds={busySessionIds}
               approvalSessionIds={approvalSessionIds}
+              interruptedSessionIds={interruptedSessionIds}
               activeSessionId={activeSessionId}
               status={historyFailed ? "error" : "idle"}
               pending={historyPending}
@@ -12869,13 +14188,15 @@ function Workspace({
               onFileMoved={onFileMoved}
               onFileDeleted={onFileDeleted}
               canGoBack={
-                !!monoViewId ||
+                !!irgatViewId ||
                 tabVisitNav.canBack ||
                 searchViewOpen ||
                 settingsOpen ||
                 inboxViewOpen ||
                 notesViewOpen ||
-                automationsViewOpen
+                automationsViewOpen ||
+                kanbanViewOpen ||
+                fleetViewOpen
               }
               canGoForward={tabVisitNav.canForward}
               onGoBack={onRailBack}
@@ -12900,8 +14221,10 @@ function Workspace({
               onSelectProject={onSelectProject}
               onOpenProject={pickProject}
               onRemoveProject={onRemoveProject}
-              monos={sidebarMonos}
-              monoViewActive={monoCovers}
+              irgats={sidebarIrgats}
+              irgatViewActive={irgatCovers}
+              artifactsPanel={artifactsPanel}
+              artifactCount={projectArtifacts.artifacts.length}
               onNew={onNew}
               openSessions={openProjectSessions}
               onNewTerminal={onNewTerminal}
@@ -12910,11 +14233,18 @@ function Workspace({
               onOpenInboxItem={onOpenLinkedWorkItem}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
+              onOpenKanban={onOpenKanban}
+              onOpenFleet={onOpenFleet}
+              fleetNeedsYou={fleetNeedsYouCount}
+              onSessionBoard={onSessionBoard}
+              boardSessionIds={kanbanSessions.linkedIds}
               onGoToFile={onGoToFile}
               searchActive={searchViewOpen}
               inboxActive={inboxViewOpen}
               notesActive={notesViewOpen}
               automationsActive={automationsViewOpen}
+              kanbanActive={kanbanViewOpen}
+              fleetActive={fleetViewOpen}
               notesEnabled={notesEnabled}
               projectRailOpen={projectRailOpen}
               compactProjectRail={compactProjectRail}
@@ -12941,7 +14271,9 @@ function Workspace({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
-                  automationsViewOpen
+                  automationsViewOpen ||
+                  kanbanViewOpen ||
+                  fleetViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
                 }
@@ -12950,7 +14282,9 @@ function Workspace({
                   settingsOpen ||
                   inboxViewOpen ||
                   notesViewOpen ||
-                  automationsViewOpen
+                  automationsViewOpen ||
+                  kanbanViewOpen ||
+                  fleetViewOpen
                 }
                 inert={
                   searchViewOpen ||
@@ -12958,6 +14292,8 @@ function Workspace({
                   inboxViewOpen ||
                   notesViewOpen ||
                   automationsViewOpen ||
+                  kanbanViewOpen ||
+                  fleetViewOpen ||
                   undefined
                 }
               >
@@ -13006,7 +14342,7 @@ function Workspace({
                         {projectTerminals.map((dock) => {
                           const show =
                             dock.open &&
-                            !monoCovers &&
+                            !irgatCovers &&
                             sameProjectPath(dock.projectPath, projectCwd);
                           return (
                             <div
@@ -13048,10 +14384,10 @@ function Workspace({
                               <div
                                 key={tab.id}
                                 aria-hidden={
-                                  tab.id !== activeTabId || monoCovers
+                                  tab.id !== activeTabId || irgatCovers
                                 }
                                 className={
-                                  tab.id === activeTabId && !monoCovers
+                                  tab.id === activeTabId && !irgatCovers
                                     ? "absolute inset-0 flex h-full min-h-0 flex-col"
                                     : "hidden"
                                 }
@@ -13062,7 +14398,7 @@ function Workspace({
                                     visible={
                                       tab.id === activeTabId &&
                                       !inboxViewOpen &&
-                                      !monoCovers
+                                      !irgatCovers
                                     }
                                     layout={tab.layout}
                                     sessions={sessions}
@@ -13074,22 +14410,23 @@ function Workspace({
                                     fileErrorCounts={fileErrorCounts}
                                     focusedId={
                                       tab.id === activeTabId &&
-                                      !monoViewId &&
+                                      !irgatViewId &&
                                       !inboxViewOpen &&
                                       !tab.diffFocused &&
                                       !projectTerminalFocused
                                         ? tab.focusedId
                                         : ""
                                     }
-                                    addToChatSessionId={
-                                      tab.id === activeTabId
-                                        ? active?.id
-                                        : undefined
-                                    }
+                                    addToChatSessionId={workspaceChatTarget({
+                                      tabId: tab.id,
+                                      activeTabId,
+                                      activeSessionId: active?.id,
+                                      irgatViewId,
+                                    })}
                                     composerFocused={
                                       composerFocused &&
                                       !projectTerminalFocused &&
-                                      !monoViewId
+                                      !irgatViewId
                                     }
                                     composerFocusToken={composerFocusToken}
                                     onSelectFile={onSelectFileSurface}
@@ -13115,13 +14452,13 @@ function Workspace({
                               </div>
                             ))}
                             {sessions
-                              .filter((session) => isMonoSession(session.id))
+                              .filter((session) => isIrgatSession(session.id))
                               .map((session) => {
-                                const visible = monoViewId === session.id;
+                                const visible = irgatViewId === session.id;
                                 return (
                                   <div
                                     key={session.id}
-                                    data-mono-view={session.id}
+                                    data-irgat-view={session.id}
                                     aria-hidden={!visible}
                                     inert={!visible || undefined}
                                     className={
@@ -13137,7 +14474,7 @@ function Workspace({
                                       focused={
                                         visible &&
                                         !projectTerminalFocused &&
-                                        !monoShownSessionActive
+                                        !irgatShownSessionActive
                                       }
                                       inSplit={false}
                                       addToChatTarget={visible}
@@ -13145,27 +14482,48 @@ function Workspace({
                                         visible &&
                                         composerFocused &&
                                         !projectTerminalFocused &&
-                                        !monoShownSessionActive
+                                        !irgatShownSessionActive
                                       }
                                       composerFocusToken={composerFocusToken}
-                                      onShowMonoActivity={onShowMonoActivity}
-                                      onOpenArtifact={onOpenMonoArtifact}
-                                      onOpenDiff={onOpenMonoDiff}
-                                      onCommitChanges={onCommitMonoChanges}
-                                      monoActivityTurnId={
-                                        selectedMonoActivity?.turnId
+                                      onShowIrgatActivity={onShowIrgatActivity}
+                                      onOpenArtifact={onOpenIrgatArtifact}
+                                      onOpenDiff={onOpenIrgatDiff}
+                                      onCommitChanges={onCommitIrgatChanges}
+                                      irgatActivityTurnId={
+                                        selectedIrgatActivity?.turnId
                                       }
-                                      onOpenMonoSession={onOpenMonoSession}
-                                      monoLaunchedSessions={
+                                      onOpenIrgatSession={onOpenIrgatSession}
+                                      irgatLaunchedSessions={
                                         visible
-                                          ? monoLaunchedSessions
+                                          ? irgatLaunchedSessions
                                           : undefined
                                       }
-                                      openMonoSessionId={shownMonoSessionId}
+                                      openIrgatSessionId={shownIrgatSessionId}
                                     />
                                   </div>
                                 );
                               })}
+                            {openIrgatGroupId ? (
+                              <div
+                                data-irgat-group-pane={openIrgatGroupId}
+                                className="absolute inset-0 flex h-full min-h-0 flex-col"
+                              >
+                                <IrgatGroupView
+                                  key={openIrgatGroupId}
+                                  groupId={openIrgatGroupId}
+                                  runner={irgatGroups}
+                                  liveSeat={openIrgatGroupSeat}
+                                  visible={
+                                    !projectTerminalFocused && composerFocused
+                                  }
+                                  focusToken={composerFocusToken}
+                                  onApproval={onApproval}
+                                  onQuestionReply={onQuestionReply}
+                                  onQuestionInteraction={onQuestionInteraction}
+                                  onOpenFile={onOpenFile}
+                                />
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -13187,7 +14545,9 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
-                            !monoViewId &&
+                            !kanbanViewOpen &&
+                            !fleetViewOpen &&
+                            !irgatViewId &&
                             activeLinkedWorkItemPanel?.sessionId ===
                               panel.sessionId
                           }
@@ -13196,11 +14556,27 @@ function Workspace({
                           }
                         />
                       ))}
+                      {browserMounted ? (
+                        <BrowserPanel
+                          visible={
+                            browserOpen &&
+                            !searchViewOpen &&
+                            !settingsOpen &&
+                            !inboxViewOpen &&
+                            !notesViewOpen &&
+                            !automationsViewOpen &&
+                            !kanbanViewOpen &&
+                            !fleetViewOpen
+                          }
+                          onClose={() => setBrowserOpen(false)}
+                          openRequest={browserRequest}
+                        />
+                      ) : null}
                     </main>
                   </div>
-                  {monoCovers ? monoOverviewPanel : null}
-                  {monoSettingsDialog}
-                  {monoCovers ? monoActivityPanel : null}
+                  {irgatCovers ? irgatOverviewPanel : null}
+                  {irgatSettingsDialog}
+                  {irgatCovers ? irgatActivityPanel : null}
                 </div>
               </div>
               {searchViewOpen ? (
@@ -13224,6 +14600,7 @@ function Workspace({
                   onOpenProject={onSelectProject}
                 />
               ) : null}
+              <SessionReferenceHost onOpenSession={openReferencedSession} />
               <div className="hidden" aria-hidden>
                 {sessions
                   .filter((session) => session.inboxAsk)
@@ -13272,6 +14649,7 @@ function Workspace({
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
                   cwd={projectCwd}
+                  chatTargets={noteChatTargets}
                   recents={recents}
                   onClose={onLeaveNotes}
                   onToggleSidebar={onToggleSidebar}
@@ -13289,6 +14667,45 @@ function Workspace({
                     launchAutomation(automation, run, true)
                   }
                   onOpenSession={onOpenAutomationSession}
+                />
+              ) : null}
+              {kanbanViewOpen ? (
+                <KanbanView
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  cwd={boardCwd}
+                  recents={recents}
+                  focusRequest={kanbanFocus}
+                  liveSessions={kanbanSessions.live}
+                  onOpenTerminal={onShowTerminal}
+                  onStartSession={onStartCardSession}
+                  onOpenSession={onOpenAutomationSession}
+                  onClose={onLeaveKanban}
+                  onToggleSidebar={onToggleSidebar}
+                />
+              ) : null}
+              {fleetViewOpen ? (
+                <FleetView
+                  sessions={promptableSessions}
+                  unseenFinishedIds={unseenFinishedIds}
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  onClose={onLeaveFleet}
+                  onToggleSidebar={onToggleSidebar}
+                  onOpenSession={onOpenFleetSession}
+                  onApproval={onApproval}
+                  onQuestionReply={onQuestionReply}
+                  onQuestionInteraction={onQuestionInteraction}
+                  habitApprovals={habitApprovals}
+                  onHabitApproval={(entry, decision) =>
+                    void decideHabitApproval(
+                      entry.irgatId,
+                      entry.habit.id,
+                      decision,
+                    ).catch((error) =>
+                      console.warn("Could not answer the habit", error),
+                    )
+                  }
                 />
               ) : null}
               {settingsOpen ? (
@@ -13323,35 +14740,43 @@ function Workspace({
               inboxViewOpen ||
               notesViewOpen ||
               automationsViewOpen ||
-              settingsOpen ||
-              monoCovers ? null : (
+              kanbanViewOpen ||
+              fleetViewOpen ||
+              settingsOpen ? null : irgatCovers ? (
+                // The Irgat's composer already shows its usage, and it has no
+                // terminal of its own, so its footer carries the browser alone.
+                <UsageFooter
+                  providers={NO_USAGE_PROVIDERS}
+                  browserOpen={browserOpen}
+                  onToggleBrowser={onToggleBrowser}
+                />
+              ) : (
                 <UsageFooter
                   providers={usageProviders}
                   session={usageSession}
+                  adhd={{ session: active }}
                   project={active?.cwd ?? projectCwd}
                   onSelectAccount={onSelectProviderAccount}
                   onManageAccounts={() =>
                     openSettings("providers", "provider-accounts")
                   }
-                  // A Mono in full view has no terminal of its own.
-                  terminals={monoCovers ? undefined : runningTerminals}
-                  terminalOpen={!monoCovers && runningTerminalOpen}
+                  terminals={runningTerminals}
+                  terminalOpen={runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
-                      ? onNewTerminal
-                      : undefined
+                    isLocalProject(projectCwd) ? onNewTerminal : undefined
                   }
                   onShowTerminal={
-                    !monoCovers && isLocalProject(projectCwd)
+                    isLocalProject(projectCwd)
                       ? onShowProjectTerminal
                       : undefined
                   }
                   projectTerminalActive={
-                    !monoCovers &&
                     !!currentProjectDock &&
                     currentProjectDock.pane.files.length > 0
                   }
+                  browserOpen={browserOpen}
+                  onToggleBrowser={onToggleBrowser}
                 />
               )}
             </div>
@@ -13382,9 +14807,18 @@ function Workspace({
               }}
             />
           )}
-          <HarnessUpdateNotice
+          <InboxResurfaceNotices
             topOffset={
               12 + (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0)
+            }
+            onOpenInbox={onOpenInbox}
+            onHeightChange={setInboxResurfaceHeight}
+          />
+          <HarnessUpdateNotice
+            topOffset={
+              12 +
+              (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
+              (inboxResurfaceHeight ? inboxResurfaceHeight + 8 : 0)
             }
             onHeightChange={setHarnessUpdateHeight}
           />
@@ -13393,6 +14827,7 @@ function Workspace({
             topOffset={
               12 +
               (reminderNoticesHeight ? reminderNoticesHeight + 8 : 0) +
+              (inboxResurfaceHeight ? inboxResurfaceHeight + 8 : 0) +
               (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
             }
             onFocusSession={onOpenApprovalSession}
@@ -13414,6 +14849,7 @@ function Workspace({
               onClose={() => setWhatsNewVersion(null)}
             />
           ) : null}
+          <UpdateDialog onOpenWhatsNew={onOpenWhatsNew} />
           {remoteProjectDialogOpen ? (
             <AddRemoteProjectDialog
               onCancel={() => setRemoteProjectDialogOpen(false)}
@@ -13434,6 +14870,7 @@ function Workspace({
         <TranscriptPoolOutlet pool={transcriptPool} />
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
+    </ArtifactHostContext.Provider>
   );
 }
 function conversationTitle(session: Session): string {
@@ -13557,6 +14994,7 @@ function toTitleTab(
     seenKeys.add(key);
     files.push(
       file.plan?.title?.trim() ||
+        file.artifact?.title.trim() ||
         (file.releaseNotes
           ? releaseNotesTitle(file.releaseNotes.version)
           : file.terminal

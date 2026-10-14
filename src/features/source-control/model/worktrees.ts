@@ -17,6 +17,10 @@ export type Worktree = {
   dirty: boolean | null;
   unpushed: number | null;
   sessionIds: string[];
+  /** `PORT` for processes in this linked worktree, once assigned. */
+  port?: number | null;
+  /** Setup command started in the background when this worktree was created. */
+  setupCommand?: string | null;
 };
 export type Worktrees = { worktrees: Worktree[]; defaultRoot: string };
 
@@ -83,7 +87,7 @@ export function orchestrationWorktreeBranchName(id: string): string {
 export function namedWorktreeBranch(fragment: string): string | null {
   const clean = fragment
     .trim()
-    .replace(/^(?:mc|monocode)\/+/, "")
+    .replace(/^(?:mc|irgat|monocode)\/+/, "")
     .replace(/^\/+|\/+$/g, "");
   return clean ? `mc/${clean}` : null;
 }

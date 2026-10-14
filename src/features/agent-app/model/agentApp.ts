@@ -45,24 +45,32 @@ import { sessionConversationPage, type SessionReadOptions } from "./sessionConve
 import {
   CARD_FIELDS,
   parseCard,
-  type MonoCard,
-} from "../../monos/model/monoCards";
+  type IrgatCard,
+} from "../../irgats/model/irgatCards";
 import {
   HABITS_MAX,
   checkHabitsNow,
   habitRunningSince,
   habitSchedule,
   habitScheduleLabel,
+  HABIT_DELAY_MAX_SECONDS,
   newHabit,
   nextHabitRunAt,
   type Habit,
-} from "../../monos/model/monoHabits";
+  type HabitCondition,
+} from "../../irgats/model/irgatHabits";
+import {
+  habitConditionError,
+  pauseHabit,
+  setHabitGuards,
+  type HabitGuardSettings,
+} from "../../irgats/model/habitGuards";
 import {
   memoryWithinBudget,
-  MonoFileConflict,
+  IrgatFileConflict,
   type AgentFilePath,
-  type MonoFiles,
-} from "../../monos/model/monoFiles";
+  type IrgatFiles,
+} from "../../irgats/model/irgatFiles";
 import {
   addMemoryEntry,
   archiveMemoryEntries,
@@ -74,7 +82,7 @@ import {
   sinceDate,
   supersedeMemoryEntry,
   topicName,
-} from "../../monos/model/monoMemory";
+} from "../../irgats/model/irgatMemory";
 
 export type AppSessionListing = {
   id: string;
@@ -96,7 +104,7 @@ export type AgentAppHost = {
     launch: QuickLaunch,
     id: string,
     placement?: AppSessionPlacement,
-    notifyMonoId?: string,
+    notifyIrgatId?: string,
   ): Promise<void>;
   sessions(cwd: string): Promise<AppSessionListing[]>;
   session(id: string): Promise<Session | null>;
@@ -105,7 +113,7 @@ export type AgentAppHost = {
     id: string,
     prompt: string,
     requestId: string,
-    notifyMonoId?: string,
+    notifyIrgatId?: string,
   ): Promise<{ alreadySubmitted: boolean }>;
   draft(
     id: string,
@@ -128,38 +136,38 @@ export type AgentAppHost = {
   artifact?(id: string): Promise<Artifact | null>;
   saveArtifact?(artifact: ArtifactUpsert): Promise<Artifact>;
   postArtifact?(sourceSessionId: string, card: ArtifactCard): void | Promise<void>;
-  /** Whether the session is a Mono's own conversation, which owns memory. */
-  isMono(sessionId: string): boolean;
+  /** Whether the session is a Irgat's own conversation, which owns memory. */
+  isIrgat(sessionId: string): boolean;
   /**
-   * The Mono a session works for: its own conversation or one of its habit
+   * The Irgat a session works for: its own conversation or one of its habit
    * runs. Its projects are the ones it may name with "project".
    */
-  monoOf?(sessionId: string): {
+  irgatOf?(sessionId: string): {
     id: string;
     projects: readonly string[];
     showStartedSessionsInSidebar?: boolean;
     /** Files the sessions it starts into a folder named after it. */
     folder?: { name: string; color: string };
   } | undefined;
-  /** A hidden run of one of a Mono's habits: it may remember, not schedule. */
+  /** A hidden run of one of a Irgat's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
-  /** Puts a card in the Mono's chat, or holds it for a habit run's report. */
-  postCard?(sourceSessionId: string, card: MonoCard): void;
+  /** Puts a card in the Irgat's chat, or holds it for a habit run's report. */
+  postCard?(sourceSessionId: string, card: IrgatCard): void;
   habits?: {
-    load(monoId: string): Promise<Habit[]>;
+    load(irgatId: string): Promise<Habit[]>;
     update<T>(
-      monoId: string,
+      irgatId: string,
       change: (habits: Habit[]) => { habits: Habit[]; result: T },
     ): Promise<T>;
   };
-  agentFiles(monoId: string): Promise<MonoFiles>;
+  agentFiles(irgatId: string): Promise<IrgatFiles>;
   readAgentFile(
-    monoId: string,
+    irgatId: string,
     path: AgentFilePath,
   ): Promise<{ text: string | null; hash: string }>;
-  /** Throws `MonoFileConflict` when the file moved past `hash`. */
+  /** Throws `IrgatFileConflict` when the file moved past `hash`. */
   writeAgentFile(
-    monoId: string,
+    irgatId: string,
     path: AgentFilePath,
     text: string,
     hash: string,
@@ -215,8 +223,30 @@ const FIELDS = new Map<string, readonly string[]>([
   ["memory.replace", ["find", "fact", "topic", "until"]],
   ["memory.remove", ["find", "topic"]],
   ["habits.list", []],
-  ["habits.add", ["name", "instructions", "schedule"]],
-  ["habits.update", ["id", "name", "instructions", "schedule", "enabled"]],
+  [
+    "habits.add",
+    [
+      "name",
+      "instructions",
+      "schedule",
+      "requestApproval",
+      "ifCondition",
+      "delaySeconds",
+    ],
+  ],
+  [
+    "habits.update",
+    [
+      "id",
+      "name",
+      "instructions",
+      "schedule",
+      "enabled",
+      "requestApproval",
+      "ifCondition",
+      "delaySeconds",
+    ],
+  ],
   ["habits.run", ["id"]],
   ["habits.remove", ["id"]],
   ["chat.card", [...CARD_FIELDS]],
@@ -249,17 +279,17 @@ function completionRecipient(
   source: Session,
   input: Record<string, unknown>,
   host: AgentAppHost,
-  defaultForMono = false,
+  defaultForIrgat = false,
 ): string | undefined {
   const requested = input.notifyOnComplete;
   if (requested !== undefined && typeof requested !== "boolean")
     throw new Error("notifyOnComplete must be a boolean");
-  const isMono = host.isMono(source.id);
-  if (!(requested ?? (defaultForMono && isMono && !input.draft)))
+  const isIrgat = host.isIrgat(source.id);
+  if (!(requested ?? (defaultForIrgat && isIrgat && !input.draft)))
     return undefined;
-  if (!isMono)
+  if (!isIrgat)
     throw new Error(
-      "Completion notifications are only available in a Mono's chat",
+      "Completion notifications are only available in a Irgat's chat",
     );
   if (input.draft === true)
     throw new Error("An unsent draft cannot send a completion notification");
@@ -293,7 +323,7 @@ function noteTags(value: unknown): string[] {
 }
 
 /**
- * The project an action works in. A session works in its own; a Mono works on
+ * The project an action works in. A session works in its own; a Irgat works on
  * several, so it names one with "project" (its path or name), and may leave it
  * out when it has one project or is in one of its own.
  */
@@ -302,44 +332,44 @@ function requireProject(
   input: Record<string, unknown>,
   host: AgentAppHost,
 ): string {
-  const mono = host.monoOf?.(source.id);
+  const irgat = host.irgatOf?.(source.id);
   const named = optionalString(input.project, "project", 4096);
-  if (!mono) {
-    if (named) throw new Error("project is only for a Mono");
+  if (!irgat) {
+    if (named) throw new Error("project is only for a Irgat");
     if (!looksLikeProject(source.cwd))
       throw new Error("Choose a project folder in this session first");
     return source.cwd;
   }
   const choices = () =>
-    mono.projects.length
-      ? mono.projects.map((path) => `${projectName(path)} (${path})`).join(", ")
+    irgat.projects.length
+      ? irgat.projects.map((path) => `${projectName(path)} (${path})`).join(", ")
       : "none yet; the user adds them from your details panel";
   if (named) {
-    const byPath = mono.projects.find(
+    const byPath = irgat.projects.find(
       (path) => pathKey(path) === pathKey(named),
     );
-    const byName = mono.projects.filter(
+    const byName = irgat.projects.filter(
       (path) => projectName(path) === named,
     );
     const match = byPath ?? (byName.length === 1 ? byName[0] : undefined);
     if (!match) throw new Error(`Not one of your projects. Yours: ${choices()}`);
     return match;
   }
-  const own = mono.projects.find(
+  const own = irgat.projects.find(
     (path) => pathKey(path) === pathKey(source.cwd),
   );
   if (own) return own;
-  if (mono.projects.length === 1) return mono.projects[0];
+  if (irgat.projects.length === 1) return irgat.projects[0];
   throw new Error(`Pass "project" to choose one. Yours: ${choices()}`);
 }
 
-/** A Mono's chat lives outside its projects; project access follows its roster. */
+/** A Irgat's chat lives outside its projects; project access follows its roster. */
 export function canAccessAgentAppProject(
   source: Session,
   cwd: string,
-  monoProjects?: readonly string[],
+  irgatProjects?: readonly string[],
 ): boolean {
-  return (monoProjects ?? [source.cwd]).some(
+  return (irgatProjects ?? [source.cwd]).some(
     (project) => pathKey(project) === pathKey(cwd),
   );
 }
@@ -372,10 +402,10 @@ export function notePreview(body: string): string {
 }
 
 /**
- * Puts a session a Mono started into the sidebar folder named after it,
+ * Puts a session a Irgat started into the sidebar folder named after it,
  * making that folder in its color the first time.
  */
-function fileInMonoFolder(
+function fileInIrgatFolder(
   cwd: string,
   sessionId: string,
   folder: { name: string; color: string },
@@ -407,7 +437,7 @@ function startLaunch(
     throw new Error("Unknown harness; run models.list for available providers");
   const chosenHarness = harness as HarnessId;
   if (!isHarnessAvailable(chosenHarness))
-    throw new Error(`${chosenHarness} is not available in MonoCode`);
+    throw new Error(`${chosenHarness} is not available in Irgatos`);
   const requestedModel = optionalString(input.model, "model");
   const model = requestedModel
     ? modelsFor(chosenHarness).find((entry) => entry.id === requestedModel)
@@ -469,7 +499,7 @@ function startLaunch(
   return {
     cwd,
     prompt,
-    ...(host.monoOf?.(source.id)?.showStartedSessionsInSidebar !== true
+    ...(host.irgatOf?.(source.id)?.showStartedSessionsInSidebar !== true
       ? { sidebarHidden: true }
       : {}),
     ...(draft ? { draft: true } : {}),
@@ -482,8 +512,8 @@ function startLaunch(
       ...(requestedSettings as Record<string, string>),
     }),
     runtimeMode: runtimeMode as Session["runtimeMode"],
-    // A Mono delegates work without navigating the user out of their chat.
-    reveal: host.isMono(source.id) ? false : reveal,
+    // A Irgat delegates work without navigating the user out of their chat.
+    reveal: host.isIrgat(source.id) ? false : reveal,
     workspaceMode,
     ...(workspaceMode === "current" && currentWorktree
       ? { worktreeCwd: currentWorktree }
@@ -504,13 +534,13 @@ async function handleSoul(
   input: Record<string, unknown>,
   host: AgentAppHost,
 ): Promise<unknown> {
-  const monoId = host.isMono(source.id)
-    ? host.monoOf?.(source.id)?.id
+  const irgatId = host.isIrgat(source.id)
+    ? host.irgatOf?.(source.id)?.id
     : undefined;
-  if (!monoId)
-    throw new Error("Only a Mono's own conversation can manage its soul");
+  if (!irgatId)
+    throw new Error("Only a Irgat's own conversation can manage its soul");
   if (action === "soul.read") {
-    const files = await host.agentFiles(monoId);
+    const files = await host.agentFiles(irgatId);
     return { file: "SOUL.md", text: files.soul, hash: files.soulHash };
   }
   if (typeof input.text !== "string" || input.text.length > 240_000)
@@ -518,14 +548,14 @@ async function handleSoul(
   const expectedHash = requiredString(input.expectedHash, "expectedHash", 128);
   try {
     const hash = await host.writeAgentFile(
-      monoId,
+      irgatId,
       "SOUL.md",
       input.text,
       expectedHash,
     );
     return { file: "SOUL.md", updated: true, hash };
   } catch (error) {
-    if (error instanceof MonoFileConflict)
+    if (error instanceof IrgatFileConflict)
       throw new Error(
         "SOUL.md changed since you read it. Run soul.read and reapply the user's requested changes to the current text before calling soul.update again.",
       );
@@ -539,12 +569,12 @@ async function handleSoul(
  */
 async function editAgentFile<T>(
   host: AgentAppHost,
-  monoId: string,
+  irgatId: string,
   path: AgentFilePath,
   edit: (text: string) => { text: string; result: T },
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
-    const current = await host.readAgentFile(monoId, path);
+    const current = await host.readAgentFile(irgatId, path);
     const fallback =
       current.text == null && path !== "MEMORY.md"
         ? `# ${path.slice("memory/".length, -".md".length)}\n\n`
@@ -552,10 +582,10 @@ async function editAgentFile<T>(
     const next = edit(current.text ?? fallback);
     try {
       if (next.text !== (current.text ?? ""))
-        await host.writeAgentFile(monoId, path, next.text, current.hash);
+        await host.writeAgentFile(irgatId, path, next.text, current.hash);
       return next.result;
     } catch (error) {
-      if (!(error instanceof MonoFileConflict) || attempt >= 2)
+      if (!(error instanceof IrgatFileConflict) || attempt >= 2)
         throw error;
     }
   }
@@ -568,21 +598,21 @@ async function editAgentFile<T>(
  */
 async function keepMemoryInBudget(
   host: AgentAppHost,
-  monoId: string,
+  irgatId: string,
   keep: string,
   date: string,
 ): Promise<string[]> {
-  const memory = await host.readAgentFile(monoId, "MEMORY.md");
+  const memory = await host.readAgentFile(irgatId, "MEMORY.md");
   const fitted = fitMemoryBudget(memory.text ?? "", keep, date);
   if (!fitted.moved.length) return [];
-  await editAgentFile(host, monoId, "memory/archive.md", (archive) => ({
+  await editAgentFile(host, irgatId, "memory/archive.md", (archive) => ({
     text: archiveMemoryEntries(archive, fitted.moved, date),
     result: undefined,
   }));
   try {
-    await host.writeAgentFile(monoId, "MEMORY.md", fitted.text, memory.hash);
+    await host.writeAgentFile(irgatId, "MEMORY.md", fitted.text, memory.hash);
   } catch (error) {
-    if (!(error instanceof MonoFileConflict)) throw error;
+    if (!(error instanceof IrgatFileConflict)) throw error;
     return [];
   }
   return fitted.moved;
@@ -594,15 +624,15 @@ async function handleMemory(
   input: Record<string, unknown>,
   host: AgentAppHost,
 ): Promise<unknown> {
-  const monoId = host.monoOf?.(source.id)?.id;
-  if (!monoId) throw new Error("Memory belongs to the Mono's conversation");
+  const irgatId = host.irgatOf?.(source.id)?.id;
+  if (!irgatId) throw new Error("Memory belongs to the Irgat's conversation");
   const path = memoryPath(input.topic);
   const date = memoryDate(host.now?.() ?? new Date());
   const until = optionalString(input.until, "until", 10);
   const report = async (result: Record<string, unknown>, keep?: string) => {
     const moved =
       path === "MEMORY.md" && keep
-        ? await keepMemoryInBudget(host, monoId, keep, date)
+        ? await keepMemoryInBudget(host, irgatId, keep, date)
         : [];
     return {
       file: path,
@@ -625,7 +655,7 @@ async function handleMemory(
               requiredString(input.since, "since", 20),
               host.now?.() ?? new Date(),
             );
-      const files = await host.agentFiles(monoId);
+      const files = await host.agentFiles(irgatId);
       const paths: AgentFilePath[] = [
         "MEMORY.md",
         ...files.topics.map((topic) => `memory/${topic}.md` as const),
@@ -637,7 +667,7 @@ async function handleMemory(
           text:
             file === "MEMORY.md"
               ? files.memory
-              : ((await host.readAgentFile(monoId, file)).text ?? ""),
+              : ((await host.readAgentFile(irgatId, file)).text ?? ""),
         })),
       );
       const hits = searchMemory(texts, query, { since });
@@ -647,11 +677,11 @@ async function handleMemory(
     }
     case "memory.read": {
       if (path !== "MEMORY.md") {
-        const topic = await host.readAgentFile(monoId, path);
+        const topic = await host.readAgentFile(irgatId, path);
         if (topic.text == null) throw new Error("No such memory topic");
         return { file: path, text: topic.text };
       }
-      const files = await host.agentFiles(monoId);
+      const files = await host.agentFiles(irgatId);
       const budget = memoryWithinBudget(files.memory);
       return {
         file: path,
@@ -663,7 +693,7 @@ async function handleMemory(
     }
     case "memory.add": {
       const entry = memoryEntry(requiredString(input.fact, "fact"), date, until);
-      const added = await editAgentFile(host, monoId, path, (text) => {
+      const added = await editAgentFile(host, irgatId, path, (text) => {
         const next = addMemoryEntry(text, entry);
         return { text: next.text, result: next.added };
       });
@@ -674,7 +704,7 @@ async function handleMemory(
     case "memory.replace": {
       const find = requiredString(input.find, "find", 2000);
       const entry = memoryEntry(requiredString(input.fact, "fact"), date, until);
-      await editAgentFile(host, monoId, path, (text) => ({
+      await editAgentFile(host, irgatId, path, (text) => ({
         text: supersedeMemoryEntry(text, find, entry, date),
         result: undefined,
       }));
@@ -682,7 +712,7 @@ async function handleMemory(
     }
     case "memory.remove": {
       const find = requiredString(input.find, "find", 2000);
-      const removed = await editAgentFile(host, monoId, path, (text) => {
+      const removed = await editAgentFile(host, irgatId, path, (text) => {
         const next = removeMemoryEntry(text, find);
         return { text: next.text, result: next.removed };
       });
@@ -701,6 +731,18 @@ function habitView(habit: Habit) {
     enabled: habit.enabled,
     nextRun: habit.enabled ? new Date(habit.nextRunAt).toLocaleString() : null,
     ...(habitRunningSince(habit.id) != null ? { running: true } : {}),
+    ...(habit.requestApproval ? { requestApproval: true } : {}),
+    ...(habit.ifCondition ? { ifCondition: habit.ifCondition } : {}),
+    ...(habit.delaySeconds ? { delaySeconds: habit.delaySeconds } : {}),
+    // The token is the user's secret; the agent only learns that one exists.
+    ...(habit.triggerToken ? { hasTrigger: true } : {}),
+    ...(habit.approval?.state === "pending"
+      ? { waiting: "for the user's approval" }
+      : habit.delayedUntil && habit.delayedUntil > Date.now()
+        ? {
+            waiting: `until ${new Date(habit.delayedUntil).toLocaleString()}`,
+          }
+        : {}),
     ...(habit.lastRunAt
       ? {
           lastRun: new Date(habit.lastRunAt).toLocaleString(),
@@ -708,6 +750,67 @@ function habitView(habit: Habit) {
           ...(habit.lastError ? { lastError: habit.lastError } : {}),
         }
       : {}),
+  };
+}
+
+/**
+ * Guards from the CLI over the habit's current ones. An agent can make a
+ * habit ask first but cannot stop it asking: approval is the user's call.
+ */
+function habitGuardsInput(
+  input: Record<string, unknown>,
+  current?: Habit,
+): HabitGuardSettings | undefined {
+  if (
+    input.requestApproval === undefined &&
+    input.ifCondition === undefined &&
+    input.delaySeconds === undefined
+  )
+    return undefined;
+  if (
+    input.requestApproval !== undefined &&
+    typeof input.requestApproval !== "boolean"
+  )
+    throw new Error("requestApproval must be true or false");
+  if (input.requestApproval === false && current?.requestApproval)
+    throw new Error(
+      "Only the user can stop a habit asking first, from the habit's page",
+    );
+  let ifCondition: HabitCondition | null = current?.ifCondition ?? null;
+  if (input.ifCondition === null) ifCondition = null;
+  else if (input.ifCondition !== undefined) {
+    const raw = input.ifCondition as Record<string, unknown> | undefined;
+    if (raw?.kind === "shell" && typeof raw.command === "string")
+      ifCondition = { kind: "shell", command: raw.command };
+    else if (raw?.kind === "expression" && typeof raw.expression === "string")
+      ifCondition = { kind: "expression", expression: raw.expression };
+    else
+      throw new Error(
+        'ifCondition must be null, {"kind":"shell","command":"..."} or {"kind":"expression","expression":"..."}',
+      );
+    const error = habitConditionError(ifCondition);
+    if (error) throw new Error(`ifCondition: ${error}`);
+  }
+  let delaySeconds = current?.delaySeconds ?? 0;
+  if (input.delaySeconds !== undefined) {
+    if (
+      typeof input.delaySeconds !== "number" ||
+      !Number.isFinite(input.delaySeconds) ||
+      input.delaySeconds < 0 ||
+      input.delaySeconds > HABIT_DELAY_MAX_SECONDS
+    )
+      throw new Error(
+        `delaySeconds must be 0 to ${HABIT_DELAY_MAX_SECONDS} (a day)`,
+      );
+    delaySeconds = input.delaySeconds;
+  }
+  return {
+    requestApproval:
+      typeof input.requestApproval === "boolean"
+        ? input.requestApproval
+        : !!current?.requestApproval,
+    ifCondition,
+    delaySeconds,
   };
 }
 
@@ -719,11 +822,11 @@ async function handleHabits(
 ): Promise<unknown> {
   const habits = host.habits;
   // A habit's own run cannot schedule more runs.
-  const monoId = host.isMono(source.id)
-    ? host.monoOf?.(source.id)?.id
+  const irgatId = host.isIrgat(source.id)
+    ? host.irgatOf?.(source.id)?.id
     : undefined;
-  if (!habits || !monoId)
-    throw new Error("Only a Mono's own conversation can manage its habits");
+  if (!habits || !irgatId)
+    throw new Error("Only a Irgat's own conversation can manage its habits");
   const now = host.now?.() ?? new Date();
   const find = (list: Habit[]) => {
     const id = requiredString(input.id, "id", 128);
@@ -733,18 +836,17 @@ async function handleHabits(
   };
   switch (action) {
     case "habits.list":
-      return { habits: (await habits.load(monoId)).map(habitView) };
+      return { habits: (await habits.load(irgatId)).map(habitView) };
     case "habits.add": {
       const name = requiredString(input.name, "name", 80);
       const instructions = requiredString(input.instructions, "instructions", 4_000);
       const schedule = habitSchedule(input.schedule);
-      const habit = await habits.update(monoId, (list) => {
+      const guards = habitGuardsInput(input);
+      const habit = await habits.update(irgatId, (list) => {
         if (list.length >= HABITS_MAX)
-          throw new Error(`A Mono can have at most ${HABITS_MAX} habits`);
-        const created = newHabit(
-          { name, instructions, schedule },
-          now.getTime(),
-        );
+          throw new Error(`A Irgat can have at most ${HABITS_MAX} habits`);
+        const plain = newHabit({ name, instructions, schedule }, now.getTime());
+        const created = guards ? setHabitGuards(plain, guards) : plain;
         return { habits: [...list, created], result: created };
       });
       return { habit: habitView(habit) };
@@ -769,10 +871,14 @@ async function handleHabits(
       };
       if (input.enabled !== undefined && typeof input.enabled !== "boolean")
         throw new Error("enabled must be true or false");
-      const habit = await habits.update(monoId, (list) => {
+      const habit = await habits.update(irgatId, (list) => {
         const current = find(list);
+        const guards = habitGuardsInput(input, current);
+        const guarded = guards ? setHabitGuards(current, guards) : current;
         const next: Habit = {
-          ...current,
+          ...(input.enabled === false && current.enabled
+            ? pauseHabit(guarded)
+            : guarded),
           ...patch,
           ...(input.enabled === undefined
             ? {}
@@ -794,7 +900,7 @@ async function handleHabits(
         throw new Error(
           `That habit is already running (started ${new Date(running).toLocaleTimeString()}); its result will be posted here when it ends`,
         );
-      const habit = await habits.update(monoId, (list) => {
+      const habit = await habits.update(irgatId, (list) => {
         const next = { ...find(list), runRequested: true };
         return {
           habits: list.map((entry) => (entry.id === next.id ? next : entry)),
@@ -808,7 +914,7 @@ async function handleHabits(
       };
     }
     case "habits.remove": {
-      const removed = await habits.update(monoId, (list) => {
+      const removed = await habits.update(irgatId, (list) => {
         const habit = find(list);
         return {
           habits: list.filter((entry) => entry.id !== habit.id),
@@ -835,8 +941,8 @@ async function handleArtifacts(
   input: Record<string, unknown>,
   host: AgentAppHost,
 ): Promise<unknown> {
-  if (!(host.isMono(source.id) || host.isHabitRun?.(source.id)))
-    throw new Error("Only a Mono can create or read artifacts");
+  if (!(host.isIrgat(source.id) || host.isHabitRun?.(source.id)))
+    throw new Error("Only a Irgat can create or read artifacts");
   if (!host.artifact) throw new Error("Artifacts are unavailable");
   if (action === "artifacts.list") {
     if (!host.artifacts) throw new Error("Artifacts are unavailable");
@@ -956,14 +1062,14 @@ export async function handleAgentApp(
   if (action === "chat.card") {
     if (
       !host.postCard ||
-      !(host.isMono(source.id) || host.isHabitRun?.(source.id))
+      !(host.isIrgat(source.id) || host.isHabitRun?.(source.id))
     )
-      throw new Error("Only a Mono can put cards in its chat");
+      throw new Error("Only a Irgat can put cards in its chat");
     const card = parseCard(input);
     host.postCard(source.id, card);
     return {
       posted: card.type,
-      note: host.isMono(source.id)
+      note: host.isIrgat(source.id)
         ? "It shows in the chat where you are in your reply."
         : "It goes out with your report, after its text; if you stay quiet, it is dropped.",
     };
@@ -992,7 +1098,7 @@ export async function handleAgentApp(
     }
     case "sessions.read": {
       const id = requiredString(input.sessionId, "sessionId", 256);
-      const target = id === source.id && host.isMono?.(id)
+      const target = id === source.id && host.isIrgat?.(id)
         ? source : await projectSession(source, id, input, host);
       const options = {
         before: optionalString(input.before, "before", 256),
@@ -1004,7 +1110,7 @@ export async function handleAgentApp(
     case "sessions.send": {
       const id = requiredString(input.sessionId, "sessionId", 256);
       const prompt = agentPrompt(input.prompt);
-      const notifyMonoId = completionRecipient(source, input, host);
+      const notifyIrgatId = completionRecipient(source, input, host);
       if (id === source.id)
         throw new Error(
           "Use the current conversation to continue this session",
@@ -1016,13 +1122,13 @@ export async function handleAgentApp(
         id,
         prompt,
         `app-${source.id}-${requestId}`,
-        ...(notifyMonoId ? [notifyMonoId] : []),
+        ...(notifyIrgatId ? [notifyIrgatId] : []),
       );
       return {
         sessionId: id,
         submitted: true,
         ...result,
-        ...(notifyMonoId ? { notifyOnComplete: true } : {}),
+        ...(notifyIrgatId ? { notifyOnComplete: true } : {}),
       };
     }
     case "sessions.draft": {
@@ -1051,7 +1157,7 @@ export async function handleAgentApp(
       const target = await projectSession(source, id, input, host);
       if (
         target.orchestrationLeadId ||
-        host.isMono(id) ||
+        host.isIrgat(id) ||
         host.isHabitRun?.(id)
       )
         throw new Error("Only regular project sessions can be managed here");
@@ -1072,7 +1178,7 @@ export async function handleAgentApp(
           "request ID must use letters, digits, underscores or hyphens",
         );
       const launch = startLaunch(source, input, host);
-      const notifyMonoId = completionRecipient(source, input, host, true);
+      const notifyIrgatId = completionRecipient(source, input, host, true);
       if (input.worktreeCwd !== undefined) {
         const chosen = (await host.worktrees(launch.cwd)).worktrees.find(
           (tree) =>
@@ -1104,13 +1210,13 @@ export async function handleAgentApp(
           launch,
           id,
           { direction: placement as SplitDir, besideSessionId },
-          ...(notifyMonoId ? [notifyMonoId] : []),
+          ...(notifyIrgatId ? [notifyIrgatId] : []),
         );
-      else if (notifyMonoId) await host.start(launch, id, undefined, notifyMonoId);
+      else if (notifyIrgatId) await host.start(launch, id, undefined, notifyIrgatId);
       else await host.start(launch, id);
-      const folder = host.monoOf?.(source.id)?.folder;
+      const folder = host.irgatOf?.(source.id)?.folder;
       if (folder && !launch.sidebarHidden)
-        fileInMonoFolder(launch.cwd, id, folder);
+        fileInIrgatFolder(launch.cwd, id, folder);
       return {
         id,
         cwd: launch.cwd,
@@ -1118,7 +1224,7 @@ export async function handleAgentApp(
         model: launch.model,
         submitted: !launch.draft,
         draft: !!launch.draft,
-        ...(notifyMonoId ? { notifyOnComplete: true } : {}),
+        ...(notifyIrgatId ? { notifyOnComplete: true } : {}),
       };
     }
     case "worktrees.list":

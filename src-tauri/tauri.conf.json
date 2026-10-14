@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MonoCode",
-  "version": "0.13.0",
-  "identifier": "com.monocode.desktop",
+  "productName": "Irgatos",
+  "version": "0.4.0",
+  "identifier": "com.irgatos.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MonoCode",
+        "title": "Irgatos",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
@@ -28,8 +28,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https://avatars.githubusercontent.com https://uploads.linear.app https://lh3.googleusercontent.com; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost; media-src 'self' asset: http://asset.localhost https://asset.localhost blob:; object-src 'none'; base-uri 'self'; frame-src monoartifact: http://monoartifact.localhost",
-      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https://avatars.githubusercontent.com https://uploads.linear.app https://lh3.googleusercontent.com; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost http://localhost:1420 ws://localhost:1420 http://127.0.0.1:1420 ws://127.0.0.1:1420; media-src 'self' asset: http://asset.localhost https://asset.localhost blob:; object-src 'none'; base-uri 'self'; frame-src monoartifact: http://monoartifact.localhost",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https://avatars.githubusercontent.com https://uploads.linear.app https://lh3.googleusercontent.com; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost wss://generativelanguage.googleapis.com; media-src 'self' asset: http://asset.localhost https://asset.localhost blob:; object-src 'none'; base-uri 'self'; frame-src monoartifact: http://monoartifact.localhost",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob: https://avatars.githubusercontent.com https://uploads.linear.app https://lh3.googleusercontent.com; font-src 'self' data:; connect-src ipc: http://ipc.localhost https://ipc.localhost asset: http://asset.localhost https://asset.localhost wss://generativelanguage.googleapis.com http://localhost:1420 ws://localhost:1420 http://127.0.0.1:1420 ws://127.0.0.1:1420; media-src 'self' asset: http://asset.localhost https://asset.localhost blob:; object-src 'none'; base-uri 'self'; frame-src monoartifact: http://monoartifact.localhost",
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
@@ -50,11 +50,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "macos/Assets.car": "Assets.car"
-    },
+    "resources": {},
     "macOS": {
       "entitlements": "Entitlements.plist",
+      "infoPlist": "Info.plist",
       "signingIdentity": "-"
     },
     "linux": {

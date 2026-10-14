@@ -165,18 +165,18 @@ export type HarnessSessionInput = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   runtimeMode: RuntimeMode;
-  /** Keep provider context in memory; MonoCode owns the saved transcript. */
+  /** Keep provider context in memory; Irgatos owns the saved transcript. */
   ephemeral?: boolean;
-  /** Persist Codex context in MonoCode's private Mono store. */
-  codexStore?: "mono";
+  /** Persist Codex context in Irgatos's private Irgat store. */
+  codexStore?: "irgat";
   intent?: TurnIntent;
   /**
-   * This session drives MonoCode's control CLI, which reaches the app over
+   * This session drives Irgatos's control CLI, which reaches the app over
    * loopback. Sandboxes deny network by default, so a lead that cannot open
    * that socket cannot supervise its agents at all.
    */
   controlsAgents?: boolean;
-  /** Grants this normal turn access to MonoCode's scoped app CLI. */
+  /** Grants this normal turn access to Irgatos's scoped app CLI. */
   appAccess?: boolean;
   onEvent: (event: HarnessEvent) => void;
 };

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript";
-import { MonoComposer } from "../../src/features/monos/ui/MonoComposer";
+import { IrgatComposer } from "../../src/features/irgats/ui/IrgatComposer";
 import { MessageQueue } from "../../src/features/sessions/ui/MessageQueue";
-import { visibleMonoCompletionMessages } from "../../src/features/monos/model/monoMessaging";
+import { visibleIrgatCompletionMessages } from "../../src/features/irgats/model/irgatMessaging";
 import {
   newSession,
   type Block,
@@ -67,15 +67,15 @@ function Fixture() {
   );
 }
 
-const monoAnswer =
+const irgatAnswer =
   "A reply arriving in chunks that should glide smoothly as the conversation grows. ".repeat(
     35,
   );
 
-function MonoFixture() {
+function IrgatFixture() {
   const history = blocks.slice(-12);
   const prompt: Block = {
-    id: "mono-prompt",
+    id: "irgat-prompt",
     role: "user",
     text: "Explain this in detail",
   };
@@ -83,15 +83,15 @@ function MonoFixture() {
   const [conversation, setConversation] = useState<Block[]>([
     ...history,
     prompt,
-    { id: "mono-answer", role: "assistant", text: monoAnswer, streaming: true },
+    { id: "irgat-answer", role: "assistant", text: irgatAnswer, streaming: true },
   ]);
   useEffect(() => {
     Object.assign(window, {
-      completeMonoReply: (text = monoAnswer) => {
+      completeIrgatReply: (text = irgatAnswer) => {
         setConversation([
           ...history,
           prompt,
-          { id: "mono-answer", role: "assistant", text, streaming: false },
+          { id: "irgat-answer", role: "assistant", text, streaming: false },
         ]);
         setBusy(false);
       },
@@ -103,15 +103,15 @@ function MonoFixture() {
         <AgentTranscript
           blocks={conversation}
           busy={busy}
-          agentName="Mono"
+          agentName="Irgat"
           agentMascot={{ mascot: "crab", color: "#aaf" }}
           bottomAligned
           inlineWork
         />
       </div>
-      <MonoComposer
-        sessionId="browser-mono"
-        name="Mono"
+      <IrgatComposer
+        sessionId="browser-irgat"
+        name="Irgat"
         enabled={false}
         onSubmit={() => false}
         controls={<span className="h-6.5">Model · Effort · Context</span>}
@@ -120,13 +120,13 @@ function MonoFixture() {
   );
 }
 
-function MonoCompletionFixture() {
+function IrgatCompletionFixture() {
   const history = new URLSearchParams(location.search).has("short")
     ? []
     : blocks.slice(-12);
   const start = Date.now();
   const launched = {
-    sessionId: "app-mono-review",
+    sessionId: "app-irgat-review",
     cwd: "/repo",
     title: "Review the changes",
     harness: "codex" as const,
@@ -135,31 +135,31 @@ function MonoCompletionFixture() {
   const original: Block[] = [
     ...history,
     {
-      id: "mono-request",
+      id: "irgat-request",
       role: "user",
       text: "Start a review session and report back",
       startedAt: start,
       durationMs: 1000,
-      monoSpawnedSessions: [launched],
+      irgatSpawnedSessions: [launched],
     },
     {
-      id: "mono-launch",
+      id: "irgat-launch",
       role: "tool",
       text: "Start a session",
       tool: { kind: "execute", status: "completed" },
     },
     {
-      id: "mono-handoff",
+      id: "irgat-handoff",
       role: "assistant",
       text: "I started the review session. I’ll report back when it finishes.",
     },
   ];
   const completion: Block = {
-    id: "mono-completion",
+    id: "irgat-completion",
     role: "user",
     text: "Review complete",
     internal: true,
-    appRequestId: "mono-completion-batch-review",
+    appRequestId: "irgat-completion-batch-review",
     startedAt: start + 5000,
   };
   const [conversation, setConversation] = useState(original);
@@ -169,13 +169,13 @@ function MonoCompletionFixture() {
   const [state, setState] = useState<"working" | "done">("working");
   useEffect(() => {
     Object.assign(window, {
-      queueMonoCompletion: () => {
+      queueIrgatCompletion: () => {
         setNotifications([
           {
             id: completion.id,
             text: completion.text,
             attachments: [],
-            monoSessionCompletion: {
+            irgatSessionCompletion: {
               sessionId: launched.sessionId,
               title: launched.title,
               status: "completed",
@@ -184,18 +184,18 @@ function MonoCompletionFixture() {
         ]);
         setState("done");
       },
-      beginMonoCompletion: () => {
+      beginIrgatCompletion: () => {
         setNotifications([]);
         setConversation([...original, completion]);
         setBusy(true);
         setState("done");
       },
-      finishMonoCompletion: () => {
+      finishIrgatCompletion: () => {
         setConversation([
           ...original,
           { ...completion, durationMs: 1000 },
           {
-            id: "mono-report",
+            id: "irgat-report",
             role: "assistant",
             text: "The review is complete. Here are the results. ".repeat(40),
           },
@@ -210,7 +210,7 @@ function MonoCompletionFixture() {
         <AgentTranscript
           blocks={conversation}
           busy={busy}
-          agentName="Mono"
+          agentName="Irgat"
           agentMascot={{ mascot: "crab", color: "#aaf" }}
           bottomAligned
           inlineWork
@@ -222,7 +222,7 @@ function MonoCompletionFixture() {
         />
       </div>
       <MessageQueue
-        messages={visibleMonoCompletionMessages({
+        messages={visibleIrgatCompletionMessages({
           ...session,
           blocks: conversation,
           busy,
@@ -232,9 +232,9 @@ function MonoCompletionFixture() {
         variant="messages"
         onResume={() => {}}
       />
-      <MonoComposer
-        sessionId="completion-mono"
-        name="Mono"
+      <IrgatComposer
+        sessionId="completion-irgat"
+        name="Irgat"
         enabled={false}
         onSubmit={() => false}
         controls={<span className="h-6.5">Model · Effort · Context</span>}
@@ -244,9 +244,9 @@ function MonoCompletionFixture() {
 }
 
 const params = new URLSearchParams(location.search);
-const mono = params.has("mono");
-const completion = params.has("monoCompletion");
-if (mono || completion) root.style.width = "540px";
+const irgat = params.has("irgat");
+const completion = params.has("irgatCompletion");
+if (irgat || completion) root.style.width = "540px";
 createRoot(host).render(
-  completion ? <MonoCompletionFixture /> : mono ? <MonoFixture /> : <Fixture />,
+  completion ? <IrgatCompletionFixture /> : irgat ? <IrgatFixture /> : <Fixture />,
 );
