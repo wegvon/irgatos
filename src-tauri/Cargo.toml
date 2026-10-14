@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 description = "Irgatos — one UI for every agent harness"
 authors = ["Nick"]
-repository = "https://github.com/wegvon/monocode"
-homepage = "https://github.com/wegvon/monocode"
+repository = "https://github.com/wegvon/irgatos"
+homepage = "https://github.com/wegvon/irgatos"
 license.workspace = true
 
 [lib]

@@ -88,7 +88,7 @@ it("falls back to GitHub when the authenticated API action fails", async () => {
   );
 
   expect(mocks.openUrl).toHaveBeenCalledWith(
-    "https://github.com/wegvon/monocode",
+    "https://github.com/wegvon/irgatos",
   );
   expect(container.querySelector("[data-github-star-prompt]")).not.toBeNull();
 });

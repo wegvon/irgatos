@@ -120,18 +120,18 @@ fn menu_item(
 pub fn dispatch(app: &AppHandle, id: &str) {
     match id {
         "help_website" => {
-            let _ = open::that("https://github.com/wegvon/monocode");
+            let _ = open::that("https://github.com/wegvon/irgatos");
         }
         "help_github" => {
-            let _ = open::that("https://github.com/wegvon/monocode");
+            let _ = open::that("https://github.com/wegvon/irgatos");
         }
         "help_report_bug" => {
             let _ =
-                open::that("https://github.com/wegvon/monocode/issues/new?template=bug_report.yml");
+                open::that("https://github.com/wegvon/irgatos/issues/new?template=bug_report.yml");
         }
         "help_request_feature" => {
             let _ = open::that(
-                "https://github.com/wegvon/monocode/issues/new?template=feature_request.yml",
+                "https://github.com/wegvon/irgatos/issues/new?template=feature_request.yml",
             );
         }
         "new_window" => {

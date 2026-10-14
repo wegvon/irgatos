@@ -20,12 +20,12 @@ Install and sign in to at least one supported agent first. See [provider setup](
 
 | Platform | Download |
 | --- | --- |
-| macOS, Apple Silicon | [Irgatos.dmg](https://github.com/wegvon/monocode/releases/Irgatos.dmg) |
-| macOS, Intel | [Irgatos_x64.dmg](https://github.com/wegvon/monocode/releases/Irgatos_x64.dmg) |
-| Linux, x86_64 | [.deb, .rpm, or AppImage](https://github.com/wegvon/monocode/releases/latest) |
-| Windows, x86_64 | [Installer](https://github.com/wegvon/monocode/releases/latest) |
+| macOS, Apple Silicon | [Apple Silicon DMG](https://github.com/wegvon/irgatos/releases/latest) |
+| macOS, Intel | [Intel DMG](https://github.com/wegvon/irgatos/releases/latest) |
+| Linux, x86_64 | [.deb, .rpm, or AppImage](https://github.com/wegvon/irgatos/releases/latest) |
+| Windows, x86_64 | [Installer](https://github.com/wegvon/irgatos/releases/latest) |
 
-On macOS, open the DMG and drag Irgatos to Applications. On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
+On macOS, open the DMG and drag Irgatos to Applications. After that, **Irgatos › Check for Updates…** installs new releases in one click; see [versioning and updates](docs/building.md#versioning-and-updates). On Windows, run the installer. See [Linux setup](docs/install.md) for dependencies and package instructions.
 
 ## Get started
 
@@ -38,7 +38,7 @@ Open a project folder, choose an agent, and send a message. Each tab is a sessio
 
 Irgats are experimental agents that work across your projects. They keep a memory and can run scheduled tasks you set up with them.
 
-Irgatos is still early. If something breaks, [report a bug](https://github.com/wegvon/monocode/issues).
+Irgatos is still early. If something breaks, [report a bug](https://github.com/wegvon/irgatos/issues).
 
 ## Guides
 
@@ -62,7 +62,7 @@ Small, focused contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md
 
 Thanks to everyone who contributes to Irgatos!
 
-[![Irgatos contributors](https://contrib.rocks/image?repo=wegvon/monocode)](https://github.com/wegvon/monocode/graphs/contributors)
+[![Irgatos contributors](https://contrib.rocks/image?repo=wegvon/irgatos)](https://github.com/wegvon/irgatos/graphs/contributors)
 
 Contributor image by [contrib.rocks](https://contrib.rocks).
 

@@ -1264,7 +1264,7 @@ pub enum GitHubStarStatus {
     Unavailable,
 }
 
-const IRGAT_STAR_ENDPOINT: &str = "/user/starred/wegvon/monocode";
+const IRGAT_STAR_ENDPOINT: &str = "/user/starred/wegvon/irgatos";
 
 /// Whether the GitHub CLI is installed and has an active authenticated account.
 #[tauri::command]

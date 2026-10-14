@@ -6,7 +6,7 @@ import {
 } from "../../features/inbox/model/githubTasks";
 import { Loader, Star, X } from "../../shared/ui/icons";
 
-const IRGAT_GITHUB_URL = "https://github.com/wegvon/monocode";
+const IRGAT_GITHUB_URL = "https://github.com/wegvon/irgatos";
 const DISMISSED_STORAGE_KEY = "irgat.githubStarPrompt.dismissed.v1";
 
 type PromptSnapshot = "loading" | "visible" | "starring" | "hidden";
