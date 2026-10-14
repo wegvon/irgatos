@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SessionPane, type SessionPaneProps } from "./SessionPane";
 import { clearComposerDraft, setComposerDraft } from "../model/draftCache";
+import { requestSendToChat } from "../model/sendToChat";
+import { requestAddToChat } from "../model/quoteDraft";
 
 const probes = vi.hoisted(() => ({
   pick: vi.fn(),
@@ -364,4 +366,34 @@ it("keeps rapid sends out of the queue and steer interface", () => {
     container.querySelector('[aria-label="Edit queued message"]'),
   ).toBeNull();
   expect(container.textContent).not.toContain("Steer");
+});
+
+it("takes Page to agent captures, screenshot included, and Add to Chat", () => {
+  const pane = props();
+  pane.onSubmit = vi.fn(() => true);
+  render({ ...pane, addToChatTarget: true });
+  const screenshot = {
+    id: "shot",
+    name: "page.png",
+    kind: "image" as const,
+    mimeType: "image/png",
+    size: 4,
+    data: "AAAA",
+  };
+  const delivery = requestSendToChat("Fix this button: Save", [screenshot]);
+  expect(pane.onSubmit).toHaveBeenCalledWith("chat", "Fix this button: Save", [
+    screenshot,
+  ]);
+  expect(delivery).toMatchObject({ status: "sent", sessionId: "chat" });
+
+  act(() => requestAddToChat("A note from the page"));
+  expect(field().value).toBe("> A note from the page\n\n");
+});
+
+it("leaves captures alone while it is not the chat that takes them", () => {
+  const pane = props();
+  pane.onSubmit = vi.fn(() => true);
+  render({ ...pane, addToChatTarget: false });
+  expect(requestSendToChat("Fix this button", [])).toBeNull();
+  expect(pane.onSubmit).not.toHaveBeenCalled();
 });

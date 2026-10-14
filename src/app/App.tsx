@@ -19,6 +19,7 @@ import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import { HarnessEventQueue } from "./model/harnessFlush";
 import { updateSessionState } from "./model/sessionState";
+import { workspaceChatTarget } from "./model/chatTarget";
 import {
   handleAgentApp,
   canAccessAgentAppProject,
@@ -502,7 +503,10 @@ import {
   fetchClaudeRateLimits,
   fetchCodexRateLimits,
 } from "../features/providers/model/rateLimitsFetch";
-import { exhaustedWindowResetAt } from "../features/providers/model/rateLimits";
+import {
+  exhaustedWindowResetAt,
+  type RateLimitProvider,
+} from "../features/providers/model/rateLimits";
 import { dropContextWindow } from "../features/sessions/model/contextUsage";
 import {
   discardDraftSessionRecord,
@@ -1014,6 +1018,7 @@ function filesInWorkspaceTabs(tabs: readonly WorkspaceTab[]): FilePaneTab[] {
 
 /** Stable empty tab list for the title bar while a Irgat is in full view. */
 const NO_TITLE_TABS: [] = [];
+const NO_USAGE_PROVIDERS: RateLimitProvider[] = [];
 
 /** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
 function confirmDiscardUnsaved(message: string): Promise<boolean> {
@@ -1887,6 +1892,8 @@ function Workspace({
     const openSessionForAddToChat = (event: Event) => {
       const detail = (event as CustomEvent<AddToChatRequest>).detail;
       if (!detail?.text) return;
+      // The Irgat in full view takes it; a new session would open out of sight.
+      if (irgatViewIdRef.current) return;
 
       const result = applyAddToChatRequest({
         sessions: sessionsRef.current,
@@ -13276,11 +13283,12 @@ function Workspace({
                                         ? tab.focusedId
                                         : ""
                                     }
-                                    addToChatSessionId={
-                                      tab.id === activeTabId
-                                        ? active?.id
-                                        : undefined
-                                    }
+                                    addToChatSessionId={workspaceChatTarget({
+                                      tabId: tab.id,
+                                      activeTabId,
+                                      activeSessionId: active?.id,
+                                      irgatViewId,
+                                    })}
                                     composerFocused={
                                       composerFocused &&
                                       !projectTerminalFocused &&
@@ -13401,8 +13409,7 @@ function Workspace({
                             !inboxViewOpen &&
                             !notesViewOpen &&
                             !automationsViewOpen &&
-                            !kanbanViewOpen &&
-                            !irgatViewId
+                            !kanbanViewOpen
                           }
                           onClose={() => setBrowserOpen(false)}
                         />
@@ -13550,8 +13557,15 @@ function Workspace({
               notesViewOpen ||
               automationsViewOpen ||
               kanbanViewOpen ||
-              settingsOpen ||
-              irgatCovers ? null : (
+              settingsOpen ? null : irgatCovers ? (
+                // The Irgat's composer already shows its usage, and it has no
+                // terminal of its own, so its footer carries the browser alone.
+                <UsageFooter
+                  providers={NO_USAGE_PROVIDERS}
+                  browserOpen={browserOpen}
+                  onToggleBrowser={onToggleBrowser}
+                />
+              ) : (
                 <UsageFooter
                   providers={usageProviders}
                   session={usageSession}
@@ -13560,22 +13574,18 @@ function Workspace({
                   onManageAccounts={() =>
                     openSettings("providers", "provider-accounts")
                   }
-                  // A Irgat in full view has no terminal of its own.
-                  terminals={irgatCovers ? undefined : runningTerminals}
-                  terminalOpen={!irgatCovers && runningTerminalOpen}
+                  terminals={runningTerminals}
+                  terminalOpen={runningTerminalOpen}
                   onToggleTerminal={onToggleRunningTerminal}
                   onNewTerminal={
-                    !irgatCovers && isLocalProject(projectCwd)
-                      ? onNewTerminal
-                      : undefined
+                    isLocalProject(projectCwd) ? onNewTerminal : undefined
                   }
                   onShowTerminal={
-                    !irgatCovers && isLocalProject(projectCwd)
+                    isLocalProject(projectCwd)
                       ? onShowProjectTerminal
                       : undefined
                   }
                   projectTerminalActive={
-                    !irgatCovers &&
                     !!currentProjectDock &&
                     currentProjectDock.pane.files.length > 0
                   }
