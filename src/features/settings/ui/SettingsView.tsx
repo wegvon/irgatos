@@ -402,12 +402,20 @@ import {
 } from "../../notifications/model/notifications";
 import {
   installPendingUpdate,
-  packageManagedInstall,
+  isUpdateBusy,
+  loadUpdateRepo,
+  loadUpdateSourceDir,
+  openUpdateDialog,
   packageManagerHint,
-  readAppVersion,
+  readBuildInfo,
   runUpdateFlow,
-  type UpdaterSnapshot,
+  saveUpdateRepo,
+  saveUpdateSourceDir,
+  DEFAULT_UPDATE_REPOS,
 } from "../../../app/model/updater";
+import { formatVersion, shortCommit } from "../../../app/model/appVersion";
+import { updateActionLabel, updateHeadline } from "../../../app/model/updateStatus";
+import { useAppBuild, useUpdater } from "../../../app/model/useUpdater";
 
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 import { ProjectNotificationSettings } from "../../notifications/ui/ProjectNotificationSettings";
@@ -576,6 +584,7 @@ export function SettingsView({
           className="flex shrink-0 items-center gap-1.5 pr-2"
           data-tauri-drag-region="false"
         >
+          <SettingsVersionBadge />
           {section === "appearance" ? (
             <button
               type="button"
@@ -998,6 +1007,7 @@ function GeneralPage({
 
       <Group title="About">
         <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+        <UpdateSourceRow />
       </Group>
     </>
   );
@@ -2183,55 +2193,33 @@ function UpdateRow({
 }: {
   onOpenWhatsNew: (version: string) => void;
 }) {
-  const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({
-    phase: "idle",
-    currentVersion: "…",
-  });
+  const snapshot = useUpdater();
+  useAppBuild();
 
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([readAppVersion(), packageManagedInstall()]).then(
-      ([currentVersion, packageManaged]) => {
-        if (cancelled) return;
-        setSnapshot((current) => ({
-          ...current,
-          currentVersion,
-          packageManaged: packageManaged ?? undefined,
-        }));
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const busy =
-    snapshot.phase === "checking" || snapshot.phase === "downloading";
-  const hasUpdate = snapshot.phase === "available";
+  const busy = snapshot.phase === "checking" || isUpdateBusy(snapshot);
+  const action = updateActionLabel(snapshot);
 
   const onClick = async () => {
     if (busy) return;
-    if (hasUpdate) {
-      await installPendingUpdate(setSnapshot);
+    if (action) {
+      openUpdateDialog();
+      await installPendingUpdate();
       return;
     }
-    await runUpdateFlow(true, setSnapshot);
+    await runUpdateFlow(true);
   };
 
   const status =
-    snapshot.phase === "available"
-      ? `Version ${snapshot.availableVersion} is available.`
-      : snapshot.phase === "downloading"
-        ? `Downloading${snapshot.progress != null ? ` ${snapshot.progress}%` : "…"}`
-        : snapshot.phase === "checking"
-          ? "Checking for updates…"
-          : snapshot.phase === "current"
-            ? "You're on the latest version."
-            : snapshot.phase === "error"
-              ? (snapshot.error ?? "Update check failed.")
-              : snapshot.packageManaged
-                ? packageManagerHint(snapshot.packageManaged)
-                : "Irgatos updates itself from the release feed.";
+    snapshot.phase === "error"
+      ? (snapshot.error ?? "Update check failed.")
+      : snapshot.phase === "idle"
+        ? snapshot.packageManaged
+          ? packageManagerHint(snapshot.packageManaged)
+          : "Irgatos checks its GitHub Releases and the source checkout it was built from."
+        : [updateHeadline(snapshot), snapshot.phase === "current" ? snapshot.note : null]
+            .filter(Boolean)
+            .join(". ");
+  const commit = shortCommit(snapshot.currentCommit);
 
   return (
     <Row
@@ -2240,8 +2228,16 @@ function UpdateRow({
         <span className="flex items-baseline gap-2">
           Version
           <span className="font-mono text-[12px] text-content/45">
-            {snapshot.currentVersion}
+            {formatVersion(snapshot.currentVersion)}
           </span>
+          {commit ? (
+            <span
+              className="font-mono text-[11px] text-content/30"
+              title={snapshot.currentCommit}
+            >
+              {commit}
+            </span>
+          ) : null}
         </span>
       }
       description={status}
@@ -2256,15 +2252,110 @@ function UpdateRow({
         <SecondaryButton onClick={() => void onClick()} disabled={busy}>
           {busy ? (
             <Loader className="size-3.5 animate-spin" aria-hidden />
-          ) : hasUpdate ? (
+          ) : action ? (
             <ArrowDownCircle className="size-3.5 text-accent" aria-hidden />
           ) : (
             <RefreshCw className="size-3.5" strokeWidth={1.75} aria-hidden />
           )}
-          {hasUpdate ? "Download" : "Check for updates"}
+          {action ?? "Check for updates"}
         </SecondaryButton>
       </div>
     </Row>
+  );
+}
+
+function UpdateSourceRow() {
+  const [repo, setRepo] = useState(() => loadUpdateRepo() ?? "");
+  const [sourceDir, setSourceDir] = useState(() => loadUpdateSourceDir() ?? "");
+  const [detectedDir, setDetectedDir] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readBuildInfo().then((info) => {
+      if (!cancelled) setDetectedDir(info?.sourceDir ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const commitRepo = () => {
+    try {
+      setRepo(saveUpdateRepo(repo) ?? "");
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const commitSourceDir = () => {
+    setSourceDir(saveUpdateSourceDir(sourceDir) ?? "");
+  };
+
+  const inputClass =
+    "min-w-0 flex-1 bg-transparent font-mono text-[12px] text-content outline-none placeholder:text-content/35";
+
+  return (
+    <Row
+      id="update-source"
+      label="Update source"
+      description={
+        error ??
+        `Releases come from ${repo || DEFAULT_UPDATE_REPOS.join(", falling back to ")}. Source updates fast-forward, rebuild, and reinstall ${
+          sourceDir || detectedDir || "the checkout this build came from"
+        }.`
+      }
+    >
+      <div className="flex w-56 max-w-full flex-col gap-1.5">
+        <label className="flex h-7 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
+          <input
+            value={repo}
+            onChange={(event) => setRepo(event.target.value)}
+            onBlur={commitRepo}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitRepo();
+            }}
+            placeholder={DEFAULT_UPDATE_REPOS[0]}
+            aria-label="Release repository"
+            spellCheck={false}
+            autoComplete="off"
+            className={inputClass}
+          />
+        </label>
+        <label className="flex h-7 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20">
+          <input
+            value={sourceDir}
+            onChange={(event) => setSourceDir(event.target.value)}
+            onBlur={commitSourceDir}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitSourceDir();
+            }}
+            placeholder={detectedDir ?? "~/src/irgatos"}
+            aria-label="Source checkout"
+            spellCheck={false}
+            autoComplete="off"
+            className={inputClass}
+          />
+        </label>
+      </div>
+    </Row>
+  );
+}
+
+function SettingsVersionBadge() {
+  const build = useAppBuild();
+  if (build.currentVersion === "…") return null;
+  const commit = shortCommit(build.currentCommit);
+  return (
+    <button
+      type="button"
+      onClick={() => void runUpdateFlow(true)}
+      title={`Irgatos ${formatVersion(build.currentVersion)}${commit ? ` (${commit})` : ""}. Check for updates`}
+      className="shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[11px] text-content/40 hover:bg-content/10 hover:text-content"
+    >
+      {formatVersion(build.currentVersion)}
+    </button>
   );
 }
 

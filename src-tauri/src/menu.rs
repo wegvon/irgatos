@@ -148,8 +148,7 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         | "split_right" | "split_down" | "focus_left" | "focus_right" | "focus_up"
         | "focus_down" | "sidebar_opacity" | "open_project" | "go_to_file" | "open_search"
         | "open_inbox" | "open_notes" | "find_in_project" | "find" | "new_terminal"
-        | "new_terminal_tab" | "toggle_terminal" | "open_model_picker" | "open_settings"
-        | "check_for_updates" => {
+        | "new_terminal_tab" | "toggle_terminal" | "open_model_picker" | "open_settings" => {
             let _ = app.emit(id, ());
         }
         // New Tab, Close Tab, Sidebar, Zoom, Reload, Command Palette, and Close All Tabs target
@@ -164,7 +163,9 @@ pub fn dispatch(app: &AppHandle, id: &str) {
         | "zoom_reset"
         | "reload"
         | "open_command_palette"
-        | "close_all_tabs" => emit_to_focused(app, id),
+        | "close_all_tabs"
+        // One update dialog, not one per window racing to install.
+        | "check_for_updates" => emit_to_focused(app, id),
         _ => {}
     }
 }

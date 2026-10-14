@@ -90,6 +90,7 @@ import { Sidebar } from "./shell/Sidebar";
 import { ApprovalToasts } from "../features/sessions/ui/ApprovalToasts";
 import { HarnessUpdateNotice } from "../features/providers/ui/HarnessUpdateNotice";
 import { WhatsNewDialog } from "./shell/WhatsNewDialog";
+import { UpdateDialog } from "./shell/UpdateDialog";
 import { ProviderSignInDialog } from "../features/sessions/ui/ProviderSignInDialog";
 import { TitleBar, type Tab as TitleTab } from "./shell/TitleBar";
 import { WindowControls } from "./shell/WindowControls";
@@ -13678,6 +13679,7 @@ function Workspace({
               onClose={() => setWhatsNewVersion(null)}
             />
           ) : null}
+          <UpdateDialog onOpenWhatsNew={onOpenWhatsNew} />
           {remoteProjectDialogOpen ? (
             <AddRemoteProjectDialog
               onCancel={() => setRemoteProjectDialogOpen(false)}

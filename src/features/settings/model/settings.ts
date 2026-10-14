@@ -237,6 +237,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "update upgrade release what's new build changelog",
   },
   {
+    id: "update-source",
+    section: "general",
+    label: "Update source",
+    keywords: "update repository github releases source checkout git rebuild",
+  },
+  {
     id: "sounds",
     section: "general",
     label: "Sounds",

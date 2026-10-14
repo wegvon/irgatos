@@ -175,7 +175,7 @@ import {
   type SessionReminder,
 } from "../../features/sessions/model/sessionReminders";
 import { SessionsEmpty } from "../../features/sessions/ui/SessionsEmpty";
-import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
@@ -2175,6 +2175,7 @@ function SidebarComponent({
                   onClick={onOpenSettings}
                   shortcut={`${MOD},`}
                   ariaLabel={`Settings (${MOD},)`}
+                  meta={<AppVersionBadge />}
                 />
               ) : null}
             </div>

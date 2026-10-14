@@ -51,6 +51,7 @@ mod reminders;
 mod remote;
 mod remote_ssh;
 mod search;
+mod self_update;
 mod session_store;
 mod skills;
 pub mod ssh_askpass;
@@ -526,6 +527,11 @@ pub fn run() {
             harness_updates::harness_latest_version,
             harness_updates::harness_update_check_claim,
             harness_updates::harness_update,
+            self_update::self_update_info,
+            self_update::self_update_check,
+            self_update::self_update_install_release,
+            self_update::self_update_install_source,
+            self_update::self_update_relaunch,
             harness::provider_account_remove,
             account_identity::provider_account_identity,
             pi_usage::fetch_pi_usage,

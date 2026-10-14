@@ -72,7 +72,7 @@ import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailAction, RailSearch } from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
-import { SidebarUpdateFooter } from "./SidebarUpdate";
+import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { SettingsNav } from "./SettingsRail";
 import { Shimmer } from "../../shared/ui/Shimmer";
@@ -557,6 +557,7 @@ export function ProjectRail({
               onClick={onOpenSettings}
               shortcut={`${MOD},`}
               ariaLabel={`Settings (${MOD},)`}
+              meta={<AppVersionBadge />}
             />
           </div>
         </>
