@@ -242,3 +242,56 @@ it("uses a Irgat's only project, or the one its chat started in", async () => {
     "none yet",
   );
 });
+
+it("lets the Irgat add guards but only the user can stop approval", async () => {
+  const { run, habits } = habitsFixture();
+  const added = (await run("habits.add", {
+    name: "Deploy watch",
+    instructions: "Check the deploy.",
+    schedule: { kind: "daily", time: "09:00" },
+    requestApproval: true,
+    ifCondition: { kind: "expression", expression: "now.weekday != 0" },
+    delaySeconds: 120,
+  })) as { habit: { id: string } };
+  const id = added.habit.id;
+  expect(habits()[0]).toMatchObject({
+    requestApproval: true,
+    ifCondition: { kind: "expression", expression: "now.weekday != 0" },
+    delaySeconds: 120,
+  });
+  await expect(
+    run("habits.update", { id, requestApproval: false }),
+  ).rejects.toThrow("Only the user");
+  await expect(
+    run("habits.update", { id, ifCondition: { kind: "expression", expression: "eval(1)" } }),
+  ).rejects.toThrow("ifCondition");
+  await expect(
+    run("habits.update", { id, ifCondition: { shell: "ls" } }),
+  ).rejects.toThrow("ifCondition must be");
+  await expect(run("habits.update", { id, delaySeconds: 10 ** 6 })).rejects.toThrow(
+    "delaySeconds",
+  );
+  await run("habits.update", {
+    id,
+    ifCondition: null,
+    delaySeconds: 0,
+    name: "Deploy watcher",
+  });
+  expect(habits()[0]).toMatchObject({ name: "Deploy watcher", requestApproval: true });
+  expect(habits()[0].ifCondition).toBeUndefined();
+  expect(habits()[0].delaySeconds).toBeUndefined();
+
+  // The token never reaches the agent, and pausing drops a waiting run.
+  habits()[0].triggerToken = "s".repeat(43);
+  habits()[0].approval = { state: "pending", requestedAt: Date.now() };
+  habits()[0].runRequested = true;
+  const list = (await run("habits.list")) as { habits: Record<string, unknown>[] };
+  expect(list.habits[0]).toMatchObject({
+    hasTrigger: true,
+    waiting: "for the user's approval",
+  });
+  expect(JSON.stringify(list)).not.toContain("s".repeat(43));
+  await run("habits.update", { id, enabled: false });
+  expect(habits()[0].approval).toBeUndefined();
+  expect(habits()[0].runRequested).toBeUndefined();
+});

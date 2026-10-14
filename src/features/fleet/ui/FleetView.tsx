@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
+  Clock,
   FileDiff,
   GitBranch,
   LoaderCircle,
@@ -15,6 +16,7 @@ import {
   Search,
 } from "../../../shared/ui/icons";
 import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
+import type { HabitApprovalEntry } from "../../irgats/model/habitApprovals";
 import { formatLiveElapsed } from "../../sessions/model/liveAgents";
 import type { Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
@@ -54,6 +56,12 @@ type Props = {
     reply: UserQuestionReply,
   ) => void;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
+  /** Habit runs across every Irgat waiting on the user's approval. */
+  habitApprovals?: readonly HabitApprovalEntry[];
+  onHabitApproval?: (
+    entry: HabitApprovalEntry,
+    decision: "approve" | "skip",
+  ) => void;
 };
 
 const EMPTY_COPY: Record<FleetBucket, string> = {
@@ -90,6 +98,8 @@ export function FleetView({
   onApproval,
   onQuestionReply,
   onQuestionInteraction,
+  habitApprovals = [],
+  onHabitApproval,
 }: Props) {
   const now = useMinuteClock();
   const [query, setQuery] = useState("");
@@ -111,6 +121,11 @@ export function FleetView({
   }, [now, sessions, unseenFinishedIds]);
   const shown = useMemo(() => filterFleet(fleet, query), [fleet, query]);
   const filtering = query.trim().length > 0;
+  const shownHabits = useMemo(
+    () => filterHabitApprovals(habitApprovals, query),
+    [habitApprovals, query],
+  );
+  const empty = fleet.total === 0 && habitApprovals.length === 0;
 
   const toggle = (bucket: FleetBucket) =>
     setCollapsed((current) => {
@@ -145,7 +160,7 @@ export function FleetView({
               : `${fleet.total} ${fleet.total === 1 ? "session" : "sessions"} across every project`}
           </span>
         </div>
-        {fleet.total > 0 ? (
+        {!empty ? (
           <label
             className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
             data-tauri-drag-region="false"
@@ -172,12 +187,12 @@ export function FleetView({
         ) : null}
         {IS_MAC ? null : <WindowControls />}
       </div>
-      {fleet.total === 0 ? (
+      {empty ? (
         <FleetMessage
           title="No agents yet"
           body="Sessions from every project show up here, sorted by what needs you first: approvals and questions, finished work to review, then what is still running."
         />
-      ) : filtering && shown.total === 0 ? (
+      ) : filtering && shown.total === 0 && shownHabits.length === 0 ? (
         <FleetMessage
           title="No sessions match"
           body={`Nothing matches “${query.trim()}”.`}
@@ -196,7 +211,9 @@ export function FleetView({
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-3 py-4 sm:px-6 sm:py-6">
             {FLEET_BUCKETS.map((bucket) => {
               const entries = shown[bucket];
-              if (filtering && entries.length === 0) return null;
+              const habits = bucket === "needsYou" ? shownHabits : [];
+              const count = entries.length + habits.length;
+              if (filtering && count === 0) return null;
               const open = filtering || !collapsed.has(bucket);
               return (
                 <section
@@ -220,16 +237,32 @@ export function FleetView({
                       {FLEET_BUCKET_LABEL[bucket]}
                     </span>
                     <span className="tabular-nums text-content/40">
-                      {entries.length}
+                      {count}
                     </span>
                   </button>
                   {open ? (
-                    entries.length === 0 ? (
+                    count === 0 ? (
                       <p className="px-6 text-[12px] text-content/35">
                         {EMPTY_COPY[bucket]}
                       </p>
                     ) : (
                       <ul className="flex flex-col gap-2">
+                        {habits.map((approval) => (
+                          <li key={`habit:${approval.irgatId}:${approval.habit.id}`}>
+                            <HabitApprovalCard
+                              entry={approval}
+                              now={now}
+                              onOpen={
+                                approval.irgatSessionId
+                                  ? () => onOpenSession(approval.irgatSessionId!)
+                                  : undefined
+                              }
+                              onDecide={(decision) =>
+                                onHabitApproval?.(approval, decision)
+                              }
+                            />
+                          </li>
+                        ))}
                         {entries.map((entry) => (
                           <li key={entry.sessionId}>
                             <FleetRow
@@ -354,6 +387,102 @@ function FleetRow({
           onQuestionInteraction={onQuestionInteraction}
         />
       ))}
+    </article>
+  );
+}
+
+function filterHabitApprovals(
+  entries: readonly HabitApprovalEntry[],
+  query: string,
+): readonly HabitApprovalEntry[] {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return entries;
+  return entries.filter((entry) =>
+    `${entry.habit.name}\n${entry.irgatName}\n${entry.habit.instructions}`
+      .toLocaleLowerCase()
+      .includes(needle),
+  );
+}
+
+/** A habit run that waits for the user before it starts. */
+function HabitApprovalCard({
+  entry,
+  now,
+  onOpen,
+  onDecide,
+}: {
+  entry: HabitApprovalEntry;
+  now: number;
+  onOpen?: () => void;
+  onDecide: (decision: "approve" | "skip") => void;
+}) {
+  const { habit } = entry;
+  const trigger =
+    habit.trigger?.source === "webhook"
+      ? "Started by its trigger"
+      : "Due on its schedule";
+  return (
+    <article
+      data-fleet-habit={habit.id}
+      className="overflow-hidden rounded-xl border border-amber-400/30 bg-amber-400/[0.04]"
+    >
+      <button
+        type="button"
+        disabled={!onOpen}
+        onClick={onOpen}
+        aria-label={`Open ${entry.irgatName}`}
+        className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2.5 text-left enabled:hover:bg-content/5"
+      >
+        <Clock
+          className="size-4 shrink-0"
+          style={{ color: entry.color }}
+          strokeWidth={1.75}
+        />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="min-w-0 truncate text-[13px] font-medium text-content">
+            {habit.name}
+          </span>
+          <span className="truncate text-[11px] text-content/45">
+            {entry.irgatName} · habit · {trigger}
+          </span>
+        </span>
+        <span className="shrink-0 text-[11px] tabular-nums text-content/35">
+          {formatLiveElapsed(entry.requestedAt, now)} ago
+        </span>
+        {onOpen ? (
+          <ChevronRight className="size-3.5 shrink-0 text-content/35" />
+        ) : null}
+      </button>
+      <div
+        data-fleet-request="habit-approval"
+        className="flex flex-col gap-2 border-t border-stroke px-3.5 py-2.5 sm:flex-row sm:items-center"
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
+            <CircleAlert className="size-3.5 shrink-0 text-amber-400" strokeWidth={1.75} />
+            <span className="min-w-0 truncate">Run this habit now?</span>
+          </span>
+          <span className="line-clamp-2 text-[11px] leading-relaxed text-content/50">
+            {habit.instructions}
+          </span>
+        </span>
+        <span className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-content px-3 py-1 text-[12px] font-medium text-background-base hover:bg-content/80 sm:flex-none"
+            onClick={() => onDecide("approve")}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            className="flex-1 rounded-md bg-content/10 px-3 py-1 text-[12px] font-medium text-content/70 hover:bg-content/20 sm:flex-none"
+            onClick={() => onDecide("skip")}
+          >
+            Skip
+          </button>
+        </span>
+      </div>
     </article>
   );
 }

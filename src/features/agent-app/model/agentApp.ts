@@ -53,10 +53,18 @@ import {
   habitRunningSince,
   habitSchedule,
   habitScheduleLabel,
+  HABIT_DELAY_MAX_SECONDS,
   newHabit,
   nextHabitRunAt,
   type Habit,
+  type HabitCondition,
 } from "../../irgats/model/irgatHabits";
+import {
+  habitConditionError,
+  pauseHabit,
+  setHabitGuards,
+  type HabitGuardSettings,
+} from "../../irgats/model/habitGuards";
 import {
   memoryWithinBudget,
   IrgatFileConflict,
@@ -215,8 +223,30 @@ const FIELDS = new Map<string, readonly string[]>([
   ["memory.replace", ["find", "fact", "topic", "until"]],
   ["memory.remove", ["find", "topic"]],
   ["habits.list", []],
-  ["habits.add", ["name", "instructions", "schedule"]],
-  ["habits.update", ["id", "name", "instructions", "schedule", "enabled"]],
+  [
+    "habits.add",
+    [
+      "name",
+      "instructions",
+      "schedule",
+      "requestApproval",
+      "ifCondition",
+      "delaySeconds",
+    ],
+  ],
+  [
+    "habits.update",
+    [
+      "id",
+      "name",
+      "instructions",
+      "schedule",
+      "enabled",
+      "requestApproval",
+      "ifCondition",
+      "delaySeconds",
+    ],
+  ],
   ["habits.run", ["id"]],
   ["habits.remove", ["id"]],
   ["chat.card", [...CARD_FIELDS]],
@@ -701,6 +731,18 @@ function habitView(habit: Habit) {
     enabled: habit.enabled,
     nextRun: habit.enabled ? new Date(habit.nextRunAt).toLocaleString() : null,
     ...(habitRunningSince(habit.id) != null ? { running: true } : {}),
+    ...(habit.requestApproval ? { requestApproval: true } : {}),
+    ...(habit.ifCondition ? { ifCondition: habit.ifCondition } : {}),
+    ...(habit.delaySeconds ? { delaySeconds: habit.delaySeconds } : {}),
+    // The token is the user's secret; the agent only learns that one exists.
+    ...(habit.triggerToken ? { hasTrigger: true } : {}),
+    ...(habit.approval?.state === "pending"
+      ? { waiting: "for the user's approval" }
+      : habit.delayedUntil && habit.delayedUntil > Date.now()
+        ? {
+            waiting: `until ${new Date(habit.delayedUntil).toLocaleString()}`,
+          }
+        : {}),
     ...(habit.lastRunAt
       ? {
           lastRun: new Date(habit.lastRunAt).toLocaleString(),
@@ -708,6 +750,67 @@ function habitView(habit: Habit) {
           ...(habit.lastError ? { lastError: habit.lastError } : {}),
         }
       : {}),
+  };
+}
+
+/**
+ * Guards from the CLI over the habit's current ones. An agent can make a
+ * habit ask first but cannot stop it asking: approval is the user's call.
+ */
+function habitGuardsInput(
+  input: Record<string, unknown>,
+  current?: Habit,
+): HabitGuardSettings | undefined {
+  if (
+    input.requestApproval === undefined &&
+    input.ifCondition === undefined &&
+    input.delaySeconds === undefined
+  )
+    return undefined;
+  if (
+    input.requestApproval !== undefined &&
+    typeof input.requestApproval !== "boolean"
+  )
+    throw new Error("requestApproval must be true or false");
+  if (input.requestApproval === false && current?.requestApproval)
+    throw new Error(
+      "Only the user can stop a habit asking first, from the habit's page",
+    );
+  let ifCondition: HabitCondition | null = current?.ifCondition ?? null;
+  if (input.ifCondition === null) ifCondition = null;
+  else if (input.ifCondition !== undefined) {
+    const raw = input.ifCondition as Record<string, unknown> | undefined;
+    if (raw?.kind === "shell" && typeof raw.command === "string")
+      ifCondition = { kind: "shell", command: raw.command };
+    else if (raw?.kind === "expression" && typeof raw.expression === "string")
+      ifCondition = { kind: "expression", expression: raw.expression };
+    else
+      throw new Error(
+        'ifCondition must be null, {"kind":"shell","command":"..."} or {"kind":"expression","expression":"..."}',
+      );
+    const error = habitConditionError(ifCondition);
+    if (error) throw new Error(`ifCondition: ${error}`);
+  }
+  let delaySeconds = current?.delaySeconds ?? 0;
+  if (input.delaySeconds !== undefined) {
+    if (
+      typeof input.delaySeconds !== "number" ||
+      !Number.isFinite(input.delaySeconds) ||
+      input.delaySeconds < 0 ||
+      input.delaySeconds > HABIT_DELAY_MAX_SECONDS
+    )
+      throw new Error(
+        `delaySeconds must be 0 to ${HABIT_DELAY_MAX_SECONDS} (a day)`,
+      );
+    delaySeconds = input.delaySeconds;
+  }
+  return {
+    requestApproval:
+      typeof input.requestApproval === "boolean"
+        ? input.requestApproval
+        : !!current?.requestApproval,
+    ifCondition,
+    delaySeconds,
   };
 }
 
@@ -738,13 +841,12 @@ async function handleHabits(
       const name = requiredString(input.name, "name", 80);
       const instructions = requiredString(input.instructions, "instructions", 4_000);
       const schedule = habitSchedule(input.schedule);
+      const guards = habitGuardsInput(input);
       const habit = await habits.update(irgatId, (list) => {
         if (list.length >= HABITS_MAX)
           throw new Error(`A Irgat can have at most ${HABITS_MAX} habits`);
-        const created = newHabit(
-          { name, instructions, schedule },
-          now.getTime(),
-        );
+        const plain = newHabit({ name, instructions, schedule }, now.getTime());
+        const created = guards ? setHabitGuards(plain, guards) : plain;
         return { habits: [...list, created], result: created };
       });
       return { habit: habitView(habit) };
@@ -771,8 +873,12 @@ async function handleHabits(
         throw new Error("enabled must be true or false");
       const habit = await habits.update(irgatId, (list) => {
         const current = find(list);
+        const guards = habitGuardsInput(input, current);
+        const guarded = guards ? setHabitGuards(current, guards) : current;
         const next: Habit = {
-          ...current,
+          ...(input.enabled === false && current.enabled
+            ? pauseHabit(guarded)
+            : guarded),
           ...patch,
           ...(input.enabled === undefined
             ? {}

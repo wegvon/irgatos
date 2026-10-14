@@ -220,6 +220,14 @@ export function IrgatOverview({
               actions.remove(habit.id);
               back();
             }}
+            guards={{
+              onApprove: () => actions.approve(habit.id),
+              onSkip: () => actions.skip(habit.id),
+              onGuardsChange: (settings) =>
+                actions.setGuards(habit.id, settings),
+              onTriggerTokenChange: (token) =>
+                actions.setTriggerToken(habit.id, token),
+            }}
           />
         ),
       },

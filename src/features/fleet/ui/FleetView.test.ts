@@ -180,3 +180,64 @@ it("explains the empty fleet", () => {
   expect(container.textContent).toContain("No agents yet");
   expect(container.querySelector("[data-fleet-bucket]")).toBeNull();
 });
+
+it("lists habit runs waiting for approval in Needs you and answers them", () => {
+  const requestedAt = Date.now() - 5 * 60_000;
+  const approval = {
+    irgatId: "irgat-1",
+    irgatSessionId: "irgat-chat",
+    irgatName: "Skull",
+    color: "#f80",
+    requestedAt,
+    habit: {
+      id: "h1",
+      name: "Deploy watch",
+      instructions: "Check the production deploy.",
+      schedule: { scheduleKind: "daily" as const, minute: 0, time: "09:00", dayOfWeek: 1 },
+      enabled: true,
+      createdAt: 0,
+      nextRunAt: 0,
+      requestApproval: true,
+      runRequested: true,
+      approval: { state: "pending" as const, requestedAt },
+      trigger: { source: "webhook" as const, at: requestedAt },
+    },
+  };
+  const onHabitApproval = vi.fn();
+  const props = render([], { habitApprovals: [approval], onHabitApproval });
+  // A waiting habit alone is not an empty fleet.
+  expect(container.textContent).not.toContain("No agents yet");
+  const needs = bucket("needsYou");
+  expect(needs.textContent).toContain("Deploy watch");
+  expect(needs.textContent).toContain("Skull · habit · Started by its trigger");
+  expect(needs.querySelector("button span.tabular-nums")?.textContent).toBe("1");
+
+  const approve = [...needs.querySelectorAll("button")].find(
+    (b) => b.textContent === "Approve",
+  )!;
+  act(() => approve.click());
+  expect(onHabitApproval).toHaveBeenCalledWith(approval, "approve");
+  const skip = [...needs.querySelectorAll("button")].find(
+    (b) => b.textContent === "Skip",
+  )!;
+  act(() => skip.click());
+  expect(onHabitApproval).toHaveBeenLastCalledWith(approval, "skip");
+
+  act(() =>
+    needs.querySelector<HTMLButtonElement>('button[aria-label="Open Skull"]')!.click(),
+  );
+  expect(props.onOpenSession).toHaveBeenCalledWith("irgat-chat");
+
+  const filter = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Filter sessions"]',
+  )!;
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!;
+  act(() => {
+    setValue.call(filter, "nothing like it");
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(container.textContent).toContain("No sessions match");
+});

@@ -640,6 +640,9 @@ import {
   writeAgentFile,
 } from "../features/irgats/model/irgatFiles";
 import { useIrgatHabits } from "./hooks/useIrgatHabits";
+import { useHabitWebhooks } from "./hooks/useHabitWebhooks";
+import { useHabitApprovals } from "../features/irgats/hooks/useHabitApprovals";
+import { decideHabitApproval } from "../features/irgats/model/habitApprovals";
 import { useIrgatGroupChat } from "./hooks/useIrgatGroupChat";
 import {
   useActiveIrgatGroups,
@@ -2335,9 +2338,10 @@ function Workspace({
     () => sessions.filter((session) => !session.ephemeral),
     [sessions],
   );
+  const habitApprovals = useHabitApprovals();
   const fleetNeedsYouCount = useMemo(
-    () => countNeedsYou(promptableSessions),
-    [promptableSessions],
+    () => countNeedsYou(promptableSessions) + habitApprovals.length,
+    [promptableSessions, habitApprovals],
   );
   useInputNotifications(promptableSessions, activeSessionId);
 
@@ -8779,6 +8783,7 @@ function Workspace({
   decideIrgatBlockRef.current = decideIrgatBlock;
 
   useLightpandaAutostart();
+  useHabitWebhooks();
   useIrgatHabits({
     sessions: () => sessionsRef.current,
     open: async (id) => (await ensureOpenSession(id)) ?? undefined,
@@ -14498,6 +14503,16 @@ function Workspace({
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}
                   onQuestionInteraction={onQuestionInteraction}
+                  habitApprovals={habitApprovals}
+                  onHabitApproval={(entry, decision) =>
+                    void decideHabitApproval(
+                      entry.irgatId,
+                      entry.habit.id,
+                      decision,
+                    ).catch((error) =>
+                      console.warn("Could not answer the habit", error),
+                    )
+                  }
                 />
               ) : null}
               {settingsOpen ? (

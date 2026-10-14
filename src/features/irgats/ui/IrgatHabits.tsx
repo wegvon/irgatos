@@ -10,14 +10,21 @@ import {
   habitsToday,
   habitStarting,
   loadHabits,
+  habitAwaitingApproval,
   nextHabitRunAt,
-  runHabitAnyway,
   subscribeHabitsRunning,
   updateHabits,
   type Habit,
 } from "../model/irgatHabits";
+import {
+  pauseHabit,
+  runHabitNow,
+  setHabitGuards,
+  type HabitGuardSettings,
+} from "../model/habitGuards";
+import { decideHabitApproval } from "../model/habitApprovals";
 import { heldUntilLabel } from "../../quotas/model/usageLimitRegistry";
-import { RunningFor, useHabitRunning } from "./HabitPage";
+import { RunningFor, useHabitRunning, when } from "./HabitPage";
 import { Empty, Section } from "./irgatPanelParts";
 
 /** Each Irgat's habits as last loaded, so switching back shows them at once. */
@@ -79,32 +86,44 @@ export type HabitActions = {
   runNow(id: string): void;
   toggle(id: string): void;
   remove(id: string): void;
+  /** Lets a run waiting on the user go ahead. */
+  approve(id: string): void;
+  /** Turns down a run waiting on the user; it waits for its next time. */
+  skip(id: string): void;
+  /** Saves new guards; rejects when the condition is not valid. */
+  setGuards(id: string, settings: HabitGuardSettings): Promise<void>;
+  /** Creates or replaces the trigger URL's token, or removes it with null. */
+  setTriggerToken(id: string, token: string | null): Promise<void>;
 };
 
 /** Edits to the Irgat's habits from the panel, saved over what was read. */
 export function habitActions(irgatId: string): HabitActions {
-  const change = (
-    id: string,
-    edit: (habit: Habit) => Habit | null,
-    then?: () => void,
-  ) =>
-    void updateHabits(irgatId, (list) => ({
+  const save = (id: string, edit: (habit: Habit) => Habit | null) =>
+    updateHabits(irgatId, (list) => ({
       habits: list.flatMap((habit) => {
         if (habit.id !== id) return [habit];
         const next = edit(habit);
         return next ? [next] : [];
       }),
       result: undefined,
-    }))
+    }));
+  const change = (
+    id: string,
+    edit: (habit: Habit) => Habit | null,
+    then?: () => void,
+  ) =>
+    void save(id, edit)
       .then(then)
       .catch((error) => console.warn("Could not change the habit", error));
   return {
-    // On a habit waiting out a usage limit this is Run anyway.
-    runNow: (id) => change(id, runHabitAnyway, checkHabitsNow),
+    // Past any delay, condition or approval; on a habit waiting out a usage
+    // limit this is Run anyway.
+    runNow: (id) =>
+      change(id, (habit) => runHabitNow(habit, Date.now()), checkHabitsNow),
     toggle: (id) =>
       change(id, (habit) =>
         habit.enabled
-          ? { ...habit, enabled: false }
+          ? pauseHabit(habit)
           : {
               ...habit,
               enabled: true,
@@ -112,6 +131,21 @@ export function habitActions(irgatId: string): HabitActions {
             },
       ),
     remove: (id) => change(id, () => null),
+    approve: (id) =>
+      void decideHabitApproval(irgatId, id, "approve").catch((error) =>
+        console.warn("Could not approve the habit", error),
+      ),
+    skip: (id) =>
+      void decideHabitApproval(irgatId, id, "skip").catch((error) =>
+        console.warn("Could not skip the habit", error),
+      ),
+    setGuards: (id, settings) =>
+      save(id, (habit) => setHabitGuards(habit, settings)),
+    setTriggerToken: (id, token) =>
+      save(id, (habit) => {
+        const { triggerToken: _old, ...rest } = habit;
+        return token ? { ...rest, triggerToken: token } : rest;
+      }),
   };
 }
 
@@ -128,12 +162,19 @@ export function HabitRow({
   const running = runningSince != null;
   const now = Date.now();
   const held = !running && habitQuotaHeld(habit, now);
+  const awaiting = !running && habitAwaitingApproval(habit, now);
+  const delayedUntil =
+    !running && habit.delayedUntil != null && habit.delayedUntil > now
+      ? habit.delayedUntil
+      : undefined;
   const starting = !running && habitStarting(habit);
   return (
     <li
       data-habit={habit.id}
       data-habit-running={running || undefined}
       data-habit-held={held || undefined}
+      data-habit-approval={awaiting || undefined}
+      data-habit-delayed={delayedUntil != null || undefined}
       className="group/habit flex items-center rounded-md hover:bg-content/5"
     >
       <button
@@ -163,15 +204,21 @@ export function HabitRow({
           </span>
           <span
             className={`truncate text-[11px] leading-4 ${
-              held ? "text-amber-500 dark:text-amber-300" : "text-content/40"
+              held || awaiting
+                ? "text-amber-500 dark:text-amber-300"
+                : "text-content/40"
             }`}
           >
             {running ? (
               <>
                 Running now · <RunningFor since={runningSince} />
               </>
+            ) : awaiting ? (
+              "Waiting for your approval"
             ) : held && habit.quotaHold ? (
               heldUntilLabel(habit.quotaHold.until, now)
+            ) : delayedUntil != null ? (
+              `Delayed · starts ${when(delayedUntil, now)}`
             ) : starting ? (
               "Starting…"
             ) : habit.enabled ? (
@@ -182,6 +229,13 @@ export function HabitRow({
           </span>
         </span>
       </button>
+      {awaiting ? (
+        <HabitApprovalButtons
+          name={habit.name}
+          onApprove={() => actions.approve(habit.id)}
+          onSkip={() => actions.skip(habit.id)}
+        />
+      ) : null}
       <span className="flex shrink-0 items-center pr-2 opacity-0 transition-opacity group-hover/habit:opacity-100 focus-within:opacity-100">
         <HabitButton
           label={
@@ -213,6 +267,38 @@ export function HabitRow({
         </HabitButton>
       </span>
     </li>
+  );
+}
+
+/** Approve / Skip for a run waiting on the user, on the card and in Fleet. */
+export function HabitApprovalButtons({
+  name,
+  onApprove,
+  onSkip,
+}: {
+  name: string;
+  onApprove: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 pr-1">
+      <button
+        type="button"
+        aria-label={`Approve ${name}`}
+        onClick={onApprove}
+        className="rounded-md bg-content px-2 py-0.5 text-[11px] font-medium text-background-base hover:bg-content/80"
+      >
+        Approve
+      </button>
+      <button
+        type="button"
+        aria-label={`Skip ${name}`}
+        onClick={onSkip}
+        className="rounded-md bg-content/10 px-2 py-0.5 text-[11px] font-medium text-content/70 hover:bg-content/20"
+      >
+        Skip
+      </button>
+    </span>
   );
 }
 

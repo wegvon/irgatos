@@ -10,6 +10,12 @@ import { IconButton } from "../../../app/shell/TitleBar";
 import { PageHeader } from "./irgatPanelParts";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import {
+  habitDelayLabel,
+  type HabitGuardSettings,
+} from "../model/habitGuards";
+import { HabitGuardsSection, HabitTriggerSection } from "./HabitGuardsSection";
+import {
+  habitAwaitingApproval,
   habitQuotaHeld,
   habitRunningSince,
   habitScheduleLabel,
@@ -55,6 +61,15 @@ const OUTCOME: Record<HabitRun["outcome"], { label: string; dot: string }> = {
   posted: { label: "Messaged you", dot: "bg-[var(--irgat-color)]" },
   quiet: { label: "Nothing to report", dot: "bg-content/25" },
   failed: { label: "Couldn't finish", dot: "bg-red-500/70" },
+  skipped: { label: "Skipped", dot: "bg-amber-400/60" },
+};
+
+/** Guard edits from the habit's page; without them the sections are hidden. */
+export type HabitPageGuardActions = {
+  onApprove: () => void;
+  onSkip: () => void;
+  onGuardsChange: (settings: HabitGuardSettings) => Promise<void>;
+  onTriggerTokenChange: (token: string | null) => Promise<void>;
 };
 
 /** One habit up close: what it does, when, and how its recent runs went. */
@@ -66,6 +81,7 @@ export function HabitPage({
   onRunNow,
   onToggle,
   onRemove,
+  guards,
 }: {
   habit: Habit;
   /** The Irgat's color, for runs that reached the user. */
@@ -75,10 +91,20 @@ export function HabitPage({
   onRunNow: () => void;
   onToggle: () => void;
   onRemove: () => void;
+  guards?: HabitPageGuardActions;
 }) {
   const runningSince = useHabitRunning(habit.id);
+  const now = Date.now();
   const starting = runningSince == null && habitStarting(habit);
-  const held = runningSince == null && habitQuotaHeld(habit, Date.now());
+  const held = runningSince == null && habitQuotaHeld(habit, now);
+  const awaiting = runningSince == null && habitAwaitingApproval(habit, now);
+  const delayedUntil =
+    runningSince == null &&
+    habit.delayedUntil != null &&
+    habit.delayedUntil > now
+      ? habit.delayedUntil
+      : undefined;
+  const guardSummary = habitGuardSummary(habit);
   const runs = habit.runs ?? [];
   return (
     <div
@@ -122,7 +148,36 @@ export function HabitPage({
           <Row label="Runs">
             {habit.enabled ? habitScheduleLabel(habit.schedule) : "Paused"}
           </Row>
-          {held && habit.quotaHold ? (
+          {guardSummary ? <Row label="Guards">{guardSummary}</Row> : null}
+          {awaiting ? (
+            <Row label="Next">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-amber-500 dark:text-amber-300">
+                  Waiting for your approval
+                </span>
+                {guards ? (
+                  <span className="flex shrink-0 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={guards.onApprove}
+                      className="rounded-md bg-content px-2 py-0.5 text-[11px] font-medium text-background-base hover:bg-content/80"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={guards.onSkip}
+                      className="rounded-md bg-content/10 px-2 py-0.5 text-[11px] font-medium text-content/70 hover:bg-content/20"
+                    >
+                      Skip
+                    </button>
+                  </span>
+                ) : null}
+              </span>
+            </Row>
+          ) : delayedUntil != null ? (
+            <Row label="Next">Delayed · starts {when(delayedUntil, now)}</Row>
+          ) : held && habit.quotaHold ? (
             <Row label="Next">
               <HeldWorkNotice
                 harness={habit.quotaHold.harness as HarnessId}
@@ -145,6 +200,23 @@ export function HabitPage({
           </p>
         </Section>
 
+        {guards ? (
+          <>
+            <Section title="Guards">
+              <HabitGuardsSection
+                habit={habit}
+                onSave={guards.onGuardsChange}
+              />
+            </Section>
+            <Section title="Trigger">
+              <HabitTriggerSection
+                habit={habit}
+                onTokenChange={guards.onTriggerTokenChange}
+              />
+            </Section>
+          </>
+        ) : null}
+
         <Section title="Recent runs">
           {runningSince != null ? <RunningRow since={runningSince} /> : null}
           {runs.length === 0 && runningSince == null ? (
@@ -162,6 +234,21 @@ export function HabitPage({
       </div>
     </div>
   );
+}
+
+/** "Asks first · If test -f READY · Waits 5 min", or empty without guards. */
+export function habitGuardSummary(habit: Habit): string {
+  const condition = habit.ifCondition;
+  return [
+    habit.requestApproval ? "Asks first" : "",
+    condition
+      ? `If ${condition.kind === "shell" ? condition.command : condition.expression}`
+      : "",
+    habit.delaySeconds ? `Waits ${habitDelayLabel(habit.delaySeconds)}` : "",
+    habit.triggerToken ? "Has a trigger" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -215,7 +302,7 @@ function RunningRow({ since }: { since: number }) {
 
 function RunRow({ run, cwd }: { run: HabitRun; cwd: string }) {
   const [open, setOpen] = useState(false);
-  const detail = run.report ?? run.error;
+  const detail = run.report ?? run.error ?? run.reason;
   const outcome = OUTCOME[run.outcome];
   const expanded = open && !!detail;
   return (
@@ -250,8 +337,10 @@ function RunRow({ run, cwd }: { run: HabitRun; cwd: string }) {
               streaming={false}
               cwd={cwd}
             />
-          ) : (
+          ) : run.error ? (
             <p className="whitespace-pre-wrap text-red-500/80">{run.error}</p>
+          ) : (
+            <p className="whitespace-pre-wrap text-content/60">{run.reason}</p>
           )}
         </div>
       ) : null}

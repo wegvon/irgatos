@@ -247,6 +247,13 @@ Actions:
                   "dayOfWeek", 0 = Sunday); time is local 24-hour HH:MM.
                   Each run is a hidden session that posts to this chat only
                   when it has something worth saying.
+                  Optional guards on add or update: "requestApproval":true
+                  waits for the user's Approve first; "delaySeconds":300
+                  waits after it comes due; "ifCondition" skips the run when
+                  false, either {"kind":"shell","command":"test -f READY"}
+                  (exit 0 runs) or {"kind":"expression","expression":
+                  "now.weekday != 0 && last.hoursAgo > 20"} over now.*,
+                  trigger.*, last.* and runs.count; null removes it.
   habits.update  {"id":"...","name":"...","instructions":"...",
                   "schedule":{...},"enabled":false}  Change or pause one.
   habits.run     {"id":"..."}  Run one within a minute, to try it out.

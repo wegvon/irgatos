@@ -56,7 +56,16 @@ vi.mock("../../features/irgats/model/irgatFiles", async (original) => {
   };
 });
 
+const { runCheck } = vi.hoisted(() => ({ runCheck: vi.fn() }));
+vi.mock("../../features/sessions/model/completionGate", async (original) => ({
+  ...(await original<object>()),
+  runCheckCommand: (...args: unknown[]) => runCheck(...args),
+}));
+
 const { useIrgatHabits } = await import("./useIrgatHabits");
+const { approveHabit } = await import(
+  "../../features/irgats/model/habitGuards"
+);
 const { shouldPersistSession } =
   await import("../../features/sessions/data/sessionStore");
 const { checkHabitsNow, relayApproval } =
@@ -448,4 +457,128 @@ it("uses a waiting habit's latest instructions when it launches", async () => {
     "Inspect only the release branch.",
   );
   await vi.waitFor(() => expect(stored[1].lastOutcome).toBe("quiet"));
+});
+
+function setupGuarded(guards: Partial<Habit>, reply = "NOTHING_TO_REPORT") {
+  stored = [
+    {
+      id: "h1",
+      name: "Guarded",
+      instructions: "Check the deploy.",
+      schedule: { scheduleKind: "daily", time: "09:00", minute: 0, dayOfWeek: 1 },
+      enabled: true,
+      createdAt: 0,
+      nextRunAt: Date.now() - 60_000,
+      ...guards,
+    },
+  ];
+  const host = makeHost(reply);
+  mountHost(host);
+  return host;
+}
+
+it("skips a run whose shell condition fails, without starting a session", async () => {
+  runCheck.mockResolvedValueOnce({
+    status: "failed",
+    exitCode: 1,
+    output: "no READY file",
+    truncated: 0,
+    durationMs: 3,
+  });
+  const host = setupGuarded({
+    ifCondition: { kind: "shell", command: "test -f READY" },
+  });
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("skipped"));
+  expect(runCheck).toHaveBeenCalledWith("/code/app", "test -f READY", 60_000);
+  expect(stored[0].runs?.[0].reason).toContain("no READY file");
+  expect(stored[0].nextRunAt).toBeGreaterThan(Date.now());
+  expect(host.add).not.toHaveBeenCalled();
+});
+
+it("runs once a shell condition passes", async () => {
+  runCheck.mockResolvedValueOnce({
+    status: "passed",
+    exitCode: 0,
+    output: "",
+    truncated: 0,
+    durationMs: 3,
+  });
+  const host = setupGuarded({
+    ifCondition: { kind: "shell", command: "test -f READY" },
+  });
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("quiet"));
+  expect(host.run).toHaveBeenCalledTimes(1);
+});
+
+it("fails a run whose condition cannot be checked", async () => {
+  const host = setupGuarded({
+    ifCondition: { kind: "expression", expression: "weather.sunny" },
+  });
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("failed"));
+  expect(stored[0].lastError).toContain('Unknown name "weather"');
+  expect(host.add).not.toHaveBeenCalled();
+});
+
+it("waits for approval, then runs once approved", async () => {
+  const host = setupGuarded({
+    requestApproval: true,
+    ifCondition: { kind: "expression", expression: "runs.count == 0" },
+  });
+  await vi.waitFor(() => expect(stored[0].approval?.state).toBe("pending"));
+  expect(stored[0].runRequested).toBe(true);
+  // Another check while it waits does nothing.
+  await act(async () => checkHabitsNow());
+  expect(host.add).not.toHaveBeenCalled();
+
+  stored = stored.map((habit) => approveHabit(habit));
+  fileVersion++;
+  await act(async () => checkHabitsNow());
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("quiet"));
+  expect(host.run).toHaveBeenCalledTimes(1);
+  expect(stored[0].approval).toBeUndefined();
+  expect(stored[0].runRequested).toBeUndefined();
+});
+
+it("drops a run nobody approved in time", async () => {
+  const host = setupGuarded({
+    requestApproval: true,
+    runRequested: true,
+    approval: {
+      state: "pending",
+      requestedAt: Date.now() - 13 * 60 * 60 * 1000,
+    },
+  });
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("skipped"));
+  expect(stored[0].runs?.[0].reason).toBe("Nobody approved it in time.");
+  expect(host.add).not.toHaveBeenCalled();
+});
+
+it("waits out the delay before running", async () => {
+  const host = setupGuarded({ delaySeconds: 1 });
+  await vi.waitFor(() => expect(stored[0].delayedUntil).toBeDefined());
+  expect(host.add).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("quiet"), {
+    timeout: 3_000,
+  });
+  expect(host.run).toHaveBeenCalledTimes(1);
+  expect(stored[0].delayedUntil).toBeUndefined();
+});
+
+it("hands a webhook payload to the run", async () => {
+  const host = setupGuarded({
+    enabled: true,
+    nextRunAt: Date.now() + 3_600_000,
+    runRequested: true,
+    trigger: { source: "webhook", at: Date.now(), payload: "build 42 failed" },
+    ifCondition: {
+      kind: "expression",
+      expression: 'trigger.payload contains "failed"',
+    },
+  });
+  await vi.waitFor(() => expect(host.run).toHaveBeenCalledTimes(1));
+  expect(host.run.mock.calls[0][1]).toContain(
+    "<trigger_payload>\nbuild 42 failed\n</trigger_payload>",
+  );
+  await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("quiet"));
+  expect(stored[0].trigger).toBeUndefined();
 });

@@ -33,6 +33,13 @@ import {
   updateHabits,
   type Habit,
 } from "../../features/irgats/model/irgatHabits";
+import {
+  askHabitApproval,
+  checkHabitCondition,
+  delayHabit,
+  habitGuardStage,
+  skipHabit,
+} from "../../features/irgats/model/habitGuards";
 import type { HarnessId } from "../../features/sessions/model/session";
 import type { UsageLimitHold } from "../../features/quotas/model/usageLimitRegistry";
 import {
@@ -151,6 +158,17 @@ function heldByRegistry(habit: Habit, now: number): boolean {
   return !!usageLimitRegistry.get(hold.harness as HarnessId, hold.accountId, now);
 }
 
+function changeHabit(
+  irgatId: string,
+  habitId: string,
+  change: (habit: Habit) => Habit,
+): Promise<void> {
+  return updateHabits(irgatId, (habits) => ({
+    habits: habits.map((entry) => (entry.id === habitId ? change(entry) : entry)),
+    result: undefined,
+  }));
+}
+
 function parkHabit(
   irgatId: string,
   habitId: string,
@@ -188,6 +206,88 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
     let running = false;
     // A check asked for mid-run happens as soon as that run ends.
     let checkAgain = false;
+    // Wake-ups for delays ending between ticks, by when they end.
+    const wakes = new Map<number, number>();
+    const wakeAt = (at: number) => {
+      if (wakes.has(at)) return;
+      const timer = window.setTimeout(
+        () => {
+          wakes.delete(at);
+          void tick();
+        },
+        Math.max(0, at - Date.now()) + 50,
+      );
+      wakes.set(at, timer);
+    };
+
+    /**
+     * Takes the habit through its delay, condition and approval. True when it
+     * should run now; otherwise what happened is saved on the habit.
+     */
+    const passGuards = async (
+      irgatId: string,
+      habitId: string,
+      cwd: string,
+    ): Promise<boolean> => {
+      const latest = (await loadHabits(irgatId)).find(
+        (entry) => entry.id === habitId,
+      );
+      if (!latest) return false;
+      let stage = habitGuardStage(latest, Date.now());
+      if (stage.stage === "check") {
+        const checkedAt = Date.now();
+        const result = await checkHabitCondition(
+          latest,
+          stage.condition,
+          cwd,
+          checkedAt,
+        );
+        if (stopped) return false;
+        if (result.kind === "skip") {
+          await changeHabit(irgatId, habitId, (entry) =>
+            skipHabit(entry, Date.now(), result.reason),
+          );
+          return false;
+        }
+        if (result.kind === "fail") {
+          await changeHabit(irgatId, habitId, (entry) =>
+            afterRun(entry, Date.now(), {
+              kind: "failed",
+              error: result.error,
+              startedAt: checkedAt,
+            }),
+          );
+          return false;
+        }
+        stage = habitGuardStage(latest, Date.now(), true);
+      }
+      switch (stage.stage) {
+        case "run":
+          return true;
+        case "wait":
+          return false;
+        case "expired":
+          await changeHabit(irgatId, habitId, (entry) =>
+            skipHabit(entry, Date.now(), "Nobody approved it in time."),
+          );
+          return false;
+        case "delay": {
+          const until = stage.until;
+          await changeHabit(irgatId, habitId, (entry) =>
+            delayHabit(entry, until),
+          );
+          wakeAt(until);
+          return false;
+        }
+        case "ask":
+          await changeHabit(irgatId, habitId, (entry) =>
+            askHabitApproval(entry, Date.now()),
+          );
+          return false;
+        case "check":
+          return false;
+      }
+    };
 
     const runHabit = async (
       irgatId: string,
@@ -197,6 +297,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       const host = hostRef.current;
       const irgat = await host.open(irgatSessionId);
       if (!irgat || stopped || !findIrgat(irgatId)) return;
+      if (!(await passGuards(irgatId, habitId, irgat.cwd)) || stopped) return;
       const files = await loadIrgatFiles(irgatId);
       if (stopped || !findIrgat(irgatId)) return;
       // Out of quota: wait for the reset instead of failing the run.
@@ -313,11 +414,12 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           // Habits are set up in its chat, so one never opened has none.
           if (!sessionId) continue;
           const now = Date.now();
-          const { run, skipped } = dueHabits(
-            await loadHabits(id),
-            now,
-            heldByRegistry,
-          );
+          const habits = await loadHabits(id);
+          // A delay saved before a restart still ends on time.
+          for (const habit of habits)
+            if (habit.delayedUntil != null && habit.delayedUntil > now)
+              wakeAt(habit.delayedUntil);
+          const { run, skipped } = dueHabits(habits, now, heldByRegistry);
           if (!run.length && !skipped.length) continue;
           if (skipped.length) {
             await updateHabits(id, (habits) => {
@@ -368,6 +470,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      for (const wake of wakes.values()) window.clearTimeout(wake);
       stopChecks();
       stopHolds();
       if ((window as OwnedWindow)[OWNER] === owner)
