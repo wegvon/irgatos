@@ -32,6 +32,13 @@ type Options = {
 /** The recognizer normally answers Stop within a second. */
 const FINAL_TIMEOUT_MS = 4000;
 
+/**
+ * There is one microphone, so there is one capture. More than one composer can
+ * be on screen, and starting in a second drops the first rather than letting
+ * two recognizers write into two drafts at once.
+ */
+let holder: (() => void) | null = null;
+
 export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
   const [phase, setPhase] = useState<DictationPhase>("idle");
   const [error, setError] = useState<DictationError | null>(null);
@@ -47,21 +54,29 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
   const phaseRef = useRef<DictationPhase>("idle");
   phaseRef.current = phase;
 
+  // One stable identity per hook, so the holder can be compared and dropped
+  // however often the callbacks it forwards to are rebuilt.
+  const detachRef = useRef<() => void>(() => {});
+  const release = useRef(() => detachRef.current()).current;
+
   const finish = useCallback(
     (reason: DictationEnd) => {
       window.clearTimeout(timeoutRef.current);
       generationRef.current += 1;
       handleRef.current = null;
+      if (holder === release) holder = null;
       levels.set(0);
       setPhase("idle");
       phaseRef.current = "idle";
       callbacks.current.onEnd?.(reason);
     },
-    [levels],
+    [levels, release],
   );
 
   const start = useCallback(async () => {
     if (phaseRef.current !== "idle") return;
+    if (holder && holder !== release) holder();
+    holder = release;
     const generation = ++generationRef.current;
     const stale = () => generationRef.current !== generation;
     setError(null);
@@ -153,7 +168,7 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
       });
       finish("error");
     }
-  }, [finish, levels]);
+  }, [finish, levels, release]);
 
   /** Stop listening and keep the transcript. */
   const stop = useCallback(() => {
@@ -188,6 +203,7 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
   const cancel = useCallback(() => end("cancel"), [end]);
   /** Stop listening and leave the draft as it is, for typing that takes over. */
   const detach = useCallback(() => end("detach"), [end]);
+  detachRef.current = detach;
 
   const toggle = useCallback(() => {
     if (phaseRef.current === "idle") void start();
@@ -199,8 +215,9 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
       window.clearTimeout(timeoutRef.current);
       generationRef.current += 1;
       handleRef.current?.cancel();
+      if (holder === release) holder = null;
     },
-    [],
+    [release],
   );
 
   return {
