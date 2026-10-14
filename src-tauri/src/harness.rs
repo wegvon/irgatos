@@ -986,6 +986,7 @@ pub fn harness_spawn(
     };
 
     crate::control::configure_child(&app, &session_id, &mut cmd);
+    crate::lightpanda::configure_child(&app, &mut cmd);
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
@@ -1514,12 +1515,23 @@ pub(crate) fn exec_output(
     cwd: Option<&str>,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
+    exec_output_env(command, args, cwd, &[], timeout)
+}
+
+pub(crate) fn exec_output_env(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    envs: &[(&str, &str)],
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
     let mut cmd = Command::new(command);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_child(&mut cmd, command);
+    cmd.envs(envs.iter().copied());
     if let Some(dir) = cwd {
         let workdir = expand_home(dir);
         if workdir.is_dir() {
@@ -1586,7 +1598,7 @@ fn isolate_child(cmd: &mut Command) {
     }
 }
 
-fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+pub(crate) fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
     #[cfg(windows)]
     {
         crate::windows::spawn_managed(cmd)
@@ -3000,7 +3012,7 @@ pub(crate) fn apply_gui_env(cmd: &mut Command) {
     }
 }
 
-fn prepare_child(cmd: &mut Command, command: &str) {
+pub(crate) fn prepare_child(cmd: &mut Command, command: &str) {
     apply_gui_env(cmd);
     if command_basename(command) == "fx" {
         apply_fx_env(cmd);

@@ -30,6 +30,7 @@ mod jira;
 mod jsonc;
 mod kanban;
 mod legacy_data;
+mod lightpanda;
 mod linear;
 mod link_preview;
 #[cfg(target_os = "macos")]
@@ -268,6 +269,7 @@ pub fn run() {
             artifacts::serve_html(ctx.app_handle(), &request)
         })
         .manage(harness::HarnessHost::new())
+        .manage(lightpanda::LightpandaHost::default())
         .manage(pty::PtyHost::new())
         .manage(remote::RemoteConnections::default())
         .manage(window_transfer::WindowTransferState::new())
@@ -507,6 +509,11 @@ pub fn run() {
             computer_use::computer_use_status,
             computer_use::computer_use_disable_telemetry,
             computer_use::computer_use_grant_permissions,
+            lightpanda::lightpanda_status,
+            lightpanda::lightpanda_install,
+            lightpanda::lightpanda_sidecar_start,
+            lightpanda::lightpanda_sidecar_stop,
+            lightpanda::lightpanda_sidecar_status,
             harness::claude_mcp_add,
             harness::claude_mcp_remove,
             harness::mcp_provider_login,
@@ -753,6 +760,9 @@ fn reap_harness_children(handle: &tauri::AppHandle) {
     }
     if let Some(host) = handle.try_state::<pty::PtyHost>() {
         host.kill_all();
+    }
+    if let Some(host) = handle.try_state::<lightpanda::LightpandaHost>() {
+        host.stop();
     }
 }
 
