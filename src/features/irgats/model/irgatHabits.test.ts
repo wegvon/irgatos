@@ -197,6 +197,21 @@ it("hands the Irgat what its habits posted since the user last wrote", () => {
   expect(habitPostsContext([])).toBe("");
 });
 
+it("still hands over habit posts after a Live voice call", () => {
+  const blocks: Block[] = [
+    { id: "u1", role: "user", text: "thanks" },
+    {
+      id: "p1",
+      role: "assistant",
+      text: "CI is red",
+      irgatHabit: { id: "h1", name: "CI", at: at(5, 9) },
+    },
+    { id: "v1", role: "user", text: "what broke?", liveVoice: { at: 1 } },
+    { id: "v2", role: "assistant", text: "A flaky test", liveVoice: { at: 2 } },
+  ];
+  expect(unseenHabitPosts(blocks).map((block) => block.id)).toEqual(["p1"]);
+});
+
 it("routes an answer in the Irgat's chat back to the run that asked", () => {
   const id = relayApproval({
     irgatId: "irgat",

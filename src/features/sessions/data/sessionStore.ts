@@ -921,6 +921,16 @@ function sanitizeBlock(
       at: block.irgatHabit.at,
     };
   }
+  if (
+    (block.role === "user" || block.role === "assistant") &&
+    typeof block.liveVoice?.at === "number" &&
+    Number.isFinite(block.liveVoice.at)
+  ) {
+    next.liveVoice = {
+      at: block.liveVoice.at,
+      ...(block.liveVoice.interrupted === true ? { interrupted: true } : {}),
+    };
+  }
   if (block.role === "user" && typeof block.sentAt === "number")
     next.sentAt = block.sentAt;
   const turnModel = sanitizeTurnModel(block.turnModel);

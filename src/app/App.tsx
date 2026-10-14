@@ -676,6 +676,11 @@ import {
   unseenHabitPosts,
   updateHabits,
 } from "../features/irgats/model/irgatHabits";
+import { setLiveHost } from "../features/voice/live/liveHost";
+import {
+  liveTurnsContext,
+  unseenLiveTurns,
+} from "../features/voice/live/liveTranscript";
 import {
   loadIrgatRotation,
   planRotation,
@@ -8474,6 +8479,9 @@ function Workspace({
           if (habitPosts.length) {
             appContext.push(habitPostsContext(habitPosts));
           }
+          // Likewise what was said in a Live voice call since the last turn.
+          const liveTurns = unseenLiveTurns(current.blocks);
+          if (liveTurns.length) appContext.push(liveTurnsContext(liveTurns));
           if (
             agentFiles &&
             agentLook &&
@@ -8824,6 +8832,46 @@ function Workspace({
     );
   };
   decideIrgatBlockRef.current = decideIrgatBlock;
+  const appendLiveRef = useRef(appendToIrgat);
+  appendLiveRef.current = appendToIrgat;
+  useEffect(
+    () =>
+      setLiveHost({
+        session: (sessionId) => {
+          const session = sessionsRef.current.find(
+            (candidate) => candidate.id === sessionId,
+          );
+          return session
+            ? {
+                id: session.id,
+                title: irgatForSession(session.id)
+                  ? irgatLook(irgatForSession(session.id)!).name
+                  : session.title,
+                cwd: session.cwd,
+                blocks: session.blocks,
+              }
+            : undefined;
+        },
+        append: (sessionId, block) => appendLiveRef.current(sessionId, block),
+        delegate: async (sessionId, prompt) => {
+          let settle!: (text: string | undefined) => void;
+          const done = new Promise<string | undefined>((resolve) => {
+            settle = resolve;
+          });
+          const accepted = await submitSessionRef.current(sessionId, prompt, [], {
+            onSettled: (outcome) =>
+              settle(outcome.status === "completed" ? outcome.text : undefined),
+          });
+          return accepted
+            ? { started: true, done }
+            : {
+                started: false,
+                reason: "The agent could not take the work right now",
+              };
+        },
+      }),
+    [],
+  );
 
   useLightpandaAutostart();
   useHabitWebhooks();

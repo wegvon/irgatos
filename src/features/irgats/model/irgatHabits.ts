@@ -599,7 +599,13 @@ export function unseenHabitPosts(blocks: readonly Block[]): Block[] {
   const posts: Block[] = [];
   for (let i = blocks.length - 1; i >= 0; i--) {
     const block = blocks[i];
-    if (block.role === "user" && !block.draft && !block.internal) break;
+    if (
+      block.role === "user" &&
+      !block.draft &&
+      !block.internal &&
+      !block.liveVoice
+    )
+      break;
     if (block.irgatHabit && block.text.trim()) posts.unshift(block);
   }
   return posts;

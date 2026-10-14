@@ -29,6 +29,38 @@ it("persists sidebar visibility without making the session ephemeral", () => {
   expect(persistFingerprint(hidden)).not.toBe(persistFingerprint(session));
 });
 
+it("keeps what was said in a Live voice call across restarts", () => {
+  const session = newSession("codex", "/tmp");
+  session.blocks = [
+    { id: "u", role: "user", text: "is CI green?", liveVoice: { at: 5 } },
+    {
+      id: "a",
+      role: "assistant",
+      text: "Checking",
+      liveVoice: { at: 6, interrupted: true },
+    },
+    {
+      id: "t",
+      role: "tool",
+      text: "ls",
+      liveVoice: { at: 7 },
+    },
+    {
+      id: "bad",
+      role: "assistant",
+      text: "x",
+      liveVoice: { at: Number.NaN },
+    },
+  ];
+  const blocks = sanitizeSessionForPersist(session).blocks;
+  expect(blocks.map((block) => block.liveVoice)).toEqual([
+    { at: 5 },
+    { at: 6, interrupted: true },
+    undefined,
+    undefined,
+  ]);
+});
+
 it("fingerprints queued message edits, ordering, errors and pause state", () => {
   const session = newSession("codex", "/tmp");
   const first = { id: "first", text: "One", attachments: [] };

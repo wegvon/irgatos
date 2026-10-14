@@ -47,6 +47,16 @@ describe("editLastTurn", () => {
     ]);
   });
 
+  it("never edits what was said in a Live voice call", () => {
+    const blocks: Block[] = [
+      { id: "u1", role: "user", text: "typed" },
+      { id: "a1", role: "assistant", text: "ok" },
+      { id: "v1", role: "user", text: "spoken", liveVoice: { at: 1 } },
+      { id: "v2", role: "assistant", text: "heard", liveVoice: { at: 2 } },
+    ];
+    expect(lastUserTurnStartIndex(blocks)).toBe(0);
+  });
+
   it("ignores draft user blocks when selecting the editable turn", () => {
     const blocks: Block[] = [
       { id: "submitted", role: "user", text: "keep this" },
