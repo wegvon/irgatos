@@ -47,6 +47,22 @@ test("beta builds override a configured production endpoint", () => {
   }), "https://cdn.example.com/beta/latest.json");
 });
 
+test("stable builds fall back to the GitHub Release feed", () => {
+  assert.equal(updaterEndpoint({
+    GITHUB_REF_NAME: "main",
+    RELEASE_TAG: "v0.1.0",
+    GITHUB_REPOSITORY: "wegvon/irgatos",
+  }), "https://github.com/wegvon/irgatos/releases/latest/download/latest.json");
+  assert.throws(() => updaterEndpoint({ GITHUB_REF_NAME: "v0.1.0" }), /GITHUB_REPOSITORY/);
+});
+
+test("beta builds never use the GitHub latest feed", () => {
+  assert.throws(() => updaterEndpoint({
+    GITHUB_REF_NAME: "v0.2.0-beta.1",
+    GITHUB_REPOSITORY: "wegvon/irgatos",
+  }), /R2_PUBLIC_BASE_URL is required/);
+});
+
 test("beta builds require an isolated R2 endpoint and HTTPS", () => {
   assert.throws(() => updaterEndpoint({
     GITHUB_REF_NAME: "v0.9.1-beta.1",
