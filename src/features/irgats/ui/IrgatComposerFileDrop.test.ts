@@ -86,14 +86,14 @@ it("attaches files dropped anywhere on the Irgat chat", async () => {
     container.querySelector<HTMLElement>("[data-layout]")!.dataset.layout;
   expect(layout()).toBe("inline");
   await native({ type: "over", position: { x: 50, y: 20 } } as DragDropEvent);
-  expect(container.textContent).toContain("Drop files to attach");
+  expect(container.textContent).toContain("Drop files or folders to attach");
 
   await native({
     type: "drop",
     paths: ["/Users/me/photo.png"],
     position: { x: 50, y: 20 },
   } as DragDropEvent);
-  expect(container.textContent).not.toContain("Drop files to attach");
+  expect(container.textContent).not.toContain("Drop files or folders to attach");
   expect(container.querySelector('[title="/Users/me/photo.png"]')).not.toBeNull();
   // An attachment moves the field above the buttons, like a second line.
   expect(layout()).toBe("multiline");
@@ -125,4 +125,42 @@ it("ignores native drops outside the chat", async () => {
     position: { x: 900, y: 900 },
   } as DragDropEvent);
   expect(invoke).not.toHaveBeenCalledWith("inspect_paths", expect.anything());
+});
+
+it("attaches a dropped folder as a chip with its item count, and removes it", async () => {
+  invoke.mockImplementation(async (command: string, args: { paths?: string[]; path?: string }) => {
+    if (command === "inspect_paths")
+      return (args.paths ?? []).map((path) => ({
+        path,
+        name: path.split("/").pop() ?? path,
+        size: 0,
+        isDir: true,
+      }));
+    if (command === "list_dir" && args.path === "/Users/me/app")
+      return [
+        { name: ".git", path: "/Users/me/app/.git", isDir: true, ignored: true },
+        { name: "node_modules", path: "/Users/me/app/node_modules", isDir: true, ignored: false },
+        { name: "src", path: "/Users/me/app/src", isDir: true, ignored: false },
+        { name: "package.json", path: "/Users/me/app/package.json", isDir: false, ignored: false },
+      ];
+    return [];
+  });
+  await render();
+  await native({
+    type: "drop",
+    paths: ["/Users/me/app"],
+    position: { x: 50, y: 20 },
+  } as DragDropEvent);
+
+  const chip = container.querySelector<HTMLElement>('[title^="/Users/me/app"]')!;
+  expect(chip).not.toBeNull();
+  expect(chip.textContent).toContain("app");
+  expect(chip.textContent).toContain("2 items");
+  expect(chip.title).toContain("2 left out");
+  expect(invoke).toHaveBeenCalledWith("list_dir", { path: "/Users/me/app" });
+
+  await act(async () =>
+    chip.querySelector<HTMLButtonElement>('[aria-label="Remove app"]')!.click(),
+  );
+  expect(container.querySelector('[title^="/Users/me/app"]')).toBeNull();
 });

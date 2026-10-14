@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { X } from "../../../shared/ui/icons";
-import { attachmentPreviewSrc, isAttachmentFolder } from "../model/attachments";
+import {
+  attachmentPreviewSrc,
+  folderItemCountLabel,
+  isAttachmentFolder,
+} from "../model/attachments";
 import type { Attachment } from "../model/session";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
@@ -16,6 +20,10 @@ export function AttachmentChip({ attachment, onRemove, photo = false }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const preview = attachmentPreviewSrc(attachment);
   const image = attachment.kind === "image" && preview;
+  const folder = isAttachmentFolder(attachment);
+  const itemCount = attachment.folder
+    ? folderItemCountLabel(attachment.folder)
+    : null;
 
   return (
     <>
@@ -23,7 +31,7 @@ export function AttachmentChip({ attachment, onRemove, photo = false }: Props) {
         className={`group relative flex min-w-0 items-center gap-1.5 rounded-md ${
           image ? "" : "bg-content/10 py-0.5 pl-1 pr-1"
         }`}
-        title={attachment.path ?? attachment.name}
+        title={chipTitle(attachment, itemCount)}
       >
         {image ? (
           <button
@@ -50,15 +58,16 @@ export function AttachmentChip({ attachment, onRemove, photo = false }: Props) {
         ) : (
           <>
             <span className="grid size-5 shrink-0 place-items-center">
-              <FileTypeIcon
-                name={attachment.name}
-                isDir={isAttachmentFolder(attachment)}
-                size={16}
-              />
+              <FileTypeIcon name={attachment.name} isDir={folder} size={16} />
             </span>
             <span className="min-w-0 max-w-[140px] truncate text-[11px] leading-none text-content/80">
               {attachment.name}
             </span>
+            {itemCount ? (
+              <span className="shrink-0 text-[10px] leading-none text-content/45">
+                {itemCount}
+              </span>
+            ) : null}
           </>
         )}
         {onRemove ? (
@@ -89,4 +98,14 @@ export function AttachmentChip({ attachment, onRemove, photo = false }: Props) {
       ) : null}
     </>
   );
+}
+
+function chipTitle(attachment: Attachment, itemCount: string | null): string {
+  const where = attachment.path ?? attachment.name;
+  const skipped = attachment.folder?.skipped ?? 0;
+  if (!itemCount) return where;
+  const left = skipped
+    ? `, ${skipped} left out (version control, dependencies, build output)`
+    : "";
+  return `${where}\n${itemCount}${left}`;
 }

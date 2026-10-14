@@ -6,10 +6,14 @@ import { IrgatComposer } from "./IrgatComposer";
 import { clearComposerDraft } from "../../sessions/model/draftCache";
 import { saveComposerAutocorrect } from "../../settings/model/displayPrefs";
 
-const { pick } = vi.hoisted(() => ({ pick: vi.fn() }));
+const { pick, pickFolder } = vi.hoisted(() => ({
+  pick: vi.fn(),
+  pickFolder: vi.fn(),
+}));
 vi.mock("../../sessions/model/attachments", async (original) => ({
   ...(await original<typeof import("../../sessions/model/attachments")>()),
   pickAttachments: pick,
+  pickFolderAttachments: pickFolder,
 }));
 vi.mock("../../sessions/hooks/useFileDrop", () => ({
   useFileDrop: () => false,
@@ -37,6 +41,15 @@ const file = {
   size: 12,
   path: "/tmp/note.txt",
 };
+const folder = {
+  id: "folder",
+  name: "reports",
+  kind: "file" as const,
+  mimeType: "inode/directory",
+  size: 0,
+  path: "/tmp/reports",
+  folder: { names: ["q1/", "summary.md"], total: 2, skipped: 1 },
+};
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -48,6 +61,7 @@ beforeEach(() => {
   );
   clearComposerDraft("chat");
   pick.mockReset().mockResolvedValue([file]);
+  pickFolder.mockReset().mockResolvedValue([folder]);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -217,8 +231,13 @@ it("inserts a picked emoji where the cursor was, beside attach", async () => {
     'button[aria-label="Add emoji"]',
   )!;
   expect(button.previousElementSibling?.getAttribute("aria-label")).toBe(
-    "Attach files",
+    "Attach folder",
   );
+  expect(
+    button.previousElementSibling?.previousElementSibling?.getAttribute(
+      "aria-label",
+    ),
+  ).toBe("Attach files");
   // The picker loads on first open.
   await act(async () => button.click());
   await vi.waitFor(() =>
@@ -232,4 +251,24 @@ it("inserts a picked emoji where the cursor was, beside attach", async () => {
   // The floating chat keeps its inline input, without the extra row.
   render();
   expect(container.querySelector('button[aria-label="Add emoji"]')).toBeNull();
+});
+
+it.each([
+  ["the floating chat", {}],
+  ["the Irgats view", { controls: createElement("span", null, "Model") }],
+])("attaches a picked folder in %s and sends it", async (_, extra) => {
+  const onSubmit = vi.fn(() => true);
+  render({ onSubmit, ...extra });
+  type("Look at these");
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Attach folder"]')!
+      .click(),
+  );
+  expect(pickFolder).toHaveBeenCalledOnce();
+  const chip = container.querySelector<HTMLElement>('[title^="/tmp/reports"]')!;
+  expect(chip.textContent).toContain("reports");
+  expect(chip.textContent).toContain("2 items");
+  act(submit);
+  expect(onSubmit).toHaveBeenCalledWith("Look at these", [folder]);
 });

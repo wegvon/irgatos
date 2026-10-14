@@ -259,6 +259,17 @@ export type Attachment = {
   data?: string;
   /** Object URL for in-session thumbnails. Not persisted. */
   previewUrl?: string;
+  /** What an attached folder held at its top level when it was attached. */
+  folder?: FolderSummary;
+};
+
+export type FolderSummary = {
+  /** Entries worth reading, directories ending in "/"; capped, so maybe partial. */
+  names: string[];
+  /** Every entry worth reading, including any `names` left out. */
+  total: number;
+  /** Version control, dependency, build and gitignored entries left out. */
+  skipped: number;
 };
 
 export type IrgatSessionCompletion = {

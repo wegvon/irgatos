@@ -390,6 +390,7 @@ function FloatingConversation({
   );
   return (
     <div
+      data-session-drop={session.id}
       className="flex min-h-0 flex-1 flex-col"
       onKeyDown={(event) => {
         if (

@@ -172,7 +172,7 @@ describe("Composer Explorer file drops", () => {
         }),
       ),
     );
-    expect(container.textContent).toContain("Drop files to attach");
+    expect(container.textContent).toContain("Drop files or folders to attach");
 
     await act(async () => {
       window.dispatchEvent(
@@ -200,7 +200,7 @@ describe("Composer image drops", () => {
     const session = await render({ disabled: false });
 
     act(() => domDrag(session, "dragover"));
-    expect(container.textContent).toContain("Drop files to attach");
+    expect(container.textContent).toContain("Drop files or folders to attach");
     await nativeDrop(["/project/image.png"]);
 
     expect(attachmentCount()).toBe(1);
@@ -213,7 +213,7 @@ describe("Composer image drops", () => {
     act(() => domDrag(session, "dragover"));
     await nativeDrop(["/project/image.png"]);
 
-    expect(container.textContent).not.toContain("Drop files to attach");
+    expect(container.textContent).not.toContain("Drop files or folders to attach");
     expect(attachmentCount()).toBe(0);
   });
 
@@ -233,7 +233,7 @@ describe("Composer image drops", () => {
     await nativeDrop(["/project/image.png"]);
 
     expect(listen).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("Drop files to attach");
+    expect(container.textContent).not.toContain("Drop files or folders to attach");
     expect(attachmentCount()).toBe(0);
 
     await render({ harness: "codex" });

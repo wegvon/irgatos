@@ -323,7 +323,7 @@ describe("Irgat composer dictation", () => {
       '[data-layout="inline"]',
     )!;
     expect(line.className).toContain(
-      "grid-cols-[1.625rem_minmax(0,1fr)_auto_1.625rem]",
+      "grid-cols-[3.375rem_minmax(0,1fr)_auto_1.625rem]",
     );
     expect(micButton()).not.toBeNull();
     expect(modeButton()).not.toBeNull();

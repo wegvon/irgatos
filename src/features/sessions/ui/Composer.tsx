@@ -5,6 +5,7 @@ import {
   CircleDashed,
   CursorMagicSelection,
   FilePlus,
+  FolderPlus,
   Plus,
   Share,
   Square,
@@ -28,6 +29,7 @@ import {
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
+  pickFolderAttachments,
   revokeAttachment,
 } from "../model/attachments";
 import { resizeComposer } from "../model/composerResize";
@@ -1918,6 +1920,16 @@ export function Composer({
     });
   };
 
+  // A folder travels as a local path, which a connected machine cannot open.
+  const foldersSupported = attachmentsSupported && !remote;
+  const attachFolderFromPicker = () => {
+    if (!foldersSupported) return;
+    void pickFolderAttachments().then((files) => {
+      addAttachments(files);
+      ref.current?.focus();
+    });
+  };
+
   return (
     <div
       data-composer
@@ -2146,7 +2158,7 @@ export function Composer({
         >
           {fileDrag ? (
             <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">
-              Drop files to attach
+              Drop files or folders to attach
             </div>
           ) : null}
           {hideTopBar ? null : (
@@ -2399,6 +2411,30 @@ export function Composer({
                       </span>
                     </span>
                   </button>
+                  {!remote ? (
+                    <button
+                      type="button"
+                      disabled={!foldersSupported}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setPlusOpen(false);
+                        attachFolderFromPicker();
+                      }}
+                      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left text-content hover:bg-content/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <FolderPlus className="mt-0.5 size-4 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-[13px]">
+                          Attach folder…
+                        </span>
+                        <span className="block truncate whitespace-nowrap text-[11px] leading-4 text-content/45">
+                          {foldersSupported
+                            ? "Point the agent at a folder"
+                            : `${HARNESS_TITLE[harness]} does not support attachments`}
+                        </span>
+                      </span>
+                    </button>
+                  ) : null}
                   {!remote || remoteFeatures?.plan ? (
                     <button
                       type="button"

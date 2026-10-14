@@ -1,9 +1,46 @@
 import { invoke } from "@tauri-apps/api/core";
-import { basename, pickFiles as pickFilePaths } from "../../../platform/tauri/fs";
-import type { Attachment, AttachmentKind } from "./session";
+import {
+  basename,
+  listDir,
+  pickFiles as pickFilePaths,
+  pickFolders,
+} from "../../../platform/tauri/fs";
+import type { Attachment, AttachmentKind, FolderSummary } from "./session";
 
 export const MAX_ATTACHMENTS = 20;
 export const MAX_EMBED_BYTES = 20 * 1024 * 1024;
+/** Top-level names a folder attachment lists in the prompt. */
+export const MAX_FOLDER_NAMES = 40;
+
+/**
+ * Folders that are big, generated or private to a tool. Listing them would
+ * bury the folder's own files, and an agent reading them burns its context.
+ */
+const HEAVY_DIRS = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  "target",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  ".svelte-kit",
+  ".turbo",
+  ".cache",
+  ".parcel-cache",
+  ".gradle",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  "Pods",
+  "DerivedData",
+  "coverage",
+]);
 
 type PathInfo = {
   path: string;
@@ -147,6 +184,7 @@ export function persistableAttachment(file: Attachment): Attachment {
     kind: file.kind,
     size: file.size,
     ...(file.path ? { path: file.path } : {}),
+    ...(file.folder ? { folder: file.folder } : {}),
   };
 }
 
@@ -243,6 +281,12 @@ export async function pickAttachments(): Promise<Attachment[]> {
   return attachmentsFromPaths(paths);
 }
 
+export async function pickFolderAttachments(): Promise<Attachment[]> {
+  const paths = await pickFolders("Attach folders");
+  if (!paths.length) return [];
+  return attachmentsFromPaths(paths);
+}
+
 export async function attachmentsFromPaths(
   paths: string[],
 ): Promise<Attachment[]> {
@@ -325,13 +369,79 @@ export function attachmentPath(file: Attachment): string {
 /** Native harnesses without file blocks can ask their tools to read this path. */
 export function attachmentPathText(file: Attachment): string {
   if (isAttachmentFolder(file)) {
-    return `Attached folder (list or read the files inside from this path): ${JSON.stringify(attachmentPath(file))}`;
+    const line = `Attached folder (list or read the files inside from this path): ${JSON.stringify(attachmentPath(file))}`;
+    return file.folder ? `${line}\n${folderSummaryText(file.folder)}` : line;
   }
   return `Attached file (read from disk): ${JSON.stringify(attachmentPath(file))}`;
 }
 
 export function isAttachmentFolder(file: Attachment): boolean {
   return file.mimeType === FOLDER_MIME;
+}
+
+function folderSummaryText(summary: FolderSummary): string {
+  const lines: string[] = [];
+  if (summary.total === 0) {
+    lines.push("Its top level holds nothing worth reading.");
+  } else {
+    const more = summary.total - summary.names.length;
+    const listed =
+      summary.names.join(", ") + (more > 0 ? `, and ${more} more` : "");
+    lines.push(`Top level (${countLabel(summary.total, "item")}): ${listed}`);
+  }
+  if (summary.skipped > 0) {
+    lines.push(
+      `Left out: ${countLabel(summary.skipped, "version control, dependency, build or gitignored entry", "version control, dependency, build or gitignored entries")}. Skip those unless the task needs them.`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function countLabel(count: number, one: string, many = `${one}s`): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/**
+ * The folder's top level, minus anything an agent should not wade through.
+ * One directory read, so a huge tree costs no more than its first level.
+ */
+async function summarizeFolder(
+  path: string,
+): Promise<FolderSummary | undefined> {
+  let entries: Awaited<ReturnType<typeof listDir>>;
+  try {
+    entries = await listDir(path);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(entries)) return undefined;
+  const kept: string[] = [];
+  let skipped = 0;
+  for (const entry of entries) {
+    if (skipName(entry.name)) continue;
+    if (entry.ignored || (entry.isDir && HEAVY_DIRS.has(entry.name))) {
+      skipped += 1;
+      continue;
+    }
+    kept.push(entry.isDir ? `${entry.name}/` : entry.name);
+  }
+  kept.sort((a, b) => {
+    const dirs = Number(b.endsWith("/")) - Number(a.endsWith("/"));
+    return (
+      dirs ||
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+    );
+  });
+  return {
+    names: kept.slice(0, MAX_FOLDER_NAMES),
+    total: kept.length,
+    skipped,
+  };
+}
+
+/** "12 items", for a folder chip. */
+export function folderItemCountLabel(summary: FolderSummary): string {
+  return countLabel(summary.total, "item");
 }
 
 function contentBlockFor(file: Attachment): PromptContentBlock {
@@ -371,6 +481,11 @@ async function attachmentFromPath(info: PathInfo): Promise<Attachment | null> {
     size: info.size,
     path: info.path,
   };
+  if (info.isDir) {
+    const folder = await summarizeFolder(info.path);
+    if (folder) file.folder = folder;
+    return file;
+  }
   if (
     isVisionImage(mimeType) &&
     info.size > 0 &&

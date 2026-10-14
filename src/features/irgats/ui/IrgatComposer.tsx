@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { ArrowUp, Plus, SmilePlus } from "../../../shared/ui/icons";
+import { ArrowUp, FolderPlus, Plus, SmilePlus } from "../../../shared/ui/icons";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
 import type { Attachment } from "../../sessions/model/session";
 import {
@@ -16,6 +16,7 @@ import {
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
+  pickFolderAttachments,
   revokeAttachment,
 } from "../../sessions/model/attachments";
 import {
@@ -50,9 +51,12 @@ const MAX_HEIGHT = 160;
 /** The quiet buttons under the input: a glyph that gains a backdrop on hover. */
 const TOOL_BUTTON =
   "grid size-6.5 shrink-0 place-items-center rounded-md text-content/55 transition-colors hover:bg-content/8 hover:text-content disabled:opacity-50";
-const INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_1.625rem]";
+const INLINE_ATTACH_BUTTON =
+  "grid size-6.5 shrink-0 place-items-center rounded-md bg-content/8 text-content/55 hover:bg-content/12 hover:text-content disabled:opacity-50";
+/** Attach and attach-folder share the first column, 0.125rem apart. */
+const INPUT_COLUMNS = "grid-cols-[3.375rem_minmax(0,1fr)_1.625rem]";
 /** The same line with room for the voice buttons between the field and send. */
-const VOICE_INPUT_COLUMNS = "grid-cols-[1.625rem_minmax(0,1fr)_auto_1.625rem]";
+const VOICE_INPUT_COLUMNS = "grid-cols-[3.375rem_minmax(0,1fr)_auto_1.625rem]";
 const FIELD_CLASSES =
   "scrollbar-none block min-w-0 w-full resize-none bg-transparent py-1 text-[13px] leading-4.5 text-content outline-none placeholder:text-content/35";
 
@@ -367,6 +371,18 @@ export function IrgatComposer({
       />
     </button>
   );
+  const attachFolderButton = (className: string) => (
+    <button
+      type="button"
+      title="Attach folder…"
+      aria-label="Attach folder"
+      disabled={!enabled || submitting}
+      onClick={() => readAttachments(pickFolderAttachments)}
+      className={className}
+    >
+      <FolderPlus className="size-3.5" strokeWidth={1.75} />
+    </button>
+  );
   const input = (className: string) => (
     <textarea
       ref={field}
@@ -430,7 +446,7 @@ export function IrgatComposer({
       >
         {fileDrag ? (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">
-            Drop files to attach
+            Drop files or folders to attach
           </div>
         ) : null}
         {dropError ? (
@@ -476,9 +492,12 @@ export function IrgatComposer({
                 className={`${FIELD_CLASSES} col-start-2 h-0 overflow-hidden`}
               />
             </div>
-            {attachButton(
-              `col-start-1 grid size-6.5 place-items-center rounded-md bg-content/8 text-content/55 hover:bg-content/12 hover:text-content ${stacked ? "row-start-2" : "row-start-1"}`,
-            )}
+            <div
+              className={`col-start-1 flex items-center gap-0.5 ${stacked ? "row-start-2" : "row-start-1"}`}
+            >
+              {attachButton(INLINE_ATTACH_BUTTON)}
+              {attachFolderButton(INLINE_ATTACH_BUTTON)}
+            </div>
             {input(
               `row-start-1 ${stacked ? `${voice.available ? "col-span-4" : "col-span-3"} col-start-1 px-1.5` : "col-start-2"}`,
             )}
@@ -510,6 +529,7 @@ export function IrgatComposer({
         // control lines up under send.
         <div className="flex min-w-0 items-center gap-0.5 pt-1 pl-1 pr-1.5">
           {attachButton(TOOL_BUTTON, true)}
+          {attachFolderButton(TOOL_BUTTON)}
           <button
             ref={emojiButton}
             type="button"
