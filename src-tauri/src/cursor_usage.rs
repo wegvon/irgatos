@@ -298,9 +298,9 @@ fn read_cli_session() -> Result<String, SessionError> {
 
 fn unreadable_session_message() -> &'static str {
     if cfg!(target_os = "macos") {
-        "Cursor CLI is signed in, but MonoCode could not read its session from the login Keychain."
+        "Cursor CLI is signed in, but Irgatos could not read its session from the login Keychain."
     } else {
-        "Cursor CLI is signed in, but MonoCode could not read its session file."
+        "Cursor CLI is signed in, but Irgatos could not read its session file."
     }
 }
 
