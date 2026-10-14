@@ -92,7 +92,14 @@ jobs:
             echo "Release already exists; refusing to replace it" >&2
             exit 1
           fi
-          EXISTING_SHA=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null || true)
+          EXISTING_SHA=$(gh api "repos/$GH_REPO/commits/$TAG" --jq .sha 2>/dev/null) || EXISTING_SHA=""
+          # One-time migration of the inherited upstream tag. Preserve its
+          # exact target before assigning Irgatos' independent v0.4.0 tag.
+          if [[ "$TAG" == v0.4.0 && "$EXISTING_SHA" == 7288fb6ebd1a27758eaec779d95b25797d214e17 && "$SOURCE_SHA" == 89666361bdf882ac462a22888be3656e0044dfba ]]; then
+            gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/archive/upstream-v0.4.0" -f sha="$EXISTING_SHA"
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$SOURCE_SHA" -F force=true
+            EXISTING_SHA="$SOURCE_SHA"
+          fi
           if [[ -n "$EXISTING_SHA" && "$EXISTING_SHA" != "$SOURCE_SHA" ]]; then
             echo "Existing tag points to another commit" >&2
             exit 1
