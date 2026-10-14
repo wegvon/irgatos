@@ -22,6 +22,22 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
   - Gemini can hand real work to the chat's agent (`delegate_to_irgat_session`) and tells you the result when it finishes. It can also save a note (`save_irgat_note`) and, for Irgats, remember a fact (`update_irgat_memory`).
   - What both sides said is added to the chat, and the next typed message carries it to the agent.
   - **Settings › Voice › Live voice (Gemini)** stores the API key, or picks up `GEMINI_API_KEY` / `GOOGLE_API_KEY` from your shell. It also sets the voice (Puck, Charon, Kore, Fenrir, Aoede), the model, interrupt-on-speech and whether calls are saved to the chat.
+### Added
+
+- **Coding agents in plain terminals.** A terminal tab or dock running Claude Code, Codex, Cursor Agent, Gemini CLI, OpenCode, GitHub Copilot CLI, Amp, Qwen Code or any other of the 24 agents in the catalog now shows which agent it is and whether it is working, waiting for you, idle or done, read from the screen the agent draws. The patterns are adapted from [herdr](https://github.com/herdrdev/herdr) (Apache-2.0).
+  - A badge on the terminal's tab names the agent and its state, pulsing while it works and amber while it waits for you.
+  - The Kanban board lists running terminal agents above the columns, and a click opens their terminal.
+  - Notifications say when a terminal agent needs you or has finished in the background, and open the terminal when clicked.
+- **Messages wait for a busy session.** A session message sent to a session that is waiting on a tool approval or a question is held as **Blocked** instead of being typed into the prompt. It goes out on its own once the session is free; the pill can open that session to approve or answer, or send the message anyway.
+  - A message the target has not picked up, or stopped making progress on, is marked **Stalled** and can be sent again.
+- **Group chats show who is stuck.** The room's status bar says when the member replying waits on an approval or a question (answer it right in the room) or has stalled, with **Answer** or **Review** to jump there, and **Retry** or **Skip** for a stalled turn.
+
+### Fixed
+
+- A running turn is saved every few seconds, so a crash or power loss mid-reply keeps what had already streamed in. Streams of changes no longer hold saves back.
+- State files (Irgat index, checkpoints, turn reviews, remote machines) are written to a temporary file and renamed into place. A file that no longer parses is kept as `<name>.corrupt-<time>.bak` and its last good copy restored instead of starting empty.
+- The session database keeps three rolling copies, taken at most every ten minutes while sessions are saved. A database that no longer opens is set aside and the newest good copy takes its place.
+- A malformed Irgat roster, group room list or room transcript in local storage is kept aside instead of being overwritten by the next save, and the roster and rooms fall back to their last good copy.
 
 ## [0.3.0] - 2026-10-14
 
