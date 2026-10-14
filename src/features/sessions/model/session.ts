@@ -401,6 +401,11 @@ export type Block = {
   statusKey?: string;
   /** Posted to a Irgat's chat by one of its habits, outside any turn. */
   irgatHabit?: { id: string; name: string; at: number };
+  /**
+   * Said out loud in a Live voice call, outside any harness turn; the next
+   * typed turn hands it over. See `features/voice/live/liveTranscript`.
+   */
+  liveVoice?: { at: number; interrupted?: boolean };
   /** A card a Irgat put in its chat; see `features/irgats/model/irgatCards`. */
   irgatCard?: import("../../irgats/model/irgatCards").IrgatCard;
   /**
