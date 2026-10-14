@@ -58,9 +58,9 @@ const TABS: { id: IrgatOverviewTab; label: string; icon: typeof Clock }[] = [
   { id: "all", label: "All", icon: DashboardSquare },
   { id: "sessions", label: "Sessions", icon: MessageMultiple },
   { id: "documents", label: "Documents", icon: File },
-  { id: "artifacts", label: "Artifacts", icon: Artifacts },
   { id: "habits", label: "Habits", icon: Clock },
   { id: "changes", label: "Changes", icon: FileDiff },
+  { id: "artifacts", label: "Artifacts", icon: Artifacts },
 ];
 
 /** The conversation's recorded changes, reviewed and committed on their tab. */

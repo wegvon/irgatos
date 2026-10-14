@@ -105,13 +105,21 @@ it("names only the open tab, with its count, and switches tabs", async () => {
   const labels = tabs().map((tab) =>
     tab.querySelector("[data-tab-label]")!.getAttribute("data-tab-label"),
   );
-  expect(labels).toEqual(["closed", "open", "closed", "closed", "closed"]);
+  expect(labels).toEqual([
+    "closed",
+    "open",
+    "closed",
+    "closed",
+    "closed",
+    "closed",
+  ]);
   expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
     "All",
     "Sessions",
     "Documents",
     "Habits",
     "Changes",
+    "Artifacts",
   ]);
   expect(tabs()[1].textContent).toBe("Sessions2");
   expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
