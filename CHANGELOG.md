@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic code search for agents.** Point **Settings › Semantic search** at an EmbeddingGemma server, save its key and index a project. Indexing runs in the background and only re-embeds changed files. Agents then run `app code.search` to find code by meaning and by name: results from the index are merged with `git grep` on the query's identifiers. It is read-only, works in any agent turn without `/operator`, and falls back to grep alone while a project is unindexed or still indexing.
+
 ### Changed
 
 - **Voice mode reads a short summary.** Instead of the whole reply, voice mode now says in a sentence or three what the agent did, what it changed and any question it asks you, in the selected speech model's voice. With a Live voice (Gemini) key the summary comes from Gemini Flash-Lite in the reply's own language. Without one, or when that call fails, it reads the reply's opening paragraph, its questions, its `Next:` lines and a closing offer, and leaves code, tables and file lists on screen. Turn off **Settings › Voice › Read a short summary** to hear the whole reply again.

@@ -122,7 +122,7 @@ pub async fn search_project(options: SearchOptions) -> Result<SearchResult, Stri
     result
 }
 
-fn search_project_sync(
+pub(crate) fn search_project_sync(
     root: &Path,
     options: &SearchOptions,
     cancel: &AtomicBool,

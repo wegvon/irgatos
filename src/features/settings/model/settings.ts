@@ -28,6 +28,7 @@ export type SettingsSectionId =
   | "providers"
   | "usage"
   | "mcp"
+  | "search"
   | "skills"
   | "irgats"
   | "inbox"
@@ -140,6 +141,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "tools servers connections oauth authenticate login claude codex cursor opencode",
   },
   {
+    id: "search",
+    group: "agents",
+    label: "Semantic search",
+    description:
+      "Let agents find code by meaning, with an embedding index of each project.",
+    keywords:
+      "semantic code search embedding embeddinggemma vector index grep agents endpoint",
+  },
+  {
     id: "skills",
     group: "agents",
     label: "Skills",
@@ -221,6 +231,18 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Lightpanda Headless Browser",
     keywords:
       "lightpanda headless browser cdp playwright puppeteer scraping research install mcp",
+  },
+  {
+    id: "semantic-search-service",
+    section: "search",
+    label: "Embedding service",
+    keywords: "endpoint url api key embeddinggemma turn on off",
+  },
+  {
+    id: "semantic-search-projects",
+    section: "search",
+    label: "Project indexes",
+    keywords: "index rebuild progress status project code",
   },
   {
     id: "irgats-enabled",

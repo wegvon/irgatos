@@ -259,7 +259,7 @@ fn secret_path(app: &AppHandle, file: &str) -> Result<std::path::PathBuf, String
 }
 
 /// Writes `key` readable only by this user, or removes the file when empty.
-fn store_secret(path: &std::path::Path, key: &str) -> Result<bool, String> {
+pub(crate) fn store_secret(path: &std::path::Path, key: &str) -> Result<bool, String> {
     let key = key.trim();
     if key.is_empty() {
         return match std::fs::remove_file(path) {
@@ -275,7 +275,7 @@ fn store_secret(path: &std::path::Path, key: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-fn read_secret(path: &std::path::Path) -> Result<Option<String>, String> {
+pub(crate) fn read_secret(path: &std::path::Path) -> Result<Option<String>, String> {
     match std::fs::read_to_string(path) {
         Ok(raw) => Ok(Some(raw.trim().to_string()).filter(|key| !key.is_empty())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),

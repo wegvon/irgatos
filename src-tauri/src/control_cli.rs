@@ -82,7 +82,8 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 36] = [
+const APP_ACTIONS: [&str; 37] = [
+    "code.search",
     "computer.read",
     "computer.act",
     "projects.list",
@@ -121,6 +122,7 @@ const APP_ACTIONS: [&str; 36] = [
     "chat.card",
 ];
 const APP_USAGE: &str = r#"Irgatos app access — use in a thread enabled by /operator.
+code.search is the exception: it works during any agent turn started in Irgatos.
 
 Usage: {exe} app ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
@@ -129,6 +131,16 @@ sessions.*, worktrees.* and folders.* actions to choose which one. It may be
 left out when the Irgat has a single project.
 
 Actions:
+  code.search   {"query":"where is the session search SQL","limit":8}
+                  Find code in your working folder by meaning and by name:
+                  semantic neighbours from the project's index, fused with
+                  git grep on identifiers and words in the query. Ask in
+                  plain language, in any language, and include identifiers
+                  you know. Returns path (relative to your folder), startLine,
+                  endLine, score, sources and a preview for up to limit
+                  (1-20) results, plus the index state. Without an index, or
+                  while it is still being built, results come partly or only
+                  from grep and "note" says so. Read-only.
   computer.read {} Read the window explicitly shared with this chat, with an
                   accessibility tree and screenshot_file_path. Optional query
                   filters the tree. Read before and after every action.

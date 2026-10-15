@@ -612,6 +612,7 @@ describe("settings navigation", () => {
       "providers",
       "usage",
       "mcp",
+      "search",
       "skills",
       "irgats",
       "inbox",

@@ -47,6 +47,9 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
+}));
 const live = vi.hoisted(() => ({
   status: vi.fn(async () => ({ stored: false, env: null as string | null })),
   save: vi.fn(async (_key: string) => true),

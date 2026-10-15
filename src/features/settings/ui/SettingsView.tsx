@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -53,6 +54,19 @@ import {
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
+import {
+  SEMANTIC_INDEX_EVENT,
+  buildSemanticIndex,
+  cancelSemanticIndex,
+  indexableProjects,
+  loadSemanticIndexStatus,
+  loadSemanticSearchSettings,
+  removeSemanticIndex,
+  saveSemanticSearchSettings,
+  semanticIndexSummary,
+  type SemanticIndexStatus,
+  type SemanticSearchSettings,
+} from "../model/semanticSearch";
 import { LightpandaSettings } from "./LightpandaSettings";
 import { AgentQuotaSettings } from "./AgentQuotaSettings";
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
@@ -663,6 +677,9 @@ export function SettingsView({
               {section === "irgats" ? <IrgatsPage /> : null}
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
+              ) : null}
+              {section === "search" ? (
+                <SemanticSearchPage cwd={cwd} recents={recents} />
               ) : null}
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
@@ -3950,6 +3967,288 @@ function ProviderBinaryControl({
         </Popover>
       ) : null}
     </span>
+  );
+}
+
+function SemanticSearchPage({
+  cwd,
+  recents,
+}: {
+  cwd?: string;
+  recents?: RecentProject[];
+}) {
+  const [settings, setSettings] = useState<SemanticSearchSettings | null>(
+    null,
+  );
+  const [endpoint, setEndpoint] = useState("");
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statuses, setStatuses] = useState<
+    Record<string, SemanticIndexStatus>
+  >({});
+  const [working, setWorking] = useState<string | null>(null);
+  const projects = useMemo(
+    () => indexableProjects(cwd, recents),
+    [cwd, recents],
+  );
+
+  useEffect(() => {
+    void loadSemanticSearchSettings()
+      .then((next) => {
+        setSettings(next);
+        setEndpoint(next.endpoint);
+      })
+      .catch((reason: unknown) => setError(String(reason)));
+  }, []);
+
+  const refreshStatus = useCallback(() => {
+    if (!projects.length) return;
+    void loadSemanticIndexStatus(projects)
+      .then((list) =>
+        setStatuses(Object.fromEntries(list.map((s) => [s.root, s]))),
+      )
+      .catch(() => {});
+  }, [projects]);
+
+  useEffect(() => {
+    refreshStatus();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unlisten = listen(SEMANTIC_INDEX_EVENT, () => {
+      clearTimeout(timer);
+      timer = setTimeout(refreshStatus, 300);
+    }).catch(() => undefined);
+    return () => {
+      clearTimeout(timer);
+      void unlisten.then((stop) => stop?.());
+    };
+  }, [refreshStatus]);
+
+  const save = async (patch: {
+    enabled?: boolean;
+    endpoint?: string;
+    key?: string;
+  }) => {
+    if (!settings) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await saveSemanticSearchSettings({
+        enabled: patch.enabled ?? settings.enabled,
+        endpoint: patch.endpoint ?? settings.endpoint,
+        key: patch.key,
+      });
+      setSettings(next);
+      setEndpoint(next.endpoint);
+      if (patch.key !== undefined) setKey("");
+      refreshStatus();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setEndpoint(settings.endpoint);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const run = async (root: string, action: () => Promise<void>) => {
+    setWorking(root);
+    setError(null);
+    try {
+      await action();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setWorking(null);
+      refreshStatus();
+    }
+  };
+
+  const rebuild = async (root: string) => {
+    const confirmed = await ask(
+      `Embed every file in ${projectName(root)} again? Until it finishes, agents search a partial index. A large project takes an hour or more.`,
+      {
+        title: "Rebuild index",
+        kind: "warning",
+        okLabel: "Rebuild",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed) await run(root, () => buildSemanticIndex(root, true));
+  };
+
+  const remove = async (root: string) => {
+    const confirmed = await ask(
+      `Delete the semantic index of ${projectName(root)}? Agents fall back to plain text search there, and nothing is sent to the embedding service for it until you index it again.`,
+      {
+        title: "Remove index",
+        kind: "warning",
+        okLabel: "Remove",
+        cancelLabel: "Cancel",
+      },
+    );
+    if (confirmed) await run(root, () => removeSemanticIndex(root));
+  };
+
+  const inputClass =
+    "min-w-0 flex-1 bg-transparent text-[12px] text-content outline-none placeholder:text-content/35";
+  const fieldClass =
+    "flex h-7 w-72 max-w-full shrink-0 items-center rounded-md border border-content/10 px-2 focus-within:border-content/20";
+  const ready = !!settings?.endpoint && !!settings?.hasKey;
+  const enabled = !!settings?.enabled;
+
+  return (
+    <>
+      <Group
+        id="semantic-search-service"
+        title="Embedding service"
+        description="An EmbeddingGemma server with an OpenAI-style /v1/embeddings endpoint. The code of each project you index is sent to it, and so is every search query."
+      >
+        <Row
+          label="Semantic search"
+          description={
+            ready
+              ? "Agents can call code.search, and indexed projects are kept up to date as they search."
+              : "Save an endpoint and an API key to turn this on."
+          }
+        >
+          <Toggle
+            label="Semantic search"
+            on={enabled}
+            onChange={(on) => void save({ enabled: on })}
+            disabled={busy || !ready}
+          />
+        </Row>
+        <Row label="Endpoint" description="https, or http on this machine.">
+          <label className={fieldClass}>
+            <input
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+              onBlur={() => {
+                if (settings && endpoint.trim() !== settings.endpoint)
+                  void save({ endpoint: endpoint.trim() });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+              placeholder="https://embed.example.com"
+              aria-label="Embedding endpoint"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={!settings}
+              className={inputClass}
+            />
+          </label>
+        </Row>
+        <Row
+          label="API key"
+          description="Stored in Irgatos's app data, readable only by you. It never reaches the agents."
+        >
+          {settings?.hasKey ? (
+            <>
+              <span className="text-[12px] text-content/45">Saved</span>
+              <SecondaryButton
+                onClick={() => void save({ key: "", enabled: false })}
+                disabled={busy}
+              >
+                Remove
+              </SecondaryButton>
+            </>
+          ) : (
+            <div className="flex max-w-full flex-wrap items-center gap-2">
+              <label className={`${fieldClass} w-52`}>
+                <input
+                  type="password"
+                  value={key}
+                  onChange={(event) => setKey(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && key.trim())
+                      void save({ key: key.trim() });
+                  }}
+                  aria-label="Embedding API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                  disabled={!settings}
+                  className={inputClass}
+                />
+              </label>
+              <SecondaryButton
+                onClick={() => void save({ key: key.trim() })}
+                disabled={busy || !key.trim()}
+              >
+                {busy ? "Saving" : "Save"}
+              </SecondaryButton>
+            </div>
+          )}
+        </Row>
+        {error ? (
+          <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
+            {error}
+          </p>
+        ) : null}
+      </Group>
+      <Group
+        id="semantic-search-projects"
+        title="Project indexes"
+        description="Indexing runs in the background at about 1.5 chunks a second, so a large project takes an hour or more the first time. Later passes embed only changed files, recently edited ones first. Agents can search while it runs."
+      >
+        {projects.length ? (
+          projects.map((root) => {
+            const status = statuses[root];
+            const state = status?.state ?? "none";
+            const pending = working === root;
+            return (
+              <Row
+                key={root}
+                label={projectName(root)}
+                description={
+                  status ? semanticIndexSummary(status) : "Checking…"
+                }
+              >
+                {state === "indexing" ? (
+                  <SecondaryButton
+                    onClick={() =>
+                      void run(root, () => cancelSemanticIndex(root))
+                    }
+                    disabled={pending}
+                  >
+                    Stop
+                  </SecondaryButton>
+                ) : (
+                  <SecondaryButton
+                    onClick={() =>
+                      void run(root, () => buildSemanticIndex(root, false))
+                    }
+                    disabled={pending || !enabled}
+                  >
+                    {state === "none" ? "Index" : "Update"}
+                  </SecondaryButton>
+                )}
+                {state !== "none" ? (
+                  <>
+                    <SecondaryButton
+                      onClick={() => void rebuild(root)}
+                      disabled={pending || !enabled || state === "indexing"}
+                    >
+                      Rebuild
+                    </SecondaryButton>
+                    <SecondaryButton
+                      onClick={() => void remove(root)}
+                      disabled={pending}
+                    >
+                      Remove
+                    </SecondaryButton>
+                  </>
+                ) : null}
+              </Row>
+            );
+          })
+        ) : (
+          <p className="px-4 py-3.5 text-[12px] text-content/45">
+            Open a project to index it.
+          </p>
+        )}
+      </Group>
+    </>
   );
 }
 
