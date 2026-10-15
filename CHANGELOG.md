@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Semantic code search for agents.** Point **Settings › Semantic search** at an EmbeddingGemma server, save its key and index a project. Indexing runs in the background and only re-embeds changed files. Agents then run `app code.search` to find code by meaning and by name: results from the index are merged with `git grep` on the query's identifiers. It is read-only, works in any agent turn without `/operator`, and falls back to grep alone while a project is unindexed or still indexing.
+- **Semantic code search for agents.** Point **Settings › Providers › Semantic search** at an EmbeddingGemma server, save its key and index a project. Indexing runs in the background and only re-embeds changed files. Agents then run `app code.search` to find code by meaning and by name: results from the index are merged with `git grep` on the query's identifiers. It is read-only, works in any agent turn without `/operator`, and falls back to grep alone while a project is unindexed or still indexing.
 
 ### Changed
 

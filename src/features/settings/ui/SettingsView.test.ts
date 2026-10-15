@@ -178,7 +178,7 @@ describe("settings pages", () => {
       if (command === "semantic_index_status") return [];
       return undefined;
     });
-    await render("search");
+    await render("providers");
     const toggle = () =>
       container.querySelector<HTMLButtonElement>(
         '[role="switch"][aria-label="Semantic search"]',
@@ -206,7 +206,7 @@ describe("settings pages", () => {
 
     settings = { enabled: false, endpoint: "https://embed.example.com", hasKey: true };
     await render("general");
-    await render("search");
+    await render("providers");
     expect(toggle().disabled).toBe(false);
     await act(async () => toggle().click());
     expect(toggle().getAttribute("aria-checked")).toBe("true");

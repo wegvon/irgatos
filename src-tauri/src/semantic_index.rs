@@ -410,7 +410,7 @@ pub(crate) fn agent_search(app: &AppHandle, cwd: &Path, input: &Value) -> Result
         None => {
             note = note.or_else(|| {
                 Some(if active.is_some() {
-                    "This project has no semantic index, so results come from git grep only. The user can index it in Irgatos Settings > Semantic search.".into()
+                    "This project has no semantic index, so results come from git grep only. The user can index it in Irgatos Settings > Providers > Semantic search.".into()
                 } else {
                     OFF.into()
                 })

@@ -678,9 +678,6 @@ export function SettingsView({
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
               ) : null}
-              {section === "search" ? (
-                <SemanticSearchPage cwd={cwd} recents={recents} />
-              ) : null}
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
@@ -3970,7 +3967,8 @@ function ProviderBinaryControl({
   );
 }
 
-function SemanticSearchPage({
+/** Semantic code search: the embedding service and each project's index. */
+function SemanticSearchGroups({
   cwd,
   recents,
 }: {
@@ -4100,8 +4098,8 @@ function SemanticSearchPage({
     <>
       <Group
         id="semantic-search-service"
-        title="Embedding service"
-        description="An EmbeddingGemma server with an OpenAI-style /v1/embeddings endpoint. The code of each project you index is sent to it, and so is every search query."
+        title="Semantic search"
+        description="Lets agents find code by meaning with app code.search. It needs an EmbeddingGemma server with an OpenAI-style /v1/embeddings endpoint. The code of each project you index is sent to it, and so is every search query."
       >
         <Row label="Endpoint" description="https, or http on this machine.">
           <label className={fieldClass}>
@@ -4190,7 +4188,7 @@ function SemanticSearchPage({
       </Group>
       <Group
         id="semantic-search-projects"
-        title="Project indexes"
+        title="Semantic search indexes"
         description="Indexing runs in the background at about 1.5 chunks a second, so a large project takes an hour or more the first time. Later passes embed only changed files, recently edited ones first. Agents can search while it runs."
       >
         {projects.length ? (
@@ -4473,6 +4471,7 @@ function ProvidersPage({
           />
         </Row>
       </Group>
+      <SemanticSearchGroups cwd={cwd} recents={recents} />
     </>
   );
 }
