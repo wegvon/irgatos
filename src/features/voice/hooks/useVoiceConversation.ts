@@ -86,6 +86,8 @@ export function useVoiceConversation({
    */
   const startSpeaking = useCallback((fallback: string, reply?: string) => {
     const settings = loadVoiceSettings();
+    // A failure on an earlier reply is not news once the next one starts.
+    setError(null);
     speakingRef.current = true;
     setSpeaking(true);
     let stopped = false;
@@ -128,6 +130,7 @@ export function useVoiceConversation({
   const turnOff = useCallback(() => {
     setOn(false);
     setHeard(false);
+    setError(null);
     speakingRef.current = false;
     speechRef.current?.stop();
     if (ownsCaptureRef.current) detachCapture();

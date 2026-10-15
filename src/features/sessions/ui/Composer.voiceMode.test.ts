@@ -353,6 +353,20 @@ describe("Composer voice mode", () => {
     expect(captures).toHaveLength(2);
   });
 
+  it("clears a failed reading when voice mode turns off", async () => {
+    voice.speak.mockRejectedValue(new Error("EMA is unreachable"));
+    await render({});
+    await turnOn();
+    await say("hi");
+    await act(async () => latest().handlers.onFinal("hi"));
+    await render({ busy: true });
+    await render({ busy: false, voiceReply: { id: "a1", text: "Hello." } });
+    expect(container.textContent).toContain("EMA is unreachable");
+    await act(async () => modeButton().click());
+    await advance(0);
+    expect(container.textContent).not.toContain("EMA is unreachable");
+  });
+
   it("turns off from the strip, keeping what was heard", async () => {
     await render({});
     await turnOn();

@@ -397,8 +397,9 @@ function FloatingConversation({
 }) {
   const transcript = useIrgatTranscript(session, true);
   const voiceReply = useMemo(
-    () => (session.busy ? null : latestReply(session.blocks)),
-    [session.blocks, session.busy],
+    () =>
+      session.busy ? null : latestReply(session.blocks, session.queuedMessages),
+    [session.blocks, session.busy, session.queuedMessages],
   );
   const question = session.pendingQuestion ?? textQuestion(session);
   return (
@@ -449,6 +450,7 @@ function FloatingConversation({
           hideTurnMetrics
           visible
           messageDeliveries={irgatMessageDeliveries(session)}
+          onRetryMessage={() => void action({ kind: "resume" })}
           hasEarlier={transcript.hasEarlier}
           loadEarlierOnScroll
           onLoadEarlier={transcript.loadEarlier}

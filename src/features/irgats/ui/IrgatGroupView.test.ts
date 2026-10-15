@@ -20,7 +20,11 @@ import {
   irgatGroupViewKey,
 } from "../model/irgatGroups";
 import type { Session } from "../../sessions/model/session";
-import { clearComposerDraft } from "../../sessions/model/draftCache";
+import {
+  clearComposerDraft,
+  setComposerDraft,
+} from "../../sessions/model/draftCache";
+import { adhdEnabledFor } from "../../adhd/model/adhdMode";
 import { IrgatGroupView } from "./IrgatGroupView";
 
 let stored: Map<string, string>;
@@ -363,6 +367,32 @@ describe("sending", () => {
       idOf("Frontend"),
     ]);
     expect(q(`[data-reply-chip="${idOf("Frontend")}"]`)!.textContent).toBe("Frontend1");
+  });
+
+  it("handles /i-have-adhd itself instead of sending it to the room", async () => {
+    const { group } = setup();
+    const runner = fakeRunner();
+    await render(group.id, runner);
+    type("/i-have-adhd on");
+    submit();
+    expect(runner.send).not.toHaveBeenCalled();
+    expect(q('[role="status"]')!.textContent).toContain("ADHD mode on");
+    expect(adhdEnabledFor(irgatGroupViewKey(group.id))).toBe(true);
+  });
+
+  it("sends a restored draft that @mentions a member", async () => {
+    const { group, idOf } = setup();
+    setComposerDraft(irgatGroupViewKey(group.id), "@Security check this");
+    const runner = fakeRunner();
+    await render(group.id, runner);
+    await act(async () =>
+      all('[role="radio"]').find((b) => b.textContent === "Pick or @mention")!.click(),
+    );
+    expect(field().value).toBe("@Security check this");
+    expect(container.textContent).not.toContain("Pick who replies above");
+    submit();
+    expect(runner.send).toHaveBeenCalledOnce();
+    expect(q(`[data-reply-chip="${idOf("Security")}"]`)).not.toBeNull();
   });
 
   it("holds the message when nobody would reply", async () => {

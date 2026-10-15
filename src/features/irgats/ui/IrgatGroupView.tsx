@@ -51,6 +51,8 @@ import {
   updateIrgatGroup,
   type IrgatGroupMessage,
 } from "../model/irgatGroups";
+import { applyAdhdCommand, parseAdhdCommand } from "../../adhd/model/adhdMode";
+import { getComposerDraft } from "../../sessions/model/draftCache";
 import { IrgatComposer } from "./IrgatComposer";
 import { GroupMascots } from "./IrgatGroupRail";
 import { IrgatRailMascot } from "./IrgatRailMascot";
@@ -118,7 +120,11 @@ export function IrgatGroupView({
   const { group, name, members } = useIrgatGroup(groupId);
   const messages = useIrgatGroupMessages(groupId);
   const run = useIrgatGroupRun(runner, groupId);
-  const [draft, setDraft] = useState("");
+  // The composer restores a saved draft without reporting it, so start there.
+  const [draft, setDraft] = useState(
+    () => getComposerDraft(irgatGroupViewKey(groupId)) ?? "",
+  );
+  const [adhdNote, setAdhdNote] = useState<string | null>(null);
   const mode = group?.mode ?? "round";
   const [picked, setPicked] = useState<string[] | null>(null);
   const memberIds = members.map((member) => member.id).join("|");
@@ -159,7 +165,18 @@ export function IrgatGroupView({
   }
 
   const send = (text: string, attachments: Parameters<IrgatGroupRunner["send"]>[2]) => {
-    if (!mentioned.length && !effectivePicked.length) return false;
+    // /i-have-adhd and the stop phrases change the room's mode, not the talk.
+    const command = attachments.length ? null : parseAdhdCommand(text);
+    const adhdReply = command
+      ? applyAdhdCommand(irgatGroupViewKey(groupId), command)
+      : null;
+    if (adhdReply) {
+      setAdhdNote(adhdReply);
+      return true;
+    }
+    setAdhdNote(null);
+    if (!mentionedMembers(text, members).length && !effectivePicked.length)
+      return false;
     pinned.current = true;
     const posted = runner.send(groupId, text, attachments, effectivePicked);
     if (!posted) return false;
@@ -297,6 +314,14 @@ export function IrgatGroupView({
           mentioned={mentioned}
           onToggle={togglePicked}
         />
+        {adhdNote ? (
+          <p
+            role="status"
+            className="mx-auto w-full max-w-4xl px-3 pb-1 text-[11.5px] text-content/55"
+          >
+            {adhdNote}
+          </p>
+        ) : null}
         {nobodyReplies && draft.trim() ? (
           <p className="mx-auto w-full max-w-4xl px-3 pb-1 text-[11.5px] text-content/50">
             Pick who replies above, or address someone with @.
@@ -307,6 +332,7 @@ export function IrgatGroupView({
           computerUse={false}
           name={name}
           placeholder={`Message ${name} — type @ to address one member`}
+          voiceEnabled={visible}
           hotkeys={visible}
           busy={busy}
           voiceReply={
