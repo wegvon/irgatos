@@ -22,7 +22,7 @@ pub enum SpeechProvider {
 }
 
 impl SpeechProvider {
-    fn endpoint(self) -> &'static str {
+    pub(crate) fn endpoint(self) -> &'static str {
         match self {
             Self::Drama => "https://drama.turel.se/v1/audio/speech",
             Self::Ema => "https://ema.turel.se/v1/tts",

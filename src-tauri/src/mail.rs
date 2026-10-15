@@ -95,6 +95,12 @@ fn settings(dir: &Path) -> Result<MailSettings, String> {
     })
 }
 
+/// The Executor URL once Mail is set up, for the service status chip.
+pub(crate) fn status_endpoint(app: &AppHandle) -> Option<String> {
+    let endpoint = load_config(&data_dir(app).ok()?).endpoint;
+    (!endpoint.is_empty()).then_some(endpoint)
+}
+
 fn connect(dir: &Path) -> Result<Executor, String> {
     let endpoint = load_config(dir).endpoint;
     let key = crate::voice::read_secret(&dir.join(KEY_FILE))?;

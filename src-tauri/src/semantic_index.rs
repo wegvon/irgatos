@@ -110,6 +110,12 @@ fn active(dir: &Path) -> Result<Option<(String, String)>, String> {
     Ok(read_key(dir)?.map(|key| (config.endpoint, key)))
 }
 
+/// The endpoint while semantic search is on, for the service status chip.
+pub(crate) fn status_endpoint(app: &AppHandle) -> Option<String> {
+    let config = load_config(&data_dir(app).ok()?);
+    (config.enabled && !config.endpoint.trim().is_empty()).then_some(config.endpoint)
+}
+
 /// Projects are keyed by their canonical path, so a symlinked checkout and
 /// its target share one index.
 fn scope_of(root: &str) -> Result<PathBuf, String> {

@@ -44,6 +44,7 @@ import {
   AdhdModeChip,
   type AdhdChipSession,
 } from "../../features/adhd/ui/AdhdModeChip";
+import { ServiceStatusChip } from "../../features/service-status/ui/ServiceStatusChip";
 import {
   ProviderSignInPanel,
   type ProviderSignInState,
@@ -150,6 +151,7 @@ export function UsageFooter({
       )}
       {adhd || showTerminals || showTerminalButton || onToggleBrowser ? (
         <div className="ml-auto flex min-w-0 items-center gap-2">
+          <ServiceStatusChip />
           {adhd ? <AdhdModeChip session={adhd.session} /> : null}
           {onToggleBrowser ? (
             <button
