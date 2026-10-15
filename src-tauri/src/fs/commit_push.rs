@@ -641,7 +641,20 @@ mod tests {
     fn clone(origin: &Tmp, label: &str) -> Tmp {
         let dir = tmp(label);
         let url = origin.0.to_string_lossy().into_owned();
-        git(&dir.0, &["clone", "-q", "-b", "main", &url, "."]);
+        // Set before checkout, or Windows' autocrlf rewrites a.txt as CRLF.
+        git(
+            &dir.0,
+            &[
+                "clone",
+                "-q",
+                "-c",
+                "core.autocrlf=false",
+                "-b",
+                "main",
+                &url,
+                ".",
+            ],
+        );
         configure(&dir.0);
         dir
     }
