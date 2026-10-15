@@ -362,7 +362,12 @@ export function MailView({
                 {emailOf(e.account) || "An account"}: {e.message}
               </p>
             ))}
-            {!loading && !error && threads.length === 0 ? (
+            {(loading || !accounts) && !error && threads.length === 0 ? (
+              <div className="flex justify-center py-6 text-content/45">
+                <LoaderCircle className="size-4 animate-spin" />
+              </div>
+            ) : null}
+            {!loading && accounts && !error && threads.length === 0 ? (
               <p className="px-2 py-3 text-[12px] text-content/45">
                 No mail here.
               </p>
