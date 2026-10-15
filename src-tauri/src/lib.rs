@@ -31,6 +31,7 @@ mod irgat_chat;
 mod irgat_transcript;
 mod jira;
 mod jsonc;
+mod ideas;
 mod kanban;
 mod lightpanda;
 mod linear;
@@ -621,6 +622,22 @@ pub fn run() {
             notes::notes_delete,
             notes::notes_save_image,
             notes::notes_image_path,
+            ideas::ideas_load,
+            ideas::ideas_board_create,
+            ideas::ideas_board_rename,
+            ideas::ideas_board_delete,
+            ideas::ideas_list_create,
+            ideas::ideas_list_rename,
+            ideas::ideas_list_move,
+            ideas::ideas_list_delete,
+            ideas::ideas_card_create,
+            ideas::ideas_card_update,
+            ideas::ideas_card_move,
+            ideas::ideas_card_delete,
+            ideas::ideas_card_restore,
+            ideas::ideas_label_save,
+            ideas::ideas_label_delete,
+            ideas::ideas_search,
             kanban::kanban_board,
             kanban::kanban_card_create,
             kanban::kanban_card_update,

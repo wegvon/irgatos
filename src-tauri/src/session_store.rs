@@ -1044,6 +1044,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     ensure_orchestration_history(conn)?;
     crate::irgat_transcript::ensure_tables(conn)?;
     crate::kanban::ensure_tables(conn)?;
+    crate::ideas::ensure_tables(conn)?;
     Ok(())
 }
 

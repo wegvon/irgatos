@@ -55,6 +55,8 @@ fn yield_to_queries() {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Task {
     Document,
+    /// A natural-language search over documents.
+    Query,
     CodeRetrieval,
 }
 
@@ -62,6 +64,7 @@ impl Task {
     fn as_str(self) -> &'static str {
         match self {
             Task::Document => "Document",
+            Task::Query => "Query",
             Task::CodeRetrieval => "CodeRetrieval",
         }
     }
