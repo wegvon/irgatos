@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Voice mode reads a short summary.** Instead of the whole reply, voice mode now says in a sentence or three what the agent did, what it changed and any question it asks you, in the selected speech model's voice. With a Live voice (Gemini) key the summary comes from Gemini Flash-Lite in the reply's own language. Without one, or when that call fails, it reads the reply's opening paragraph, its questions, its `Next:` lines and a closing offer, and leaves code, tables and file lists on screen. Turn off **Settings › Voice › Read a short summary** to hear the whole reply again.
+
 ## [0.5.3] - 2026-10-15
 
 ### Added

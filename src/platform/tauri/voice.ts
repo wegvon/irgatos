@@ -187,6 +187,26 @@ function subscribeSpeech() {
   return speechSubscription;
 }
 
+/**
+ * A few spoken sentences for an agent reply from Gemini, or null without a
+ * Live voice key, outside the app, or when the call fails.
+ */
+export async function summarizeReply(
+  text: string,
+  locale = "",
+): Promise<string | null> {
+  try {
+    if (!isTauri()) return null;
+    const summary = await invoke<string | null>("voice_summarize", {
+      text,
+      locale: locale || null,
+    });
+    return summary?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** The chosen service generates speech; macOS plays its WAV. */
 export async function speak(
   text: string,

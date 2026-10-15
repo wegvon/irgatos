@@ -25,6 +25,8 @@ export type VoiceSettings = {
   conversationPauseMs: number;
   /** Voice mode reads each finished reply aloud. */
   readReplies: boolean;
+  /** Reads a short summary of the reply instead of all of it. */
+  speechSummary: boolean;
   speechProvider: SpeechProvider;
 };
 
@@ -48,6 +50,7 @@ export const VOICE_SETTINGS_DEFAULTS: VoiceSettings = {
   cloudModel: DEFAULT_CLOUD_MODEL,
   conversationPauseMs: 1200,
   readReplies: true,
+  speechSummary: true,
   speechProvider: "drama",
 };
 
@@ -111,6 +114,7 @@ function parse(raw: string | null): VoiceSettings {
         (CONVERSATION_PAUSES as readonly unknown[]).includes(value),
       ),
       readReplies: pick("readReplies", isBool),
+      speechSummary: pick("speechSummary", isBool),
       speechProvider: pick("speechProvider", (value) =>
         SPEECH_PROVIDERS.some((provider) => provider.value === value),
       ),

@@ -506,6 +506,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "voice mode text to speech tts say speak answer",
   },
   {
+    id: "voice-mode-speech-summary",
+    section: "voice",
+    label: "Read a short summary",
+    keywords: "voice mode summary summarize short brief gemini tts speak",
+  },
+  {
     id: "voice-mode-voice",
     section: "voice",
     label: "Speech model",

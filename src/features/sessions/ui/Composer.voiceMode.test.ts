@@ -16,6 +16,7 @@ const voice = vi.hoisted(() => ({
   cancel: vi.fn(),
   speak: vi.fn(),
   stopSpeaking: vi.fn(),
+  summarize: vi.fn(),
 }));
 
 vi.mock("../../../platform/tauri/voice", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../../platform/tauri/voice", () => ({
   requestVoiceAccess: voice.status,
   startCapture: voice.start,
   speak: voice.speak,
+  summarizeReply: voice.summarize,
   systemVoices: async () => [],
   openVoicePrivacySettings: vi.fn(),
   saveTranscriptionKey: vi.fn(),
@@ -124,6 +126,7 @@ beforeEach(() => {
         };
       },
     );
+  voice.summarize.mockReset().mockResolvedValue(null);
   voice.speak.mockReset().mockImplementation(async () => ({
     id: "speech-1",
     done: new Promise<{ interrupted: boolean }>((resolve) => {
@@ -180,7 +183,7 @@ describe("Composer voice mode", () => {
       },
     });
     expect(voice.speak).toHaveBeenCalledExactlyOnceWith(
-      "Done. All 42 tests pass.",
+      "All 42 tests pass.",
       "kahya",
     );
     expect(strip()?.dataset.phase).toBe("speaking");
@@ -285,6 +288,67 @@ describe("Composer voice mode", () => {
     await act(async () => latest().handlers.onFinal("hi"));
     await render({ busy: true });
     await render({ busy: false, voiceReply: { id: "a1", text: "Hello." } });
+    expect(voice.speak).not.toHaveBeenCalled();
+    expect(captures).toHaveLength(2);
+  });
+
+  it("reads Gemini's summary when there is one", async () => {
+    voice.summarize.mockResolvedValue("I fixed the build. Should I push?");
+    saveVoiceSettings({ locale: "en-GB" });
+    await render({});
+    await turnOn();
+    await say("fix it");
+    await act(async () => latest().handlers.onFinal("fix it"));
+    const text = "Fixed the build.\n\n- `a.ts`\n\nShould I push?";
+    await render({ busy: true });
+    await render({ busy: false, voiceReply: { id: "a1", text } });
+    expect(voice.summarize).toHaveBeenCalledExactlyOnceWith(text, "en-GB");
+    expect(voice.speak).toHaveBeenCalledExactlyOnceWith(
+      "I fixed the build. Should I push?",
+      "drama",
+    );
+  });
+
+  it("reads the whole reply when the summary is off", async () => {
+    saveVoiceSettings({ speechSummary: false });
+    await render({});
+    await turnOn();
+    await say("hi");
+    await act(async () => latest().handlers.onFinal("hi"));
+    await render({ busy: true });
+    await render({
+      busy: false,
+      voiceReply: { id: "a1", text: "## Done\nAll **42** tests pass." },
+    });
+    expect(voice.summarize).not.toHaveBeenCalled();
+    expect(voice.speak).toHaveBeenCalledExactlyOnceWith(
+      "Done. All 42 tests pass.",
+      "drama",
+    );
+  });
+
+  it("skips the reading when Escape lands while the summary is on its way", async () => {
+    let answer!: (summary: string | null) => void;
+    voice.summarize.mockReturnValue(
+      new Promise<string | null>((resolve) => (answer = resolve)),
+    );
+    await render({});
+    await turnOn();
+    await say("hi");
+    await act(async () => latest().handlers.onFinal("hi"));
+    await render({ busy: true });
+    await render({ busy: false, voiceReply: { id: "a1", text: "Hi there." } });
+    expect(strip()?.dataset.phase).toBe("speaking");
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    await advance(0);
+    expect(strip()?.dataset.phase).toBe("listening");
+    await act(async () => answer("Hello."));
+    await advance(0);
     expect(voice.speak).not.toHaveBeenCalled();
     expect(captures).toHaveLength(2);
   });
