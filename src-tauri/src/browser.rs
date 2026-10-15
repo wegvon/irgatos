@@ -30,12 +30,11 @@ const EVENT: &str = "inline-browser";
 /// persist apart from the app UI's default store (macOS 14+; older systems
 /// fall back to the default store).
 #[cfg(target_os = "macos")]
-// An opaque 16-byte namespace (WebKit reads it as a UUID), not a display name.
-// Keep it pinned: changing it would orphan the cookies and imported sign-ins
-// already stored under it, and the bundle-identifier folder import in
-// `legacy_data` carries that store to the new identifier only because the id
-// is unchanged.
-const DATA_STORE_ID: [u8; 16] = *b"monocode-browser";
+// An opaque 16-byte namespace (WebKit reads it as a UUID). Keep it pinned:
+// changing it would orphan the cookies and imported sign-ins stored under it.
+const DATA_STORE_ID: [u8; 16] = [
+    0x6d, 0x6f, 0x6e, 0x6f, 0x63, 0x6f, 0x64, 0x65, 0x2d, 0x62, 0x72, 0x6f, 0x77, 0x73, 0x65, 0x72,
+];
 
 thread_local! {
     // Wry views must be created, used and dropped on the main thread.
@@ -779,7 +778,7 @@ mod tests {
             "file:///etc/passwd",
             "tauri://localhost",
             "http://localhost:1420/",
-            "monoartifact://x",
+            "irgatartifact://x",
         ] {
             assert!(!allowed_navigation(value, Some(&app)), "{value}");
         }

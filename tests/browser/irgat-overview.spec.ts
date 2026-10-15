@@ -12,30 +12,30 @@ const columns = (page: Page) =>
 test("lands on All with ten of each kind and pages one section", async ({
   page,
 }) => {
-  await page.goto("/tests/browser/mono-overview.html");
+  await page.goto("/tests/browser/irgat-overview.html");
   await expect(page.getByRole("tab", { name: "All" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await expect(shown(page, "sessions", "data-mono-session")).toHaveCount(10);
-  await expect(shown(page, "documents", "data-mono-document")).toHaveCount(10);
+  await expect(shown(page, "sessions", "data-irgat-session")).toHaveCount(10);
+  await expect(shown(page, "documents", "data-irgat-document")).toHaveCount(10);
   await expect(shown(page, "habits", "data-habit")).toHaveCount(10);
   await page.locator('[data-overview-more="sessions"]').click();
-  await expect(shown(page, "sessions", "data-mono-session")).toHaveCount(20);
-  await expect(shown(page, "documents", "data-mono-document")).toHaveCount(10);
+  await expect(shown(page, "sessions", "data-irgat-session")).toHaveCount(20);
+  await expect(shown(page, "documents", "data-irgat-document")).toHaveCount(10);
   await page.getByRole("button", { name: "View all habits" }).click();
   await expect(page.getByRole("tab", { name: "Habits" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
   await page.getByRole("tab", { name: "All" }).click();
-  await expect(shown(page, "sessions", "data-mono-session")).toHaveCount(20);
+  await expect(shown(page, "sessions", "data-irgat-session")).toHaveCount(20);
 });
 
 test("stacks sections in a narrow panel and pairs them in a wide one", async ({
   page,
 }) => {
-  await page.goto("/tests/browser/mono-overview.html");
+  await page.goto("/tests/browser/irgat-overview.html");
   await expect(page.locator("[data-overview-all]")).toBeVisible();
   expect(await columns(page)).toHaveLength(1);
   const separator = await page.getByRole("separator").boundingBox();
@@ -50,8 +50,8 @@ test("stacks sections in a narrow panel and pairs them in a wide one", async ({
 
 test("keeps a narrow window free of sideways scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/tests/browser/mono-overview.html");
-  await expect(shown(page, "sessions", "data-mono-session")).toHaveCount(10);
+  await page.goto("/tests/browser/irgat-overview.html");
+  await expect(shown(page, "sessions", "data-irgat-session")).toHaveCount(10);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -62,7 +62,7 @@ test("keeps a narrow window free of sideways scrolling", async ({ page }) => {
 test("explains a failed habits read and offers another try", async ({
   page,
 }) => {
-  await page.goto("/tests/browser/mono-overview.html?seed=error");
+  await page.goto("/tests/browser/irgat-overview.html?seed=error");
   const alert = page.locator('[data-overview-section="habits"] [role="alert"]');
   await expect(alert).toContainText("Could not read the habits.");
   await expect(alert.getByRole("button", { name: "Try again" })).toBeVisible();

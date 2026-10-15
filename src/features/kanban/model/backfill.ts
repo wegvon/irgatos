@@ -1,4 +1,4 @@
-import { listIrgats } from "../../irgats/model/irgat";
+import { irgatSessionIds, listIrgats } from "../../irgats/model/irgat";
 import { listSessionsByProject, type SessionSummary } from "../../sessions/data/sessionStore";
 import { sessionDisplayTitle } from "../../sessions/model/session";
 import { KANBAN_BACKFILL_LIMIT, syncKanbanSessions, type KanbanSessionSync } from "./kanban";
@@ -32,7 +32,7 @@ export async function backfillKanbanBoard(
   skip: ReadonlySet<string>,
 ): Promise<string[]> {
   const rows = await listSessionsByProject(project);
-  const irgats = listIrgats().flatMap((irgat) => (irgat.sessionId ? [irgat.sessionId] : []));
+  const irgats = listIrgats().flatMap(irgatSessionIds);
   const entries = backfillEntries(rows, new Set([...skip, ...irgats]));
   return entries.length ? syncKanbanSessions(project, entries) : [];
 }

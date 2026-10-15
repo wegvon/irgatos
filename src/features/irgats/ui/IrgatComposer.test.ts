@@ -188,12 +188,14 @@ it("waits for delivery and keeps a rejected message available to retry", async (
   });
   expect(onSubmit).toHaveBeenCalledTimes(1);
   expect(field().value).toBe("Keep this draft");
-  expect(field().disabled).toBe(true);
+  // Read-only, not disabled, so the caret stays in the field.
+  expect(field().readOnly).toBe(true);
+  expect(field().disabled).toBe(false);
   await act(async () => {
     acknowledge(false);
   });
   expect(field().value).toBe("Keep this draft");
-  expect(field().disabled).toBe(false);
+  expect(field().readOnly).toBe(false);
   act(() => submit());
   await act(async () => {
     acknowledge(true);

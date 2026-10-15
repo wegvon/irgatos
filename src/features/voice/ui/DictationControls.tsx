@@ -20,6 +20,7 @@ const VENUE_LABEL: Record<DictationVenue, string> = {
   device: "On this Mac",
   apple: "Apple servers",
   service: "Transcription service",
+  qwen: "Qwen3-ASR · Rem",
 };
 
 export function DictationButton({

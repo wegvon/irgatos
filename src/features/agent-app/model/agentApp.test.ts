@@ -12,7 +12,7 @@ import {
 import type { Note } from "../../notes";
 import type { Artifact } from "../../artifacts/artifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
-import { handleAgentApp, notePreview, canAccessAgentAppProject, type AgentAppHost } from "./agentApp";
+import { handleAgentApp, notePreview, canAccessAgentAppProject, canReadAgentAppSession, type AgentAppHost } from "./agentApp";
 import { createIrgat, irgatKnownProjects, irgatLook, findIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
 import { approveProjectAccess, projectAccessBlock } from "../../irgats/model/irgatProjectAccess";
 import { rememberProject } from "../../projects/model/recents";
@@ -613,6 +613,37 @@ describe("agent app commands", () => {
     expect(await handleAgentApp(source, "own-chat", "sessions.read", { sessionId: source.id, ...options }, host)).toMatchObject({ nextBefore: "older" });
     expect(host.readConversation).toHaveBeenCalledWith(source, options);
     expect(host.sessions).not.toHaveBeenCalled();
+  });
+
+  it("lists and reads the same Irgat's main and child chats without granting project access", async () => {
+    const { source, host } = fixture();
+    source.cwd = "/home";
+    source.blocks = [{ id: "main-user", role: "user", text: "Ana sohbet" }];
+    const child = { ...newSession("codex", "/home"), id: "child-1", title: "Chat 1",
+      blocks: [{ id: "child-user", role: "user" as const, text: "Alt sohbetin son mesajı" }] };
+    const foreign = { ...newSession("codex", "/home"), id: "foreign" };
+    const ids = [source.id, child.id];
+    const owner = { id: "irgat-invader", projects: [] as string[], sessionIds: ids };
+    host.irgatOf = (id) => ids.includes(id) ? owner : undefined;
+    host.isIrgat = (id) => ids.includes(id) || id === foreign.id;
+    host.session = vi.fn(async (id) => [source, child, foreign].find((chat) => chat.id === id) ?? null);
+    host.requestProjectAccess = vi.fn();
+
+    for (const caller of [source, child]) {
+      const listed = await handleAgentApp(caller, `list-${caller.id}`, "sessions.list", {}, host);
+      expect(listed).toMatchObject({ irgatId: owner.id,
+        sessions: [{ id: source.id }, { id: child.id, title: "Chat 1" }] });
+      const target = caller === source ? child : source;
+      const page = await handleAgentApp(caller, `read-${caller.id}`, "sessions.read", { sessionId: target.id }, host);
+      expect(page).toMatchObject({ sessionId: target.id,
+        turns: [{ user: { text: target.blocks[0].text } }] });
+      expect(canReadAgentAppSession(caller, target, owner.projects, ids)).toBe(true);
+      expect(canReadAgentAppSession(caller, foreign, owner.projects, ids)).toBe(false);
+      await expect(handleAgentApp(caller, `foreign-${caller.id}`, "sessions.read", { sessionId: foreign.id }, host)).rejects.toThrow("Pass \"project\"");
+      await expect(handleAgentApp(caller, `private-${caller.id}`, "sessions.list", { project: "/code/private" }, host)).rejects.toThrow("Not one of your projects");
+    }
+    expect(host.sessions).not.toHaveBeenCalled();
+    expect(host.requestProjectAccess).not.toHaveBeenCalled();
   });
 
   it("reads a listed project session in bounded pages", async () => {

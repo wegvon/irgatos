@@ -256,3 +256,53 @@ it("shows collapsible Fleet sessions inline without a page toolbar", () => {
   act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Open Sidebar session"]')!.click());
   expect(props.onOpenSession).toHaveBeenCalledWith("inline");
 });
+
+it("shows interrupted sessions apart and offers row actions on right-click", () => {
+  const onArchive = vi.fn();
+  const onDelete = vi.fn();
+  const onStop = vi.fn();
+  const props = render(
+    [
+      chat("cut", "/work/api", "Migrate schema", { blocks: [sent()] }),
+      chat("busy", "/work/web", "Restyle header", { busy: true, blocks: [sent()] }),
+    ],
+    {
+      interruptedSessionIds: new Set(["cut"]),
+      actions: {
+        onArchive,
+        onDelete,
+        onStop,
+        canArchive: (id: string) => id !== "busy",
+      },
+    },
+  );
+  expect(bucket("interrupted").textContent).toContain("Migrate schema");
+  expect(bucket("interrupted").textContent).toContain("Open it to resume");
+  expect(bucket("idle").textContent).not.toContain("Migrate schema");
+
+  const menuFor = (id: string) => {
+    act(() =>
+      container
+        .querySelector(`[data-fleet-session="${id}"]`)!
+        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 5, clientY: 5 })),
+    );
+    return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  };
+  const pick = (items: HTMLElement[], label: string) =>
+    act(() => items.find((item) => item.textContent?.includes(label))!.click());
+
+  const busyItems = menuFor("busy");
+  expect(busyItems.map((item) => item.textContent)).toContain("Stop");
+  expect(busyItems.map((item) => item.textContent)).not.toContain("Archive");
+  pick(busyItems, "Stop");
+  expect(onStop).toHaveBeenCalledWith("busy");
+
+  const cutItems = menuFor("cut");
+  expect(cutItems.map((item) => item.textContent)).not.toContain("Stop");
+  pick(cutItems, "Archive");
+  expect(onArchive).toHaveBeenCalledWith("cut");
+  pick(menuFor("cut"), "Delete");
+  expect(onDelete).toHaveBeenCalledWith("cut");
+  pick(menuFor("cut"), "Open");
+  expect(props.onOpenSession).toHaveBeenCalledWith("cut");
+});

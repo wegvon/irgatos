@@ -22,6 +22,7 @@ type VoiceDriver = {
   status: VoiceStatus;
   capture: string | null;
   speech: string | null;
+  speechProvider: string | null;
   heard: string;
   calls: string[];
   level: (level: number) => Promise<void>;
@@ -44,6 +45,7 @@ const driver: VoiceDriver = {
   status: GRANTED,
   capture: null,
   speech: null,
+  speechProvider: null,
   heard: "",
   calls: [],
   level: (level) =>
@@ -81,6 +83,7 @@ mockIPC(
         return null;
       case "voice_speak":
         driver.speech = payload.id as string;
+        driver.speechProvider = payload.provider as string;
         return null;
       case "voice_stop_speaking":
         void emit("irgat:voice-speech", {
@@ -107,6 +110,24 @@ const view = new URLSearchParams(location.search).get("view");
 const { Composer } = await import("../../src/features/sessions/ui/Composer");
 const { SettingsView } =
   await import("../../src/features/settings/ui/SettingsView");
+
+const { UsageChips } = await import("../../src/app/shell/UsageFooter");
+const { setCachedRateLimits } =
+  await import("../../src/features/providers/model/rateLimitsCache");
+setCachedRateLimits("codex", "default", {
+  provider: "codex",
+  status: "ok",
+  updatedAt: Date.now(),
+  error: null,
+  session: {
+    usedPercent: 25,
+    windowMinutes: 300,
+    resetsAt: Date.now() + 3600000,
+  },
+  weekly: null,
+  monthly: null,
+  resetCredits: null,
+});
 
 function ComposerFixture() {
   const [busy, setBusy] = useState(false);
@@ -136,6 +157,9 @@ function ComposerFixture() {
         hotkeys
         harness="codex"
         model=""
+        modelLeading={
+          <UsageChips providers={["codex"]} session={{ harness: "codex" }} />
+        }
         runtimeMode="supervised"
         executionCwd="~/code/irgat"
         hideTopBar

@@ -424,7 +424,7 @@ fn rename_branch(root: &Path, path: &Path, branch: &str) -> Result<Worktree, Str
         return Err("The main working copy cannot be renamed here".into());
     }
     let current = tree.branch.as_deref().ok_or("The worktree is detached")?;
-    if !current.starts_with("mc/") && !current.starts_with("irgat/") {
+    if !current.starts_with("irgat/") {
         return Err("Only automatically created worktree branches can be renamed".into());
     }
     if current == branch {
@@ -751,7 +751,7 @@ pub fn git_orchestration_worktree_remove(
     let conn = store.lock_conn()?;
     let removed = remove_with_sessions(&conn, &root, &path, true, true)?;
     if let Some(branch) = branch {
-        if branch.starts_with("mc/orch-") {
+        if branch.starts_with("irgat/orch-") {
             if let Err(error) = git(Path::new(&removed.project_cwd), &["branch", "-D", &branch]) {
                 eprintln!("Orchestration worktree removed; temporary branch cleanup will need a retry: {error}");
             }
@@ -765,7 +765,7 @@ pub async fn git_orchestration_branch_remove(cwd: String, branch: String) -> Res
     tauri::async_runtime::spawn_blocking(move || {
         let root = expand_home(&cwd);
         let branch = branch.trim();
-        if !branch.starts_with("mc/orch-") {
+        if !branch.starts_with("irgat/orch-") {
             return Err("Only orchestration temporary branches can be removed here".into());
         }
         git(&root, &["check-ref-format", "--branch", branch])?;
@@ -899,7 +899,7 @@ mod tests {
         std::fs::write(root.join("untracked.txt"), "lead new\n").unwrap();
         std::fs::remove_file(root.join("deleted.txt")).unwrap();
 
-        let tree = create_seeded(&root, "mc/orch-testworker").unwrap();
+        let tree = create_seeded(&root, "irgat/orch-testworker").unwrap();
         let worker = Path::new(&tree.path);
         assert_eq!(
             std::fs::read_to_string(worker.join("tracked.txt")).unwrap(),
@@ -911,12 +911,12 @@ mod tests {
         );
         assert!(!worker.join("deleted.txt").exists());
         assert_eq!(
-            create_seeded(&root, "mc/orch-testworker").unwrap().path,
+            create_seeded(&root, "irgat/orch-testworker").unwrap().path,
             tree.path
         );
 
         std::fs::write(root.join("tracked.txt"), "later lead edit\n").unwrap();
-        assert!(create_seeded(&root, "mc/orch-testworker").is_err());
+        assert!(create_seeded(&root, "irgat/orch-testworker").is_err());
         assert_eq!(
             std::fs::read_to_string(worker.join("tracked.txt")).unwrap(),
             "lead dirty\n"
@@ -943,18 +943,19 @@ mod tests {
     fn renames_only_temporary_worktree_branches() {
         let repo = repo();
         let root = repo.0.join("repo");
-        let tree = create(&root, "mc/12345678", "main", false).unwrap();
-        let renamed = rename_branch(&root, Path::new(&tree.path), "mc/faster-worktrees").unwrap();
-        assert_eq!(renamed.branch.as_deref(), Some("mc/faster-worktrees"));
+        let tree = create(&root, "irgat/12345678", "main", false).unwrap();
+        let renamed =
+            rename_branch(&root, Path::new(&tree.path), "irgat/faster-worktrees").unwrap();
+        assert_eq!(renamed.branch.as_deref(), Some("irgat/faster-worktrees"));
         assert!(git(
             &root,
-            &["rev-parse", "--verify", "refs/heads/mc/faster-worktrees"]
+            &["rev-parse", "--verify", "refs/heads/irgat/faster-worktrees"]
         )
         .is_ok());
-        assert!(rename_branch(&root, &root, "mc/nope").is_err());
+        assert!(rename_branch(&root, &root, "irgat/nope").is_err());
 
         let regular = create(&root, "feature/manual", "main", false).unwrap();
-        assert!(rename_branch(&root, Path::new(&regular.path), "mc/should-not-change").is_err());
+        assert!(rename_branch(&root, Path::new(&regular.path), "irgat/should-not-change").is_err());
     }
 
     #[test]

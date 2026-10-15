@@ -22,7 +22,10 @@ use crate::notifications::Permission;
 mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod qwen;
 mod speech;
+mod summary;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod transcription;
 
@@ -56,9 +59,10 @@ pub type Sink = Arc<dyn Fn(VoiceEvent) + Send + Sync>;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
-    #[default]
     Apple,
     Cloud,
+    #[default]
+    Qwen,
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -198,12 +202,36 @@ pub fn voice_set_live_key(app: AppHandle, key: String) -> Result<bool, String> {
 /// WebSocket URL, so unlike the transcription key it has to reach the webview.
 #[tauri::command]
 pub async fn voice_live_key(app: AppHandle) -> Result<Option<String>, String> {
-    if let Some(key) = read_secret(&secret_path(&app, LIVE_KEY_FILE)?)? {
+    live_key(&app).await
+}
+
+async fn live_key(app: &AppHandle) -> Result<Option<String>, String> {
+    if let Some(key) = read_secret(&secret_path(app, LIVE_KEY_FILE)?)? {
         return Ok(Some(key));
     }
     tauri::async_runtime::spawn_blocking(|| live_env_key(env_value).map(|(_, key)| key))
         .await
         .map_err(|error| error.to_string())
+}
+
+/// A few spoken sentences for an agent reply, written by Gemini with the Live
+/// voice key. Nothing without a key, so voice mode uses its own excerpt.
+#[tauri::command]
+pub async fn voice_summarize(
+    app: AppHandle,
+    text: String,
+    locale: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(key) = live_key(&app).await? else {
+        return Ok(None);
+    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let locale = locale.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || summary::summarize(&key, &text, &locale))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn env_value(name: &str) -> Option<String> {
@@ -268,15 +296,13 @@ pub fn voice_speak(
     app: AppHandle,
     id: String,
     text: String,
-    voice: Option<String>,
-    rate: Option<u32>,
+    provider: Option<speech::SpeechProvider>,
 ) -> Result<(), String> {
     let text = speech::speakable(&text);
     if text.is_empty() {
         return Err("Nothing to read aloud".into());
     }
-    let command = platform::speech_command(voice.as_deref(), rate)?;
-    SPEAKER.speak(command, id, text, move |ended| {
+    SPEAKER.speak(provider.unwrap_or_default(), id, text, move |ended| {
         let _ = app.emit(speech::EVENT, ended);
     })
 }
@@ -285,12 +311,6 @@ pub fn voice_speak(
 #[tauri::command]
 pub fn voice_stop_speaking(id: Option<String>) {
     SPEAKER.stop_if(id.as_deref());
-}
-
-/// The system voices `say` can use, for the voice picker.
-#[tauri::command]
-pub async fn voice_list_voices() -> Vec<speech::SystemVoice> {
-    platform::list_voices().await
 }
 
 fn event_sink(app: &AppHandle) -> Sink {
@@ -401,25 +421,6 @@ mod platform {
         on_main(app, move || apple::cancel(&capture)).await;
     }
 
-    pub(super) fn speech_command(
-        voice: Option<&str>,
-        rate: Option<u32>,
-    ) -> Result<std::process::Command, String> {
-        Ok(super::speech::say_command(voice, rate))
-    }
-
-    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
-        tauri::async_runtime::spawn_blocking(|| {
-            std::process::Command::new("/usr/bin/say")
-                .args(["-v", "?"])
-                .output()
-                .map(|output| super::speech::parse_voices(&String::from_utf8_lossy(&output.stdout)))
-                .unwrap_or_default()
-        })
-        .await
-        .unwrap_or_default()
-    }
-
     pub(super) fn open_privacy_settings(pane: &str) -> Result<(), String> {
         let anchor = match pane {
             "speech" => "Privacy_SpeechRecognition",
@@ -476,17 +477,6 @@ mod platform {
 
     pub(super) fn open_privacy_settings(_pane: &str) -> Result<(), String> {
         Err(UNSUPPORTED.into())
-    }
-
-    pub(super) fn speech_command(
-        _voice: Option<&str>,
-        _rate: Option<u32>,
-    ) -> Result<std::process::Command, String> {
-        Err("Reading aloud uses the macOS system voice".into())
-    }
-
-    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
-        Vec::new()
     }
 }
 
@@ -570,13 +560,13 @@ mod tests {
     }
 
     #[test]
-    fn start_options_default_to_the_apple_engine() {
+    fn start_options_default_to_the_qwen_engine() {
         let options: StartOptions = serde_json::from_value(serde_json::json!({
             "capture": "c1",
             "cloudKey": "smuggled",
         }))
         .unwrap();
-        assert_eq!(options.engine, Engine::Apple);
+        assert_eq!(options.engine, Engine::Qwen);
         assert!(options.locale.is_empty());
         assert!(!options.allow_server);
         assert_eq!(

@@ -99,7 +99,7 @@ export function irgatCodeToolCall(block: Block): IrgatToolCall | undefined {
   const command = candidate?.trim().replace(/^Run(?:ning)?\s+command:\s*/i, "");
   if (!command) return undefined;
   const words = shellWords(command);
-  if (!words || !/(?:^|[/\\])(?:irgat|monocode)(?:\.exe)?$/i.test(words[0] ?? ""))
+  if (!words || !/(?:^|[/\\])irgat(?:\.exe)?$/i.test(words[0] ?? ""))
     return undefined;
   if (words[1] !== "app") return undefined;
   const action = words[2] ?? "--help";

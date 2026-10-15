@@ -148,6 +148,8 @@ export type AgentAppHost = {
   irgatOf?(sessionId: string): {
     id: string;
     projects: readonly string[];
+    /** Main and child chats belonging to this Irgat, independent of projects. */
+    sessionIds?: readonly string[];
     showStartedSessionsInSidebar?: boolean;
     /** Files the sessions it starts into a folder named after it. */
     folder?: { name: string; color: string };
@@ -379,6 +381,17 @@ export function canAccessAgentAppProject(
   return (irgatProjects ?? [source.cwd]).some(
     (project) => pathKey(project) === pathKey(cwd),
   );
+}
+
+/** Own Irgat chats can be read even when no project has been assigned. */
+export function canReadAgentAppSession(
+  source: Session,
+  target: Session,
+  irgatProjects?: readonly string[],
+  irgatSessionIds?: readonly string[],
+): boolean {
+  return !!irgatSessionIds?.includes(target.id) ||
+    canAccessAgentAppProject(source, target.cwd, irgatProjects);
 }
 
 async function projectSession(
@@ -1136,13 +1149,35 @@ export async function handleAgentApp(
         })),
       };
     case "sessions.list": {
+      const irgat = host.irgatOf?.(source.id);
+      if (input.project === undefined && irgat?.sessionIds) {
+        const chats = await Promise.all(irgat.sessionIds.map((id) =>
+          id === source.id ? source : host.session(id),
+        ));
+        return {
+          irgatId: irgat.id,
+          sessions: chats.flatMap((chat) => chat ? [{
+            id: chat.id,
+            title: chat.title,
+            harness: chat.harness,
+            model: chat.model,
+            busy: !!chat.busy,
+            hasDraft: chat.blocks.some((block) => block.role === "user" && block.draft),
+            archived: false,
+          }] : []),
+        };
+      }
       const cwd = requireProject(source, input, host);
       return { cwd, sessions: await host.sessions(cwd) };
     }
     case "sessions.read": {
       const id = requiredString(input.sessionId, "sessionId", 256);
+      const ownChat = host.irgatOf?.(source.id)?.sessionIds?.includes(id);
       const target = id === source.id && host.isIrgat?.(id)
-        ? source : await projectSession(source, id, input, host);
+        ? source : ownChat
+          ? await host.session(id)
+          : await projectSession(source, id, input, host);
+      if (!target) throw new Error("Irgat chat is no longer available");
       const options = {
         before: optionalString(input.before, "before", 256),
         limit: input.limit as number | undefined,

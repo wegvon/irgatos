@@ -165,6 +165,22 @@ describe("fleetEntry", () => {
     expect(fleetEntry(session, { now: NOW })?.bucket).toBe("idle");
   });
 
+  it("lists a session that stopped mid-turn as Interrupted, not Idle", () => {
+    const session = chat("/repo/a", {
+      blocks: [sent(NOW - 1_000), { id: "r", role: "assistant", text: "Half" }],
+    });
+    expect(
+      fleetEntry(session, { now: NOW, interruptedIds: new Set([session.id]) })
+        ?.bucket,
+    ).toBe("interrupted");
+    expect(
+      fleetEntry(
+        { ...session, busy: true },
+        { now: NOW, interruptedIds: new Set([session.id]) },
+      )?.bucket,
+    ).toBe("running");
+  });
+
   it("skips blank tabs, Inbox asks, hidden habit runs, and quiet workers", () => {
     expect(fleetEntry(chat("/repo/a"))).toBeNull();
     expect(fleetEntry(chat("/repo/a", { ephemeral: true, busy: true }))).toBeNull();
@@ -194,6 +210,26 @@ describe("fleetEntry", () => {
       irgat: "Ada",
       projectLabel: "Ada",
     });
+  });
+
+  it("lists project-free chats under Chat, without a branch", () => {
+    const entry = fleetEntry(
+      chat("/Users/me/.irgatos/scratch", {
+        branch: "main",
+        busy: true,
+        blocks: [sent(NOW)],
+      }),
+      { now: NOW, projectLabel: () => "scratch" },
+    );
+    expect(entry).toMatchObject({
+      chat: true,
+      projectLabel: "Chat",
+      bucket: "running",
+    });
+    expect(entry?.branch).toBeUndefined();
+    expect(
+      fleetEntry(chat("/repo/a", { blocks: [sent(NOW)] }), { now: NOW })?.chat,
+    ).toBeUndefined();
   });
 });
 

@@ -28,6 +28,8 @@ vi.mock("../data/sessionReferenceDirectory", () => ({
   applySessionReferencesToTurn: mocks.applySessionReferencesToTurn,
 }));
 
+import { INTERACTIVE_QUESTION_RULES } from "./interactiveQuestion";
+
 import { preparePrompt } from "./promptPreparation";
 
 function deferred<T>() {
@@ -83,7 +85,8 @@ describe("preparePrompt", () => {
     expect(mocks.events).toEqual(["warm", "files"]);
 
     files.resolve("with files");
-    await expect(preparation).resolves.toBe("prepared");
+    await expect(preparation).resolves.toBe("prepared" + INTERACTIVE_QUESTION_RULES,
+    );
     expect(mocks.applyNotesToTurn).toHaveBeenCalledWith("with files");
     expect(mocks.applySkillsToTurn).toHaveBeenCalledWith("with files", {
       harness: "pi",
@@ -109,7 +112,9 @@ describe("preparePrompt", () => {
 
     await expect(
       preparePrompt("see @session/fix-3f2a9c1e", context),
-    ).resolves.toBe("see @session/fix-3f2a9c1e +files +skills +sessions");
+    ).resolves.toBe("see @session/fix-3f2a9c1e +files +skills +sessions" +
+        INTERACTIVE_QUESTION_RULES,
+    );
     expect(mocks.applySessionReferencesToTurn).toHaveBeenCalledWith(
       "see @session/fix-3f2a9c1e",
       "see @session/fix-3f2a9c1e +files +skills",

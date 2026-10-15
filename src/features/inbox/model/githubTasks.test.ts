@@ -223,13 +223,13 @@ describe("dedupeInboxItems", () => {
         number: 10,
         updatedAt: "2026-08-27T10:00:00Z",
         projectPath: "/tmp/agent-terminal",
-        repo: "wegvon/monocode",
+        repo: "wegvon/irgatos",
       }),
       item({
         number: 10,
         updatedAt: "2026-08-27T10:00:00Z",
         projectPath: "/tmp/irgat",
-        repo: "WEGVON/monocode",
+        repo: "WEGVON/irgatos",
       }),
     ];
     const deduped = dedupeInboxItems(rows, [
@@ -239,7 +239,7 @@ describe("dedupeInboxItems", () => {
     expect(deduped).toHaveLength(1);
     expect(deduped[0]?.projectPath).toBe("/tmp/irgat");
     expect(inboxItemKey(deduped[0]!)).toBe(
-      "github:wegvon/monocode:issue:10",
+      "github:wegvon/irgatos:issue:10",
     );
   });
 
@@ -297,8 +297,8 @@ describe("groupProjectsByRepo", () => {
   it("fetches each GitHub remote once", () => {
     expect(
       groupProjectsByRepo([
-        { path: "/tmp/irgat", repo: "wegvon/monocode" },
-        { path: "/tmp/agent-terminal", repo: "WEGVON/monocode" },
+        { path: "/tmp/irgat", repo: "wegvon/irgatos" },
+        { path: "/tmp/agent-terminal", repo: "WEGVON/irgatos" },
         { path: "/tmp/docs", repo: "acme/docs" },
       ]).map((project) => project.path),
     ).toEqual(["/tmp/irgat", "/tmp/docs"]);

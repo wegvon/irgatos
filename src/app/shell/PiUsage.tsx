@@ -12,7 +12,11 @@ import {
   RATE_LIMIT_MIN_REFETCH_MS,
   RATE_LIMIT_POLL_MS,
 } from "../../features/providers/model/rateLimits";
-import { UsageProviderChip, type UsageChipVariant } from "./UsageProviderChip";
+import {
+  USAGE_REFRESH_CLASSES,
+  UsageProviderChip,
+  type UsageChipVariant,
+} from "./UsageProviderChip";
 
 export function PiUsage({
   model,
@@ -121,7 +125,7 @@ function PiProviderUsage({
         title="Refresh Pi usage"
         disabled={fetching}
         onClick={() => refreshRef.current(true)}
-        className="grid size-6 shrink-0 place-items-center rounded text-content/40 hover:bg-content/10 hover:text-content disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-accent"
+        className={`${USAGE_REFRESH_CLASSES[variant]} focus-visible:outline-2 focus-visible:outline-accent`}
       >
         <RefreshCw
           className={`size-2.5 ${fetching ? "motion-safe:animate-spin" : ""}`}

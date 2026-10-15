@@ -15,8 +15,6 @@ export type AdhdSettings = {
   /** The always-on switch: every chat follows it unless it has its own choice. */
   enabled: boolean;
   showInStatusBar: boolean;
-  /** Keep the agent's next step or task progress beside the status bar chip. */
-  showFocus: boolean;
 };
 
 export type AdhdState = AdhdSettings & {
@@ -27,7 +25,6 @@ export type AdhdState = AdhdSettings & {
 export const ADHD_SETTINGS_DEFAULTS: AdhdSettings = {
   enabled: false,
   showInStatusBar: true,
-  showFocus: true,
 };
 
 const DEFAULT_STATE: AdhdState = { ...ADHD_SETTINGS_DEFAULTS, chats: {} };
@@ -67,7 +64,6 @@ function parse(raw: string | null): AdhdState {
     return {
       enabled: bool("enabled"),
       showInStatusBar: bool("showInStatusBar"),
-      showFocus: bool("showFocus"),
       chats,
     };
   } catch {

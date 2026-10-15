@@ -18,6 +18,7 @@ mod cursor_usage;
 mod devin_config;
 mod devin_usage;
 mod external_editor;
+mod free_chat;
 mod fs;
 mod gitlab;
 mod habit_webhook;
@@ -31,7 +32,6 @@ mod irgat_transcript;
 mod jira;
 mod jsonc;
 mod kanban;
-mod legacy_data;
 mod lightpanda;
 mod linear;
 mod link_preview;
@@ -244,9 +244,6 @@ fn should_request_quit(code: Option<i32>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    for note in legacy_data::import_identifier_folders(&legacy_data::identifier_roots()) {
-        eprintln!("irgat: {note}");
-    }
     #[cfg(target_os = "macos")]
     macos::register_spellcheck_default();
     #[cfg(windows)]
@@ -330,6 +327,7 @@ pub fn run() {
             control::app_cli_path,
             default_cwd,
             home_dir,
+            free_chat::free_chat_scratch_dir,
             notifications::notification_permission,
             notifications::request_notification_permission,
             notifications::show_notification,
@@ -343,10 +341,10 @@ pub fn run() {
             voice::voice_live_key_status,
             voice::voice_set_live_key,
             voice::voice_live_key,
+            voice::voice_summarize,
             voice::voice_open_privacy_settings,
             voice::voice_speak,
             voice::voice_stop_speaking,
-            voice::voice_list_voices,
             reminders::reminder_list,
             reminders::reminder_set,
             reminders::reminder_clear,

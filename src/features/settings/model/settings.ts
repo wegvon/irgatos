@@ -234,6 +234,16 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Pin irgats to the icon rail",
     keywords: "irgat rail compact collapsed icons top divider project picker",
   },
+  ...(IS_MAC
+    ? [
+        {
+          id: "irgat-menu-bar-icon",
+          section: "irgats" as const,
+          label: "Menu bar icon",
+          keywords: "irgat menu bar tray status icon quick composer macos hide",
+        },
+      ]
+    : []),
   {
     id: "irgat-list",
     section: "irgats",
@@ -472,26 +482,20 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "voice-access",
     section: "voice",
-    label: "Microphone and speech access",
+    label: "Microphone access",
     keywords: "permission privacy allow denied system settings",
   },
   {
     id: "voice-engine",
     section: "voice",
     label: "Transcription engine",
-    keywords: "apple on device local cloud openai whisper server",
+    keywords: "qwen rem turkish cloud openai whisper server",
   },
   {
     id: "voice-language",
     section: "voice",
     label: "Language",
     keywords: "locale turkish english dictation language",
-  },
-  {
-    id: "voice-allow-server",
-    section: "voice",
-    label: "Allow Apple servers",
-    keywords: "network offline on device privacy",
   },
   {
     id: "voice-service",
@@ -512,16 +516,16 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "voice mode text to speech tts say speak answer",
   },
   {
-    id: "voice-mode-voice",
+    id: "voice-mode-speech-summary",
     section: "voice",
-    label: "Reading voice",
-    keywords: "system voice siri spoken content say tts",
+    label: "Read a short summary",
+    keywords: "voice mode summary summarize short brief gemini tts speak",
   },
   {
-    id: "voice-mode-rate",
+    id: "voice-mode-voice",
     section: "voice",
-    label: "Reading speed",
-    keywords: "rate words per minute fast slow tts",
+    label: "Speech model",
+    keywords: "drama ema lightning kahya turkish speech voice tts provider",
   },
   {
     id: "voice-live-key",
@@ -566,12 +570,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "adhd",
     label: "Show in status bar",
     keywords: "adhd chip footer indicator toggle",
-  },
-  {
-    id: "adhd-focus",
-    section: "adhd",
-    label: "Next step in status bar",
-    keywords: "adhd next step task progress working memory",
   },
   {
     id: "adhd-chats",
@@ -999,11 +997,11 @@ export const IRGATS_ENABLED_DEFAULT = true;
 export const IRGATS_ENABLED_CHANGE_EVENT = "irgat:irgats-enabled-change";
 
 /** Whether irgats show in the title bar at all, across every project. */
-export function loadMonosEnabled(): boolean {
+export function loadIrgatsEnabled(): boolean {
   return readFlag(IRGATS_ENABLED_KEY) ?? IRGATS_ENABLED_DEFAULT;
 }
 
-export function saveMonosEnabled(value: boolean) {
+export function saveIrgatsEnabled(value: boolean) {
   writeFlag(IRGATS_ENABLED_KEY, value);
   if (typeof window === "undefined") return;
   window.dispatchEvent(
@@ -1011,7 +1009,7 @@ export function saveMonosEnabled(value: boolean) {
   );
 }
 
-export function subscribeMonosEnabled(onStoreChange: () => void) {
+export function subscribeIrgatsEnabled(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
   window.addEventListener(IRGATS_ENABLED_CHANGE_EVENT, onStoreChange);
   return () =>
@@ -1293,6 +1291,7 @@ export const KEYBINDINGS: KeybindingRow[] = [
   { command: "App: Find in Files", keys: `${MOD}${SHIFT}F`, when: "Always" },
   { command: "App: Open Project", keys: `${MOD}O`, when: "Always" },
   { command: "App: New Window", keys: `${MOD}${SHIFT}N`, when: "Always" },
+  { command: "App: New Chat", keys: `${MOD}${SHIFT}H`, when: "Always" },
   ...(IS_MAC
     ? [
         {

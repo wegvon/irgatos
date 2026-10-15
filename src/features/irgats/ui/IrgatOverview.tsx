@@ -24,7 +24,12 @@ import {
 } from "../model/overviewSections";
 import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
-import { habitActions, HabitsList, useHabitsLoad } from "./IrgatHabits";
+import {
+  confirmHabitRemoval,
+  habitActions,
+  HabitsList,
+  useHabitsLoad,
+} from "./IrgatHabits";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
 import { useIrgatArtifacts } from "../../artifacts/hooks/useArtifacts";
 import { getRegisteredArtifact } from "../../artifacts/model/artifactRegistry";
@@ -36,6 +41,7 @@ import { IrgatOverviewAll } from "./IrgatOverviewAll";
 import {
   LaunchedSessionPage,
   IrgatSessionList,
+  type IrgatSessionActions,
   type ShownIrgatSession,
 } from "./IrgatSessionList";
 import { EmptyState, PageHeader } from "./irgatPanelParts";
@@ -99,6 +105,8 @@ type Props = {
   tab: IrgatOverviewTab;
   onTabChange: (tab: IrgatOverviewTab) => void;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  /** Rename, archive and delete for its session cards, as in the sidebar. */
+  sessionActions?: IrgatSessionActions;
   /** A session it started, open over the list until Back. */
   shownSession?: ShownIrgatSession;
   onBackFromSession?: () => void;
@@ -137,6 +145,7 @@ export function IrgatOverview({
   tab,
   onTabChange,
   onOpenSession,
+  sessionActions,
   shownSession,
   onBackFromSession = () => {},
   onOpenSessionInWorkspace = () => {},
@@ -217,6 +226,7 @@ export function IrgatOverview({
             onRunNow={() => actions.runNow(habit.id)}
             onToggle={() => actions.toggle(habit.id)}
             onRemove={() => {
+              if (!confirmHabitRemoval(habit.name)) return;
               actions.remove(habit.id);
               back();
             }}
@@ -411,6 +421,7 @@ export function IrgatOverview({
                 setLimits((current) => showMoreInSection(current, section))
               }
               onOpenSession={onOpenSession}
+              sessionActions={sessionActions}
               onOpenDocument={onOpenDocument}
               onOpenHabit={(id) => push({ kind: "habit", id })}
               onNewHabit={() => push({ kind: "new-habit" })}
@@ -429,6 +440,7 @@ export function IrgatOverview({
                   query={query}
                   filters={filters}
                   onOpenSession={onOpenSession}
+                  actions={sessionActions}
                 />
               </div>
             ) : (

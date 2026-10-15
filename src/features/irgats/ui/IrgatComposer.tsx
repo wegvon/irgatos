@@ -90,6 +90,8 @@ type Props = {
   enabled?: boolean;
   /** This composer owns the voice shortcuts while its pane has the focus. */
   hotkeys?: boolean;
+  /** Voice input, off while another surface such as a terminal has focus. */
+  voiceEnabled?: boolean;
   /** The Irgat is working, so voice mode waits for the reply. */
   busy?: boolean;
   /** The Irgat's last finished reply, which voice mode reads aloud. */
@@ -134,6 +136,7 @@ export function IrgatComposer({
   name,
   enabled = true,
   hotkeys = false,
+  voiceEnabled = true,
   busy = false,
   voiceReply = null,
   focusToken,
@@ -470,9 +473,10 @@ export function IrgatComposer({
   };
   const voice = useComposerVoice({
     field,
-    enabled: enabled && !submitting,
+    // A message on its way counts as busy: voice mode stays on and reads the reply.
+    enabled: enabled && voiceEnabled,
     hotkeys,
-    busy,
+    busy: busy || submitting,
     draftEmpty: !text.trim() && attachments.length === 0,
     reply: voiceReply,
     write: writeDraft,
@@ -519,7 +523,9 @@ export function IrgatComposer({
       placeholder={placeholder ?? `Message ${name}`}
       spellCheck={autocorrect}
       autoCorrect={autocorrect ? "on" : "off"}
-      disabled={!enabled || submitting}
+      // Read-only rather than disabled while sending, so the caret stays.
+      disabled={!enabled}
+      readOnly={submitting}
       value={text}
       onFocus={onFocus}
       onBlur={() => setMentionToken(null)}

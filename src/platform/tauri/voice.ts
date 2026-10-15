@@ -6,7 +6,7 @@ export const VOICE_EVENT = "irgat:voice";
 
 export type VoicePermission = "prompt" | "granted" | "denied" | "unsupported";
 
-export type VoiceEngine = "apple" | "cloud";
+export type VoiceEngine = "apple" | "cloud" | "qwen";
 
 export type VoiceStatus = {
   supported: boolean;
@@ -159,14 +159,7 @@ export function openVoicePrivacySettings(pane: "microphone" | "speech") {
 /** Rust reports here when an utterance stops, for whatever reason. */
 export const SPEECH_EVENT = "irgat:voice-speech";
 
-export type SystemVoice = { name: string; locale: string };
-
-export type SpeechOptions = {
-  /** A system voice name; empty uses the Spoken Content voice. */
-  voice?: string;
-  /** Words per minute; 0 uses the Spoken Content rate. */
-  rate?: number;
-};
+export type SpeechProvider = "drama" | "ema" | "kahya";
 
 export type SpeechHandle = {
   id: string;
@@ -175,101 +168,75 @@ export type SpeechHandle = {
   stop: () => void;
 };
 
-const utterances = new Map<string, (interrupted: boolean) => void>();
+type SpeechResult = { interrupted: boolean; error?: string };
+const utterances = new Map<string, (result: SpeechResult) => void>();
 let speechSubscription: Promise<UnlistenFn | void> | null = null;
 
 function subscribeSpeech() {
-  speechSubscription ??= listen<{ id: string; interrupted: boolean }>(
+  speechSubscription ??= listen<SpeechResult & { id: string }>(
     SPEECH_EVENT,
     ({ payload }) => {
       const resolve = utterances.get(payload.id);
       utterances.delete(payload.id);
-      resolve?.(payload.interrupted);
+      resolve?.(payload);
     },
-  ).catch(console.error);
+  ).catch((reason) => {
+    speechSubscription = null;
+    throw reason;
+  });
   return speechSubscription;
 }
 
-/** `say` speaks about 180 words a minute; the webview's 1 is the same pace. */
-const WEBVIEW_WORDS_PER_MINUTE = 180;
-
-function speakInWebview(
-  id: string,
+/**
+ * A few spoken sentences for an agent reply from Gemini, or null without a
+ * Live voice key, outside the app, or when the call fails.
+ */
+export async function summarizeReply(
   text: string,
-  options: SpeechOptions,
-): SpeechHandle {
-  const synth = globalThis.speechSynthesis;
-  if (!synth) throw new Error("This system cannot read replies aloud");
-  let settle!: (interrupted: boolean) => void;
-  const done = new Promise<{ interrupted: boolean }>((resolve) => {
-    let settled = false;
-    settle = (interrupted) => {
-      if (settled) return;
-      settled = true;
-      resolve({ interrupted });
-    };
-  });
-  const utterance = new SpeechSynthesisUtterance(text);
-  if (options.rate) utterance.rate = options.rate / WEBVIEW_WORDS_PER_MINUTE;
-  const voice = options.voice
-    ? synth.getVoices().find((candidate) => candidate.name === options.voice)
-    : undefined;
-  if (voice) utterance.voice = voice;
-  utterance.onend = () => settle(false);
-  utterance.onerror = () => settle(true);
-  synth.cancel();
-  synth.speak(utterance);
-  return {
-    id,
-    done,
-    stop: () => {
-      settle(true);
-      synth.cancel();
-    },
-  };
+  locale = "",
+): Promise<string | null> {
+  try {
+    if (!isTauri()) return null;
+    const summary = await invoke<string | null>("voice_summarize", {
+      text,
+      locale: locale || null,
+    });
+    return summary?.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Reads `text` aloud with the macOS system voice, interrupting anything
- * already speaking. Elsewhere the webview's speech synthesis stands in.
- */
+/** The chosen service generates speech; macOS plays its WAV. */
 export async function speak(
   text: string,
-  options: SpeechOptions = {},
+  provider: SpeechProvider = "drama",
 ): Promise<SpeechHandle> {
+  if (!isTauri())
+    throw new Error("Speech playback is available in the desktop app");
   const id = `speech-${Date.now().toString(36)}-${++sequence}`;
-  if (!isTauri()) return speakInWebview(id, text, options);
-  const done = new Promise<{ interrupted: boolean }>((resolve) => {
-    utterances.set(id, (interrupted) => resolve({ interrupted }));
+  let settle!: (result: SpeechResult) => void;
+  const result = new Promise<SpeechResult>((resolve) => {
+    settle = resolve;
   });
-  await subscribeSpeech();
+  utterances.set(id, settle);
   try {
-    await invoke("voice_speak", {
-      id,
-      text,
-      voice: options.voice || null,
-      rate: options.rate || null,
-    });
+    await subscribeSpeech();
+    await invoke("voice_speak", { id, text, provider });
   } catch (reason) {
     utterances.delete(id);
-    if (globalThis.speechSynthesis) return speakInWebview(id, text, options);
     throw new Error(errorText(reason));
   }
   return {
     id,
-    done,
+    done: result.then(({ interrupted, error }) => {
+      if (error) throw new Error(error);
+      return { interrupted };
+    }),
     stop: () => {
+      utterances.delete(id);
+      settle({ interrupted: true });
       void invoke("voice_stop_speaking", { id }).catch(console.error);
     },
   };
-}
-
-export async function systemVoices(): Promise<SystemVoice[]> {
-  try {
-    if (!isTauri()) return [];
-    const voices = await invoke<SystemVoice[]>("voice_list_voices");
-    return Array.isArray(voices) ? voices : [];
-  } catch {
-    return [];
-  }
 }

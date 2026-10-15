@@ -17,7 +17,7 @@ export type DictationError = {
 };
 
 /** Where the audio is transcribed, for the privacy hint beside the meter. */
-export type DictationVenue = "device" | "apple" | "service";
+export type DictationVenue = "device" | "apple" | "service" | "qwen";
 
 export type DictationEnd = "final" | "cancel" | "error" | "detach";
 
@@ -115,7 +115,10 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
         pane: "speech",
       });
     }
-    setVenue(!apple ? "service" : status.onDevice ? "device" : "apple");
+    setVenue(
+      settings.engine === "qwen"
+        ? "qwen"
+        : !apple ? "service" : status.onDevice ? "device" : "apple");
     heardRef.current = "";
     callbacks.current.onBegin();
     try {
@@ -124,8 +127,9 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
           engine: settings.engine,
           locale: settings.locale,
           allowServer: settings.allowServer,
-          cloud: apple
-            ? undefined
+          cloud:
+            settings.engine !== "cloud"
+              ? undefined
             : {
                 endpoint: settings.cloudEndpoint,
                 model: settings.cloudModel,
@@ -148,6 +152,7 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
           },
           onError: (message) => {
             if (stale()) return;
+            handleRef.current?.cancel();
             setError({ message });
             finish("error");
           },
@@ -180,7 +185,7 @@ export function useDictation({ onBegin, onTranscript, onEnd }: Options) {
     handle.stop();
     // A service upload has its own timeout in Rust; the local recognizer
     // gets a short one, after which what was already on screen stands.
-    if (loadVoiceSettings().engine === "cloud") return;
+    if (loadVoiceSettings().engine !== "apple") return;
     const generation = generationRef.current;
     timeoutRef.current = window.setTimeout(() => {
       if (generationRef.current !== generation) return;

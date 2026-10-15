@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatInteger } from "../../shared/lib/numbers";
 import type { IconComponent } from "../../shared/ui/icons";
 
 type Props = {
@@ -104,6 +105,70 @@ export function FleetNeedsYouCount({
       aria-hidden
       data-fleet-needs-you={count}
       className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-black tabular-nums ${className}`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+export type ChatIndicator = {
+  count: number;
+  tone: "attention" | "unread" | "none";
+};
+
+export function chatLabel(indicator: ChatIndicator | undefined): string {
+  if (!indicator || indicator.tone === "none" || indicator.count <= 0)
+    return "Chat";
+  const count = formatInteger(indicator.count);
+  if (indicator.tone === "attention")
+    return `Chat, ${count} ${indicator.count === 1 ? "chat needs" : "chats need"} you`;
+  return `Chat, ${count} new ${indicator.count === 1 ? "reply" : "replies"}`;
+}
+
+/** Chats waiting on the user (amber) or holding unread replies (accent). */
+export function ChatCount({
+  indicator,
+  className = "",
+}: {
+  indicator: ChatIndicator | undefined;
+  className?: string;
+}) {
+  if (!indicator || indicator.tone === "none" || indicator.count <= 0)
+    return null;
+  const tone =
+    indicator.tone === "attention"
+      ? "bg-amber-500 text-black"
+      : "bg-accent text-white";
+  return (
+    <span
+      aria-hidden
+      data-chat-count={indicator.count}
+      data-chat-tone={indicator.tone}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-1 text-[10px] font-semibold leading-none tabular-nums ${tone} ${className}`}
+    >
+      {indicator.count > 99 ? "99+" : indicator.count}
+    </span>
+  );
+}
+
+export function artifactsLabel(count: number): string {
+  return count ? `Artifacts, ${formatInteger(count)}` : "Artifacts";
+}
+
+/** The project's artifact count beside the Artifacts menu item; nothing at zero. */
+export function ArtifactCount({
+  count,
+  className = "",
+}: {
+  count: number;
+  className?: string;
+}) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden
+      data-artifact-count={count}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-medium leading-none text-white tabular-nums ${className}`}
     >
       {count > 99 ? "99+" : count}
     </span>

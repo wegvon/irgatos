@@ -70,6 +70,7 @@ export type UsageFooterSession = {
 };
 
 export function UsageFooter({
+  hideUsage = false,
   providers,
   session,
   project,
@@ -85,6 +86,7 @@ export function UsageFooter({
   onManageAccounts,
   adhd,
 }: {
+  hideUsage?: boolean;
   providers: RateLimitProvider[];
   session?: UsageFooterSession;
   project?: string;
@@ -129,7 +131,8 @@ export function UsageFooter({
       aria-label={ariaLabel}
       className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto border-t border-stroke px-3 text-[11px] text-content/55"
     >
-      <UsageChips
+      {hideUsage ? null : (
+        <UsageChips
         providers={providers}
         session={session}
         project={project}
@@ -144,6 +147,7 @@ export function UsageFooter({
           ) : null
         }
       />
+      )}
       {adhd || showTerminals || showTerminalButton || onToggleBrowser ? (
         <div className="ml-auto flex min-w-0 items-center gap-2">
           {adhd ? <AdhdModeChip session={adhd.session} /> : null}

@@ -281,10 +281,12 @@ it("keeps the draft when the workspace rejects delivery", async () => {
 it("ignores a stale initial snapshot after a newer update arrives", async () => {
   let initial!: (view: FloatingIrgatView) => void;
   native.invoke.mockImplementation(
-    () =>
-      new Promise((resolve) => {
+    (command) =>
+    command === "irgat_chat_state"
+      ? new Promise((resolve) => {
         initial = resolve;
-      }),
+      })
+      : Promise.resolve(null),
   );
   await render();
   act(() => receive({ payload: snapshot(1) }));

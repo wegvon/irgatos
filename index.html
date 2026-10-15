@@ -9,12 +9,8 @@
       (function () {
         try {
           var root = document.documentElement;
-          // Before the app migrates its storage, fall back to the old names.
           var read = function (name) {
-            var value = localStorage.getItem("irgat." + name);
-            return value != null
-              ? value
-              : localStorage.getItem("monocode." + name);
+            return localStorage.getItem("irgat." + name);
           };
           var hue = read("themeHue");
           var sat = read("themeSaturation");

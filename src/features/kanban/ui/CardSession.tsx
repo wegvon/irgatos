@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { LAYER } from "../../../shared/lib/layers";
-import { Play, X } from "../../../shared/ui/icons";
+import { CircleAlert, MessageSquare, Play, X } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SecondaryButton } from "../../../shared/ui/SecondaryButton";
 import { listSessionsByProject } from "../../sessions/data/sessionStore";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 import {
   cardSessionLabel,
   cardSessionView,
+  type CardApproval,
   type CardSessionState,
   type CardSessionView,
   type LiveCardSession,
@@ -49,24 +51,28 @@ export function SessionStateBadge({
 export function SessionChip({
   card,
   live,
+  chat = false,
   onOpen,
 }: {
   card: KanbanCard;
   live: LiveCardSession | undefined;
+  /** The card sits on the Chats board. */
+  chat?: boolean;
   onOpen?: (sessionId: string) => void;
 }) {
   if (!card.session) return null;
   const view = cardSessionView(card.session, live);
   const sessionId = card.session.id;
   const canOpen = !!onOpen && view.state !== "missing";
+  const noun = chat || live?.chat ? "chat" : "session";
   return (
     <button
       type="button"
       tabIndex={-1}
       data-no-drag
       disabled={!canOpen}
-      title={canOpen ? `Open session: ${view.title}` : view.title}
-      aria-label={`${cardSessionLabel(view)} session${canOpen ? ", open it" : ""}`}
+      title={canOpen ? `Open ${noun}: ${view.title}` : view.title}
+      aria-label={`${cardSessionLabel(view)} ${noun}${canOpen ? ", open it" : ""}`}
       onClick={(event) => {
         event.stopPropagation();
         if (canOpen) onOpen(sessionId);
@@ -74,11 +80,81 @@ export function SessionChip({
       onKeyDown={(event) => event.stopPropagation()}
       className="inline-flex min-w-0 items-center gap-1 rounded hover:brightness-125 disabled:cursor-default"
     >
+      {noun === "chat" ? <ChatBadge /> : null}
       {view.harness ? (
         <HarnessIcon harness={view.harness} className="size-3 shrink-0 text-content/55" />
       ) : null}
       <SessionStateBadge view={view} />
     </button>
+  );
+}
+
+export function ChatBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      data-card-chat
+      className={`inline-flex h-4.5 shrink-0 items-center gap-1 rounded bg-content/8 px-1.5 text-[10.5px] font-medium text-content/60 ${className}`}
+    >
+      <MessageSquare aria-hidden className="size-3 shrink-0" strokeWidth={1.75} />
+      Chat
+    </span>
+  );
+}
+
+/** Allow or deny the session's waiting tool call without leaving the board. */
+export function CardApprovalActions({
+  sessionId,
+  approval,
+  compact = false,
+  onApproval,
+}: {
+  sessionId: string;
+  approval: CardApproval;
+  compact?: boolean;
+  onApproval: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
+}) {
+  const decide = (decision: "allow" | "deny") => (event: MouseEvent) => {
+    event.stopPropagation();
+    onApproval(sessionId, approval.requestId, decision);
+  };
+  const size = compact ? "h-5 px-1.5 text-[10.5px]" : "h-6.5 px-2.5 text-[12px]";
+  return (
+    <span
+      data-no-drag
+      data-card-approval={approval.requestId}
+      className={`flex min-w-0 items-center gap-1.5 ${compact ? "w-full" : ""}`}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <CircleAlert
+        aria-hidden
+        className="size-3.5 shrink-0 text-amber-400"
+        strokeWidth={1.75}
+      />
+      <span
+        className={`min-w-0 flex-1 truncate ${compact ? "text-[11px]" : "text-[12px]"} text-content/75`}
+        title={approval.label}
+      >
+        {approval.label}
+      </span>
+      <button
+        type="button"
+        data-no-drag
+        aria-label={`Allow: ${approval.label}`}
+        onClick={decide("allow")}
+        className={`inline-flex shrink-0 items-center rounded-md bg-content font-medium text-background-base hover:bg-content/80 ${size}`}
+      >
+        Allow
+      </button>
+      <button
+        type="button"
+        data-no-drag
+        aria-label={`Deny: ${approval.label}`}
+        onClick={decide("deny")}
+        className={`inline-flex shrink-0 items-center rounded-md bg-content/10 font-medium text-content/70 hover:bg-content/20 ${size}`}
+      >
+        Deny
+      </button>
+    </span>
   );
 }
 
@@ -91,6 +167,7 @@ export function CardSessionSection({
   onStart,
   onOpen,
   onLink,
+  onApproval,
 }: {
   card: KanbanCard;
   project: string;
@@ -98,16 +175,24 @@ export function CardSessionSection({
   onStart?: () => void;
   onOpen?: (sessionId: string) => void;
   onLink: (session: { id: string; title: string } | null) => void;
+  onApproval?: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
 }) {
   const link = card.session;
   const view = link ? cardSessionView(link, live) : null;
+  const chat = !!live?.chat || isFreeChatCwd(project);
+  const noun = chat ? "chat" : "session";
+  const Noun = chat ? "Chat" : "Session";
   return (
     <section
-      aria-label="Session"
+      aria-label={Noun}
       data-card-session
+      data-card-session-chat={chat || undefined}
       className="flex flex-col gap-2 rounded-lg border border-content/10 px-3 py-2.5"
     >
-      <span className="text-[11px] text-content/45">Session</span>
+      <span className="flex items-center gap-1.5 text-[11px] text-content/45">
+        {chat ? <MessageSquare aria-hidden className="size-3" strokeWidth={1.75} /> : null}
+        {Noun}
+      </span>
       {link && view ? (
         <>
           <div className="flex min-w-0 items-center gap-2">
@@ -115,22 +200,29 @@ export function CardSessionSection({
               <HarnessIcon harness={view.harness} className="size-3.5 shrink-0 text-content/60" />
             ) : null}
             <span className="min-w-0 flex-1 truncate text-[13px] text-content/90" title={view.title}>
-              {view.state === "missing" ? "Linked session is unavailable" : view.title}
+              {view.state === "missing" ? `Linked ${noun} is unavailable` : view.title}
             </span>
             <SessionStateBadge view={view} />
             {view.state !== "missing" && onOpen ? (
-              <SecondaryButton onClick={() => onOpen(link.id)}>Open session</SecondaryButton>
+              <SecondaryButton onClick={() => onOpen(link.id)}>Open {noun}</SecondaryButton>
             ) : null}
             <button
               type="button"
-              title="Unlink session"
-              aria-label="Unlink session"
+              title={`Unlink ${noun}`}
+              aria-label={`Unlink ${noun}`}
               onClick={() => onLink(null)}
               className="grid size-6 shrink-0 place-items-center rounded-md text-content/40 hover:bg-content/10 hover:text-content"
             >
               <X className="size-3" strokeWidth={1.75} />
             </button>
           </div>
+          {live?.approval && onApproval ? (
+            <CardApprovalActions
+              sessionId={link.id}
+              approval={live.approval}
+              onApproval={onApproval}
+            />
+          ) : null}
           {view.state === "missing" ? (
             <div className="flex items-center gap-2 text-[12px] text-content/50">
               <span className="min-w-0 flex-1">
@@ -144,17 +236,21 @@ export function CardSessionSection({
             </p>
           ) : (
             <p className="text-[12px] text-content/45">
-              {card.autoTitle ? "Added for this session. " : ""}The card moves to In progress,
-              Review, or Done as the session works, waits on you, or finishes.
+              {card.autoTitle ? `Added for this ${noun}. ` : ""}The card moves to In progress,
+              Review, or Done as the {noun} works, waits on you, or finishes.
             </p>
           )}
         </>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
           <span className="min-w-0 flex-1 text-[12px] text-content/50">
-            Start an agent on this card, or link a session you already have.
+            {chat
+              ? "Start a chat on this card, or link one you already have."
+              : "Start an agent on this card, or link a session you already have."}
           </span>
-          {onStart ? <StartButton onStart={onStart} label="Start session" /> : null}
+          {onStart ? (
+            <StartButton onStart={onStart} label={chat ? "Start chat" : "Start session"} />
+          ) : null}
           <LinkExisting project={project} onLink={onLink} />
         </div>
       )}

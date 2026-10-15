@@ -68,8 +68,8 @@ describe.each([
   ],
   [
     "irgat.monosEnabled",
-    settings.loadMonosEnabled,
-    settings.saveMonosEnabled,
+    settings.loadIrgatsEnabled,
+    settings.saveIrgatsEnabled,
     true,
     "irgat:irgats-enabled-change",
   ],

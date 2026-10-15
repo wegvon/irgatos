@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { speak, type SpeechHandle } from "../../../platform/tauri/voice";
+import { speak, summarizeReply } from "../../../platform/tauri/voice";
 import { createEndpointer, type Endpointer } from "../model/endpointing";
-import { spokenReply, type Reply } from "../model/spokenReply";
+import { replySummary, spokenReply, type Reply } from "../model/spokenReply";
 import { loadVoiceSettings } from "../model/voiceSettings";
 import type { Dictation } from "./useDictation";
 
@@ -52,7 +52,8 @@ export function useVoiceConversation({
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const speakingRef = useRef(false);
-  const speechRef = useRef<SpeechHandle | null>(null);
+  /** The utterance playing, or the summary it is still waiting for. */
+  const speechRef = useRef<{ stop: () => void } | null>(null);
   const spokenRef = useRef<string | null>(null);
   const ownsCaptureRef = useRef(false);
   const endpointerRef = useRef<Endpointer | null>(null);
@@ -79,28 +80,48 @@ export function useVoiceConversation({
     [],
   );
 
-  const startSpeaking = useCallback((text: string) => {
+  /**
+   * Reads `fallback`, or with `reply`, Gemini's summary of it when there is
+   * one. Stopping while the summary is on its way skips the reading.
+   */
+  const startSpeaking = useCallback((fallback: string, reply?: string) => {
     const settings = loadVoiceSettings();
+    // A failure on an earlier reply is not news once the next one starts.
+    setError(null);
     speakingRef.current = true;
     setSpeaking(true);
+    let stopped = false;
     const finish = () => {
       speechRef.current = null;
       speakingRef.current = false;
       setSpeaking(false);
     };
-    void speak(text, {
-      voice: settings.speechVoice,
-      rate: settings.speechRate,
-    })
-      .then((handle) => {
-        speechRef.current = handle;
-        if (!speakingRef.current) handle.stop();
-        return handle.done;
+    speechRef.current = {
+      stop: () => {
+        stopped = true;
+        finish();
+      },
+    };
+    void (
+      reply ? summarizeReply(reply, settings.locale) : Promise.resolve(null)
+    )
+      .then((summary) => {
+        if (stopped || !speakingRef.current) return;
+        speechRef.current = null;
+        return speak(summary ?? fallback, settings.speechProvider).then(
+          (handle) => {
+            speechRef.current = handle;
+            if (!speakingRef.current) handle.stop();
+            return handle.done;
+          },
+        );
       })
       .catch((reason: unknown) => {
         setError(reason instanceof Error ? reason.message : String(reason));
       })
-      .finally(finish);
+      .finally(() => {
+        if (!stopped) finish();
+      });
   }, []);
 
   const { phase: capturePhase, error: captureError } = dictation;
@@ -109,6 +130,7 @@ export function useVoiceConversation({
   const turnOff = useCallback(() => {
     setOn(false);
     setHeard(false);
+    setError(null);
     speakingRef.current = false;
     speechRef.current?.stop();
     if (ownsCaptureRef.current) detachCapture();
@@ -155,9 +177,12 @@ export function useVoiceConversation({
     const latest = replyRef.current;
     if (latest && latest.id !== spokenRef.current) {
       spokenRef.current = latest.id;
-      const text = spokenReply(latest.text);
-      if (text && loadVoiceSettings().readReplies && capturePhase === "idle") {
-        startSpeaking(text);
+      const { readReplies, speechSummary } = loadVoiceSettings();
+      const text = speechSummary
+        ? replySummary(latest.text)
+        : spokenReply(latest.text);
+      if (text && readReplies && capturePhase === "idle") {
+        startSpeaking(text, speechSummary ? latest.text : undefined);
         return;
       }
     }

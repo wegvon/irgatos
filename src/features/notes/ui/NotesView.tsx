@@ -966,6 +966,13 @@ function NoteEditor({
             <button
               type="button"
               onClick={() => {
+                const name = draft.title.trim() || note.title.trim();
+                if (
+                  !window.confirm(
+                    `Delete ${name ? `“${name}”` : "this note"}? This can’t be undone.`,
+                  )
+                )
+                  return;
                 skipSave.current = true;
                 if (saveTimer.current != null)
                   window.clearTimeout(saveTimer.current);

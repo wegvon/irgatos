@@ -23,10 +23,10 @@ vi.mock("@tauri-apps/api/webview", () => ({
 vi.mock("../../source-control/hooks/useProjectBranches", () => ({
   useProjectBranchesState: () => ({
     branches: {
-      current: "mc/greeting",
+      current: "irgat/greeting",
       detached: false,
       branches: [
-        { name: "mc/greeting", remote: null, current: true },
+        { name: "irgat/greeting", remote: null, current: true },
         { name: "main", remote: null, current: false },
       ],
     },
@@ -1520,7 +1520,7 @@ describe("Composer question focus", () => {
       container.querySelector('[aria-label="Choose working copy"]'),
     ).toBeNull();
     expect(
-      container.querySelector('[aria-label="Branch mc/greeting"]'),
+      container.querySelector('[aria-label="Branch irgat/greeting"]'),
     ).not.toBeNull();
   });
 
@@ -1622,7 +1622,7 @@ describe("Composer question focus", () => {
     );
     expect(onWorkspaceModeChange).toHaveBeenLastCalledWith(
       "worktree",
-      "mc/greeting",
+      "irgat/greeting",
     );
 
     await act(async () =>
@@ -1635,7 +1635,7 @@ describe("Composer question focus", () => {
         }),
       ),
     );
-    expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("mc/greeting");
+    expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("irgat/greeting");
   });
 
   it("returns focus to the composer textarea once a question is answered", async () => {

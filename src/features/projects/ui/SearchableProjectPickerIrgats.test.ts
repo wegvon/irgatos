@@ -67,3 +67,50 @@ it("shows the open irgat, and lets the current project lead back out of it", () 
   act(() => project.click());
   expect(onSelectProject).toHaveBeenCalledWith("/code/app");
 });
+
+it("marks a working Irgat with unread replies and a project with an agent at work", () => {
+  act(() =>
+    root.render(
+      createElement(SearchableProjectPicker, {
+        cwd: "/code/app",
+        recents: [
+          { path: "/code/app", openedAt: 2 },
+          { path: "/code/api", openedAt: 1 },
+        ],
+        busyPaths: ["/code/api"],
+        compact: true,
+        onSelectProject: vi.fn(),
+        irgats: {
+          items: [
+            {
+              id: "m1",
+              name: "IrgatCat",
+              mascot: "cat",
+              color: "#fff",
+              status: "working",
+              unseen: 3,
+            },
+            { id: "m2", name: "Quiet", mascot: "cat", color: "#fff" },
+          ],
+          onOpen: vi.fn(),
+        },
+      }),
+    ),
+  );
+  act(() => container.querySelector("button")!.click());
+  const irgat = (id: string) =>
+    document.body.querySelector<HTMLElement>(`[data-picker-irgat="${id}"]`)!;
+  expect(irgat("m1").textContent).toContain("Working");
+  expect(irgat("m1").querySelector('[aria-label="3 unread"]')).not.toBeNull();
+  expect(irgat("m2").textContent).toContain("Irgat");
+  const row = (path: string) =>
+    [...document.body.querySelectorAll<HTMLElement>("button")].find(
+      (button) => button.title === path,
+    )!;
+  expect(
+    row("/code/api").querySelector("[data-picker-project-busy]"),
+  ).not.toBeNull();
+  expect(
+    row("/code/app").querySelector("[data-picker-project-busy]"),
+  ).toBeNull();
+});

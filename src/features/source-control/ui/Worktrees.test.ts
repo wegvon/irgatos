@@ -130,14 +130,14 @@ const result = (branch = "feature"): Worktrees => ({
 it("builds temporary and generated worktree branch names", () => {
   expect(
     temporaryWorktreeBranchName("12345678-90ab-cdef-1234-567890abcdef"),
-  ).toBe("mc/12345678");
+  ).toBe("irgat/12345678");
   expect(namedWorktreeBranch("feature/faster-worktrees")).toBe(
-    "mc/feature/faster-worktrees",
+    "irgat/feature/faster-worktrees",
   );
   expect(namedWorktreeBranch("irgat/already-prefixed")).toBe(
-    "mc/already-prefixed",
+    "irgat/already-prefixed",
   );
-  expect(namedWorktreeBranch("mc/already-short")).toBe("mc/already-short");
+  expect(namedWorktreeBranch("irgat//double-slash/")).toBe("irgat/double-slash");
   expect(namedWorktreeBranch("  ")).toBeNull();
 });
 

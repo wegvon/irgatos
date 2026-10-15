@@ -40,7 +40,9 @@ beforeEach(() => {
           size: 12,
           isDir: false,
         }))
-      : [],
+        : command === "computer_use_selected"
+          ? null
+          : [],
   );
   container = document.createElement("div");
   document.body.append(container);
@@ -143,7 +145,7 @@ it("attaches a dropped folder as a chip with its item count, and removes it", as
         { name: "src", path: "/Users/me/app/src", isDir: true, ignored: false },
         { name: "package.json", path: "/Users/me/app/package.json", isDir: false, ignored: false },
       ];
-    return [];
+    return command === "computer_use_selected" ? null : [];
   });
   await render();
   await native({

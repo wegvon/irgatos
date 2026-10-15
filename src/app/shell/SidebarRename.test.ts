@@ -11,6 +11,7 @@ import {
 } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
+import { saveRailIrgatsPinned } from "../../features/settings/model/displayPrefs";
 import {
   createIrgat,
   saveIrgatSessionId,
@@ -218,6 +219,352 @@ describe("project rail visibility", () => {
   });
 });
 
+describe("Artifacts in the navigation menu", () => {
+  function railProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
+    props = {
+      ...props,
+      recents: [{ path: "/workspace/project", openedAt: Date.now() }],
+      projectRailOpen: true,
+      compactProjectRail: false,
+      onSelectProject: vi.fn(),
+      onOpenProject: vi.fn(),
+      onOpenKanban: vi.fn(),
+      onOpenFleet: vi.fn(),
+      onOpenArtifacts: vi.fn(),
+      artifactsPanel: createElement("div", { "data-artifacts-panel": "" }),
+      artifactCount: 3,
+      ...overrides,
+    };
+  }
+  const projectsNav = () =>
+    container.querySelector<HTMLElement>('nav[aria-label="Projects"]')!;
+  const menuArtifacts = () =>
+    projectsNav().querySelector<HTMLButtonElement>(
+      'button[aria-label^="Artifacts"]',
+    )!;
+  const headerTabs = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>(
+        'aside [role="tablist"][aria-label="Workspace"] [role="tab"]',
+      ),
+    );
+
+  it("sits directly under Board with its live count", async () => {
+    railProps();
+    await act(async () => render());
+    const labels = Array.from(projectsNav().querySelectorAll("button"), (b) =>
+      b.getAttribute("aria-label"),
+    );
+    const board = labels.indexOf("Board");
+    expect(board).toBeGreaterThan(-1);
+    expect(labels.slice(board, board + 2)).toEqual(["Board",
+      "Artifacts, 3",
+    ]);
+    const badge = menuArtifacts().querySelector("[data-artifact-count]");
+    expect(badge?.getAttribute("data-artifact-count")).toBe("3");
+    expect(badge?.textContent).toBe("3");
+
+    props = { ...props, artifactCount: 0 };
+    await act(async () => render());
+    expect(menuArtifacts().getAttribute("aria-label")).toBe("Artifacts");
+    expect(menuArtifacts().querySelector("[data-artifact-count]")).toBeNull();
+  });
+
+  it("is no longer a workspace header tab", async () => {
+    railProps();
+    await act(async () => render());
+    expect(headerTabs().map((tab) => tab.textContent)).toEqual([
+      "Sessions",
+      "Explorer",
+      "Changes",
+    ]);
+    expect(
+      container.querySelector('[role="tab"][aria-label^="Artifacts"]'),
+    ).toBeNull();
+    expect(container.querySelector('[role="tab"] [data-artifact-count]')).toBeNull();
+  });
+
+  it("keeps a saved order that still lists Artifacts out of the header", async () => {
+    localStorage.setItem(
+      "irgat.sidebarTabOrder",
+      JSON.stringify(["artifacts", "files", "sessions", "inbox", "changes"]),
+    );
+    railProps();
+    await act(async () => render());
+    expect(headerTabs().map((tab) => tab.textContent)).toEqual([
+      "Explorer",
+      "Sessions",
+      "Changes",
+    ]);
+  });
+
+  it("opens the panel on click and highlights only while it is shown", async () => {
+    railProps();
+    await act(async () => render());
+    expect(menuArtifacts().className).not.toContain("bg-selection");
+    act(() => menuArtifacts().click());
+    expect(props.onOpenArtifacts).toHaveBeenCalledWith(true);
+
+    props = { ...props, tab: "artifacts" };
+    await act(async () => render());
+    expect(menuArtifacts().className).toContain("bg-selection");
+    expect(container.querySelector("[data-artifacts-panel]")).not.toBeNull();
+    expect(
+      headerTabs().filter((tab) => tab.getAttribute("aria-selected") === "true"),
+    ).toHaveLength(0);
+
+    props = { ...props, fleetActive: true };
+    await act(async () => render());
+    expect(menuArtifacts().className).not.toContain("bg-selection");
+
+    props = { ...props, fleetActive: false, open: false };
+    await act(async () => render());
+    expect(menuArtifacts().className).not.toContain("bg-selection");
+  });
+
+  it("is unavailable without a project", async () => {
+    railProps({ cwd: "~", sessions: [] });
+    await act(async () => render());
+    expect(menuArtifacts().disabled).toBe(true);
+  });
+
+  it("opens the compact drawer on the Artifacts panel", async () => {
+    vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(
+      () => ({ cancel: vi.fn(), onfinish: null }) as unknown as Animation,
+    );
+    railProps({
+      open: false,
+      projectRailOpen: false,
+      compactProjectRail: true,
+      onOpenArtifacts: vi.fn(() => {
+        props = { ...props, tab: "artifacts" };
+        render();
+      }),
+    });
+    await act(async () => render());
+    const rail = container.querySelector<HTMLElement>(
+      "[data-compact-project-rail]",
+    )!;
+    const labels = Array.from(rail.querySelectorAll("button"), (b) =>
+      b.getAttribute("aria-label"),
+    );
+    const board = labels.indexOf("Board");
+    expect(labels.slice(board, board + 3)).toEqual([
+      "Board",
+      "Fleet",
+      "Artifacts, 3",
+    ]);
+    const compactArtifacts = rail.querySelector<HTMLButtonElement>(
+      'button[aria-label="Artifacts, 3"]',
+    )!;
+    expect(compactArtifacts.getAttribute("role")).toBeNull();
+    expect(
+      compactArtifacts.querySelector("[data-artifact-count]")?.textContent,
+    ).toBe("3");
+
+    act(() => compactArtifacts.click());
+    expect(props.onOpenArtifacts).toHaveBeenCalledWith(false);
+    expect(
+      container.querySelector<HTMLElement>("[data-sidebar-drawer]")?.dataset
+        .sidebarDrawer,
+    ).toBe("open");
+    expect(compactArtifacts.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector("[data-artifacts-panel]")).not.toBeNull();
+  });
+});
+
+describe("Chats in the navigation menu", () => {
+  function railProps(overrides: Partial<ComponentProps<typeof Sidebar>> = {}) {
+    props = {
+      ...props,
+      recents: [{ path: "/workspace/project", openedAt: Date.now() }],
+      projectRailOpen: true,
+      compactProjectRail: false,
+      onSelectProject: vi.fn(),
+      onOpenProject: vi.fn(),
+      onOpenInbox: vi.fn(),
+      onOpenKanban: vi.fn(),
+      onOpenFleet: vi.fn(),
+      onOpenArtifacts: vi.fn(),
+      onOpenChat: vi.fn(),
+      chatShortcut: "⌘⇧H",
+      chats: {
+        rows: [
+          {
+            id: "chat-1",
+            title: "A separate conversation",
+            harness: "codex",
+            model: "",
+            pinned: false,
+            updatedAt: 1,
+            state: "unread",
+            blank: false,
+          },
+        ],
+        onSelect: vi.fn(),
+        onNew: vi.fn(),
+        onRename: vi.fn(),
+        onPin: vi.fn(),
+        onDelete: vi.fn(),
+        onBoard: vi.fn(),
+      },
+      ...overrides,
+    };
+  }
+
+  it("shows a separate collapsible Chats branch and opens its conversations", async () => {
+    railProps();
+    await act(async () => render());
+    const chats = container.querySelector<HTMLElement>(
+      'section[aria-label="Chats"]',
+    )!;
+    expect(chats).not.toBeNull();
+    const projects = [...container.querySelectorAll("span")].find((node) => node.textContent === "Projects")!;
+    expect(projects.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const row = Array.from(chats.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("A separate conversation"),
+    )!;
+    expect(row.getAttribute("aria-label")).toBe(
+      "A separate conversation, New reply",
+    );
+    expect(chats.textContent).not.toContain("All chats");
+    act(() => row.click());
+    expect(props.chats!.onSelect).toHaveBeenCalledWith("chat-1");
+    act(() =>
+      chats.querySelector<HTMLButtonElement>("[aria-expanded]")!.click(),
+    );
+    expect(chats.textContent).not.toContain("A separate conversation");
+    expect(
+      chats.querySelector("[aria-expanded]")!.getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
+
+  it("shows which chats are working or waiting on you", async () => {
+    railProps();
+    props = {
+      ...props,
+      chats: {
+        ...props.chats!,
+        rows: [
+          { ...props.chats!.rows[0], id: "busy", title: "Busy", state: "running" },
+          { ...props.chats!.rows[0], id: "ask", title: "Asks", state: "needs-input" },
+          { ...props.chats!.rows[0], id: "done", title: "Quiet", state: "idle" },
+        ],
+      },
+    };
+    await act(async () => render());
+    const state = (id: string) =>
+      container
+        .querySelector(`section[aria-label="Chats"] [data-free-chat-row="${id}"]`)
+        ?.getAttribute("data-state");
+    expect(state("busy")).toBe("running");
+    expect(state("ask")).toBe("needs-input");
+    expect(
+      container.querySelector('[data-free-chat-row="busy"] .animate-spin'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-free-chat-row="ask"] .bg-amber-500'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-free-chat-row="done"] .rounded-full'),
+    ).toBeNull();
+
+    // Collapsed, the header carries the most pressing state.
+    const header = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="Chats"] [aria-expanded]',
+    )!;
+    expect(header.querySelector(".bg-amber-500")).toBeNull();
+    act(() => header.click());
+    expect(header.querySelector(".bg-amber-500")).not.toBeNull();
+    expect(header.textContent).toContain("Needs you");
+  });
+
+  it("renames and deletes a chat from its menu", async () => {
+    railProps();
+    await act(async () => render());
+    const chats = container.querySelector<HTMLElement>(
+      'section[aria-label="Chats"]',
+    )!;
+    const openMenu = () =>
+      act(() =>
+        chats
+          .querySelector<HTMLButtonElement>(
+            '[aria-label="More actions for A separate conversation"]',
+          )!
+          .click(),
+      );
+    const pick = (label: string) =>
+      act(() =>
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+          .find((item) => item.textContent?.includes(label))!
+          .click(),
+      );
+
+    openMenu();
+    pick("Rename");
+    const input = chats.querySelector<HTMLInputElement>(
+      'input[aria-label="Chat title"]',
+    )!;
+    expect(input.value).toBe("A separate conversation");
+    act(() => {
+      input.value = "Renamed";
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(props.chats!.onRename).toHaveBeenCalledWith("chat-1", "Renamed");
+
+    openMenu();
+    pick("Delete");
+    expect(props.chats!.onDelete).toHaveBeenCalledWith("chat-1");
+  });
+
+  it("creates a chat with no project open", async () => {
+    railProps({ cwd: "~", sessions: [] });
+    await act(async () => render());
+    const add = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="Chats"] button[aria-label="New chat"]',
+    )!;
+    expect(add.disabled).toBe(false);
+    act(() => add.click());
+    expect(props.chats!.onNew).toHaveBeenCalledOnce();
+  });
+
+  it("highlights the selected conversation and hides the project panel", async () => {
+    railProps({
+      chatActive: true,
+      tab: "artifacts", artifactsPanel: createElement("div", { "data-artifacts-panel": "" }) });
+    props = { ...props, chats: { ...props.chats!, activeId: "chat-1" } };
+    await act(async () => render());
+    expect(
+      container.querySelector(
+        'section[aria-label="Chats"] [aria-current="true"]',
+      )?.textContent,
+    ).toContain("A separate conversation");
+    expect(container.querySelector("[data-artifacts-panel]")).toBeNull();
+  });
+
+  it("appears on the compact rail too", async () => {
+    railProps({
+      open: false,
+      projectRailOpen: false,
+      compactProjectRail: true,
+      chatIndicator: { count: 3, tone: "unread" },
+    });
+    await act(async () => render());
+    const rail = container.querySelector<HTMLElement>("[data-compact-project-rail]")!;
+    const labels = Array.from(rail.querySelectorAll("button"), (b) =>
+      b.getAttribute("aria-label"),
+    );
+    const inbox = labels.indexOf("Inbox");
+    expect(labels[inbox + 1]).toBe("Chat, 3 new replies");
+    const chat = rail.querySelector<HTMLButtonElement>('button[aria-label^="Chat"]')!;
+    expect(chat.querySelector("[data-chat-count]")?.textContent).toBe("3");
+    act(() => chat.click());
+    expect(props.onOpenChat).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("worktree explorer visibility", () => {
   it("does not mount the file tree while browsing chat tabs", () => {
     props = { ...props, gitCwd: "/worktrees/first" };
@@ -315,6 +662,52 @@ describe.each([false, true])("Irgat rail selection (compact: %s)", (compact) => 
     props = { ...props, [active]: false };
     await act(async () => render());
     expect(irgatSelected()).toBe(true);
+  });
+});
+
+describe("compact rail Irgats", () => {
+  it("opens the Irgat's menu on right-click, as the full rail does", async () => {
+    saveRailIrgatsPinned(true);
+    const irgat = createIrgat();
+    const onDelete = vi.fn();
+    props = {
+      ...props,
+      projectRailOpen: false,
+      compactProjectRail: true,
+      onSelectProject: vi.fn(),
+      onOpenProject: vi.fn(),
+      irgats: {
+        states: new Map(),
+        onOpen: vi.fn(),
+        onCreate: vi.fn(),
+        onDelete,
+      },
+    };
+    await act(async () => render());
+    const button = container.querySelector<HTMLElement>(
+      "[data-compact-rail-irgat]",
+    )!;
+    await act(async () =>
+      button.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 4,
+          clientY: 4,
+        }),
+      ),
+    );
+    const menu = document.querySelector(
+      '[role="menu"][aria-label="Irgat options"]',
+    )!;
+    expect(menu).not.toBeNull();
+    expect(menu.querySelector('input[aria-label="Irgat name"]')).not.toBeNull();
+    const remove = [
+      ...menu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent?.includes("Delete irgat"))!;
+    await act(async () => remove.click());
+    expect(onDelete).toHaveBeenCalledWith(irgat.id);
+    saveRailIrgatsPinned(false);
   });
 });
 
@@ -859,7 +1252,7 @@ describe("sidebar reorder affordances", () => {
     act(() => render());
 
     const tabs = container.querySelectorAll<HTMLElement>('[role="tab"]');
-    expect(tabs).toHaveLength(4);
+    expect(tabs).toHaveLength(3);
     for (const tab of tabs) {
       expect(tab.className).not.toContain("cursor-grab");
       expect(tab.parentElement?.className).not.toContain("cursor-grab");
@@ -1619,11 +2012,11 @@ describe("collapsed rail Inbox actions", () => {
       "Sessions",
       "Explorer",
       "Changes",
-      "Artifacts",
       "Search",
       "Inbox",
       "Notes",
       "Automations",
+      "Artifacts",
       "Settings",
     ]);
     const workspaceTabs = rail.querySelector<HTMLElement>(
@@ -1634,7 +2027,7 @@ describe("collapsed rail Inbox actions", () => {
       Array.from(workspaceTabs.querySelectorAll('[role="tab"]'), (button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Sessions", "Explorer", "Changes", "Artifacts"]);
+    ).toEqual(["Sessions", "Explorer", "Changes"]);
     const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>(
       '[aria-label="Sessions"]',
     )!;

@@ -12,6 +12,8 @@ import {
   type DeliveryBlock,
   type ProgressTracker,
 } from "../../sessions/model/deliveryGuards";
+import { adhdEnabledFor } from "../../adhd/model/adhdMode";
+import { adhdRulesContext } from "../../adhd/model/adhdRules";
 import { findIrgat, irgatLook } from "./irgat";
 import type { IrgatFiles } from "./irgatFiles";
 import {
@@ -27,6 +29,7 @@ import {
   findIrgatGroup,
   groupMembers,
   irgatGroupName,
+  irgatGroupViewKey,
   loadIrgatGroupMessages,
   speakerFields,
   type IrgatGroupMessage,
@@ -384,7 +387,7 @@ export class IrgatGroupRunner {
       .flatMap((next) => nameOf.get(next.irgatId) ?? []);
     const roomName = irgatGroupName(group);
     const stopped = () => turn.generation !== room.generation;
-    const prompt = groupTurnPrompt({
+    const turnPrompt = groupTurnPrompt({
       room: roomName,
       self,
       look,
@@ -394,6 +397,10 @@ export class IrgatGroupRunner {
       reason: turn.reason,
       after,
     });
+    // Every turn opens a fresh seat, so the rules go with each one.
+    const prompt = adhdEnabledFor(irgatGroupViewKey(groupId))
+      ? `${turnPrompt}\n\n${adhdRulesContext()}`
+      : turnPrompt;
     if (stopped()) return;
     const seat = await host.openSeat(irgat.id, `${roomName} · ${look.name}`);
     if (!seat) throw new Error(`${look.name} could not start a reply.`);

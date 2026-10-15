@@ -1,5 +1,9 @@
 import { pathKey } from "../../../shared/lib/paths";
-import { loadSidebarTabOrder, type SidebarTabId } from "./appearance";
+import {
+  loadSidebarTabOrder,
+  workspaceHeaderTabs,
+  type SidebarTabId,
+} from "./appearance";
 
 const KEY = "irgat.projectSidebarTabs.v1";
 
@@ -40,7 +44,11 @@ function writeAll(tabs: StoredTabs): void {
 
 export function loadProjectSidebarTab(project: string): ProjectSidebarTab {
   const saved = readAll()[pathKey(project)];
-  return saved ?? loadSidebarTabOrder().find(isProjectSidebarTab) ?? "sessions";
+  return (
+    saved ??
+    workspaceHeaderTabs(loadSidebarTabOrder()).find(isProjectSidebarTab) ??
+    "sessions"
+  );
 }
 
 export function saveProjectSidebarTab(

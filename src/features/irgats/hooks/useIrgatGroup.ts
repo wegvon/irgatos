@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { irgatLook, listIrgats, monosSnapshot, subscribeIrgats } from "../model/irgat";
+import { irgatLook, listIrgats, irgatsSnapshot, subscribeIrgats } from "../model/irgat";
 import { loadIrgatFiles, subscribeIrgatFiles } from "../model/irgatFiles";
 import { soulRole } from "../model/irgatGroupContext";
 import type { GroupRunState, IrgatGroupRunner } from "../model/irgatGroupRunner";
@@ -31,7 +31,7 @@ export function useIrgatGroup(groupId: string): {
   members: GroupMemberView[];
 } {
   const groupsSnap = useSyncExternalStore(subscribeIrgatGroups, irgatGroupsSnapshot);
-  const rosterSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const rosterSnap = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const roles = useMemberRoles(groupId, groupsSnap);
   return useMemo(() => {
     const group = findIrgatGroup(groupId);

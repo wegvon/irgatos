@@ -29,14 +29,17 @@ export const IRGAT_COLORS = [
 ] as const;
 
 /**
- * A Irgat is a long-lived agent of its own: a name, a mascot and a color, one
- * conversation, and the projects it works on. It is not tied to any one of
+ * A Irgat is a long-lived agent of its own: a name, a mascot and a color, its
+ * conversations and the projects it works on. It is not tied to any one of
  * them; it lives on the rail beside the projects and can be given more.
  */
 export type Irgat = {
   id: string;
   /** Its conversation; absent until it is first opened. */
   sessionId?: string;
+  /** Independent conversations sharing this Irgat’s soul, memory and habits. */
+  childSessionIds?: string[];
+  chatsCollapsed?: boolean;
   /** Replaces the mascot's own name. */
   name?: string;
   mascot: string;
@@ -156,7 +159,24 @@ function parseIrgat(value: unknown): Irgat | undefined {
   return {
     id: entry.id,
     ...(sessionId ? { sessionId } : {}),
+    ...(Array.isArray(entry.childSessionIds)
+      ? {
+          childSessionIds: [
+            ...new Set(
+              entry.childSessionIds.filter(
+                (id): id is string =>
+                  typeof id === "string" &&
+                  /^[A-Za-z0-9_-]{1,512}$/.test(id) &&
+                  id !== sessionId,
+              ),
+            ),
+          ],
+        }
+      : {}),
     ...(name ? { name } : {}),
+    ...(typeof entry.chatsCollapsed === "boolean"
+      ? { chatsCollapsed: entry.chatsCollapsed }
+      : {}),
     mascot: text("mascot") ?? PROJECT_MASCOTS[0].name,
     color: text("color") ?? TAB_GROUP_COLORS[1],
     projects: Array.isArray(entry.projects)
@@ -196,7 +216,18 @@ export function findIrgat(id: string): Irgat | undefined {
 
 /** The Irgat whose conversation this is. */
 export function irgatForSession(sessionId: string): Irgat | undefined {
-  return listIrgats().find((irgat) => irgat.sessionId === sessionId);
+  return listIrgats().find((irgat) =>
+    irgatSessionIds(irgat).includes(sessionId),
+  );
+}
+
+export function irgatSessionIds(
+  irgat: Pick<Irgat, "sessionId" | "childSessionIds">,
+): string[] {
+  return [
+    ...(irgat.sessionId ? [irgat.sessionId] : []),
+    ...(irgat.childSessionIds ?? []),
+  ];
 }
 
 export function isIrgatSession(sessionId: string): boolean {
@@ -370,7 +401,7 @@ export function subscribeIrgats(onChange: () => void): () => void {
  * Snapshot for `useSyncExternalStore`; stable while storage is unchanged.
  * Project labels are part of it, since a Irgat's look names its projects.
  */
-export function monosSnapshot(): string {
+export function irgatsSnapshot(): string {
   migrateLegacyIrgatStorage();
   try {
     return `${localStorage.getItem(ROSTER_KEY) ?? ""}|${JSON.stringify(

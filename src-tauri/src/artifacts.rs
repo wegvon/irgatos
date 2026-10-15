@@ -190,7 +190,7 @@ pub fn artifacts_upsert(
 }
 
 /// Scheme that serves `html` artifacts to the sandboxed frames that show them.
-pub const HTML_SCHEME: &str = "monoartifact";
+pub const HTML_SCHEME: &str = "irgatartifact";
 
 /// The page may run inline scripts and load public styles, scripts, images and
 /// fonts, but it cannot fetch, frame, submit forms or leave its sandbox, even

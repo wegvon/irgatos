@@ -46,6 +46,19 @@ describe("project Workspace tab", () => {
     expect(loadProjectSidebarTab("/work/new")).toBe("files");
   });
 
+  it("skips menu panels when a saved order puts Artifacts first", () => {
+    localStorage.setItem(
+      "irgat.sidebarTabOrder",
+      JSON.stringify(["artifacts", "changes", "files", "sessions", "inbox"]),
+    );
+    expect(loadProjectSidebarTab("/work/new")).toBe("changes");
+  });
+
+  it("still restores Artifacts as a project's last panel", () => {
+    saveProjectSidebarTab("/work/one", "artifacts");
+    expect(loadProjectSidebarTab("/work/one")).toBe("artifacts");
+  });
+
   it("follows a project rename and clears a deleted project's choice", () => {
     saveProjectSidebarTab("/work/one", "files");
     rebaseProjectSidebarTab("/work/one", "/work/renamed");

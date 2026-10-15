@@ -51,7 +51,7 @@ describe("MarkdownDocumentPreview", () => {
     expect(html).not.toContain("<ul");
   });
 
-  // https://github.com/wegvon/monocode/issues/591
+  // https://github.com/wegvon/irgatos/issues/591
   it("keeps consecutive lines on their own lines", () => {
     const html = renderToStaticMarkup(
       createElement(MarkdownDocumentPreview, {

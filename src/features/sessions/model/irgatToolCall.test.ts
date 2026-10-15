@@ -72,11 +72,14 @@ describe("Irgat CLI tool calls", () => {
     ).toBe("List notes");
   });
 
-  it("recognizes commands recorded when the executable was named monocode", () => {
+  it("recognizes the bundled executable by its path", () => {
     expect(
-      irgatCodeToolCall(shell("/old/MonoCode.app/Contents/MacOS/monocode app notes.list"))
+      irgatCodeToolCall(shell("/Applications/Irgatos.app/Contents/MacOS/irgat app notes.list"))
         ?.label,
     ).toBe("List notes");
+    expect(
+      irgatCodeToolCall(shell("/old/Other.app/Contents/MacOS/other app notes.list")),
+    ).toBeUndefined();
   });
 
   it("does not restyle unrelated commands or text mentioning the CLI", () => {

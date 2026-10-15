@@ -2,19 +2,19 @@ import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import {
-  MonoOverview,
-  type MonoOverviewTab,
-} from "../../src/features/monos/ui/MonoOverview";
+  IrgatOverview,
+  type IrgatOverviewTab,
+} from "../../src/features/irgats/ui/IrgatOverview";
 import type { ArtifactCard } from "../../src/features/artifacts/artifacts";
 import type {
-  MonoSpawnedSession,
+  IrgatSpawnedSession,
   Session,
 } from "../../src/features/sessions/model/session";
 import "../../src/styles/index.css";
 
 // The real overview over in-memory sessions, documents and habits, so its
 // sections lay out in Chromium and WebKit at any panel width.
-const APP = "/Users/demo/src/monocode";
+const APP = "/Users/demo/src/irgatos";
 const SITE = "/Users/demo/src/landing";
 const HOUR = 3_600_000;
 const now = Date.now();
@@ -78,7 +78,7 @@ const params = new URLSearchParams(location.search);
 const seed = params.get("seed") ?? "demo";
 const empty = seed === "empty";
 
-const launches: MonoSpawnedSession[] = empty
+const launches: IrgatSpawnedSession[] = empty
   ? []
   : SESSION_TITLES.map((title, index) => ({
       sessionId: `s${index}`,
@@ -131,12 +131,12 @@ const live = (id: string, extra: Partial<Session>) => {
 };
 const sessions = [
   live("s22", { busy: true }),
-  live("s21", { pendingQuestion: { id: "q" } as Session["pendingQuestion"] }),
+  live("s21", { pendingQuestion: { id: "q" } as unknown as Session["pendingQuestion"] }),
 ].filter((entry): entry is Session => !!entry);
 
 type Args = Record<string, unknown>;
 const handlers: Record<string, (args: Args) => unknown> = {
-  mono_read: (args) => {
+  irgat_read: (args) => {
     if (seed === "error") throw new Error("permission denied");
     return args.path === "habits.json"
       ? { text: JSON.stringify(habits), hash: "h" }
@@ -171,26 +171,26 @@ const events: string[] = [];
 Object.assign(window, { overviewEvents: () => [...events] });
 
 function Fixture() {
-  const [tab, setTab] = useState<MonoOverviewTab>(
-    (params.get("tab") as MonoOverviewTab) ?? "all",
+  const [tab, setTab] = useState<IrgatOverviewTab>(
+    (params.get("tab") as IrgatOverviewTab) ?? "all",
   );
   const [shownDocument, setShownDocument] = useState<string>();
   return (
     <div className="flex h-full w-full justify-end bg-background-base text-content">
       <div className="flex min-w-0 flex-1 items-center justify-center text-[12px] text-content/30">
-        Mono chat
+        Irgat chat
       </div>
       <div className="flex h-full">
-        <MonoOverview
+        <IrgatOverview
           open
-          monoId="mono-demo"
-          cwd="/Users/demo/.monocode/monos/broski"
+          irgatId="irgat-demo"
+          cwd="/Users/demo/.irgatos/irgats/broski"
           agent={{
             name: "Broski",
             mascot: "cat",
             color: "#7aa2f7",
             projects: [
-              { name: "monocode", path: APP },
+              { name: "irgatos", path: APP },
               { name: "landing", path: SITE },
             ],
           }}
@@ -199,7 +199,7 @@ function Fixture() {
           sessions={sessions}
           documents={documents}
           changes={{
-            sessionId: "mono-demo-session",
+            sessionId: "irgat-demo-session",
             cwd: APP,
             totals: empty ? null : { files: 7, additions: 214, deletions: 38 },
             request: {},

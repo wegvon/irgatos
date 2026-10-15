@@ -39,6 +39,7 @@ struct Capture {
     engine: Retained<AVAudioEngine>,
     recognition: Option<Recognition>,
     recording: Option<Arc<Mutex<Vec<f32>>>>,
+    qwen: Option<super::qwen::Stream>,
     sample_rate: f64,
     service: Option<Service>,
     sink: Sink,
@@ -217,7 +218,7 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
 
     let recognition = match options.engine {
         Engine::Apple => Some(recognize(&options, sink.clone())?),
-        Engine::Cloud => None,
+        Engine::Cloud | Engine::Qwen => None,
     };
     let recording = (options.engine == Engine::Cloud).then(|| Arc::new(Mutex::new(Vec::new())));
     let service = options.cloud.as_ref().map(|cloud| Service {
@@ -227,7 +228,10 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
         key: options.cloud_key.clone(),
     });
 
+    let qwen = (options.engine == Engine::Qwen)
+        .then(|| super::qwen::Stream::start(options.capture.clone(), sample_rate, sink.clone()));
     let tap = {
+        let qwen_sender = qwen.as_ref().map(|stream| stream.sender.clone());
         let request = recognition.as_ref().map(|r| r.request.clone());
         let recording = recording.clone();
         let limit = RECORDING_LIMIT_SECONDS * sample_rate as usize;
@@ -241,6 +245,16 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
                     unsafe { request.appendAudioPCMBuffer(buffer) };
                 }
                 let samples = first_channel(buffer);
+                if let Some(sender) = &qwen_sender {
+                    if let Err(std::sync::mpsc::TrySendError::Full(_)) =
+                        sender.try_send(samples.clone())
+                    {
+                        sink(VoiceEvent::Error {
+                            capture: capture.clone(),
+                            message: "Qwen ASR cannot keep up. Stop and try again.".into(),
+                        });
+                    }
+                }
                 if let Some(recording) = &recording {
                     if let Ok(mut recorded) = recording.lock() {
                         let room = limit.saturating_sub(recorded.len());
@@ -286,6 +300,7 @@ pub(super) fn start(options: StartOptions, sink: Sink) -> Result<(), String> {
             engine,
             recognition,
             recording,
+            qwen,
             sample_rate,
             service,
             sink,
@@ -417,6 +432,9 @@ pub(super) fn stop(capture: &str) {
             unsafe { recognition.request.endAudio() };
             return None;
         }
+        if active.qwen.take().is_some() {
+            return None;
+        }
         let samples = active
             .recording
             .as_ref()
@@ -464,7 +482,10 @@ pub(super) fn cancel(capture: &str) {
     }
 }
 
-fn abort(capture: Capture) {
+fn abort(mut capture: Capture) {
+    if let Some(stream) = capture.qwen.take() {
+        stream.cancel();
+    }
     silence(&capture.engine);
     if let Some(recognition) = &capture.recognition {
         unsafe { recognition.task.cancel() };

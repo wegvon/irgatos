@@ -64,3 +64,30 @@ it("separates what is still to come today from what ran and the rest", () => {
     ["Later", ["Weekly report", "Paused"]],
   ]);
 });
+
+it("asks before removing a habit", () => {
+  const remove = vi.fn();
+  const actions = { remove } as unknown as HabitActions;
+  act(() =>
+    root.render(
+      createElement(HabitsList, {
+        habits: [habit("Digest", { nextRunAt: at(18) })],
+        actions,
+        onOpen: () => {},
+      }),
+    ),
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Remove"]',
+  )!;
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  act(() => button.click());
+  expect(confirm).toHaveBeenCalledWith(
+    "Remove the habit “Digest”? This can’t be undone.",
+  );
+  expect(remove).not.toHaveBeenCalled();
+  confirm.mockReturnValue(true);
+  act(() => button.click());
+  expect(remove).toHaveBeenCalledWith("Digest");
+  confirm.mockRestore();
+});

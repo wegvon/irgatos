@@ -8270,7 +8270,7 @@ mod tests {
     #[test]
     fn pr_head_filter_qualifies_branch_with_repo_owner() {
         assert_eq!(
-            github_pr_head_filter("wegvon/monocode", "main").as_deref(),
+            github_pr_head_filter("wegvon/irgatos", "main").as_deref(),
             Some("wegvon:main")
         );
     }
@@ -8278,27 +8278,27 @@ mod tests {
     #[test]
     fn parse_github_repositories_includes_a_forks_parent() {
         let json = r#"{
-            "nameWithOwner": "EricRasputin/monocode-eric",
+            "nameWithOwner": "EricRasputin/irgatos-eric",
             "parent": {
-                "name": "monocode",
+                "name": "irgatos",
                 "owner": { "login": "wegvon" }
             }
         }"#;
         assert_eq!(
             parse_github_repositories(json).unwrap(),
-            vec!["EricRasputin/monocode-eric", "wegvon/monocode"]
+            vec!["EricRasputin/irgatos-eric", "wegvon/irgatos"]
         );
     }
 
     #[test]
     fn parse_github_repositories_keeps_a_normal_repo_single() {
         let json = r#"{
-            "nameWithOwner": "wegvon/monocode",
+            "nameWithOwner": "wegvon/irgatos",
             "parent": null
         }"#;
         assert_eq!(
             parse_github_repositories(json).unwrap(),
-            vec!["wegvon/monocode"]
+            vec!["wegvon/irgatos"]
         );
     }
 
@@ -8439,10 +8439,10 @@ mod tests {
     #[test]
     fn split_github_repo_reads_owner_and_name() {
         assert_eq!(
-            split_github_repo(" wegvon/monocode ").unwrap(),
-            ("wegvon".into(), "monocode".into())
+            split_github_repo(" wegvon/irgatos ").unwrap(),
+            ("wegvon".into(), "irgatos".into())
         );
-        assert!(split_github_repo("monocode").is_err());
+        assert!(split_github_repo("irgatos").is_err());
         assert!(split_github_repo("acme/web extra").is_err());
     }
 

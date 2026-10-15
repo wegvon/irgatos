@@ -9,13 +9,21 @@ import {
 import { toolCallLabel } from "../../sessions/model/transcriptActivity";
 import type { UserQuestionPrompt } from "../../sessions/model/userQuestion";
 import { pathKey, projectName } from "../../../shared/lib/paths";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 
 /** Attention list order: what blocks on the user first. */
-export const FLEET_BUCKETS = ["needsYou", "review", "running", "idle"] as const;
+export const FLEET_BUCKETS = [
+  "needsYou",
+  "interrupted",
+  "review",
+  "running",
+  "idle",
+] as const;
 export type FleetBucket = (typeof FLEET_BUCKETS)[number];
 
 export const FLEET_BUCKET_LABEL: Record<FleetBucket, string> = {
   needsYou: "Needs you",
+  interrupted: "Interrupted",
   review: "Ready to review",
   running: "Running",
   idle: "Idle",
@@ -49,6 +57,8 @@ export type FleetEntry = {
   branch?: string;
   /** Name of the Irgat this chat belongs to. */
   irgat?: string;
+  /** A project-free chat from the Chat view. */
+  chat?: boolean;
   /** Orchestration lead an internal worker reports to. */
   leadId?: string;
   requests: FleetRequest[];
@@ -71,6 +81,8 @@ export type Fleet = Record<FleetBucket, FleetEntry[]> & {
 
 export type FleetOptions = {
   unseenFinishedIds?: ReadonlySet<string>;
+  /** Sessions whose agent stopped mid-turn and waits to be resumed. */
+  interruptedIds?: ReadonlySet<string>;
   /** Irgat name for a session that is a Irgat's chat. */
   irgatName?: (sessionId: string) => string | undefined;
   /** Display label for a project path, e.g. a renamed tab group. */
@@ -206,23 +218,30 @@ export function fleetEntry(
     ? "needsYou"
     : session.busy
       ? "running"
-      : recent && (editedPaths.length > 0 || artifacts > 0)
-        ? "review"
-        : "idle";
+      : options.interruptedIds?.has(session.id)
+        ? "interrupted"
+        : recent && (editedPaths.length > 0 || artifacts > 0)
+          ? "review"
+          : "idle";
   const workCwd = sessionWorkCwd(session);
   const irgat = options.irgatName?.(session.id);
+  const chat = !irgat && isFreeChatCwd(session.cwd);
   return {
     sessionId: session.id,
     bucket,
     title: sessionDisplayTitle(session.title, session.harness),
     harness: session.harness,
     project: session.cwd,
-    projectLabel:
-      irgat ?? options.projectLabel?.(session.cwd) ?? projectName(session.cwd),
+    projectLabel: chat
+      ? "Chat"
+      : (irgat ??
+        options.projectLabel?.(session.cwd) ??
+        projectName(session.cwd)),
     worktree: pathKey(workCwd) !== pathKey(session.cwd),
     workCwd,
-    ...(session.branch ? { branch: session.branch } : {}),
+    ...(session.branch && !chat ? { branch: session.branch } : {}),
     ...(irgat ? { irgat } : {}),
+    ...(chat ? { chat } : {}),
     ...(session.orchestrationLeadId
       ? { leadId: session.orchestrationLeadId }
       : {}),
@@ -251,6 +270,7 @@ export function buildFleet(
 ): Fleet {
   const fleet: Fleet = {
     needsYou: [],
+    interrupted: [],
     review: [],
     running: [],
     idle: [],
@@ -268,7 +288,7 @@ export function buildFleet(
   }
   // Waiting longest first: the oldest request has blocked its agent the longest.
   fleet.needsYou.sort((a, b) => a.at - b.at);
-  for (const bucket of ["review", "running", "idle"] as const) {
+  for (const bucket of ["interrupted", "review", "running", "idle"] as const) {
     fleet[bucket].sort(
       (a, b) => Number(b.unseen) - Number(a.unseen) || b.at - a.at,
     );
@@ -310,6 +330,7 @@ export function filterFleet(fleet: Fleet, query: string): Fleet {
       .includes(needle);
   const next = {
     needsYou: fleet.needsYou.filter(matches),
+    interrupted: fleet.interrupted.filter(matches),
     review: fleet.review.filter(matches),
     running: fleet.running.filter(matches),
     idle: fleet.idle.filter(matches),
@@ -319,6 +340,7 @@ export function filterFleet(fleet: Fleet, query: string): Fleet {
     needsYouCount: fleet.needsYouCount,
     total:
       next.needsYou.length +
+      next.interrupted.length +
       next.review.length +
       next.running.length +
       next.idle.length,

@@ -1,4 +1,5 @@
 import {
+  Artifacts,
   BellOff,
   ChevronDown,
   ChevronRight,
@@ -15,14 +16,7 @@ import {
   Settings,
   Zap,
 } from "../../shared/ui/icons";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-  type MouseEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent } from "react";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -35,7 +29,10 @@ import {
   PROJECT_RAIL_WIDTH_MIN,
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
-import { basename, type GitDiffStats } from "../../platform/tauri/fs";
+import {
+  basename,
+  type GitDiffStats,
+} from "../../platform/tauri/fs";
 import { IS_MAC, MOD } from "../../platform/tauri/platform";
 import { formatInteger } from "../../shared/lib/numbers";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
@@ -74,7 +71,13 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RailAction, RailSearch } from "./RailAction";
+import {
+  ArtifactCount,
+  artifactsLabel,
+  RailAction,
+  RailSearch,
+  type ChatIndicator,
+} from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
 import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -86,6 +89,7 @@ import { notificationMuteStatus } from "../../features/notifications/ui/notifica
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { GithubStarPrompt } from "./GithubStarPrompt";
+import { ChatsRailSection, type ChatsRailProps } from "./ChatsRailSection";
 import { Popover } from "../../shared/ui/Popover";
 import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
 import {
@@ -110,6 +114,12 @@ type Props = {
   searchActive?: boolean;
   onOpenInbox?: () => void;
   inboxActive?: boolean;
+  /** Opens the project-free Chat view; works with no project open. */
+  onOpenChat?: () => void;
+  chatActive?: boolean;
+  chatIndicator?: ChatIndicator;
+  chatShortcut?: string;
+  chats?: ChatsRailProps;
   notesEnabled?: boolean;
   onOpenNotes?: () => void;
   notesActive?: boolean;
@@ -119,6 +129,10 @@ type Props = {
   fleetPanel?: ReactNode;
   kanbanActive?: boolean;
   fleetActive?: boolean;
+  /** Shows the project's Artifacts panel; absent outside a project. */
+  onOpenArtifacts?: () => void;
+  artifactsActive?: boolean;
+  artifactCount?: number;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -153,6 +167,8 @@ export function ProjectRail({
   searchActive = false,
   onOpenInbox,
   inboxActive = false,
+  chatActive = false,
+  chats,
   notesEnabled = true,
   onOpenNotes,
   notesActive = false,
@@ -162,6 +178,9 @@ export function ProjectRail({
   fleetPanel,
   kanbanActive = false,
   fleetActive = false,
+  onOpenArtifacts,
+  artifactsActive = false,
+  artifactCount = 0,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -350,6 +369,7 @@ export function ProjectRail({
     automationsActive ||
     kanbanActive ||
     fleetActive ||
+    chatActive ||
     !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
@@ -436,6 +456,15 @@ export function ProjectRail({
                 ariaLabel="Board"
               />
             ) : null}
+
+            <RailAction
+              label="Artifacts"
+              icon={Artifacts}
+              onClick={onOpenArtifacts}
+              active={artifactsActive}
+              ariaLabel={artifactsLabel(artifactCount)}
+              meta={<ArtifactCount count={artifactCount} />}
+            />
           </div>
 
           <div
@@ -543,18 +572,19 @@ export function ProjectRail({
               groupLogos={groupLogos}
               groupMascots={groupMascots}
             />
+            {chats ? <ChatsRailSection {...chats} /> : null}
           </div>
           {fleetPanel}
           {fleetPanel ? null : (
-            <LiveAgentsPreview
-              agents={liveAgents}
-              activeSessionId={activeSessionId}
-              onSelect={onSelectAgent}
-              groupLabels={groupLabels}
-              groupColors={groupColors}
-              groupCustomColors={groupCustomColors}
-              groupMascots={groupMascots}
-            />
+          <LiveAgentsPreview
+            agents={liveAgents}
+            activeSessionId={activeSessionId}
+            onSelect={onSelectAgent}
+            groupLabels={groupLabels}
+            groupColors={groupColors}
+            groupCustomColors={groupCustomColors}
+            groupMascots={groupMascots}
+          />
           )}
           <SidebarUpdateFooter
             update={updateNotice}

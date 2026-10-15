@@ -14,7 +14,7 @@ describe("Operator composer command", () => {
   });
 
   it("still consumes the spellings used before the rename", () => {
-    for (const alias of ["/mono", "/monocode"]) {
+    for (const alias of ["/irgat"]) {
       expect(consumeOperatorCommand(`${alias} list notes`)).toEqual({
         text: "list notes",
         matched: true,
@@ -39,7 +39,7 @@ describe("Operator composer command", () => {
       text: "Explain /operator",
       matched: false,
     });
-    for (const alias of ["/irgat", "/mono", "/monocode"]) {
+    for (const alias of ["/irgat"]) {
       expect(consumeOperatorCommand(`${alias} list notes`)).toEqual({
         text: "list notes",
         matched: true,

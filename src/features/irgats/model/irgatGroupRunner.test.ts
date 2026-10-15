@@ -8,8 +8,11 @@ import {
 import type { Session } from "../../sessions/model/session";
 import { createIrgat, saveIrgatName, type Irgat } from "./irgat";
 import type { IrgatFiles } from "./irgatFiles";
+import { setAdhdForChat } from "../../adhd/model/adhdMode";
+import { adhdRulesContext } from "../../adhd/model/adhdRules";
 import {
   createIrgatGroup,
+  irgatGroupViewKey,
   loadIrgatGroupMessages,
   updateIrgatGroup,
   type IrgatGroup,
@@ -119,6 +122,22 @@ describe("a round-table message", () => {
     expect(third).toContain("Architect and Security already replied");
     // The roster carries each member's role from its soul.
     expect(first).toContain("- Security, @Security: You are the Security expert.");
+  });
+
+  it("hands every turn the ADHD rules while the room has the mode on", async () => {
+    const { group, byId, all } = room(["Architect", "Security"]);
+    const fake = fakeHost(byId, (name) => `${name} ok`);
+    const runner = new IrgatGroupRunner(() => fake.host);
+    setAdhdForChat(irgatGroupViewKey(group.id), true);
+    runner.send(group.id, "Plan it", [], all);
+    await runner.idle(group.id);
+    expect(fake.turns).toHaveLength(2);
+    for (const turn of fake.turns) expect(turn.prompt).toContain(adhdRulesContext());
+
+    setAdhdForChat(irgatGroupViewKey(group.id), false);
+    runner.send(group.id, "Again", [], all);
+    await runner.idle(group.id);
+    expect(fake.turns[2].prompt).not.toContain(adhdRulesContext());
   });
 
   it("records who spoke with which model, and closes every seat", async () => {

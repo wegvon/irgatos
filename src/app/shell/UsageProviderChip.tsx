@@ -63,11 +63,12 @@ type UsageWindowEntry = {
 
 export type UsageChipVariant = "footer" | "composer";
 
+/** The composer chip matches the model name beside it, wherever it sits. */
 const USAGE_CHIP_CLASSES: Record<UsageChipVariant, string> = {
   footer:
     "-mx-1 inline-flex h-5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 text-content/55 transition-[background-color,color,transform] duration-150 ease-out hover:bg-content/10 hover:text-content focus-visible:outline-2 focus-visible:outline-accent active:scale-[0.97]",
   composer:
-    "inline-flex h-6.5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-content/55 transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-accent",
+    "inline-flex h-6.5 min-w-0 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1.5 text-[12px] text-content/55 transition-colors hover:bg-content/8 hover:text-content focus-visible:outline-2 focus-visible:outline-accent",
 };
 
 /** The refresh button beside the usage chips, per variant. */

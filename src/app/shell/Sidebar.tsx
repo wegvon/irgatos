@@ -1,3 +1,4 @@
+import type { ChatsRailProps } from "./ChatsRailSection";
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import {
   type WorktreeFocus,
@@ -24,6 +25,7 @@ import {
   GitPullRequest,
   Inbox,
   Kanban,
+  MessageSquare,
   ListFilter,
   PanelLeft,
   Pin,
@@ -54,7 +56,9 @@ import {
 } from "react";
 import {
   loadSidebarTabOrder,
+  reorderWorkspaceHeaderTabs,
   saveSidebarTabOrder,
+  workspaceHeaderTabs,
   type SidebarTabId,
 } from "../../features/settings/model/appearance";
 import { formatInteger } from "../../shared/lib/numbers";
@@ -162,7 +166,15 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectRail } from "./ProjectRail";
 import { InboxNotificationMenu } from "../../features/inbox/ui/InboxNotificationMenu";
-import { FleetNeedsYouCount, RailAction } from "./RailAction";
+import {
+  ArtifactCount,
+  artifactsLabel as artifactsMenuLabel,
+  ChatCount,
+  chatLabel,
+  FleetNeedsYouCount,
+  RailAction,
+  type ChatIndicator,
+} from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
@@ -186,15 +198,16 @@ import {
   listIrgats,
   IRGAT_STATUS_LABEL,
   irgatLook,
-  monosSnapshot,
+  irgatsSnapshot,
   subscribeIrgats,
   type IrgatStatus,
 } from "../../features/irgats/model/irgat";
 import { IrgatRailMascot } from "../../features/irgats/ui/IrgatRailMascot";
-import { useRailMonosPinned } from "../../features/settings/model/displayPrefs";
+import { useRailIrgatsPinned } from "../../features/settings/model/displayPrefs";
 import type { PickerIrgats } from "../../features/projects/ui/SearchableProjectPicker";
 import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 import {
+  IrgatContextMenu,
   unreadBadge,
   unreadLabel,
   type IrgatRailProps,
@@ -332,6 +345,12 @@ type Props = {
   onOpenKanban?: () => void;
   fleetPanel?: ReactNode;
   onOpenFleet?: () => void;
+  /** Opens the project-free Chat view; works with no project open. */
+  onOpenChat?: () => void;
+  chatActive?: boolean;
+  chatIndicator?: ChatIndicator;
+  chatShortcut?: string;
+  chats?: ChatsRailProps;
   /** Opens the session's board card, filing one first when it has none. */
   onSessionBoard?: (sessionId: string) => void | Promise<void>;
   /** Sessions that already have a card on some board. */
@@ -367,9 +386,14 @@ type Props = {
   irgats?: IrgatRailProps;
   /** A Irgat fills the main area, which has no project sidebar. */
   irgatViewActive?: boolean;
-  /** Content of the Artifacts tab. */
+  /** Content of the Artifacts panel. */
   artifactsPanel?: ReactNode;
   artifactCount?: number;
+  /**
+   * Opens the Artifacts panel from the menu, leaving any full-page view.
+   * `reveal` asks to pin the sidebar open; the compact drawer opens itself.
+   */
+  onOpenArtifacts?: (reveal: boolean) => void;
 };
 
 function SidebarComponent({
@@ -443,6 +467,11 @@ function SidebarComponent({
   onOpenKanban,
   fleetPanel,
   onOpenFleet,
+  onOpenChat,
+  chatActive = false,
+  chatIndicator,
+  chatShortcut,
+  chats,
   onSessionBoard,
   boardSessionIds,
   onGoToFile,
@@ -460,6 +489,7 @@ function SidebarComponent({
   titleBarAbove = false,
   artifactsPanel,
   artifactCount = 0,
+  onOpenArtifacts,
   unseenFinishedIds: unseenFinishedIdsProp,
   inboxUnseen = false,
   linkedSessionUpdateIds = new Set(),
@@ -481,7 +511,8 @@ function SidebarComponent({
   const hostProject = remoteProject ? remoteProjectFor(cwd) : undefined;
   const remoteChange = async (
     sessionId: string,
-    patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null },
+    patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null;
+    },
   ) => {
     if (!remote.machine || !hostProject) {
       window.alert("Connect this project's machine to change its sessions.");
@@ -590,7 +621,7 @@ function SidebarComponent({
     remote.sessions.find((session) => session.id === activeRemoteId)?.cwd ??
     (activeSessionId ? remotePendingWorktree(activeSessionId) : undefined) ??
     (remoteProject && gitCwd && gitCwd !== cwd
-      ? parseRemotePath(gitCwd)?.hostPath ?? gitCwd
+      ? (parseRemotePath(gitCwd)?.hostPath ?? gitCwd)
       : undefined) ??
     undefined;
   const gitRoot =
@@ -680,7 +711,7 @@ function SidebarComponent({
     : pending && sessions.length === 0;
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
-  useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
@@ -784,12 +815,9 @@ function SidebarComponent({
   const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
   const sessionHarnesses = harnessesInSessions(projectSessions);
   const narrowedByUser = searchNarrowed || filtersActive;
-  const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
+  const visibleTabs = workspaceHeaderTabs(tabOrder);
   const sortable = useAnimatedReorder(visibleTabs, (ids) => {
-    let index = 0;
-    const next = tabOrder.map((itemId) =>
-      itemId === "inbox" ? itemId : ids[index++],
-    );
+    const next = reorderWorkspaceHeaderTabs(tabOrder, ids);
     setTabOrder(next);
     saveSidebarTabOrder(next);
   });
@@ -827,6 +855,7 @@ function SidebarComponent({
     automationsActive ||
     kanbanActive ||
     fleetActive ||
+    chatActive ||
     settingsOpen;
   // A remembered Irgat sits underneath these views; select it only while visible.
   const railIrgats = irgats
@@ -851,6 +880,14 @@ function SidebarComponent({
   const drawerRendered = drawerVisible || drawerClosing;
   const drawerAnimation = useRef<Animation | null>(null);
   const panelOpen = open || drawerVisible;
+  const artifactsActive = tab === "artifacts" && sidebarAvailable && panelOpen;
+  const openArtifacts = inProject
+    ? () => {
+        if (drawerMode) setDrawerOpen(!artifactsActive);
+        if (onOpenArtifacts) onOpenArtifacts(!drawerMode);
+        else onTabChange("artifacts");
+      }
+    : undefined;
   // Keep the hidden explorer intact when a chat tab changes worktrees. Its
   // rows and file icons only need rebuilding when Files is actually shown.
   const explorer = useRef<{ cwd: string; rootLabel?: string } | null>(null);
@@ -1671,13 +1708,10 @@ function SidebarComponent({
         .join(" ")
     : "Changes";
 
-  const artifactsLabel = artifactCount
-    ? `Artifacts, ${formatInteger(artifactCount)}`
-    : "Artifacts";
+  const artifactsLabel = artifactsMenuLabel(artifactCount);
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const active = tab === itemId;
     const isChangesTab = itemId === "changes";
-    const isArtifactsTab = itemId === "artifacts";
     return (
       <div
         key={itemId}
@@ -1692,13 +1726,7 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
-          aria-label={
-            isChangesTab
-              ? changesLabel
-              : isArtifactsTab && artifactCount
-                ? artifactsLabel
-                : undefined
-          }
+          aria-label={isChangesTab ? changesLabel : undefined}
           data-tauri-drag-region="false"
           onClick={() => {
             if (sortable.consumeClick()) return;
@@ -1715,15 +1743,6 @@ function SidebarComponent({
               {TAB_LABELS[itemId]}
             </span>
           )}
-          {isArtifactsTab && artifactCount > 0 ? (
-            <span
-              aria-hidden
-              data-artifact-count
-              className="pointer-events-none absolute -top-1 right-0 min-w-3.5 rounded-full bg-accent px-1 text-center text-[9px] font-medium leading-3.5 tabular-nums text-white"
-            >
-              {artifactCount > 99 ? "99+" : artifactCount}
-            </span>
-          ) : null}
         </button>
       </div>
     );
@@ -1795,12 +1814,17 @@ function SidebarComponent({
               cwd={cwd}
               recents={recents}
               busy={projectPathBusy(busyProjectPaths, cwd)}
+              busyPaths={busyProjectPaths}
               onSelectProject={onSelectProject}
               onOpenProject={onOpenProject}
               onRemoveProject={onRemoveProject}
               onNew={onNew}
               onSearch={onSearch}
               onOpenInbox={onOpenInbox}
+              onOpenChat={onOpenChat}
+              chatActive={chatActive}
+              chatIndicator={chatIndicator}
+              chatShortcut={chatShortcut}
               onOpenNotificationSettings={onOpenNotificationSettings}
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
@@ -1813,6 +1837,9 @@ function SidebarComponent({
               kanbanActive={kanbanActive}
               fleetActive={fleetActive}
               fleetNeedsYou={fleetNeedsYou}
+              onOpenArtifacts={openArtifacts}
+              artifactsActive={artifactsActive}
+              artifactCount={artifactCount}
               inboxUnseen={inboxUnseen}
             />
           ) : null}
@@ -2323,13 +2350,16 @@ function SidebarComponent({
           cwd={cwd}
           recents={recents}
           busy={projectPathBusy(busyProjectPaths, cwd)}
+          busyPaths={busyProjectPaths}
           tabs={visibleTabs}
           activeTab={tab}
           tabShown={panelOpen}
           changesLabel={changesLabel}
           hasChanges={hasChanges}
           artifactsLabel={artifactsLabel}
-          hasArtifacts={artifactCount > 0}
+          artifactCount={artifactCount}
+          artifactsActive={artifactsActive}
+          onOpenArtifacts={openArtifacts}
           inboxUnseen={inboxUnseen}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2339,6 +2369,9 @@ function SidebarComponent({
           searchActive={searchActive}
           onOpenInbox={onOpenInbox}
           inboxActive={inboxActive}
+          onOpenChat={onOpenChat}
+          chatActive={chatActive}
+          chatIndicator={chatIndicator}
           onOpenNotificationSettings={onOpenNotificationSettings}
           onOpenNotes={notesEnabled ? onOpenNotes : undefined}
           notesActive={notesActive}
@@ -2376,6 +2409,11 @@ function SidebarComponent({
           searchActive={searchActive}
           onOpenInbox={onOpenInbox}
           inboxActive={inboxActive}
+          onOpenChat={onOpenChat}
+          chatActive={chatActive}
+          chatIndicator={chatIndicator}
+          chatShortcut={chatShortcut}
+          chats={chats}
           notesEnabled={notesEnabled}
           onOpenNotes={onOpenNotes}
           notesActive={notesActive}
@@ -2384,6 +2422,9 @@ function SidebarComponent({
           onOpenKanban={onOpenKanban}
           kanbanActive={kanbanActive}
           fleetActive={fleetActive}
+          onOpenArtifacts={openArtifacts}
+          artifactsActive={artifactsActive}
+          artifactCount={artifactCount}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}
@@ -2452,12 +2493,17 @@ function SidebarProjectPicker({
   cwd,
   recents,
   busy,
+  busyPaths,
   onSelectProject,
   onOpenProject,
   onRemoveProject,
   onNew,
   onSearch,
   onOpenInbox,
+  onOpenChat,
+  chatActive = false,
+  chatIndicator,
+  chatShortcut,
   onOpenNotificationSettings,
   onOpenNotes,
   onOpenAutomations,
@@ -2470,17 +2516,29 @@ function SidebarProjectPicker({
   kanbanActive = false,
   fleetActive = false,
   fleetNeedsYou = 0,
+  onOpenArtifacts,
+  artifactsActive = false,
+  artifactCount = 0,
   inboxUnseen = false,
 }: {
   cwd: string;
   recents: RecentProject[];
   busy: boolean;
+  /** Projects with an agent at work, marked in the picker. */
+  busyPaths?: Iterable<string>;
   onSelectProject: (path: string) => void;
   onOpenProject?: () => void;
   onRemoveProject?: Props["onRemoveProject"];
   onNew?: () => string | void;
+  onOpenArtifacts?: () => void;
+  artifactsActive?: boolean;
+  artifactCount?: number;
   onSearch?: () => void;
   onOpenInbox?: () => void;
+  onOpenChat?: () => void;
+  chatActive?: boolean;
+  chatIndicator?: ChatIndicator;
+  chatShortcut?: string;
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
@@ -2509,6 +2567,7 @@ function SidebarProjectPicker({
         cwd={cwd}
         recents={recents}
         busy={busy}
+        busyPaths={busyPaths}
         className="flex-1"
         onSelectProject={onSelectProject}
         onOpenProject={onOpenProject}
@@ -2554,6 +2613,25 @@ function SidebarProjectPicker({
             </span>
           </IconButton>
         ) : null}
+        {onOpenChat ? (
+          <IconButton
+            label={
+              chatShortcut
+                ? `${chatLabel(chatIndicator)} (${chatShortcut})`
+                : chatLabel(chatIndicator)
+            }
+            active={chatActive}
+            onClick={onOpenChat}
+          >
+            <span className="relative">
+              <MessageSquare className="size-3.5" strokeWidth={1.75} />
+              <ChatCount
+                indicator={chatIndicator}
+                className="absolute -right-2 -top-1.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            </span>
+          </IconButton>
+        ) : null}
         {onOpenNotes ? (
           <IconButton label="Notes" active={notesActive} onClick={onOpenNotes}>
             <StickyNote className="size-3.5" strokeWidth={1.75} />
@@ -2588,6 +2666,21 @@ function SidebarProjectPicker({
             </span>
           </IconButton>
         ) : null}
+        {onOpenArtifacts ? (
+          <IconButton
+            label={artifactsMenuLabel(artifactCount)}
+            active={artifactsActive}
+            onClick={onOpenArtifacts}
+          >
+            <span className="relative">
+              <Artifacts className="size-3.5" strokeWidth={1.75} />
+              <ArtifactCount
+                count={artifactCount}
+                className="absolute -right-2 -top-1.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            </span>
+          </IconButton>
+        ) : null}
       </div>
       {inboxMenu ? (
         <InboxNotificationMenu
@@ -2608,13 +2701,16 @@ function CompactProjectRail({
   cwd,
   recents,
   busy,
+  busyPaths,
   tabs,
   activeTab,
   tabShown,
   changesLabel,
   hasChanges,
   artifactsLabel,
-  hasArtifacts,
+  artifactCount,
+  artifactsActive,
+  onOpenArtifacts,
   inboxUnseen,
   onSelectProject,
   onOpenProject,
@@ -2624,6 +2720,9 @@ function CompactProjectRail({
   searchActive,
   onOpenInbox,
   inboxActive,
+  onOpenChat,
+  chatActive = false,
+  chatIndicator,
   onOpenNotificationSettings,
   onOpenNotes,
   notesActive,
@@ -2644,13 +2743,17 @@ function CompactProjectRail({
   cwd: string;
   recents: RecentProject[];
   busy: boolean;
+  /** Projects with an agent at work, marked in the picker. */
+  busyPaths?: Iterable<string>;
   tabs: SidebarTab[];
   activeTab: SidebarTab;
   tabShown: boolean;
   changesLabel: string;
   hasChanges: boolean;
   artifactsLabel: string;
-  hasArtifacts: boolean;
+  artifactCount: number;
+  artifactsActive: boolean;
+  onOpenArtifacts?: () => void;
   inboxUnseen: boolean;
   onSelectProject?: (path: string) => void;
   onOpenProject?: () => void;
@@ -2660,6 +2763,9 @@ function CompactProjectRail({
   searchActive: boolean;
   onOpenInbox?: () => void;
   inboxActive: boolean;
+  onOpenChat?: () => void;
+  chatActive?: boolean;
+  chatIndicator?: ChatIndicator;
   onOpenNotificationSettings?: (projectPath?: string) => void;
   onOpenNotes?: () => void;
   notesActive: boolean;
@@ -2680,27 +2786,35 @@ function CompactProjectRail({
   /** A Irgat fills the main area: no workspace tab is the current one. */
   irgatViewActive?: boolean;
 }) {
-  const monosSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
-  const monosPinned = useRailMonosPinned();
+  const irgatsSnap = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
+  const [compactIrgatMenu, setCompactIrgatMenu] = useState<{
+    id: string;
+    anchor: { x: number; y: number };
+  }>();
+  const irgatsPinned = useRailIrgatsPinned();
   const irgatItems = useMemo(() => {
     if (!irgats) return [];
     return listIrgats().map((irgat) => ({
       id: irgat.id,
       ...irgatLook(irgat),
       status: irgats.states.get(irgat.id)?.status ?? "idle",
+      unseen:
+        irgat.id === irgats.activeId
+          ? 0
+          : (irgats.unseenCounts?.get(irgat.id) ?? 0),
     }));
     // The roster is read through its snapshot.
-  }, [irgats, monosSnap]);
+  }, [irgats, irgatsSnap]);
   const pickerIrgats = useMemo((): PickerIrgats | undefined => {
     if (!irgats) return undefined;
     return {
       // Pinned Irgats have their own buttons; the picker keeps "New irgat".
-      items: monosPinned ? [] : irgatItems,
+      items: irgatsPinned ? [] : irgatItems,
       activeId: irgats.activeId,
       onOpen: irgats.onOpen,
       onCreate: irgats.onCreate,
     };
-  }, [irgats, irgatItems, monosPinned]);
+  }, [irgats, irgatItems, irgatsPinned]);
   const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -2714,6 +2828,7 @@ function CompactProjectRail({
     !automationsActive &&
     !kanbanActive &&
     !fleetActive &&
+    !chatActive &&
     !irgatViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
     if (!workspaceActive) onLeaveActive?.();
@@ -2748,7 +2863,7 @@ function CompactProjectRail({
           icon={PanelLeft}
           onClick={onTogglePanel}
         />
-        {irgats && monosPinned && irgatItems.length ? (
+        {irgats && irgatsPinned && irgatItems.length ? (
           <>
             <div
               role="group"
@@ -2770,8 +2885,20 @@ function CompactProjectRail({
                       : (irgats.unseenCounts?.get(irgat.id) ?? 0)
                   }
                   onClick={() => irgats.onOpen(irgat.id)}
+                  onContextMenu={(anchor) =>
+                    setCompactIrgatMenu({ id: irgat.id, anchor })
+                  }
                 />
               ))}
+              {compactIrgatMenu ? (
+                <IrgatContextMenu
+                  key={compactIrgatMenu.id}
+                  irgatId={compactIrgatMenu.id}
+                  anchor={compactIrgatMenu.anchor}
+                  onDelete={irgats.onDelete}
+                  onClose={() => setCompactIrgatMenu(undefined)}
+                />
+              ) : null}
             </div>
             <span
               aria-hidden
@@ -2785,6 +2912,7 @@ function CompactProjectRail({
             cwd={cwd}
             recents={recents}
             busy={busy}
+            busyPaths={busyPaths}
             compact
             className="w-full justify-center"
             onSelectProject={onSelectProject}
@@ -2804,19 +2932,10 @@ function CompactProjectRail({
             <CompactRailAction
               key={itemId}
               tab
-              label={
-                itemId === "changes"
-                  ? changesLabel
-                  : itemId === "artifacts"
-                    ? artifactsLabel
-                    : TAB_LABELS[itemId]
-              }
+              label={itemId === "changes" ? changesLabel : TAB_LABELS[itemId]}
               icon={COMPACT_TAB_ICONS[itemId]}
               active={workspaceActive && tabShown && activeTab === itemId}
-              dot={
-                (itemId === "changes" && hasChanges) ||
-                (itemId === "artifacts" && hasArtifacts)
-              }
+              dot={itemId === "changes" && hasChanges}
               onClick={() => openWorkspaceTab(itemId)}
             />
           ))}
@@ -2841,6 +2960,20 @@ function CompactProjectRail({
             setInboxMenu({ x, y });
           }}
         />
+        {onOpenChat ? (
+          <CompactRailAction
+            label={chatLabel(chatIndicator)}
+            icon={MessageSquare}
+            active={chatActive}
+            onClick={action(chatActive, onOpenChat)}
+            badge={
+              <ChatCount
+                indicator={chatIndicator}
+                className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            }
+          />
+        ) : null}
         {onOpenNotes ? (
           <CompactRailAction
             label="Notes"
@@ -2872,6 +3005,18 @@ function CompactProjectRail({
             onClick={action(fleetActive, onOpenFleet)}
           />
         ) : null}
+        <CompactRailAction
+          label={artifactsLabel}
+          icon={Artifacts}
+          active={artifactsActive}
+          onClick={onOpenArtifacts}
+          badge={
+            <ArtifactCount
+              count={artifactCount}
+              className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+            />
+          }
+        />
       </div>
       <div className="min-h-2 flex-1" />
       <div className="flex w-full flex-col items-center gap-1 py-1.5">
@@ -2909,6 +3054,7 @@ function CompactRailIrgat({
   active,
   unseen,
   onClick,
+  onContextMenu,
 }: {
   name: string;
   mascot: string;
@@ -2918,6 +3064,8 @@ function CompactRailIrgat({
   /** Replies the user has not read. */
   unseen: number;
   onClick: () => void;
+  /** Opens the Irgat's menu, as a right-click does on the full rail. */
+  onContextMenu?: (anchor: { x: number; y: number }) => void;
 }) {
   const label = `${name}, ${IRGAT_STATUS_LABEL[status]}`;
   return (
@@ -2928,6 +3076,14 @@ function CompactRailIrgat({
       aria-current={active ? "true" : undefined}
       data-compact-rail-irgat
       onClick={onClick}
+      onContextMenu={
+        onContextMenu
+          ? (event) => {
+              event.preventDefault();
+              onContextMenu({ x: event.clientX, y: event.clientY });
+            }
+          : undefined
+      }
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
           ? "bg-selection"
@@ -2955,6 +3111,7 @@ function CompactRailAction({
   active = false,
   dot = false,
   count = 0,
+  badge,
   onClick,
   onOpenContextMenu,
 }: {
@@ -2964,6 +3121,8 @@ function CompactRailAction({
   active?: boolean;
   dot?: boolean;
   count?: number;
+  /** Replaces the Fleet-style count with a custom corner badge. */
+  badge?: ReactNode;
   onClick?: () => void;
   onOpenContextMenu?: (x: number, y: number) => void;
 }) {
@@ -3019,10 +3178,12 @@ function CompactRailAction({
           className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent"
         />
       ) : null}
-      <FleetNeedsYouCount
-        count={count}
-        className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
-      />
+      {badge ?? (
+        <FleetNeedsYouCount
+          count={count}
+          className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+        />
+      )}
     </button>
   );
 }
@@ -4012,7 +4173,7 @@ export const SessionCard = memo(function SessionCard({
   );
 });
 
-function SessionRenameRow({
+export function SessionRenameRow({
   session,
   isActive,
   needsApproval,

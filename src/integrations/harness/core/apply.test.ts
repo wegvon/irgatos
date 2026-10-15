@@ -163,6 +163,23 @@ describe("turn duration", () => {
 });
 
 describe("approval lifetime", () => {
+  it.each(["stop", "error", "next turn"])("keeps project access pending after %s until the user decides", (ending) => {
+    let session = waitingForApproval();
+    const request = {
+      id: "project-access", role: "approval" as const,
+      text: "repguard projesine erişim",
+      approval: { requestId: -123 },
+      irgatProjectAccess: { irgatId: "owner", project: "/code/repguard" },
+    };
+    session.blocks.push(request);
+    session = applyHarnessEvent(session, { type: "message.delta", text: "Onayını bekliyorum." });
+    session = ending === "error"
+      ? applyHarnessEvent(session, { type: "session.error", message: "Connection lost" })
+      : ending === "next turn" ? appendUser(session, "Another question") : stopStreaming(session);
+    expect(session.blocks.find((block) => block.id === request.id)).toEqual(request);
+    expect(session.blocks.find((block) => block.tool?.callId === "shell-1")?.approval?.decided).toBe("cancelled");
+  });
+
   function waitingForApproval() {
     let session = appendUser(newSession("codex", "/tmp"), "check it");
     session = applyHarnessEvent(session, {

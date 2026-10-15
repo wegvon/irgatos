@@ -19,6 +19,8 @@ import { forgetHarnessSession } from "../../integrations/harness/core/registry";
 import { isIrgatSession } from "../../features/irgats/model/irgat";
 import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 
+import { isFreeChatCwd } from "../../features/freechat/model/freeChatPath";
+
 const SESSION_DETACH_DELAY_MS = 250;
 
 export function useIdleSessionDetach({
@@ -62,12 +64,13 @@ export function useIdleSessionDetach({
     const visibleIds = new Set(
       tabsRef.current.flatMap((tab) => leafIds(tab.layout)),
     );
-    // Inbox and resident agents own panes independently of project tabs. Keep
+    // Free chats, Inbox and resident agents own panes independently of project tabs. Keep
     // their drafts and attachments mounted when the user switches views.
     for (const session of sessions) {
       // A habit's hidden run is removed by its scheduler when it ends.
       if (
         session.inboxAsk ||
+        isFreeChatCwd(session.cwd) ||
         isIrgatSession(session.id) ||
         isHabitRun(session.id)
       )
