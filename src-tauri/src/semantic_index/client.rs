@@ -128,6 +128,12 @@ pub fn batches(texts: &[String]) -> Vec<Range<usize>> {
     out
 }
 
+enum Failure {
+    /// The server's model cannot take this much text at once (422).
+    TooManyTokens,
+    Other(String),
+}
+
 pub struct Client {
     url: Url,
     key: String,
@@ -171,12 +177,43 @@ impl Client {
         let mut out = Vec::with_capacity(texts.len());
         for range in batches(texts) {
             let batch: Vec<&str> = texts[range].iter().map(|text| clip(text)).collect();
-            out.extend(self.request(&batch, task)?);
+            match self.request(&batch, task) {
+                Ok(vectors) => out.extend(vectors),
+                // One text in the batch is too long for the model; find it
+                // by sending them one at a time.
+                Err(Failure::TooManyTokens) => {
+                    for text in batch {
+                        out.push(self.embed_shortened(text, task)?);
+                    }
+                }
+                Err(Failure::Other(error)) => return Err(error),
+            }
         }
         Ok(out)
     }
 
-    fn request(&self, texts: &[&str], task: Task) -> Result<Vec<Vec<f32>>, String> {
+    /// Dense text (long lines, symbols, non-Latin script) can pass the
+    /// character limit and still overflow the model's context. Its head is
+    /// what retrieval keys on, so keep cutting the tail until it fits.
+    fn embed_shortened(&self, text: &str, task: Task) -> Result<Vec<f32>, String> {
+        let mut text = text;
+        for _ in 0..8 {
+            match self.request(&[text], task) {
+                Ok(mut vectors) => return Ok(vectors.remove(0)),
+                Err(Failure::TooManyTokens) => {
+                    let keep = text.chars().count() * 2 / 3;
+                    text = match text.char_indices().nth(keep.max(1)) {
+                        Some((end, _)) => &text[..end],
+                        None => text,
+                    };
+                }
+                Err(Failure::Other(error)) => return Err(error),
+            }
+        }
+        Err("A text stays over the model's token limit after shortening".into())
+    }
+
+    fn request(&self, texts: &[&str], task: Task) -> Result<Vec<Vec<f32>>, Failure> {
         let body = json!({
             "model": MODEL,
             "input": texts,
@@ -203,18 +240,30 @@ impl Client {
             let retry = match response {
                 Ok(response) => {
                     let raw = response.into_string().map_err(|_| {
-                        "The embedding service sent an unreadable reply".to_string()
+                        Failure::Other("The embedding service sent an unreadable reply".into())
                     })?;
-                    return parse(&raw, texts.len(), self.dims);
+                    return parse(&raw, texts.len(), self.dims).map_err(Failure::Other);
                 }
                 Err(ureq::Error::Status(401 | 403, _)) => {
-                    return Err("The embedding service rejected the API key".into())
+                    return Err(Failure::Other(
+                        "The embedding service rejected the API key".into(),
+                    ))
+                }
+                Err(ureq::Error::Status(422, response)) => {
+                    let body = response.into_string().unwrap_or_default();
+                    return Err(if body.contains("token limit") {
+                        Failure::TooManyTokens
+                    } else {
+                        Failure::Other("The embedding service rejected the request (422)".into())
+                    });
                 }
                 Err(ureq::Error::Status(status @ (429 | 500..=599), _)) => {
                     format!("The embedding service answered {status}")
                 }
                 Err(ureq::Error::Status(status, _)) => {
-                    return Err(format!("The embedding service answered {status}"))
+                    return Err(Failure::Other(format!(
+                        "The embedding service answered {status}"
+                    )))
                 }
                 Err(ureq::Error::Transport(_)) => "Could not reach the embedding service".into(),
             };
@@ -224,7 +273,7 @@ impl Client {
                 attempt >= ATTEMPTS
             };
             if out_of_time {
-                return Err(retry);
+                return Err(Failure::Other(retry));
             }
             std::thread::sleep(wait);
             if !self.query {
@@ -291,6 +340,16 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn mock_server(statuses: Vec<u16>, dims: usize) -> MockServer {
+        mock_server_with_token_limit(statuses, dims, usize::MAX)
+    }
+
+    /// Like `mock_server`, but answers 422 "token limit" when any text is
+    /// longer than `limit` characters, as the real server does.
+    pub(crate) fn mock_server_with_token_limit(
+        statuses: Vec<u16>,
+        dims: usize,
+        limit: usize,
+    ) -> MockServer {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let url = format!("http://{}", server.server_addr().to_ip().unwrap());
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -309,8 +368,20 @@ pub(crate) mod tests {
                 seen.lock()
                     .unwrap()
                     .push(json!({"body": body, "auth": auth}));
-                let status = statuses.next().unwrap_or(200);
-                let reply = if status == 200 {
+                let too_long = body["input"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|text| text.as_str().unwrap().chars().count() > limit);
+                let status = if too_long {
+                    422
+                } else {
+                    statuses.next().unwrap_or(200)
+                };
+                let reply = if too_long {
+                    json!({"detail": "Input exceeds model token limit; split the document."})
+                        .to_string()
+                } else if status == 200 {
                     let data: Vec<Value> = body["input"]
                         .as_array()
                         .unwrap()
@@ -469,6 +540,45 @@ pub(crate) mod tests {
         assert!(server.requests.lock().unwrap().is_empty());
         drop(waiting);
         assert!(indexer.join().unwrap().is_ok());
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn texts_over_the_token_limit_are_split_out_and_shortened() {
+        let server = mock_server_with_token_limit(vec![], 4, 1_000);
+        let client = Client::new(&server.url, "k", 4).unwrap();
+        let texts = vec![
+            "short one".to_string(),
+            "x".repeat(3_000),
+            "short two".into(),
+        ];
+        let vectors = client.embed(&texts, Task::Document).unwrap();
+        assert_eq!(vectors.len(), 3);
+        assert_eq!(vectors[0], normalize(fake_vector("short one", 4)));
+        assert_eq!(vectors[2], normalize(fake_vector("short two", 4)));
+        let requests = server.requests.lock().unwrap();
+        // The batch, then each text alone, then the long one cut down.
+        let sizes: Vec<usize> = requests
+            .iter()
+            .map(|r| r["body"]["input"].as_array().unwrap().len())
+            .collect();
+        assert_eq!(sizes[0], 3);
+        assert!(sizes[1..].iter().all(|&n| n == 1));
+        // The long text went out shorter until it fit.
+        let shortest_x = requests
+            .iter()
+            .filter_map(|r| r["body"]["input"][0].as_str())
+            .filter(|text| text.starts_with('x'))
+            .map(|text| text.chars().count())
+            .min()
+            .unwrap();
+        assert!(shortest_x <= 1_000);
+
+        // Any other 422 is an error, not a reason to shorten.
+        let server = mock_server(vec![422], 4);
+        let client = Client::new(&server.url, "k", 4).unwrap();
+        let error = client.embed(&["x".into()], Task::Document).unwrap_err();
+        assert!(error.contains("422"));
         assert_eq!(server.requests.lock().unwrap().len(), 1);
     }
 
