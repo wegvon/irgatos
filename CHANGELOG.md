@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Semantic code search for agents.** Point **Settings › Providers › Semantic search** at an EmbeddingGemma server, save its key and index a project. Indexing runs in the background and only re-embeds changed files. Agents then run `app code.search` to find code by meaning and by name: results from the index are merged with `git grep` on the query's identifiers. It is read-only, works in any agent turn without `/operator`, and falls back to grep alone while a project is unindexed or still indexing.
 
+- **Mail.** A new Mail page in the sidebar shows Gmail through your [Executor](https://executor.sh): paste its URL and an API key on the page, and Irgatos never holds a Google credential. Read threads, archive them, and write or edit replies. **Start chat** opens an agent chat about a thread in the project you pick; that chat's agent can run `app mail.read` and `app mail.draft` to read the thread and save a reply as its Gmail draft, but it cannot send. A reply goes out only when you press **Send** and confirm.
+
 ### Changed
 
 - **Voice mode reads a short summary.** Instead of the whole reply, voice mode now says in a sentence or three what the agent did, what it changed and any question it asks you, in the selected speech model's voice. With a Live voice (Gemini) key the summary comes from Gemini Flash-Lite in the reply's own language. Without one, or when that call fails, it reads the reply's opening paragraph, its questions, its `Next:` lines and a closing offer, and leaves code, tables and file lists on screen. Turn off **Settings › Voice › Read a short summary** to hear the whole reply again.

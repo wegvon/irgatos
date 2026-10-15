@@ -181,11 +181,13 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
 
 /// Read-only actions the app answers itself, without the webview executor.
 /// They need a live turn but not the /operator opt-in: they only read the
-/// checkout the agent is already working in.
+/// checkout the agent is already working in. `mail.*` actions are answered
+/// the same way, scoped to the thread the chat was started for.
 const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
 
-/// The folder a read-only app action is scoped to: the caller's active turn.
-fn read_only_scope(host: &Inner, token: &str) -> Result<String, String> {
+/// The session and folder an app action answered by the app itself is scoped
+/// to: the caller's active turn.
+fn turn_scope(host: &Inner, token: &str, action: &str) -> Result<(String, String), String> {
     let grant = host
         .app_grants
         .values()
@@ -197,10 +199,8 @@ fn read_only_scope(host: &Inner, token: &str) -> Result<String, String> {
     host.active
         .get(&grant.session)
         .filter(|turn| turn.window == grant.window)
-        .map(|turn| turn.cwd.clone())
-        .ok_or_else(|| {
-            "code.search works only while an agent turn is running in Irgatos.".to_string()
-        })
+        .map(|turn| (grant.session.clone(), turn.cwd.clone()))
+        .ok_or_else(|| format!("{action} works only while an agent turn is running in Irgatos."))
 }
 
 pub fn init(app: &AppHandle) -> Result<(), String> {
@@ -258,12 +258,20 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
         {
             return Err("Invalid input or request ID".into());
         }
-        if request.namespace == "app" && READ_ONLY_APP_ACTIONS.contains(&request.action.as_str()) {
-            let cwd = {
+        let action = request.action.as_str();
+        if request.namespace == "app"
+            && (READ_ONLY_APP_ACTIONS.contains(&action)
+                || crate::mail::AGENT_ACTIONS.contains(&action))
+        {
+            let (session, cwd) = {
                 let host = inner.lock().map_err(|_| "Control service unavailable")?;
-                read_only_scope(&host, &request.token)?
+                turn_scope(&host, &request.token, action)?
             };
-            let result = crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?;
+            let result = if action == "code.search" {
+                crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?
+            } else {
+                crate::mail::agent_action(app, &session, action, &request.input)?
+            };
             return Ok(json!({"ok": true, "result": result}));
         }
         let id = uuid::Uuid::new_v4().to_string();
@@ -690,7 +698,7 @@ mod tests {
         let mut inner = Inner::default();
         assert!(inner.prepare_app_grant("ordinary", "main", "/repo"));
         let token = inner.app_grants["ordinary"].token.clone();
-        assert!(read_only_scope(&inner, &token).is_err());
+        assert!(turn_scope(&inner, &token, "code.search").is_err());
         inner.active.insert(
             "ordinary".into(),
             ActiveTurn {
@@ -699,15 +707,18 @@ mod tests {
                 app_allowed: false,
             },
         );
-        assert_eq!(read_only_scope(&inner, &token).unwrap(), "/repo/sub");
-        assert!(read_only_scope(&inner, "forged").is_err());
+        assert_eq!(
+            turn_scope(&inner, &token, "code.search").unwrap(),
+            ("ordinary".to_string(), "/repo/sub".to_string())
+        );
+        assert!(turn_scope(&inner, "forged", "mail.read").is_err());
         // A turn in another window does not lend its scope.
         inner.active.get_mut("ordinary").unwrap().window = "other".into();
-        assert!(read_only_scope(&inner, &token).is_err());
+        assert!(turn_scope(&inner, &token, "code.search").is_err());
         inner.active.get_mut("ordinary").unwrap().window = "main".into();
         // Orchestration sessions never answer to an app token.
         inner.workers.insert("ordinary".into(), "lead".into());
-        assert!(read_only_scope(&inner, &token).is_err());
+        assert!(turn_scope(&inner, &token, "code.search").is_err());
     }
     #[test]
     fn app_token_survives_normal_turns_but_only_works_when_opted_in() {

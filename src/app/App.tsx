@@ -847,6 +847,12 @@ import type { ConnectableInboxSource } from "../features/inbox/model/inboxFilter
 import type { InboxSessionPortal } from "../features/inbox/ui/InboxDiscussionPanel";
 import { inboxAskKey, inboxAskPrompt } from "../features/inbox/model/inboxAsk";
 import {
+  claimMailHint,
+  linkMailSession,
+  mailContext,
+} from "../features/mail/model/mail";
+import type { MailAskRequest, MailChat } from "../features/mail/ui/MailView";
+import {
   githubWorkItemThread,
   inboxComposerCard,
   type InboxItem,
@@ -1010,6 +1016,13 @@ const FleetView = lazySurface(
   async () => {
     const module = await import("../features/fleet/ui/FleetView");
     return { default: module.FleetView };
+  },
+  { suspense: false },
+);
+const MailView = lazySurface(
+  async () => {
+    const module = await import("../features/mail/ui/MailView");
+    return { default: module.MailView };
   },
   { suspense: false },
 );
@@ -1473,17 +1486,19 @@ function Workspace({
   const [automationsViewOpen, setAutomationsViewOpen] = useState(false);
   const [kanbanViewOpen, setKanbanViewOpen] = useState(false);
   const [fleetViewOpen, setFleetViewOpenState] = useState(false);
+  const [mailViewOpen, setMailViewOpen] = useState(false);
   const [chatViewOpen, setChatViewOpen] = useState(
     () => loadFreeChatView().open,
   );
   const [freeChatId, setFreeChatId] = useState<string | undefined>(
     () => loadFreeChatView().activeId,
   );
-  // Every navigation that leaves for another view closes Fleet, so Chat,
-  // the other cross-project page, rides on the same setter.
+  // Every navigation that leaves for another view closes Fleet, so Chat and
+  // Mail, the other cross-project pages, ride on the same setter.
   const setFleetViewOpen = useCallback((open: boolean) => {
     setFleetViewOpenState(open);
     setChatViewOpen(false);
+    setMailViewOpen(false);
   }, []);
   const [kanbanFocus, setKanbanFocus] = useState<KanbanFocusRequest | null>(
     null,
@@ -1526,6 +1541,7 @@ function Workspace({
     kanban: false,
     fleet: false,
     chat: false,
+    mail: false,
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
@@ -1752,6 +1768,7 @@ function Workspace({
       !automationsViewOpen &&
       !kanbanViewOpen &&
       !fleetViewOpen &&
+      !mailViewOpen &&
       !chatViewOpen &&
       !settingsOpen &&
       !irgatViewId,
@@ -1764,6 +1781,7 @@ function Workspace({
             !automationsViewOpen &&
             !kanbanViewOpen &&
             !fleetViewOpen &&
+            !mailViewOpen &&
             !chatViewOpen &&
             !settingsOpen
           ? (irgatViewId ?? undefined)
@@ -1775,6 +1793,7 @@ function Workspace({
       !automationsViewOpen &&
       !kanbanViewOpen &&
       !fleetViewOpen &&
+      !mailViewOpen &&
       !chatViewOpen &&
       !settingsOpen
         ? shownIrgatSessionId
@@ -1797,6 +1816,7 @@ function Workspace({
       setAutomationsViewOpen(false);
       setKanbanViewOpen(false);
       setFleetViewOpenState(false);
+      setMailViewOpen(false);
       if (id !== undefined) setFreeChatId(id);
       setChatViewOpen(true);
       setComposerFocused(true);
@@ -1812,6 +1832,8 @@ function Workspace({
   kanbanViewOpenRef.current = kanbanViewOpen;
   const fleetViewOpenRef = useRef(fleetViewOpen);
   fleetViewOpenRef.current = fleetViewOpen;
+  const mailViewOpenRef = useRef(mailViewOpen);
+  mailViewOpenRef.current = mailViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -2543,6 +2565,7 @@ function Workspace({
             !automationsViewOpenRef.current &&
             !kanbanViewOpenRef.current &&
             !fleetViewOpenRef.current &&
+            !mailViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);
@@ -2583,6 +2606,7 @@ function Workspace({
     automationsViewOpen,
     kanbanViewOpen,
     fleetViewOpen,
+    mailViewOpen,
     chatViewOpen,
     freeChatId,
     settingsOpen,
@@ -6053,6 +6077,7 @@ function Workspace({
             automationsViewOpenRef.current ||
             kanbanViewOpenRef.current ||
             fleetViewOpenRef.current ||
+            mailViewOpenRef.current ||
             chatViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -8636,6 +8661,15 @@ function Workspace({
           ) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(codeSearchContext(cli));
+          }
+          // A chat started from the Mail page hears about its thread once.
+          const mailLink =
+            rawCommand || orchestrator.forSession(sessionId)
+              ? null
+              : await claimMailHint(sessionId);
+          if (mailLink) {
+            const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
+            appContext.push(mailContext(cli, mailLink));
           }
           // A Irgat reads who it is ahead of the message, so it never takes it
           // for something the user pasted. A command must stay first.
@@ -12850,6 +12884,56 @@ function Workspace({
     setFleetViewOpen(false);
   }, []);
 
+  const onOpenMail = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
+      setMailViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveMail = useCallback(() => {
+    setMailViewOpen(false);
+  }, []);
+
+  const describeMailChat = useCallback(
+    (sessionId: string): MailChat | undefined => {
+      const open = sessions.find((session) => session.id === sessionId);
+      if (open) return { title: open.title, busy: !!open.busy };
+      const saved = history.find((session) => session.id === sessionId);
+      return saved ? { title: saved.title, busy: false } : undefined;
+    },
+    [sessions, history],
+  );
+
+  /** Starts a chat about a mail thread; its agent may read the thread and
+   *  save a reply draft, never send. */
+  const onAskMail = useCallback(
+    async ({ threadId, subject, project, text }: MailAskRequest) => {
+      const session = {
+        ...newDefaultSession(project, sessionDefaults?.runtimeMode),
+        title: `Mail: ${subject}`,
+      };
+      await linkMailSession(session.id, threadId, subject);
+      const next = [...sessionsRef.current, session];
+      sessionsRef.current = next;
+      setSessions(next);
+      setRecents(rememberProject(project));
+      onSubmit(session.id, text, []);
+      setMailViewOpen(false);
+      setSidebarTab("sessions", project);
+      await onSelectHistorySession(session.id);
+    },
+    [onSubmit, onSelectHistorySession, sessionDefaults?.runtimeMode],
+  );
+
   // Not a transition: the compact drawer opens in the same batch and closes
   // itself if it renders while a full-page view still covers the sidebar.
   const onOpenArtifacts = useCallback(
@@ -13195,6 +13279,7 @@ function Workspace({
           kanban: kanbanViewOpenRef.current,
           fleet: fleetViewOpenRef.current,
           chat: chatViewOpenRef.current,
+          mail: mailViewOpenRef.current,
         };
       }
       startTransition(() => {
@@ -13261,6 +13346,7 @@ function Workspace({
     setKanbanViewOpen(returnView.kanban);
     setFleetViewOpen(returnView.fleet);
     setChatViewOpen(!!returnView.chat);
+    setMailViewOpen(!!returnView.mail);
     setSettingsOpen(false);
   }, []);
 
@@ -13310,6 +13396,10 @@ function Workspace({
       setChatViewOpen(false);
       return;
     }
+    if (mailViewOpen) {
+      setMailViewOpen(false);
+      return;
+    }
     if (irgatViewIdRef.current) {
       closeIrgatView();
       setComposerFocused(true);
@@ -13327,6 +13417,7 @@ function Workspace({
     automationsViewOpen,
     kanbanViewOpen,
     fleetViewOpen,
+    mailViewOpen,
     chatViewOpen,
   ]);
 
@@ -13615,6 +13706,7 @@ function Workspace({
             automationsViewOpenRef.current ||
             kanbanViewOpenRef.current ||
             fleetViewOpenRef.current ||
+            mailViewOpenRef.current ||
             chatViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -13701,6 +13793,7 @@ function Workspace({
         !automationsViewOpenRef.current &&
         !kanbanViewOpenRef.current &&
         !fleetViewOpenRef.current &&
+        !mailViewOpenRef.current &&
         !chatViewOpenRef.current &&
         !(
           e.target instanceof Element &&
@@ -14492,6 +14585,7 @@ function Workspace({
     automationsViewOpen ||
     kanbanViewOpen ||
     fleetViewOpen ||
+    mailViewOpen ||
     chatViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
@@ -14627,6 +14721,7 @@ function Workspace({
                 automationsViewOpen ||
                 kanbanViewOpen ||
                 fleetViewOpen ||
+                mailViewOpen ||
                 chatViewOpen
               }
               canGoForward={tabVisitNav.canForward}
@@ -14686,6 +14781,8 @@ function Workspace({
                 />
               }
               onOpenFleet={onOpenFleet}
+              onOpenMail={onOpenMail}
+              mailActive={mailViewOpen}
               onOpenChat={onOpenChat}
               chatActive={chatViewOpen}
               chatIndicator={freeChatIndicator}
@@ -14740,6 +14837,7 @@ function Workspace({
                   automationsViewOpen ||
                   kanbanViewOpen ||
                   fleetViewOpen ||
+                  mailViewOpen ||
                   chatViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
@@ -14752,6 +14850,7 @@ function Workspace({
                   automationsViewOpen ||
                   kanbanViewOpen ||
                   fleetViewOpen ||
+                  mailViewOpen ||
                   chatViewOpen
                 }
                 inert={
@@ -14762,6 +14861,7 @@ function Workspace({
                   automationsViewOpen ||
                   kanbanViewOpen ||
                   fleetViewOpen ||
+                  mailViewOpen ||
                   chatViewOpen ||
                   undefined
                 }
@@ -15016,6 +15116,7 @@ function Workspace({
                             !automationsViewOpen &&
                             !kanbanViewOpen &&
                             !fleetViewOpen &&
+                            !mailViewOpen &&
                             !chatViewOpen &&
                             !irgatViewId &&
                             activeLinkedWorkItemPanel?.sessionId ===
@@ -15037,6 +15138,7 @@ function Workspace({
                             !automationsViewOpen &&
                             !kanbanViewOpen &&
                             !fleetViewOpen &&
+                            !mailViewOpen &&
                             !chatViewOpen
                           }
                           onClose={() => setBrowserOpen(false)}
@@ -15183,6 +15285,19 @@ function Workspace({
                   }
                 />
               ) : null}
+              {mailViewOpen ? (
+                <MailView
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  cwd={projectCwd}
+                  recents={recents}
+                  describeChat={describeMailChat}
+                  onAsk={onAskMail}
+                  onOpenSession={onOpenFleetSession}
+                  onClose={onLeaveMail}
+                  onToggleSidebar={onToggleSidebar}
+                />
+              ) : null}
               {chatViewOpen && !settingsOpen ? (
                 <FreeChatView
                   rows={freeChatList}
@@ -15272,6 +15387,7 @@ function Workspace({
               automationsViewOpen ||
               kanbanViewOpen ||
               fleetViewOpen ||
+              mailViewOpen ||
               chatViewOpen ||
               settingsOpen ? null : irgatCovers ? (
                 // The Irgat's composer already shows its usage, and it has no
