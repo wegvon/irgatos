@@ -8,9 +8,11 @@ import { useLayoutEffect, useRef } from "react";
 export function DockHostSlot({
   host,
   height,
+  className = "min-h-0 min-w-0 shrink-0",
 }: {
   host: HTMLElement;
-  height: number;
+  height?: number;
+  className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -22,6 +24,10 @@ export function DockHostSlot({
     };
   }, [host]);
   return (
-    <div ref={ref} className="min-h-0 min-w-0 shrink-0" style={{ height }} />
+    <div
+      ref={ref}
+      className={className}
+      style={height === undefined ? undefined : { height }}
+    />
   );
 }
