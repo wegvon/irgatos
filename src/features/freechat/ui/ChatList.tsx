@@ -15,7 +15,7 @@ export type ChatListActions = {
   onBoard: (id: string) => void;
 };
 
-const STATE_LABEL: Record<FreeChatRow["state"], string> = {
+export const CHAT_STATE_LABEL: Record<FreeChatRow["state"], string> = {
   "needs-input": "Needs you",
   running: "Running",
   unread: "New reply",
@@ -61,7 +61,7 @@ export function ChatList({
           kind: "item",
           id: "board",
           label: onBoardAlready(menuRow.id) ? "Show on Board" : "Add to Board",
-          disabled: menuRow.blank,
+          disabled: menuRow.blank && !onBoardAlready(menuRow.id),
         },
         { kind: "sep" },
         { kind: "item", id: "delete", label: "Delete", danger: true },
@@ -137,7 +137,7 @@ function ChatRow({
     inputRef.current?.focus();
     inputRef.current?.select();
   }, [renaming]);
-  const stateLabel = STATE_LABEL[row.state];
+  const stateLabel = CHAT_STATE_LABEL[row.state];
   return (
     <div
       data-free-chat-row={row.id}
@@ -192,19 +192,7 @@ function ChatRow({
       {row.pinned ? (
         <Pin aria-hidden className="size-3 shrink-0 opacity-50" />
       ) : null}
-      {row.state === "needs-input" ? (
-        <span
-          aria-hidden
-          className="size-2 shrink-0 rounded-full bg-amber-500"
-        />
-      ) : row.state === "running" ? (
-        <LoaderCircle
-          aria-hidden
-          className="size-3 shrink-0 animate-spin opacity-60"
-        />
-      ) : row.state === "unread" ? (
-        <span aria-hidden className="size-2 shrink-0 rounded-full bg-accent" />
-      ) : null}
+      <ChatStateMark state={row.state} />
       <button
         type="button"
         aria-label={`More actions for ${row.title}`}
@@ -218,4 +206,22 @@ function ChatRow({
       </button>
     </div>
   );
+}
+
+/** The running, needs-you or new-reply mark a chat row shows. */
+export function ChatStateMark({ state }: { state: FreeChatRow["state"] }) {
+  return state === "needs-input" ? (
+    <span aria-hidden className="size-2 shrink-0 rounded-full bg-amber-500" />
+  ) : state === "running" ? (
+    <LoaderCircle aria-hidden className="size-3 shrink-0 animate-spin opacity-60" />
+  ) : state === "unread" ? (
+    <span aria-hidden className="size-2 shrink-0 rounded-full bg-accent" />
+  ) : null;
+}
+
+/** The most pressing state among `rows`: needs you, then running, then new reply. */
+export function chatsState(rows: readonly FreeChatRow[]): FreeChatRow["state"] {
+  for (const state of ["needs-input", "running", "unread"] as const)
+    if (rows.some((row) => row.state === state)) return state;
+  return "idle";
 }

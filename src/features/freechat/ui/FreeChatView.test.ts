@@ -134,6 +134,8 @@ describe("FreeChatView", () => {
       ...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
     ].find((element) => element.textContent?.includes("Add to Board"))!;
     expect(item.disabled).toBe(true);
+    render({ boardIds: new Set(["a"]) });
+    expect(button("Show on Board")).not.toBeNull();
   });
 
   it("pins, deletes and renames from the row menu", () => {

@@ -190,6 +190,12 @@ describe("replySummary", () => {
     expect(replySummary("Evet, Türkçeye sabitledim.")).toBe(
       "Evet, Türkçeye sabitledim.",
     );
+    expect(replySummary("Windows, Linux, and macOS all pass.")).toBe(
+      "Windows, Linux, and macOS all pass.",
+    );
+    expect(replySummary("Yesterday, the deployment failed.")).toBe(
+      "Yesterday, the deployment failed.",
+    );
   });
 
   it("keeps the lead to two sentences", () => {
