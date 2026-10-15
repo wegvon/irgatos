@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Voice mode in an Irgat chat no longer turns itself off while a message is sending, so the Irgat's reply is read aloud again.
 - Chats in the sidebar show whether each one is working (spinner), waiting on you (amber dot) or has a new reply, and can be renamed, pinned, added to the board or deleted from right-click or the row's **…** menu.
+- Deleting a session always asks first, from the Delete key, the context menu, a one-session tab or **Settings › Archive**, like chats and Irgats do. Removing an Irgat habit and deleting a note ask first too.
+- Irgat chats in the sidebar show the same working, waiting and new-reply states and can be renamed from their menu.
+- Session cards on an Irgat's overview rename, archive and delete like the sidebar's, and show **Done** and **Interrupted**.
+- **Fleet** lists sessions that stopped mid-turn under their own **Interrupted** group instead of hiding them in Idle, and its rows offer open, stop, add to board, archive and delete.
+- Right-clicking an Irgat on the compact rail opens its menu, as on the full rail.
+- The project picker shows when an Irgat is working or waiting, its unread replies, and which projects have an agent at work.
+- The floating Irgat chat reads the reply aloud even when a message is queued, and offers **Retry** for a message that was not delivered.
+- A failed reading no longer stays on screen after voice mode is turned off or the next reply is read.
+- Group chats handle `/i-have-adhd` and "stop adhd mode" themselves and give each turn the ADHD rules while the mode is on. A restored draft that @mentions a member sends on Enter, and voice mode stops while a terminal has focus.
+- The Irgat composer keeps the caret while a message sends.
+- The composer's ADHD chip matches the size of the quota and model name beside it, and the Pi refresh button matches the other refresh buttons.
+- **Settings › Voice** shows a speech preview error and a transcription key error each in its own row, and Settings search finds **Menu bar icon**.
 
 ### Removed
 
