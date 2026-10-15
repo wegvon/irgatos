@@ -485,7 +485,7 @@ fn search_folder(
     for (index, term) in terms.iter().enumerate() {
         let options = crate::search::SearchOptions {
             cwd: scope_key(cwd),
-            query: term.text.clone(),
+            query: term.clone(),
             case_sensitive: false,
             whole_word: false,
             regex: false,

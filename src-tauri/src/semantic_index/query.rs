@@ -13,49 +13,6 @@ const RRF_K: f64 = 60.0;
 const VECTOR_CANDIDATES: usize = 40;
 const GREP_CANDIDATES: usize = 40;
 
-const STOPWORDS: [&str; 40] = [
-    "where",
-    "what",
-    "which",
-    "when",
-    "does",
-    "with",
-    "from",
-    "that",
-    "this",
-    "have",
-    "into",
-    "there",
-    "their",
-    "about",
-    "should",
-    "would",
-    "could",
-    "find",
-    "show",
-    "code",
-    "file",
-    "files",
-    "function",
-    "method",
-    "implemented",
-    "handled",
-    "handle",
-    "logic",
-    "used",
-    "uses",
-    "nerede",
-    "nasıl",
-    "hangi",
-    "olan",
-    "için",
-    "kodu",
-    "dosya",
-    "fonksiyon",
-    "yapılıyor",
-    "neresi",
-];
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Key {
     pub path: String,
@@ -73,56 +30,42 @@ pub struct Hit {
     pub preview: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Term {
-    pub text: String,
-    /// Looks like code (snake_case, camelCase, a path or `quoted`), so a
-    /// match is strong evidence; plain words only count together.
-    pub identifier: bool,
-}
-
-/// Words worth grepping for. Identifiers always; plain words of four or more
-/// ASCII letters that are not filler.
-pub fn terms(query: &str) -> Vec<Term> {
-    let mut out: Vec<Term> = Vec::new();
-    let mut push = |text: &str, identifier: bool| {
+/// What grep should look for: code names in the query (snake_case,
+/// camelCase, `a::path`, names with digits) and anything in backticks.
+/// Plain words are left to the embedding; grepping them ("session",
+/// "update") floods the fusion with matches that mean nothing.
+pub fn terms(query: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |text: &str| {
         let text = text.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
-        if text.is_empty() || out.iter().any(|t| t.text.eq_ignore_ascii_case(text)) {
-            return;
+        if text.chars().count() >= 3 && !out.iter().any(|t| t.eq_ignore_ascii_case(text)) {
+            out.push(text.to_string());
         }
-        out.push(Term {
-            text: text.to_string(),
-            identifier,
-        });
     };
     for quoted in query.split('`').skip(1).step_by(2) {
-        if quoted.trim().len() >= 3 {
-            push(quoted.trim(), true);
-        }
+        push(quoted.trim());
     }
     for word in query.split(|c: char| c.is_whitespace() || c == '`' || c == ',' || c == '?') {
-        let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
-        if word.chars().count() < 3 {
-            continue;
-        }
-        let inner_upper = word.chars().skip(1).any(|c| c.is_ascii_uppercase())
-            && word.chars().any(|c| c.is_ascii_lowercase());
-        let identifier = word.contains('_')
-            || word.contains("::")
-            || inner_upper
-            || (word.chars().any(|c| c.is_ascii_digit()) && word.chars().any(char::is_alphabetic));
-        if identifier {
-            for part in word.split("::").filter(|p| p.len() >= 3) {
-                push(part, true);
-            }
-        } else if word.len() >= 4
-            && word.chars().all(|c| c.is_ascii_alphabetic())
-            && !STOPWORDS.contains(&word.to_lowercase().as_str())
-        {
-            push(word, false);
+        let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != ':');
+        if is_identifier(word) {
+            word.split("::").for_each(&mut push);
         }
     }
     out
+}
+
+fn is_identifier(word: &str) -> bool {
+    let chars: Vec<char> = word.chars().collect();
+    // A hump: lower, Upper, lower ("validateEndpoint", "WebSocket"), which
+    // product names like "macOS" or "iOS" do not have.
+    let camel = chars.windows(3).any(|w| {
+        w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase() && w[2].is_ascii_lowercase()
+    });
+    let snake = word.contains('_') && word.chars().any(char::is_alphabetic);
+    let digits = chars.iter().any(char::is_ascii_digit)
+        && chars.iter().any(char::is_ascii_alphabetic)
+        && chars.iter().all(|c| c.is_ascii_alphanumeric() || *c == '_');
+    chars.len() >= 3 && (camel || snake || word.contains("::") || digits)
 }
 
 /// Chunk indices by cosine to `query`, best first. Vectors are normalized,
@@ -148,11 +91,10 @@ pub struct LineMatch {
 }
 
 /// The windows grep points at, best first. A window that matches several
-/// distinct words beats one that repeats a single word; a rare word beats a
-/// common one. Plain words only count where two of them meet, unless a
-/// single word is all the query has.
+/// distinct names beats one that repeats a single name; a rare name beats a
+/// common one.
 pub fn grep_ranking(
-    terms: &[Term],
+    terms: &[String],
     matches: &[LineMatch],
     window_of: impl Fn(&str, usize) -> (usize, usize),
 ) -> Vec<(Key, usize, Vec<String>)> {
@@ -165,10 +107,7 @@ pub fn grep_ranking(
     for m in &matches {
         per_term[m.term] += 1;
     }
-    let weight = |term: usize| {
-        let base = if terms[term].identifier { 3.0 } else { 1.0 };
-        base / (2.0 + per_term[term] as f64).ln()
-    };
+    let weight = |term: usize| 1.0 / (2.0 + per_term[term] as f64).ln();
     struct Window {
         end: usize,
         terms: Vec<bool>,
@@ -197,15 +136,13 @@ pub fn grep_ranking(
     }
     let mut ranked: Vec<(Key, usize, Vec<String>, f64)> = windows
         .into_iter()
-        .filter_map(|(key, window)| {
-            let hit: Vec<usize> = (0..terms.len()).filter(|&t| window.terms[t]).collect();
-            let strong = hit.iter().any(|&t| terms[t].identifier);
-            if !strong && hit.len() < 2 && terms.len() > 1 {
-                return None;
-            }
-            let score =
-                hit.iter().map(|&t| weight(t)).sum::<f64>() + (window.count as f64).ln_1p() * 0.01;
-            Some((key, window.end, window.previews, score))
+        .map(|(key, window)| {
+            let score = (0..terms.len())
+                .filter(|&t| window.terms[t])
+                .map(weight)
+                .sum::<f64>()
+                + (window.count as f64).ln_1p() * 0.01;
+            (key, window.end, window.previews, score)
         })
         .collect();
     ranked.sort_by(|a, b| b.3.total_cmp(&a.3).then_with(|| a.0.cmp(&b.0)));
@@ -248,7 +185,7 @@ pub struct Inputs<'a> {
     /// `chunks[i].item` relative to the caller's folder, or None when outside it.
     pub chunk_paths: &'a [Option<String>],
     pub query_vector: Option<&'a [f32]>,
-    pub terms: &'a [Term],
+    pub terms: &'a [String],
     pub matches: &'a [LineMatch],
 }
 
@@ -300,15 +237,9 @@ pub fn hybrid(
         grep_keys.push(key);
     }
 
-    // Plain words alone are a weak signal next to the embedding.
-    let grep_weight = if inputs.terms.iter().any(|t| t.identifier) {
-        1.0
-    } else {
-        0.5
-    };
     let vector_set: std::collections::HashSet<&Key> = vector_keys.iter().collect();
     let grep_set: std::collections::HashSet<&Key> = grep_keys.iter().collect();
-    rrf(&[(&vector_keys, 1.0), (&grep_keys, grep_weight)])
+    rrf(&[(&vector_keys, 1.0), (&grep_keys, 1.0)])
         .into_iter()
         .take(limit)
         .map(|(key, score)| {
@@ -374,32 +305,25 @@ mod tests {
     }
 
     #[test]
-    fn extracts_identifiers_and_meaningful_words() {
-        let found = terms(
-            "where is `search_sessions_sql` and validateEndpoint for the transcription endpoint?",
-        );
-        let texts: Vec<(&str, bool)> = found
-            .iter()
-            .map(|t| (t.text.as_str(), t.identifier))
-            .collect();
+    fn greps_only_code_names_and_quoted_text() {
         assert_eq!(
-            texts,
-            vec![
-                ("search_sessions_sql", true),
-                ("validateEndpoint", true),
-                ("transcription", false),
-                ("endpoint", false),
-            ]
+            terms(
+                "where is `search sessions` and validateEndpoint for the transcription endpoint?"
+            ),
+            vec!["search sessions", "validateEndpoint"]
         );
-        let rust = terms("session_store::search_sessions timeout");
-        assert!(rust
-            .iter()
-            .any(|t| t.text == "session_store" && t.identifier));
-        assert!(rust
-            .iter()
-            .any(|t| t.text == "search_sessions" && t.identifier));
-        // Filler and non-ASCII words are dropped: grep would not find them in code.
-        assert!(terms("görüntüsü nerede").is_empty());
+        assert_eq!(
+            terms("session_store::search_sessions timeout, HTTP_TIMEOUT and v1"),
+            vec!["session_store", "search_sessions", "HTTP_TIMEOUT"]
+        );
+        assert_eq!(terms("WebSocket setup on macOS and iOS"), vec!["WebSocket"]);
+        assert_eq!(
+            terms("utf8 base64 sha256"),
+            vec!["utf8", "base64", "sha256"]
+        );
+        // Plain words, Turkish or English, are left to the embedding.
+        assert!(terms("how does self update pick the release asset").is_empty());
+        assert!(terms("ekran görüntüsü nerede").is_empty());
     }
 
     #[test]
@@ -418,40 +342,27 @@ mod tests {
     }
 
     #[test]
-    fn grep_windows_need_two_words_or_one_identifier() {
-        let terms = vec![
-            Term {
-                text: "timeout".into(),
-                identifier: false,
-            },
-            Term {
-                text: "summary".into(),
-                identifier: false,
-            },
-            Term {
-                text: "HTTP_TIMEOUT".into(),
-                identifier: true,
-            },
-        ];
+    fn grep_windows_rank_rare_and_several_names_first() {
+        let terms = vec!["HTTP_TIMEOUT".to_string(), "summarize".to_string()];
         let m = |path: &str, line, term| LineMatch {
             path: path.into(),
             line,
             term,
             preview: format!("{path}:{line}"),
         };
-        let matches = vec![
-            m("a.rs", 5, 0),
-            m("a.rs", 9, 1),
-            m("b.rs", 100, 0),
-            m("c.rs", 3, 2),
-        ];
+        let mut matches = vec![m("a.rs", 5, 0), m("a.rs", 9, 1), m("c.rs", 3, 1)];
+        // summarize is common; HTTP_TIMEOUT is rare.
+        matches.extend((0..20).map(|i| m("d.rs", 200 + i * 70, 1)));
+        matches.push(m("b.rs", 3, 0));
+        matches.push(m("package-lock.json", 1, 0));
         let ranked = grep_ranking(&terms, &matches, |_, line| {
             window_for(&[(1, 60), (51, 110)], line)
         });
         let keys: Vec<Key> = ranked.iter().map(|r| r.0.clone()).collect();
-        // c has the identifier, a has two words; b has one plain word only.
-        assert_eq!(keys, vec![key("c.rs", 1), key("a.rs", 1)]);
-        assert_eq!(ranked[1].2, vec!["a.rs:5", "a.rs:9"]);
+        assert_eq!(keys[0], key("a.rs", 1));
+        assert_eq!(keys[1], key("b.rs", 1));
+        assert_eq!(ranked[0].2, vec!["a.rs:5", "a.rs:9"]);
+        assert!(!keys.iter().any(|k| k.path == "package-lock.json"));
     }
 
     #[test]
@@ -480,10 +391,7 @@ mod tests {
             chunk("other/c.rs", 1, vec![1.0, 0.0]),
         ];
         let paths = vec![Some("a.rs".to_string()), Some("b.rs".to_string()), None];
-        let terms = vec![Term {
-            text: "fooBar".into(),
-            identifier: true,
-        }];
+        let terms = vec!["fooBar".to_string()];
         let matches = vec![LineMatch {
             path: "b.rs".into(),
             line: 10,
