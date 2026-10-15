@@ -13118,6 +13118,24 @@ function Workspace({
     },
     [onRemoveHistorySession, refreshFreeChats],
   );
+  // What a Fleet row offers on right-click, as the sidebar's card does.
+  const fleetActions = useMemo(
+    () => ({
+      onStop: (sessionId: string) => onStop(sessionId),
+      onArchive: (sessionId: string) =>
+        void onArchiveHistorySession(sessionId, true),
+      onDelete: (sessionId: string) => void onDeleteHistorySession(sessionId),
+      onBoard: (sessionId: string) => void onSessionBoard(sessionId),
+      boardIds: kanbanSessions.linkedIds,
+    }),
+    [
+      onStop,
+      onArchiveHistorySession,
+      onDeleteHistorySession,
+      onSessionBoard,
+      kanbanSessions.linkedIds,
+    ],
+  );
   const onFreeChatBoard = useCallback(
     async (id: string) => {
       if (!(await ensureOpenSession(id))) return;
@@ -14639,6 +14657,8 @@ function Workspace({
                   sidebar
                   sessions={promptableSessions}
                   unseenFinishedIds={unseenFinishedIds}
+                  interruptedSessionIds={interruptedSessionIds}
+                  actions={fleetActions}
                   onClose={onLeaveFleet}
                   onOpenSession={onOpenFleetSession}
                   onApproval={onApproval}
@@ -15127,6 +15147,8 @@ function Workspace({
                 <FleetView
                   sessions={promptableSessions}
                   unseenFinishedIds={unseenFinishedIds}
+                  interruptedSessionIds={interruptedSessionIds}
+                  actions={fleetActions}
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
                   onClose={onLeaveFleet}

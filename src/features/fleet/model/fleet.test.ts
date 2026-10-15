@@ -165,6 +165,22 @@ describe("fleetEntry", () => {
     expect(fleetEntry(session, { now: NOW })?.bucket).toBe("idle");
   });
 
+  it("lists a session that stopped mid-turn as Interrupted, not Idle", () => {
+    const session = chat("/repo/a", {
+      blocks: [sent(NOW - 1_000), { id: "r", role: "assistant", text: "Half" }],
+    });
+    expect(
+      fleetEntry(session, { now: NOW, interruptedIds: new Set([session.id]) })
+        ?.bucket,
+    ).toBe("interrupted");
+    expect(
+      fleetEntry(
+        { ...session, busy: true },
+        { now: NOW, interruptedIds: new Set([session.id]) },
+      )?.bucket,
+    ).toBe("running");
+  });
+
   it("skips blank tabs, Inbox asks, hidden habit runs, and quiet workers", () => {
     expect(fleetEntry(chat("/repo/a"))).toBeNull();
     expect(fleetEntry(chat("/repo/a", { ephemeral: true, busy: true }))).toBeNull();
