@@ -447,24 +447,10 @@ fn search_folder(
     query: &str,
     limit: usize,
 ) -> Result<Found, String> {
-    // The deepest indexed project that holds this folder.
-    let cwd_key = scope_key(cwd);
-    let scope = store
-        .scopes(CODE)?
-        .into_iter()
-        .filter(|scope| cwd_key == *scope || cwd_key.starts_with(&format!("{scope}/")))
-        .max_by_key(String::len);
-    let prefix = scope
-        .as_ref()
-        .map(|scope| {
-            let rest = cwd_key[scope.len()..].trim_start_matches('/');
-            if rest.is_empty() {
-                String::new()
-            } else {
-                format!("{rest}/")
-            }
-        })
-        .unwrap_or_default();
+    let (scope, prefix) = match scope_for(store, cwd)? {
+        Some((scope, prefix)) => (Some(scope), prefix),
+        None => (None, String::new()),
+    };
 
     let mut note = None;
     let (chunks, query_vector) = match (&scope, embed) {
@@ -525,6 +511,26 @@ fn search_folder(
         },
     );
     Ok(Found { hits, scope, note })
+}
+
+/// The deepest indexed project that holds `cwd`, and `cwd`'s path inside
+/// it as a prefix of item paths ("" at the root, else ending in "/").
+fn scope_for(store: &Store, cwd: &Path) -> Result<Option<(String, String)>, String> {
+    let cwd_key = scope_key(cwd);
+    Ok(store
+        .scopes(CODE)?
+        .into_iter()
+        .filter(|scope| cwd_key == *scope || cwd_key.starts_with(&format!("{scope}/")))
+        .max_by_key(String::len)
+        .map(|scope| {
+            let rest = cwd_key[scope.len()..].trim_start_matches('/');
+            let prefix = if rest.is_empty() {
+                String::new()
+            } else {
+                format!("{rest}/")
+            };
+            (scope, prefix)
+        }))
 }
 
 fn refresh_due(scope: &str) -> bool {
@@ -682,4 +688,178 @@ pub(crate) fn embeddings_on(app: &AppHandle) -> bool {
     data_dir(app)
         .and_then(|dir| active(&dir))
         .is_ok_and(|active| active.is_some())
+}
+
+/// Turns a query into a code-retrieval vector, or explains why it cannot.
+fn embed_code_query(app: &AppHandle, query: &str) -> Result<Vec<f32>, String> {
+    let (endpoint, key) = active(&data_dir(app)?)?.ok_or("Semantic search is off")?;
+    let query: String = query.chars().take(MAX_QUERY_CHARS).collect();
+    client::Client::for_query(&endpoint, &key, DIMS)?
+        .embed(&[query], client::Task::CodeRetrieval)
+        .map(|mut vectors| vectors.pop().unwrap_or_default())
+}
+
+/// How many items of a corpus have vectors, for "indexed N of M".
+pub(crate) fn corpus_items(app: &AppHandle, corpus: &str, scope: &str) -> Result<usize, String> {
+    let store = Store::open(&data_dir(app)?.join(DB_FILE))?;
+    Ok(store.items(corpus, scope)?.len())
+}
+
+/// Code found by meaning alone below this is noise.
+const CODE_MEANING_FLOOR: f32 = 0.3;
+
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMeaningHit {
+    path: String,
+    relative: String,
+    start_line: usize,
+    end_line: usize,
+    preview: String,
+    score: f32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeMeaningResult {
+    hits: Vec<CodeMeaningHit>,
+    /// "on", "off" (not set up), "none" (this project has no index) or
+    /// "unavailable" (the endpoint failed).
+    semantic: &'static str,
+    note: Option<String>,
+    /// The index's state for this project: "complete", "partial", "indexing".
+    index: Option<&'static str>,
+}
+
+/// Code in the open project by meaning, for the Search view: one window per
+/// file, best first, above a floor. Word matches come from the Search view's
+/// own content search.
+#[tauri::command]
+pub async fn semantic_code_search(
+    app: AppHandle,
+    cwd: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<CodeMeaningResult, String> {
+    let limit = limit.unwrap_or(8).clamp(1, 40);
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = |semantic, note: Option<String>, index| CodeMeaningResult {
+            hits: Vec::new(),
+            semantic,
+            note,
+            index,
+        };
+        let query = query.trim();
+        let dir = data_dir(&app)?;
+        if query.is_empty() || active(&dir)?.is_none() {
+            return Ok(result("off", None, None));
+        }
+        let Ok(cwd) = scope_of(&cwd) else {
+            return Ok(result("none", None, None));
+        };
+        let store = Store::open(&dir.join(DB_FILE))?;
+        let Some((scope, prefix)) = scope_for(&store, &cwd)? else {
+            return Ok(result("none", None, None));
+        };
+        if job(&scope).is_none() && refresh_due(&scope) {
+            let _ = start(&app, Path::new(&scope), false);
+        }
+        let index = Some(status(&store, &scope, &scope)?.state);
+        let vector = match embed_code_query(&app, query) {
+            Ok(vector) => vector,
+            Err(error) => {
+                return Ok(result(
+                    "unavailable",
+                    Some(format!("Search by meaning is unavailable ({error}).")),
+                    index,
+                ))
+            }
+        };
+        let chunks = store.chunks(CODE, &scope, &prefix)?;
+        Ok(CodeMeaningResult {
+            hits: code_meaning(&chunks, &vector, &prefix, &cwd, limit),
+            semantic: "on",
+            note: None,
+            index,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn code_meaning(
+    chunks: &[store::StoredChunk],
+    vector: &[f32],
+    prefix: &str,
+    cwd: &Path,
+    limit: usize,
+) -> Vec<CodeMeaningHit> {
+    let mut files = std::collections::HashSet::new();
+    let mut hits = Vec::new();
+    for (index, score) in query::vector_ranking(chunks, vector, limit * 6) {
+        if score < CODE_MEANING_FLOOR || hits.len() >= limit {
+            break;
+        }
+        let chunk = &chunks[index];
+        let Some(relative) = chunk.item.strip_prefix(prefix) else {
+            continue;
+        };
+        if !files.insert(relative.to_string()) {
+            continue;
+        }
+        let path = cwd.join(relative);
+        let preview = std::fs::read_to_string(&path)
+            .map(|text| query::preview_lines(&text, chunk.start_line, chunk.end_line))
+            .unwrap_or_default();
+        hits.push(CodeMeaningHit {
+            path: path.to_string_lossy().into_owned(),
+            relative: relative.to_string(),
+            start_line: chunk.start_line,
+            end_line: chunk.end_line,
+            preview: query::clip_line(
+                &preview.split_whitespace().collect::<Vec<_>>().join(" "),
+                200,
+            ),
+            score: (score * 1000.0).round() / 1000.0,
+        });
+    }
+    hits
+}
+
+#[cfg(test)]
+mod code_meaning_tests {
+    use super::*;
+    use store::StoredChunk;
+
+    fn chunk(item: &str, start_line: usize, vector: Vec<f32>) -> StoredChunk {
+        StoredChunk {
+            item: item.into(),
+            start_line,
+            end_line: start_line + 9,
+            vector,
+        }
+    }
+
+    #[test]
+    fn one_window_per_file_above_the_floor_inside_the_folder() {
+        let dir = std::env::temp_dir().join(format!("code-meaning-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/mail.rs"), "fn  parse_mail()\n{\n}\n").unwrap();
+        let chunks = vec![
+            chunk("app/src/mail.rs", 1, vec![1.0, 0.0]),
+            chunk("app/src/mail.rs", 50, vec![0.9, 0.1]),
+            chunk("app/src/feed.rs", 1, vec![0.5, 0.5]),
+            chunk("other/x.rs", 1, vec![1.0, 0.0]),
+            chunk("app/src/noise.rs", 1, vec![0.1, 0.9]),
+        ];
+        let hits = code_meaning(&chunks, &[1.0, 0.0], "app/", &dir, 5);
+        let got: Vec<(&str, usize)> = hits
+            .iter()
+            .map(|h| (h.relative.as_str(), h.start_line))
+            .collect();
+        assert_eq!(got, [("src/mail.rs", 1), ("src/feed.rs", 1)]);
+        assert_eq!(hits[0].preview, "fn parse_mail()");
+        assert_eq!(code_meaning(&chunks, &[1.0, 0.0], "app/", &dir, 1).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

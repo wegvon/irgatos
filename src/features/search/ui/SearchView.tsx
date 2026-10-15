@@ -1,4 +1,10 @@
-import { Folder, LoaderCircle, MessageSquare, Search } from "../../../shared/ui/icons";
+import {
+  Folder,
+  LoaderCircle,
+  MessageSquare,
+  Search,
+  Sparkles,
+} from "../../../shared/ui/icons";
 import {
   useEffect,
   useMemo,
@@ -49,6 +55,19 @@ import {
   searchSessions,
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
+import {
+  hitsFromChatMeaning,
+  hitsFromCodeMeaning,
+  meaningNotice,
+  searchChatsByMeaning,
+  searchCodeByMeaning,
+  warmChatMeaning,
+  type ChatMeaningResult,
+  type CodeMeaningResult,
+} from "../model/meaningSearch";
+
+/** Meaning needs a round trip to the embedding service; wait for a pause. */
+const MEANING_DEBOUNCE_MS = 450;
 
 const SCOPES: { id: SearchScope; label: string }[] = [
   { id: "all", label: "All" },
@@ -104,6 +123,9 @@ export function SearchView({
   const [sessionTruncated, setSessionTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [chatMeaning, setChatMeaning] = useState<ChatMeaningResult | null>(null);
+  const [codeMeaning, setCodeMeaning] = useState<CodeMeaningResult | null>(null);
+  const [meaningLoading, setMeaningLoading] = useState(false);
 
   const trimmed = query.trim();
   const truncated = contentTruncated || sessionTruncated;
@@ -118,6 +140,9 @@ export function SearchView({
     setContentTruncated(false);
     setSessionTruncated(false);
     setError(null);
+    setChatMeaning(null);
+    setCodeMeaning(null);
+    void warmChatMeaning().catch(() => undefined);
   }, [open]);
 
   useEffect(() => {
@@ -294,6 +319,66 @@ export function SearchView({
     };
   }, [cwd, open, scope, trimmed]);
 
+  useEffect(() => {
+    if (!open || !trimmed) {
+      setChatMeaning(null);
+      setCodeMeaning(null);
+      setMeaningLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const wantSessions = scope === "all" || scope === "conversations";
+    const wantCode = (scope === "all" || scope === "files") && isLocalProject(cwd);
+    if (!wantSessions) setChatMeaning(null);
+    if (!wantCode) setCodeMeaning(null);
+    if (!wantSessions && !wantCode) {
+      setMeaningLoading(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setMeaningLoading(true);
+      const jobs: Promise<void>[] = [];
+      if (wantSessions) {
+        jobs.push(
+          searchChatsByMeaning(trimmed)
+            .then((result) => {
+              if (!cancelled) setChatMeaning(result);
+            })
+            .catch(() => {
+              if (!cancelled) setChatMeaning(null);
+            }),
+        );
+      }
+      if (wantCode) {
+        jobs.push(
+          searchCodeByMeaning(cwd, trimmed)
+            .then((result) => {
+              if (!cancelled) setCodeMeaning(result);
+            })
+            .catch(() => {
+              if (!cancelled) setCodeMeaning(null);
+            }),
+        );
+      }
+      void Promise.all(jobs).then(() => {
+        if (!cancelled) setMeaningLoading(false);
+      });
+    }, MEANING_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [cwd, open, scope, trimmed]);
+
+  const chatMeaningHits = useMemo(
+    () => hitsFromChatMeaning(chatMeaning?.hits ?? []),
+    [chatMeaning],
+  );
+  const codeMeaningHits = useMemo(
+    () => hitsFromCodeMeaning(codeMeaning?.hits ?? []),
+    [codeMeaning],
+  );
+
   const hits = useMemo(() => {
     if (!trimmed) return [];
     return flattenGrouped(
@@ -305,11 +390,15 @@ export function SearchView({
           fileHits,
           contentHits,
           projectHits,
+          chatMeaningHits,
+          codeMeaningHits,
         ),
         scope,
       ),
     );
   }, [
+    chatMeaningHits,
+    codeMeaningHits,
     contentHits,
     fileHits,
     liveMessageHits,
@@ -344,6 +433,10 @@ export function SearchView({
       onOpenSession(hit.sessionId);
     } else if (hit.kind === "message") {
       onOpenSession(hit.sessionId, hit.blockId, trimmed);
+    } else if (hit.kind === "chatMeaning") {
+      onOpenSession(hit.sessionId, hit.blockId);
+    } else if (hit.kind === "codeMeaning") {
+      onOpenFile(hit.path, { line: hit.line }, { exact: true });
     } else onOpenProject(hit.path);
     onClose();
   };
@@ -370,10 +463,18 @@ export function SearchView({
   if (!open) return null;
 
   const empty = !trimmed;
-  const noResults = !empty && hits.length === 0 && !loading;
+  const busy = loading || meaningLoading;
+  const noResults = !empty && hits.length === 0 && !busy;
   const limitNotice = truncated ? (
     <p className="px-2.5 py-1 text-[11px] text-content/45">
       Results limited to the first matches
+    </p>
+  ) : null;
+  const meaningLine = empty ? null : meaningNotice(chatMeaning, codeMeaning);
+  const meaningFooter = meaningLine ? (
+    <p className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] text-content/45">
+      <Sparkles className="size-3 shrink-0" strokeWidth={1.75} />
+      {meaningLine}
     </p>
   ) : null;
 
@@ -409,7 +510,7 @@ export function SearchView({
             data-tauri-drag-region="false"
             className="min-w-0 flex-1 bg-transparent text-[13px] text-content outline-none select-text placeholder:text-content/40"
           />
-          {loading ? (
+          {busy ? (
             <LoaderCircle
               className="size-3.5 shrink-0 animate-spin text-content/35"
               strokeWidth={1.75}
@@ -456,6 +557,7 @@ export function SearchView({
           <>
             <p className="px-2 py-1.5 text-[12px] text-content/50">No results</p>
             {limitNotice}
+            {meaningFooter}
           </>
         ) : (
           <>
@@ -467,6 +569,7 @@ export function SearchView({
               onActive={setActive}
               onOpen={openHit}
             />
+            {meaningFooter}
           </>
         )}
       </div>
@@ -503,7 +606,8 @@ function EmptyState() {
       </div>
 
       <p className="max-w-xs text-center text-[13px] text-content/45">
-        Find files, conversations, messages, and projects.
+        Find files, conversations, messages, and projects, by words or by
+        meaning.
       </p>
     </div>
   );
@@ -582,6 +686,9 @@ function ResultList({
               {row.icon}
             </span>
             <span className="min-w-0 flex-1 truncate">{row.title}</span>
+            {hit.kind === "chatMeaning" || hit.kind === "codeMeaning" ? (
+              <MeaningBadge />
+            ) : null}
             {row.meta ? (
               <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
                 {row.meta}
@@ -617,6 +724,25 @@ function rowCopy(
       meta: hit.title,
     };
   }
+  if (hit.kind === "chatMeaning") {
+    return {
+      icon: (
+        <MessageSquare
+          className="size-3.5 text-content/55"
+          strokeWidth={1.75}
+        />
+      ),
+      title: hit.preview || hit.title,
+      meta: hit.title,
+    };
+  }
+  if (hit.kind === "codeMeaning") {
+    return {
+      icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
+      title: hit.preview || hit.name,
+      meta: `${hit.relative}:${hit.line}`,
+    };
+  }
   if (hit.kind === "file") {
     return {
       icon: <FileTypeIcon name={hit.name} isDir={false} size={16} />,
@@ -644,6 +770,18 @@ function rowCopy(
     title: <MatchText text={hit.name} positions={hit.positions} active />,
     meta: prettyCwd(hit.path),
   };
+}
+
+function MeaningBadge() {
+  return (
+    <span
+      className="flex shrink-0 items-center gap-0.5 rounded bg-accent/10 px-1 py-px text-[10px] text-accent"
+      title="Found by meaning, not by the words you typed"
+    >
+      <Sparkles className="size-2.5" strokeWidth={2} />
+      meaning
+    </span>
+  );
 }
 
 function Highlight({ text, query }: { text: string; query: string }) {

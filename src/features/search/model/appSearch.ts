@@ -74,26 +74,58 @@ export type ProjectHit = {
   positions: number[];
 };
 
+/** A chat turn found by meaning: none of the query's words matched it. */
+export type ChatMeaningHit = {
+  id: string;
+  kind: "chatMeaning";
+  sessionId: string;
+  cwd: string;
+  harness: HarnessId;
+  title: string;
+  updatedAt: number;
+  blockId: string;
+  preview: string;
+  score: number;
+};
+
+/** A window of code in the open project found by meaning. */
+export type CodeMeaningHit = {
+  id: string;
+  kind: "codeMeaning";
+  path: string;
+  relative: string;
+  name: string;
+  line: number;
+  preview: string;
+  score: number;
+};
+
 export type AppSearchHit =
   | ConversationHit
   | MessageHit
   | FileHit
   | ContentHit
-  | ProjectHit;
+  | ProjectHit
+  | ChatMeaningHit
+  | CodeMeaningHit;
 
 export type GroupedHits = {
   conversations: ConversationHit[];
   messages: MessageHit[];
+  chatMeaning: ChatMeaningHit[];
   files: FileHit[];
   content: ContentHit[];
+  codeMeaning: CodeMeaningHit[];
   projects: ProjectHit[];
 };
 
 const ALL_LIMITS: Record<keyof GroupedHits, number> = {
   conversations: 8,
   messages: 8,
+  chatMeaning: 5,
   files: 10,
   content: 12,
+  codeMeaning: 5,
   projects: 6,
 };
 
@@ -102,22 +134,28 @@ const SCOPE_LIMITS: Record<SearchScope, Record<keyof GroupedHits, number>> = {
   conversations: {
     conversations: 24,
     messages: 24,
+    chatMeaning: 16,
     files: 0,
     content: 0,
+    codeMeaning: 0,
     projects: 0,
   },
   files: {
     conversations: 0,
     messages: 0,
+    chatMeaning: 0,
     files: 40,
     content: 48,
+    codeMeaning: 16,
     projects: 0,
   },
   projects: {
     conversations: 0,
     messages: 0,
+    chatMeaning: 0,
     files: 0,
     content: 0,
+    codeMeaning: 0,
     projects: 24,
   },
 };
@@ -381,7 +419,13 @@ export function filterHitsByProject(
 ): AppSearchHit[] {
   if (!cwd || cwd === "~") return hits;
   return hits.filter((hit) => {
-    if (hit.kind === "file" || hit.kind === "content") return true;
+    if (
+      hit.kind === "file" ||
+      hit.kind === "content" ||
+      hit.kind === "codeMeaning"
+    ) {
+      return true;
+    }
     if (hit.kind === "project") return sameProjectPath(hit.path, cwd);
     return sameProjectPath(hit.cwd, cwd);
   });
@@ -394,19 +438,36 @@ export function groupHits(
   const grouped: GroupedHits = {
     conversations: [],
     messages: [],
+    chatMeaning: [],
     files: [],
     content: [],
+    codeMeaning: [],
     projects: [],
   };
   for (const hit of hits) {
     if (hit.kind === "conversation") grouped.conversations.push(hit);
     else if (hit.kind === "message") grouped.messages.push(hit);
+    else if (hit.kind === "chatMeaning") grouped.chatMeaning.push(hit);
     else if (hit.kind === "file") grouped.files.push(hit);
     else if (hit.kind === "content") grouped.content.push(hit);
+    else if (hit.kind === "codeMeaning") grouped.codeMeaning.push(hit);
     else grouped.projects.push(hit);
   }
+  // Word matches already shown say the same thing better.
+  const shownMessages = new Set(
+    grouped.messages.map((hit) => `${hit.sessionId}\u0000${hit.blockId}`),
+  );
+  grouped.chatMeaning = grouped.chatMeaning.filter(
+    (hit) => !shownMessages.has(`${hit.sessionId}\u0000${hit.blockId}`),
+  );
+  const shownFiles = new Set(grouped.content.map((hit) => hit.path));
+  grouped.codeMeaning = grouped.codeMeaning.filter(
+    (hit) => !shownFiles.has(hit.path),
+  );
   grouped.conversations.sort(byScoreThenRecency);
   grouped.messages.sort(byScoreThenRecency);
+  grouped.chatMeaning.sort((a, b) => b.score - a.score);
+  grouped.codeMeaning.sort((a, b) => b.score - a.score);
   grouped.files.sort((a, b) => b.score - a.score || a.relative.localeCompare(b.relative));
   grouped.projects.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
 
@@ -414,8 +475,10 @@ export function groupHits(
   return {
     conversations: grouped.conversations.slice(0, limits.conversations),
     messages: grouped.messages.slice(0, limits.messages),
+    chatMeaning: grouped.chatMeaning.slice(0, limits.chatMeaning),
     files: grouped.files.slice(0, limits.files),
     content: grouped.content.slice(0, limits.content),
+    codeMeaning: grouped.codeMeaning.slice(0, limits.codeMeaning),
     projects: grouped.projects.slice(0, limits.projects),
   };
 }
@@ -424,8 +487,10 @@ export function flattenGrouped(grouped: GroupedHits): AppSearchHit[] {
   return [
     ...grouped.conversations,
     ...grouped.messages,
+    ...grouped.chatMeaning,
     ...grouped.files,
     ...grouped.content,
+    ...grouped.codeMeaning,
     ...grouped.projects,
   ];
 }
