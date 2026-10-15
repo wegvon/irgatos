@@ -4131,7 +4131,7 @@ export const SessionCard = memo(function SessionCard({
   );
 });
 
-function SessionRenameRow({
+export function SessionRenameRow({
   session,
   isActive,
   needsApproval,

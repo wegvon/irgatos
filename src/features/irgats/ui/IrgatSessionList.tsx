@@ -31,7 +31,11 @@ import {
   type IrgatSpawnedSession,
   type Session,
 } from "../../sessions/model/session";
-import { SessionCard } from "../../../app/shell/Sidebar";
+import { SessionCard, SessionRenameRow } from "../../../app/shell/Sidebar";
+import {
+  ExplorerMenu,
+  type ExplorerMenuItem,
+} from "../../files/ui/ExplorerMenu";
 import type { IrgatLook } from "../model/irgat";
 import { EmptyState, PageHeader } from "./irgatPanelParts";
 
@@ -50,6 +54,16 @@ export type ShownIrgatSession = {
  */
 const storedSessions = new Map<string, SessionSummary>();
 
+/** What the sidebar's session cards can do and show, for the same cards here. */
+export type IrgatSessionActions = {
+  /** Finished sessions the user has not looked at yet. */
+  unseenIds?: ReadonlySet<string>;
+  interruptedIds?: ReadonlySet<string>;
+  onRename?: (sessionId: string, title: string) => void;
+  onArchive?: (sessionId: string, archived: boolean) => void;
+  onDelete?: (sessionId: string) => void;
+};
+
 /** Cards for launched sessions, with where each stands, open or saved. */
 export function IrgatSessionList({
   agent,
@@ -59,6 +73,7 @@ export function IrgatSessionList({
   query = "",
   filters = DEFAULT_SESSION_SIDEBAR_FILTERS,
   onOpenSession,
+  actions = {},
 }: {
   agent: IrgatLook;
   launches: readonly IrgatSpawnedSession[];
@@ -68,7 +83,10 @@ export function IrgatSessionList({
   query?: string;
   filters?: SessionSidebarFilters;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  actions?: IrgatSessionActions;
 }) {
+  const [renaming, setRenaming] = useState<string>();
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number }>();
   const launchesKey = JSON.stringify(
     launches.map((entry) => [entry.sessionId, entry.cwd]),
   );
@@ -266,6 +284,64 @@ export function IrgatSessionList({
     return () => observer.disconnect();
   }, [hasMore, shown.length]);
 
+  const hasActions = !!(
+    actions.onRename ||
+    actions.onArchive ||
+    actions.onDelete
+  );
+  const menuSession = menu
+    ? (sessions.find((entry) => entry.id === menu.id) ??
+      history.find((entry) => entry.id === menu.id) ??
+      stored.byId.get(menu.id))
+    : undefined;
+  const archived = !!(
+    menuSession &&
+    "archived" in menuSession &&
+    menuSession.archived
+  );
+  const menuItems: ExplorerMenuItem[] = [
+    ...(actions.onRename
+      ? [{ kind: "item" as const, id: "rename", label: "Rename" }]
+      : []),
+    ...(actions.onArchive
+      ? [
+          {
+            kind: "item" as const,
+            id: "archive",
+            label: archived ? "Unarchive" : "Archive",
+          },
+        ]
+      : []),
+    ...(actions.onDelete
+      ? [
+          { kind: "sep" as const },
+          {
+            kind: "item" as const,
+            id: "delete",
+            label: "Delete",
+            danger: true,
+          },
+        ]
+      : []),
+  ];
+  const onPick = (action: string) => {
+    if (!menu) return;
+    if (action === "rename") setRenaming(menu.id);
+    else if (action === "archive") actions.onArchive?.(menu.id, !archived);
+    else if (action === "delete") actions.onDelete?.(menu.id);
+    setMenu(undefined);
+  };
+  const actionMenu = menu ? (
+    <ExplorerMenu
+      x={menu.x}
+      y={menu.y}
+      items={menuItems}
+      ariaLabel="Session actions"
+      onPick={onPick}
+      onClose={() => setMenu(undefined)}
+    />
+  ) : null;
+
   if (launches.length > 0 && matching.length === 0)
     return (
       <EmptyState icon={Search}>
@@ -295,33 +371,61 @@ export function IrgatSessionList({
                 updatedAt: saved?.updatedAt ?? Date.now(),
               }
             : saved;
-          if (summary)
+          if (summary) {
+            const needsApproval =
+              !!live &&
+              (hasPendingApproval(live.blocks) || !!live.pendingQuestion);
             return (
               <div key={launch.sessionId} data-irgat-session={launch.sessionId}>
-                <SessionCard
-                  session={summary}
-                  modelInFooter
-                  isActive={false}
-                  isSelected={false}
-                  busy={!!live?.busy}
-                  done={false}
-                  linkedUpdate={false}
-                  needsApproval={
-                    !!live &&
-                    (hasPendingApproval(live.blocks) || !!live.pendingQuestion)
-                  }
-                  project={
-                    agent.projects.find(
-                      (project) => project.path === summary.cwd,
-                    )?.name ?? projectName(summary.cwd)
-                  }
-                  now={Date.now()}
-                  onSelect={(id) => {
-                    if (!opening) void open(id);
-                  }}
-                />
+                {renaming === launch.sessionId && actions.onRename ? (
+                  <SessionRenameRow
+                    session={summary}
+                    isActive={false}
+                    needsApproval={needsApproval}
+                    onCommit={(title) => {
+                      setRenaming(undefined);
+                      actions.onRename?.(launch.sessionId, title);
+                    }}
+                    onCancel={() => setRenaming(undefined)}
+                  />
+                ) : (
+                  <SessionCard
+                    session={summary}
+                    modelInFooter
+                    isActive={false}
+                    isSelected={false}
+                    busy={!!live?.busy}
+                    done={!!actions.unseenIds?.has(launch.sessionId)}
+                    linkedUpdate={false}
+                    needsApproval={needsApproval}
+                    interrupted={
+                      !!actions.interruptedIds?.has(launch.sessionId)
+                    }
+                    project={
+                      agent.projects.find(
+                        (project) => project.path === summary.cwd,
+                      )?.name ?? projectName(summary.cwd)
+                    }
+                    now={Date.now()}
+                    onSelect={(id) => {
+                      if (!opening) void open(id);
+                    }}
+                    onContextMenu={
+                      hasActions
+                        ? (id, event) => {
+                            event.preventDefault();
+                            setMenu({ id, x: event.clientX, y: event.clientY });
+                          }
+                        : undefined
+                    }
+                    onArchive={actions.onArchive}
+                    onRename={actions.onRename ? setRenaming : undefined}
+                    onDelete={actions.onDelete}
+                  />
+                )}
               </div>
             );
+          }
           // Not known, either deleted or not looked up: the sidebar's card
           // still, from what the launch recorded.
           const unavailable = unavailableIds.has(launch.sessionId);
@@ -385,6 +489,7 @@ export function IrgatSessionList({
           {error}
         </p>
       ) : null}
+      {actionMenu}
     </div>
   );
 }

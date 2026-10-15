@@ -27,7 +27,7 @@ import {
 } from "../model/overviewSections";
 import { DocumentRow } from "./DocumentRow";
 import { HabitRow, type HabitActions } from "./IrgatHabits";
-import { IrgatSessionList } from "./IrgatSessionList";
+import { IrgatSessionList, type IrgatSessionActions } from "./IrgatSessionList";
 
 export type OverviewAllTab = "sessions" | "documents" | "habits" | "changes";
 
@@ -49,6 +49,7 @@ export function IrgatOverviewAll({
   limits,
   onShowMore,
   onOpenSession,
+  sessionActions,
   onOpenDocument,
   onOpenHabit,
   onNewHabit,
@@ -71,6 +72,7 @@ export function IrgatOverviewAll({
   limits: OverviewLimits;
   onShowMore: (section: OverviewSectionId) => void;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  sessionActions?: IrgatSessionActions;
   onOpenDocument: (id: string) => void;
   onOpenHabit: (id: string) => void;
   onNewHabit: () => void;
@@ -100,6 +102,7 @@ export function IrgatOverviewAll({
                   sessions={sessions}
                   history={history}
                   onOpenSession={onOpenSession}
+                  actions={sessionActions}
                 />
               </div>
               <ShowMore

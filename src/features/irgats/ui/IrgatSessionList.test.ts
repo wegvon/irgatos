@@ -332,3 +332,83 @@ it("mounts a page of cards at a time and the next as the list nears its end", as
   await act(async () => intersect?.([{ isIntersecting: true }]));
   expect(container.querySelectorAll("[data-irgat-session]")).toHaveLength(40);
 });
+
+it("gives its cards the sidebar's states and actions", async () => {
+  const child = {
+    ...newSession("codex", "/repo"),
+    id: launch.sessionId,
+    title: "PR #799 review",
+  };
+  const onRename = vi.fn();
+  const onArchive = vi.fn();
+  const onDelete = vi.fn();
+  await render([child], [launch], {
+    actions: {
+      interruptedIds: new Set([launch.sessionId]),
+      onRename,
+      onArchive,
+      onDelete,
+    },
+  });
+  const card = () =>
+    container.querySelector<HTMLElement>("[data-session-card]")!;
+  expect(card().textContent).toContain("Interrupted");
+
+  const pick = async (label: string) => {
+    await act(async () =>
+      card().dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      ),
+    );
+    const item = [
+      ...document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((entry) => entry.textContent?.includes(label))!;
+    await act(async () => item.click());
+  };
+
+  await pick("Archive");
+  expect(onArchive).toHaveBeenCalledWith(launch.sessionId, true);
+  await pick("Delete");
+  expect(onDelete).toHaveBeenCalledWith(launch.sessionId);
+  await pick("Rename");
+  const input = container.querySelector<HTMLInputElement>(
+    "[data-irgat-session] input",
+  )!;
+  const setValue = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )!.set!;
+  await act(async () => {
+    setValue.call(input, "Release review");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    ),
+  );
+  expect(onRename).toHaveBeenCalledWith(launch.sessionId, "Release review");
+});
+
+it("shows a finished session the user has not seen as done", async () => {
+  const child = {
+    ...newSession("codex", "/repo"),
+    id: launch.sessionId,
+    title: "PR #799 review",
+    blocks: [{ id: "u", role: "user", text: "go" }],
+  } as Session;
+  await render([child]);
+  expect(
+    container.querySelector("[data-session-card]")!.textContent,
+  ).not.toContain("Done");
+  await render([child], [launch], {
+    actions: { unseenIds: new Set([launch.sessionId]) },
+  });
+  expect(container.querySelector("[data-session-card]")!.textContent).toContain(
+    "Done",
+  );
+});

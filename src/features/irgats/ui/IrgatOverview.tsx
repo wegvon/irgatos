@@ -41,6 +41,7 @@ import { IrgatOverviewAll } from "./IrgatOverviewAll";
 import {
   LaunchedSessionPage,
   IrgatSessionList,
+  type IrgatSessionActions,
   type ShownIrgatSession,
 } from "./IrgatSessionList";
 import { EmptyState, PageHeader } from "./irgatPanelParts";
@@ -104,6 +105,8 @@ type Props = {
   tab: IrgatOverviewTab;
   onTabChange: (tab: IrgatOverviewTab) => void;
   onOpenSession: (sessionId: string) => void | Promise<void>;
+  /** Rename, archive and delete for its session cards, as in the sidebar. */
+  sessionActions?: IrgatSessionActions;
   /** A session it started, open over the list until Back. */
   shownSession?: ShownIrgatSession;
   onBackFromSession?: () => void;
@@ -142,6 +145,7 @@ export function IrgatOverview({
   tab,
   onTabChange,
   onOpenSession,
+  sessionActions,
   shownSession,
   onBackFromSession = () => {},
   onOpenSessionInWorkspace = () => {},
@@ -417,6 +421,7 @@ export function IrgatOverview({
                 setLimits((current) => showMoreInSection(current, section))
               }
               onOpenSession={onOpenSession}
+              sessionActions={sessionActions}
               onOpenDocument={onOpenDocument}
               onOpenHabit={(id) => push({ kind: "habit", id })}
               onNewHabit={() => push({ kind: "new-habit" })}
@@ -435,6 +440,7 @@ export function IrgatOverview({
                   query={query}
                   filters={filters}
                   onOpenSession={onOpenSession}
+                  actions={sessionActions}
                 />
               </div>
             ) : (

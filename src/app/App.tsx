@@ -14212,6 +14212,15 @@ function Workspace({
         onOpenSession={(sessionId) =>
           showIrgatLaunchedSession(irgatViewSession.id, sessionId)
         }
+        sessionActions={{
+          unseenIds: unseenFinishedIds,
+          interruptedIds: interruptedSessionIds,
+          onRename: (sessionId, title) =>
+            void onRenameHistorySession(sessionId, title),
+          onArchive: (sessionId, archived) =>
+            void onArchiveHistorySession(sessionId, archived),
+          onDelete: (sessionId) => void onDeleteHistorySession(sessionId),
+        }}
         shownSession={irgatShownSessionView}
         // Back lands on every session it started.
         onBackFromSession={() => {
