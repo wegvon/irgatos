@@ -24,7 +24,12 @@ import {
 } from "../model/overviewSections";
 import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
-import { habitActions, HabitsList, useHabitsLoad } from "./IrgatHabits";
+import {
+  confirmHabitRemoval,
+  habitActions,
+  HabitsList,
+  useHabitsLoad,
+} from "./IrgatHabits";
 import { ArtifactReader } from "../../artifacts/ui/ArtifactPanel";
 import { useIrgatArtifacts } from "../../artifacts/hooks/useArtifacts";
 import { getRegisteredArtifact } from "../../artifacts/model/artifactRegistry";
@@ -217,6 +222,7 @@ export function IrgatOverview({
             onRunNow={() => actions.runNow(habit.id)}
             onToggle={() => actions.toggle(habit.id)}
             onRemove={() => {
+              if (!confirmHabitRemoval(habit.name)) return;
               actions.remove(habit.id);
               back();
             }}

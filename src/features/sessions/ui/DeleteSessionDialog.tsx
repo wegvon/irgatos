@@ -13,7 +13,8 @@ export function DeleteSessionDialog({
   onClose,
 }: {
   title: string;
-  unusedWorktree: string;
+  /** Offers to remove the session's worktree when nothing else uses it. */
+  unusedWorktree?: string;
   onClose: (choice: SessionDeleteChoice) => void;
 }) {
   const [deleteWorktree, setDeleteWorktree] = useState(false);
@@ -24,25 +25,27 @@ export function DeleteSessionDialog({
       onClose={() => onClose({ confirmed: false, deleteWorktree: false })}
     >
       <div className="flex flex-col gap-4 p-4 text-[12px]">
-        <p>“{title}” will be permanently deleted.</p>
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={deleteWorktree}
-            onChange={(e) => setDeleteWorktree(e.target.checked)}
-            className="mt-0.5 accent-accent"
-          />
-          <span>
-            Also delete the unused worktree
-            <span className="mt-1 block break-all text-[11px] text-content/45">
-              {prettyCwd(unusedWorktree)}
+        <p>“{title}” will be permanently deleted. This can’t be undone.</p>
+        {unusedWorktree ? (
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={deleteWorktree}
+              onChange={(e) => setDeleteWorktree(e.target.checked)}
+              className="mt-0.5 accent-accent"
+            />
+            <span>
+              Also delete the unused worktree
+              <span className="mt-1 block break-all text-[11px] text-content/45">
+                {prettyCwd(unusedWorktree)}
+              </span>
+              <span className="mt-1 block text-[11px] text-content/45">
+                The branch is kept. If files have uncommitted changes, the
+                worktree stays.
+              </span>
             </span>
-            <span className="mt-1 block text-[11px] text-content/45">
-              The branch is kept. If files have uncommitted changes, the
-              worktree stays.
-            </span>
-          </span>
-        </label>
+          </label>
+        ) : null}
         <div className="flex justify-end gap-2">
           <button
             type="button"

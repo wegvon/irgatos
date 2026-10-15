@@ -82,6 +82,11 @@ export function useHabitsLoad(
   };
 }
 
+/** Removing a habit drops its schedule and history, so it asks first. */
+export function confirmHabitRemoval(name: string): boolean {
+  return window.confirm(`Remove the habit “${name}”? This can’t be undone.`);
+}
+
 export type HabitActions = {
   runNow(id: string): void;
   toggle(id: string): void;
@@ -262,7 +267,12 @@ export function HabitRow({
             <Play className="size-3.5" strokeWidth={1.75} />
           )}
         </HabitButton>
-        <HabitButton label="Remove" onClick={() => actions.remove(habit.id)}>
+        <HabitButton
+          label="Remove"
+          onClick={() => {
+            if (confirmHabitRemoval(habit.name)) actions.remove(habit.id);
+          }}
+        >
           <Trash2 className="size-3.5" strokeWidth={1.75} />
         </HabitButton>
       </span>
