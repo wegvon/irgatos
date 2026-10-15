@@ -1814,6 +1814,7 @@ function SidebarComponent({
               cwd={cwd}
               recents={recents}
               busy={projectPathBusy(busyProjectPaths, cwd)}
+              busyPaths={busyProjectPaths}
               onSelectProject={onSelectProject}
               onOpenProject={onOpenProject}
               onRemoveProject={onRemoveProject}
@@ -2349,6 +2350,7 @@ function SidebarComponent({
           cwd={cwd}
           recents={recents}
           busy={projectPathBusy(busyProjectPaths, cwd)}
+          busyPaths={busyProjectPaths}
           tabs={visibleTabs}
           activeTab={tab}
           tabShown={panelOpen}
@@ -2491,6 +2493,7 @@ function SidebarProjectPicker({
   cwd,
   recents,
   busy,
+  busyPaths,
   onSelectProject,
   onOpenProject,
   onRemoveProject,
@@ -2521,6 +2524,8 @@ function SidebarProjectPicker({
   cwd: string;
   recents: RecentProject[];
   busy: boolean;
+  /** Projects with an agent at work, marked in the picker. */
+  busyPaths?: Iterable<string>;
   onSelectProject: (path: string) => void;
   onOpenProject?: () => void;
   onRemoveProject?: Props["onRemoveProject"];
@@ -2562,6 +2567,7 @@ function SidebarProjectPicker({
         cwd={cwd}
         recents={recents}
         busy={busy}
+        busyPaths={busyPaths}
         className="flex-1"
         onSelectProject={onSelectProject}
         onOpenProject={onOpenProject}
@@ -2695,6 +2701,7 @@ function CompactProjectRail({
   cwd,
   recents,
   busy,
+  busyPaths,
   tabs,
   activeTab,
   tabShown,
@@ -2736,6 +2743,8 @@ function CompactProjectRail({
   cwd: string;
   recents: RecentProject[];
   busy: boolean;
+  /** Projects with an agent at work, marked in the picker. */
+  busyPaths?: Iterable<string>;
   tabs: SidebarTab[];
   activeTab: SidebarTab;
   tabShown: boolean;
@@ -2789,6 +2798,10 @@ function CompactProjectRail({
       id: irgat.id,
       ...irgatLook(irgat),
       status: irgats.states.get(irgat.id)?.status ?? "idle",
+      unseen:
+        irgat.id === irgats.activeId
+          ? 0
+          : (irgats.unseenCounts?.get(irgat.id) ?? 0),
     }));
     // The roster is read through its snapshot.
   }, [irgats, irgatsSnap]);
@@ -2899,6 +2912,7 @@ function CompactProjectRail({
             cwd={cwd}
             recents={recents}
             busy={busy}
+            busyPaths={busyPaths}
             compact
             className="w-full justify-center"
             onSelectProject={onSelectProject}

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -39,6 +40,8 @@ export type PickerIrgat = {
   mascot: string;
   color: string;
   status?: IrgatStatus;
+  /** Replies the user has not read. */
+  unseen?: number;
 };
 
 /** Irgats listed above the projects; picking one opens it. */
@@ -56,6 +59,8 @@ type Props = {
   /** Project whose rail supplies the choices when it differs from `cwd`. */
   railCwd?: string;
   busy?: boolean;
+  /** Projects with an agent at work, marked like the project rail marks them. */
+  busyPaths?: Iterable<string>;
   mode?: "switch" | "move";
   className?: string;
   buttonClassName?: string;
@@ -81,6 +86,7 @@ export function SearchableProjectPicker({
   recents,
   railCwd,
   busy = false,
+  busyPaths,
   mode = "switch",
   className,
   buttonClassName,
@@ -210,6 +216,7 @@ export function SearchableProjectPicker({
           onProjectContextMenu={onProjectContextMenu}
           projectMenuActive={projectMenuActive}
           irgats={irgats}
+          busyPaths={busyPaths}
         />
       ) : null}
     </div>
@@ -223,6 +230,7 @@ type ProjectPickerPopoverProps = Pick<
   | "onProjectContextMenu"
   | "projectMenuActive"
   | "irgats"
+  | "busyPaths"
 > & {
   anchor: PopoverAnchor;
   projects: readonly RecentProject[];
@@ -243,9 +251,11 @@ export function ProjectPickerPopover({
   onProjectContextMenu,
   projectMenuActive = false,
   irgats,
+  busyPaths,
   label = "Project picker",
   emptyMessage = "No projects found",
 }: ProjectPickerPopoverProps) {
+  const busyPathSet = useMemo(() => [...(busyPaths ?? [])], [busyPaths]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -415,7 +425,27 @@ export function ProjectPickerPopover({
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
               {irgat.name}
             </span>
-            <span className="shrink-0 text-[11px] text-content/40">Irgat</span>
+            {irgat.unseen ? (
+              <span
+                aria-label={`${irgat.unseen} unread`}
+                className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent/20 px-1 text-[10px] font-medium tabular-nums text-accent"
+              >
+                {irgat.unseen > 99 ? "99+" : irgat.unseen}
+              </span>
+            ) : null}
+            <span
+              className={`shrink-0 text-[11px] ${
+                irgat.status === "needs-you"
+                  ? "text-amber-500"
+                  : irgat.status === "working"
+                    ? "text-accent"
+                    : "text-content/40"
+              }`}
+            >
+              {irgat.status && irgat.status !== "idle"
+                ? IRGAT_STATUS_LABEL[irgat.status]
+                : "Irgat"}
+            </span>
           </button>
         ))}
         {filteredProjects.length > 0 ? (
@@ -430,6 +460,9 @@ export function ProjectPickerPopover({
               basename(item.path) || itemSeed,
             );
             const itemLogo = resolveTabGroupLogo(itemKey, groupLogos);
+            const itemBusy = busyPathSet.some((path) =>
+              sameProjectPath(path, item.path),
+            );
             const itemColor = resolveTabGroupColor(
               itemKey,
               groupColors,
@@ -478,6 +511,7 @@ export function ProjectPickerPopover({
                       color={itemColor}
                       name={resolveTabGroupMascot(itemKey, groupMascots)}
                       className="size-3.5"
+                      active={itemBusy}
                     />
                   )}
                 </span>
@@ -487,6 +521,14 @@ export function ProjectPickerPopover({
                 <span className="min-w-0 max-w-28 flex-1 truncate font-mono text-[11px] text-content/40">
                   {prettyParent(item.path)}
                 </span>
+                {itemBusy ? (
+                  <span
+                    data-picker-project-busy
+                    className="shrink-0 text-[11px] text-accent"
+                  >
+                    Working
+                  </span>
+                ) : null}
               </button>
             );
           })
