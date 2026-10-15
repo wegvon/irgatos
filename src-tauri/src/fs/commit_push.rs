@@ -650,6 +650,7 @@ mod tests {
         git_stdout(dir, &["rev-parse", spec]).unwrap()
     }
 
+    #[cfg(unix)]
     fn hook(repo: &Path, name: &str, script: &str) {
         let hooks = repo.join("test-hooks");
         std::fs::create_dir_all(&hooks).unwrap();
