@@ -2,7 +2,10 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus } from "../../shared/ui/icons";
 import type { FreeChatRow } from "../../features/freechat/model/freeChat";
 import {
+  CHAT_STATE_LABEL,
   ChatList,
+  ChatStateMark,
+  chatsState,
   type ChatListActions,
 } from "../../features/freechat/ui/ChatList";
 
@@ -23,6 +26,8 @@ export function ChatsRailSection({
 }: ChatsRailProps) {
   const [collapsed, setCollapsed] = useState(false);
   const Chevron = collapsed ? ChevronRight : ChevronDown;
+  // A collapsed list still says when a chat works, waits on you or replied.
+  const hidden = collapsed ? chatsState(rows) : "idle";
   return (
     <section aria-label="Chats" className="mb-2 shrink-0">
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
@@ -33,6 +38,14 @@ export function ChatsRailSection({
           className="flex min-w-0 flex-1 items-center gap-1 text-left text-xs leading-5 text-content/50 hover:text-content"
         >
           <Chevron className="size-3" /> Chats
+          {hidden !== "idle" ? (
+            <>
+              <span className="sr-only">, {CHAT_STATE_LABEL[hidden]}</span>
+              <span className="ml-1 flex items-center">
+                <ChatStateMark state={hidden} />
+              </span>
+            </>
+          ) : null}
         </button>
         <button
           type="button"

@@ -96,7 +96,7 @@ it("lists irgats once there are some, with the plus in the header", () => {
   );
 });
 
-it("counts a irgat's unread replies, except the one open", () => {
+it("counts a irgat's unread replies, selected or not", () => {
   const irgat = createIrgat();
   const badge = () => container.querySelector("[data-irgat-unread]");
   render({ unseenCounts: new Map([[irgat.id, 3]]) });
@@ -108,8 +108,9 @@ it("counts a irgat's unread replies, except the one open", () => {
   render({ unseenCounts: new Map([[irgat.id, 120]]) });
   expect(badge()?.textContent).toBe("99+");
 
+  // Another chat of the selected Irgat replied; the open one is not counted.
   render({ activeId: irgat.id, unseenCounts: new Map([[irgat.id, 3]]) });
-  expect(badge()).toBeNull();
+  expect(badge()?.textContent).toBe("3");
 });
 
 it("opens and creates independent chats under the same Irgat", () => {
