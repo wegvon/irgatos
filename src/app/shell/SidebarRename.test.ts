@@ -11,6 +11,7 @@ import {
 } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
+import { saveRailIrgatsPinned } from "../../features/settings/model/displayPrefs";
 import {
   createIrgat,
   saveIrgatSessionId,
@@ -652,6 +653,52 @@ describe.each([false, true])("Irgat rail selection (compact: %s)", (compact) => 
     props = { ...props, [active]: false };
     await act(async () => render());
     expect(irgatSelected()).toBe(true);
+  });
+});
+
+describe("compact rail Irgats", () => {
+  it("opens the Irgat's menu on right-click, as the full rail does", async () => {
+    saveRailIrgatsPinned(true);
+    const irgat = createIrgat();
+    const onDelete = vi.fn();
+    props = {
+      ...props,
+      projectRailOpen: false,
+      compactProjectRail: true,
+      onSelectProject: vi.fn(),
+      onOpenProject: vi.fn(),
+      irgats: {
+        states: new Map(),
+        onOpen: vi.fn(),
+        onCreate: vi.fn(),
+        onDelete,
+      },
+    };
+    await act(async () => render());
+    const button = container.querySelector<HTMLElement>(
+      "[data-compact-rail-irgat]",
+    )!;
+    await act(async () =>
+      button.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 4,
+          clientY: 4,
+        }),
+      ),
+    );
+    const menu = document.querySelector(
+      '[role="menu"][aria-label="Irgat options"]',
+    )!;
+    expect(menu).not.toBeNull();
+    expect(menu.querySelector('input[aria-label="Irgat name"]')).not.toBeNull();
+    const remove = [
+      ...menu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ].find((item) => item.textContent?.includes("Delete irgat"))!;
+    await act(async () => remove.click());
+    expect(onDelete).toHaveBeenCalledWith(irgat.id);
+    saveRailIrgatsPinned(false);
   });
 });
 

@@ -544,6 +544,46 @@ export function IrgatRailSection({
 }
 
 /**
+ * The Irgat menu on its own, with the background picker it opens, for places
+ * outside this section such as the compact rail.
+ */
+export function IrgatContextMenu({
+  irgatId,
+  anchor,
+  onDelete,
+  onClose,
+}: {
+  irgatId: string;
+  anchor: PopoverAnchor;
+  onDelete: (irgatId: string) => void;
+  onClose: () => void;
+}) {
+  const [background, setBackground] = useState(false);
+  const irgat = findIrgat(irgatId);
+  if (background && irgat)
+    return (
+      <ProjectBackgroundDialog
+        project={irgatBackgroundKey(irgat.id)}
+        name={irgatLook(irgat).name}
+        locked
+        onClose={onClose}
+      />
+    );
+  return (
+    <IrgatMenu
+      irgatId={irgatId}
+      anchor={anchor}
+      onBackground={() => setBackground(true)}
+      onDelete={() => {
+        onClose();
+        onDelete(irgatId);
+      }}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
  * Right-click menu for a Irgat, like a project's: its name, mascot and color
  * up top, edited in place, then the actions.
  */

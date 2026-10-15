@@ -207,6 +207,7 @@ import { useRailIrgatsPinned } from "../../features/settings/model/displayPrefs"
 import type { PickerIrgats } from "../../features/projects/ui/SearchableProjectPicker";
 import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 import {
+  IrgatContextMenu,
   unreadBadge,
   unreadLabel,
   type IrgatRailProps,
@@ -2777,6 +2778,10 @@ function CompactProjectRail({
   irgatViewActive?: boolean;
 }) {
   const irgatsSnap = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
+  const [compactIrgatMenu, setCompactIrgatMenu] = useState<{
+    id: string;
+    anchor: { x: number; y: number };
+  }>();
   const irgatsPinned = useRailIrgatsPinned();
   const irgatItems = useMemo(() => {
     if (!irgats) return [];
@@ -2867,8 +2872,20 @@ function CompactProjectRail({
                       : (irgats.unseenCounts?.get(irgat.id) ?? 0)
                   }
                   onClick={() => irgats.onOpen(irgat.id)}
+                  onContextMenu={(anchor) =>
+                    setCompactIrgatMenu({ id: irgat.id, anchor })
+                  }
                 />
               ))}
+              {compactIrgatMenu ? (
+                <IrgatContextMenu
+                  key={compactIrgatMenu.id}
+                  irgatId={compactIrgatMenu.id}
+                  anchor={compactIrgatMenu.anchor}
+                  onDelete={irgats.onDelete}
+                  onClose={() => setCompactIrgatMenu(undefined)}
+                />
+              ) : null}
             </div>
             <span
               aria-hidden
@@ -3023,6 +3040,7 @@ function CompactRailIrgat({
   active,
   unseen,
   onClick,
+  onContextMenu,
 }: {
   name: string;
   mascot: string;
@@ -3032,6 +3050,8 @@ function CompactRailIrgat({
   /** Replies the user has not read. */
   unseen: number;
   onClick: () => void;
+  /** Opens the Irgat's menu, as a right-click does on the full rail. */
+  onContextMenu?: (anchor: { x: number; y: number }) => void;
 }) {
   const label = `${name}, ${IRGAT_STATUS_LABEL[status]}`;
   return (
@@ -3042,6 +3062,14 @@ function CompactRailIrgat({
       aria-current={active ? "true" : undefined}
       data-compact-rail-irgat
       onClick={onClick}
+      onContextMenu={
+        onContextMenu
+          ? (event) => {
+              event.preventDefault();
+              onContextMenu({ x: event.clientX, y: event.clientY });
+            }
+          : undefined
+      }
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
           ? "bg-selection"
