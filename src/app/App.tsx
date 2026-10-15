@@ -14296,15 +14296,19 @@ function Workspace({
         chats.find((entry) => entry.busy) ??
         chats[0];
       if (session) states.set(irgat.id, irgatState(session));
+      // Only the chat on screen is read; its siblings' replies still count.
       const count = allIrgatSessionIds(irgat).reduce(
-        (total, id) => total + (irgatReplies.counts.get(id) ?? 0),
+        (total, id) =>
+          id === irgatViewId
+            ? total
+            : total + (irgatReplies.counts.get(id) ?? 0),
         0,
       );
       if (count) unseen.set(irgat.id, count);
     }
     return { states, unseen };
     // The roster is read through its snapshot.
-  }, [irgatsSnap, sessions, irgatReplies.counts]);
+  }, [irgatsSnap, sessions, irgatReplies.counts, irgatViewId]);
   const irgatRail = useStableValue(irgatRailState);
   const busyProjectPaths = useStableValue(
     promptableSessions.flatMap((session) =>
