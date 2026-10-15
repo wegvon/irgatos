@@ -7,6 +7,7 @@ import {
   Internet,
   Inbox,
   Mail,
+  Feed,
   Kanban,
   MoreHorizontal,
   Pin,
@@ -131,7 +132,9 @@ type Props = {
   kanbanActive?: boolean;
   fleetActive?: boolean;
   onOpenMail?: () => void;
+  onOpenFeed?: () => void;
   mailActive?: boolean;
+  feedActive?: boolean;
   /** Shows the project's Artifacts panel; absent outside a project. */
   onOpenArtifacts?: () => void;
   artifactsActive?: boolean;
@@ -182,7 +185,9 @@ export function ProjectRail({
   kanbanActive = false,
   fleetActive = false,
   onOpenMail,
+  onOpenFeed,
   mailActive = false,
+  feedActive = false,
   onOpenArtifacts,
   artifactsActive = false,
   artifactCount = 0,
@@ -375,6 +380,7 @@ export function ProjectRail({
     kanbanActive ||
     fleetActive ||
     mailActive ||
+    feedActive ||
     chatActive ||
     !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
@@ -444,6 +450,15 @@ export function ProjectRail({
                 onClick={onOpenMail}
                 active={mailActive}
                 ariaLabel="Mail"
+              />
+            ) : null}
+            {onOpenFeed ? (
+              <RailAction
+                label="Feed"
+                icon={Feed}
+                onClick={onOpenFeed}
+                active={feedActive}
+                ariaLabel="Feed"
               />
             ) : null}
             {notesEnabled ? (

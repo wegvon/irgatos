@@ -18,6 +18,7 @@ mod cursor_usage;
 mod devin_config;
 mod devin_usage;
 mod external_editor;
+mod feed;
 mod free_chat;
 mod fs;
 mod gitlab;
@@ -511,6 +512,15 @@ pub fn run() {
             semantic_index::semantic_index_cancel,
             semantic_index::semantic_index_remove,
             semantic_index::semantic_index_available,
+            feed::feed_overview,
+            feed::feed_save_interest,
+            feed::feed_remove_interest,
+            feed::feed_items,
+            feed::feed_similar,
+            feed::feed_mark,
+            feed::feed_mark_all_read,
+            feed::feed_set_threshold,
+            feed::feed_save_collector,
             mail::mail_settings,
             mail::mail_accounts,
             mail::mail_save_settings,
