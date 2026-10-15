@@ -7,6 +7,7 @@ mod azure_devops;
 mod browser;
 mod browser_picker;
 mod chat_background;
+mod chat_semantic;
 mod check_command;
 mod checkpoint;
 mod codex_irgat_store;
@@ -516,6 +517,9 @@ pub fn run() {
             semantic_index::semantic_index_cancel,
             semantic_index::semantic_index_remove,
             semantic_index::semantic_index_available,
+            semantic_index::semantic_code_search,
+            chat_semantic::chat_semantic_warm,
+            chat_semantic::chat_semantic_search,
             feed::feed_overview,
             feed::feed_save_interest,
             feed::feed_remove_interest,
