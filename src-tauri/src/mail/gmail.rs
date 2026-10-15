@@ -300,24 +300,40 @@ pub fn html_to_text(html: &str) -> String {
             .iter()
             .any(|t| tag_is(tag, t))
             {
-                out.push('\n');
+                // A tag closing a block and the next one opening make one break.
+                if !out.trim_end_matches(' ').ends_with('\n') || tag_is(tag, "br") {
+                    out.push('\n');
+                }
             }
             i = end;
         } else {
             let next = rest.find('<').map(|n| i + n).unwrap_or(html.len());
-            out.push_str(&html[i..next]);
+            // HTML collapses whitespace runs, source newlines included.
+            let text = &html[i..next];
+            let mut last_space = out.ends_with([' ', '\n']);
+            for c in text.chars() {
+                if c.is_whitespace() {
+                    if !last_space {
+                        out.push(' ');
+                    }
+                    last_space = true;
+                } else {
+                    out.push(c);
+                    last_space = false;
+                }
+            }
             i = next;
         }
     }
     let text = decode_entities(&out);
     let mut lines: Vec<&str> = Vec::new();
-    for line in text.lines().map(str::trim_end) {
+    for line in text.lines().map(str::trim) {
         if line.trim().is_empty() && lines.last().is_some_and(|l| l.trim().is_empty()) {
             continue;
         }
         lines.push(line);
     }
-    lines.join("\n")
+    lines.join("\n").trim().to_string()
 }
 
 /// Whether `rest` (just past `<` or `</`) opens the tag `name` itself, not
@@ -615,6 +631,12 @@ mod tests {
             html_to_text("<head><title>x</title></head><header>Üst</header><p>a &lt;b&gt;</p>"),
             "Üst\na <b>"
         );
+    }
+
+    #[test]
+    fn collapses_html_source_whitespace() {
+        let html = "<table>\n  <tr>\n    <td>\n      ÜCRET\n      ALINDI\n    </td>\n  </tr>\n  <tr><td>  7000&nbsp;TL </td></tr>\n</table>";
+        assert_eq!(html_to_text(html), "ÜCRET ALINDI\n7000 TL");
     }
 
     #[test]
