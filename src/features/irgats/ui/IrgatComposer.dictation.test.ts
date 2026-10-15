@@ -16,6 +16,7 @@ const voice = vi.hoisted(() => ({
   cancel: vi.fn(),
   openSettings: vi.fn(),
   speak: vi.fn(),
+  summarize: vi.fn(),
 }));
 
 vi.mock("../../../platform/tauri/voice", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../../platform/tauri/voice", () => ({
   requestVoiceAccess: voice.request,
   startCapture: voice.start,
   speak: voice.speak,
+  summarizeReply: voice.summarize,
   systemVoices: async () => [],
   openVoicePrivacySettings: voice.openSettings,
   saveTranscriptionKey: vi.fn(),
@@ -126,6 +128,7 @@ beforeEach(() => {
   voice.stop.mockReset();
   voice.cancel.mockReset();
   voice.openSettings.mockReset();
+  voice.summarize.mockReset().mockResolvedValue("Done, and the tests pass.");
   voice.speak.mockReset().mockResolvedValue({
     id: "speech-1",
     done: Promise.resolve({ interrupted: false }),
@@ -331,6 +334,36 @@ describe("Irgat composer dictation", () => {
     await startDictating();
     await act(async () => latest().handlers.onPartial?.("ship it"));
     expect(textarea().value).toBe("ship it");
+  });
+
+  it("stays in voice mode while a message sends, then reads the reply", async () => {
+    let delivered!: () => void;
+    onSubmit.mockReturnValue(
+      new Promise<void>((resolve) => (delivered = resolve)),
+    );
+    setComposerDraft("irgat-voice-test", "run the tests");
+    await renderComposer();
+    await act(async () => modeButton()!.click());
+    await flush();
+    expect(modeButton()!.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => press("Enter"));
+    await flush();
+    expect(onSubmit).toHaveBeenCalledOnce();
+    expect(modeButton()!.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => delivered());
+    await renderComposer({ busy: true });
+    await renderComposer({
+      busy: false,
+      voiceReply: { id: "a1", text: "Ran the tests. All pass." },
+    });
+    expect(modeButton()!.getAttribute("aria-pressed")).toBe("true");
+    expect(voice.summarize).toHaveBeenCalledOnce();
+    expect(voice.speak).toHaveBeenCalledWith(
+      "Done, and the tests pass.",
+      "drama",
+    );
   });
 
   it("keeps the microphone out of a chat box that cannot take messages", async () => {

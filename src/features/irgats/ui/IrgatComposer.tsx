@@ -470,9 +470,10 @@ export function IrgatComposer({
   };
   const voice = useComposerVoice({
     field,
-    enabled: enabled && !submitting,
+    // A message on its way counts as busy: voice mode stays on and reads the reply.
+    enabled,
     hotkeys,
-    busy,
+    busy: busy || submitting,
     draftEmpty: !text.trim() && attachments.length === 0,
     reply: voiceReply,
     write: writeDraft,
