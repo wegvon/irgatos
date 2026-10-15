@@ -99,7 +99,7 @@ fn probe(id: String, raw: Option<String>) -> Option<ServiceStatus> {
         id,
         host,
         state,
-        latency_ms: reached.then(|| took.as_millis() as u64),
+        latency_ms: reached.then_some(took.as_millis() as u64),
         detail,
     })
 }
