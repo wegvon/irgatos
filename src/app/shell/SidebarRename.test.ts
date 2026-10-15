@@ -468,6 +468,15 @@ describe("Chats in the navigation menu", () => {
     expect(
       container.querySelector('[data-free-chat-row="done"] .rounded-full'),
     ).toBeNull();
+
+    // Collapsed, the header carries the most pressing state.
+    const header = container.querySelector<HTMLButtonElement>(
+      'section[aria-label="Chats"] [aria-expanded]',
+    )!;
+    expect(header.querySelector(".bg-amber-500")).toBeNull();
+    act(() => header.click());
+    expect(header.querySelector(".bg-amber-500")).not.toBeNull();
+    expect(header.textContent).toContain("Needs you");
   });
 
   it("renames and deletes a chat from its menu", async () => {

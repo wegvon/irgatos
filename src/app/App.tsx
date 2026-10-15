@@ -5167,7 +5167,11 @@ function Workspace({
       const owner = irgatForSession(current.id);
       const session = {
         ...(owner
-          ? createIrgatChildSession(owner.id, current)
+          ? createIrgatChildSession(
+              owner.id,
+              current,
+              (id) => sessionsRef.current.find((entry) => entry.id === id)?.title,
+            )
           : newSession(
               current.harness,
               current.cwd,
@@ -13118,24 +13122,6 @@ function Workspace({
     },
     [onRemoveHistorySession, refreshFreeChats],
   );
-  // What a Fleet row offers on right-click, as the sidebar's card does.
-  const fleetActions = useMemo(
-    () => ({
-      onStop: (sessionId: string) => onStop(sessionId),
-      onArchive: (sessionId: string) =>
-        void onArchiveHistorySession(sessionId, true),
-      onDelete: (sessionId: string) => void onDeleteHistorySession(sessionId),
-      onBoard: (sessionId: string) => void onSessionBoard(sessionId),
-      boardIds: kanbanSessions.linkedIds,
-    }),
-    [
-      onStop,
-      onArchiveHistorySession,
-      onDeleteHistorySession,
-      onSessionBoard,
-      kanbanSessions.linkedIds,
-    ],
-  );
   const onFreeChatBoard = useCallback(
     async (id: string) => {
       if (!(await ensureOpenSession(id))) return;
@@ -14336,7 +14322,11 @@ function Workspace({
       if (!irgat?.sessionId) return;
       const parent = await ensureOpenSession(irgat.sessionId);
       if (!parent) return;
-      const child = createIrgatChildSession(irgatId, parent);
+      const child = createIrgatChildSession(
+        irgatId,
+        parent,
+        (id) => sessionsRef.current.find((entry) => entry.id === id)?.title,
+      );
       sessionsRef.current = [...sessionsRef.current, child];
       setSessions(sessionsRef.current);
       try {
@@ -14381,6 +14371,39 @@ function Workspace({
         await onOpenIrgat(irgatId);
     },
     [onRemoveHistorySession, onOpenIrgat],
+  );
+  // What a Fleet row offers on right-click, as the sidebar's card does.
+  // An Irgat's chats are deleted through the Irgat, so it drops them too.
+  const onDeleteFleetSession = useCallback(
+    (sessionId: string) => {
+      const irgat = irgatForSession(sessionId);
+      if (!irgat) return void onDeleteHistorySession(sessionId);
+      if (irgat.sessionId === sessionId) return void onDeleteIrgat(irgat.id);
+      void onDeleteIrgatChat(irgat.id, sessionId).catch((error) =>
+        message(String(error), {
+          title: "Could not delete chat",
+          kind: "error",
+        }),
+      );
+    },
+    [onDeleteHistorySession, onDeleteIrgat, onDeleteIrgatChat],
+  );
+  const fleetActions = useMemo(
+    () => ({
+      onStop: (sessionId: string) => onStop(sessionId),
+      onArchive: (sessionId: string) =>
+        void onArchiveHistorySession(sessionId, true),
+      onDelete: onDeleteFleetSession,
+      onBoard: (sessionId: string) => void onSessionBoard(sessionId),
+      boardIds: kanbanSessions.linkedIds,
+    }),
+    [
+      onStop,
+      onArchiveHistorySession,
+      onDeleteFleetSession,
+      onSessionBoard,
+      kanbanSessions.linkedIds,
+    ],
   );
   const onDeleteRailIrgatGroup = useCallback(
     (groupId: string) => void onDeleteIrgatGroup(groupId),
