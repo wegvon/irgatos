@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The status bar is the same in projects, Irgats and chats: the **ADHD** switch moves from the Irgat's composer to its status bar, and Irgats and chats get a **Terminal** button (and `⌘\``) that opens a terminal in their own folder, home included, without leaving the view.
+- Chats get the **Browser** too. It opens beside the chat and is the same browser as in projects, so its pages stay open when you move between a chat and a project.
 - Voice mode in an Irgat chat no longer turns itself off while a message is sending, so the Irgat's reply is read aloud again.
 - Chats in the sidebar show whether each one is working (spinner), waiting on you (amber dot) or has a new reply, and can be renamed, pinned, added to the board or deleted from right-click or the row's **…** menu.
 - Deleting a session always asks first, from the Delete key, the context menu, a one-session tab or **Settings › Archive**, like chats and Irgats do. Removing an Irgat habit and deleting a note ask first too.
