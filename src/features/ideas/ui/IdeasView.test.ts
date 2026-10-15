@@ -248,3 +248,16 @@ it("points to settings when search by meaning is off", async () => {
   await act(async () => button("Open settings", container).click());
   expect(onOpenSettings).toHaveBeenCalled();
 });
+
+it("shows no date until a due date is added", async () => {
+  await render();
+  await act(async () => container.querySelector<HTMLElement>('[data-idea-card="c2"]')!.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector('[aria-label="Due date"]')).toBeNull();
+  await act(async () => button("Add a due date", dialog).click());
+  const input = dialog.querySelector<HTMLInputElement>('[aria-label="Due date"]')!;
+  expect(input.value).toBe("");
+  await type(input, "2026-10-20");
+  const [update] = writes("ideas_card_update");
+  expect((update.card as IdeaCard).dueAt).not.toBeNull();
+});

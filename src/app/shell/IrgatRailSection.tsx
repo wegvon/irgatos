@@ -238,7 +238,8 @@ export function IrgatRailSection({
           const selected = irgat.id === activeId;
           const expanded = irgat.chatsCollapsed === false;
           const Chevron = expanded ? ChevronDown : ChevronRight;
-          const unseen = selected ? 0 : (unseenCounts?.get(irgat.id) ?? 0);
+          // The open chat is already left out of the count.
+          const unseen = unseenCounts?.get(irgat.id) ?? 0;
           const projects = look.projects.length
             ? irgatProjectsPhrase(look.projects)
             : "No projects yet";

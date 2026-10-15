@@ -56,6 +56,7 @@ export function IdeaCardDialog({
 }: Props) {
   const [title, setTitle] = useState(card.title);
   const [description, setDescription] = useState(card.description);
+  const [pickingDue, setPickingDue] = useState(false);
   const [editingDescription, setEditingDescription] = useState(
     card.description.trim() === "",
   );
@@ -316,26 +317,40 @@ export function IdeaCardDialog({
           </Field>
 
           <Field label="Due" icon={<Calendar className="size-3.5" strokeWidth={1.75} />}>
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={dateInputValue(card.dueAt)}
-                aria-label="Due date"
-                onChange={(event) =>
-                  save({ dueAt: parseDateInput(event.target.value) })
-                }
-                className="min-w-0 flex-1 rounded-md border border-stroke bg-transparent px-2 py-1 text-[12px] text-content outline-none focus:border-content/40"
-              />
-              {card.dueAt !== null ? (
-                <button
-                  type="button"
-                  onClick={() => save({ dueAt: null })}
-                  className="rounded px-1.5 py-1 text-content/50 hover:bg-content/8 hover:text-content"
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
+            {card.dueAt === null && !pickingDue ? (
+              // An empty date input in WebKit shows today's date in grey,
+              // which reads as a due date that was never set.
+              <button
+                type="button"
+                onClick={() => setPickingDue(true)}
+                className="rounded px-1.5 py-1 text-[12px] text-content/50 hover:bg-content/8 hover:text-content"
+              >
+                Add a due date
+              </button>
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  autoFocus={card.dueAt === null}
+                  value={dateInputValue(card.dueAt)}
+                  aria-label="Due date"
+                  onChange={(event) =>
+                    save({ dueAt: parseDateInput(event.target.value) })
+                  }
+                  onBlur={() => setPickingDue(false)}
+                  className="min-w-0 flex-1 rounded-md border border-stroke bg-transparent px-2 py-1 text-[12px] text-content outline-none focus:border-content/40"
+                />
+                {card.dueAt !== null ? (
+                  <button
+                    type="button"
+                    onClick={() => save({ dueAt: null })}
+                    className="rounded px-1.5 py-1 text-content/50 hover:bg-content/8 hover:text-content"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            )}
           </Field>
 
           <Field label="Labels" icon={<Tag className="size-3.5" strokeWidth={1.75} />}>

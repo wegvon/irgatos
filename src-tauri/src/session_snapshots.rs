@@ -83,7 +83,10 @@ pub fn take_snapshot(db: &Path) -> Result<PathBuf, String> {
         .execute("VACUUM INTO ?1", [temp.to_string_lossy()])
         .map_err(|e| display_err(db, e))?;
     drop(source);
-    std::fs::File::open(&temp)
+    // Windows only flushes a handle opened for writing.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&temp)
         .and_then(|file| file.sync_all())
         .map_err(|e| display_err(&temp, e))?;
     let mut millis = now_millis();

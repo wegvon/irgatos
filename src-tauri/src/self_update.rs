@@ -1948,6 +1948,8 @@ mod tests {
         );
     }
 
+    // The swap script is a macOS shell script; Windows paths would use `\`.
+    #[cfg(unix)]
     #[test]
     fn quoting_survives_hostile_paths() {
         assert_eq!(shell_quote("/tmp/it's here"), r"'/tmp/it'\''s here'");

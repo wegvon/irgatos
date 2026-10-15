@@ -268,7 +268,12 @@ it("shows interrupted sessions apart and offers row actions on right-click", () 
     ],
     {
       interruptedSessionIds: new Set(["cut"]),
-      actions: { onArchive, onDelete, onStop },
+      actions: {
+        onArchive,
+        onDelete,
+        onStop,
+        canArchive: (id: string) => id !== "busy",
+      },
     },
   );
   expect(bucket("interrupted").textContent).toContain("Migrate schema");
@@ -288,6 +293,7 @@ it("shows interrupted sessions apart and offers row actions on right-click", () 
 
   const busyItems = menuFor("busy");
   expect(busyItems.map((item) => item.textContent)).toContain("Stop");
+  expect(busyItems.map((item) => item.textContent)).not.toContain("Archive");
   pick(busyItems, "Stop");
   expect(onStop).toHaveBeenCalledWith("busy");
 

@@ -22,6 +22,8 @@ type Props = {
   footer?: ReactNode;
   /** The chat's terminal dock, between the pane and the footer. */
   dock?: ReactNode;
+  /** A side panel beside the pane and dock, e.g. the browser. */
+  aside?: ReactNode;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -47,6 +49,7 @@ export function FreeChatView({
   pane,
   footer,
   dock,
+  aside,
   loading = false,
   error = null,
   onRetry,
@@ -178,7 +181,7 @@ export function FreeChatView({
           className="mr-2 flex shrink-0 items-center gap-1"
           data-tauri-drag-region="false"
         >
-          {active && !active.blank ? (
+          {active && (!active.blank || onBoardAlready(active.id)) ? (
             <button
               type="button"
               onClick={() => onBoard(active.id)}
@@ -214,8 +217,15 @@ export function FreeChatView({
         >
           {activeId && pane ? (
             <>
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">{pane}</div>
-              {dock}
+              <div className="relative flex min-h-0 min-w-0 flex-1">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    {pane}
+                  </div>
+                  {dock}
+                </div>
+                {aside}
+              </div>
               {footer}
             </>
           ) : (
