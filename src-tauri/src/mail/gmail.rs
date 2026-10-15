@@ -336,7 +336,9 @@ fn decode_entities(text: &str) -> String {
     while let Some(start) = rest.find('&') {
         out.push_str(&rest[..start]);
         let tail = &rest[start..];
-        let Some(end) = tail[..tail.len().min(12)].find(';') else {
+        // Bytes, not str: a fixed cut can land inside a multi-byte letter.
+        let window = &tail.as_bytes()[..tail.len().min(12)];
+        let Some(end) = window.iter().position(|&b| b == b';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
@@ -619,5 +621,10 @@ mod tests {
     fn truncates_by_characters() {
         assert_eq!(truncate("çok", 2), "ço\n[…truncated]");
         assert_eq!(truncate("ok", 2), "ok");
+        assert_eq!(
+            decode_entities("&gt; &gt; Türel Bey &amp; ekip"),
+            "> > Türel Bey & ekip"
+        );
+        assert_eq!(decode_entities("&ü çok"), "&ü çok");
     }
 }
