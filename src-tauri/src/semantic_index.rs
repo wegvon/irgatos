@@ -9,6 +9,7 @@
 
 mod chunk;
 mod client;
+mod documents;
 mod index;
 mod query;
 mod store;
@@ -550,4 +551,99 @@ pub async fn semantic_index_available(app: AppHandle, cwd: String) -> Result<boo
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// A document to embed: its id and its text.
+type Doc = (String, String);
+
+/// Documents waiting to be embedded per corpus/scope, while a pass runs.
+static DOC_SYNCS: Mutex<Option<HashMap<String, Option<Vec<Doc>>>>> = Mutex::new(None);
+
+/// Embeds a corpus of short documents in the background: `docs` is the
+/// complete set, so missing ids are dropped. Does nothing while semantic
+/// search is off. Calls during a pass coalesce into one more pass.
+pub(crate) fn sync_documents(
+    app: &AppHandle,
+    corpus: &'static str,
+    scope: &'static str,
+    docs: Vec<Doc>,
+) {
+    let Ok(dir) = data_dir(app) else {
+        return;
+    };
+    let Ok(Some((endpoint, key))) = active(&dir) else {
+        return;
+    };
+    let Ok(embedder) = client::Client::new(&endpoint, &key, DIMS) else {
+        return;
+    };
+    let lane = format!("{corpus}\u{0}{scope}");
+    {
+        let Ok(mut syncs) = DOC_SYNCS.lock() else {
+            return;
+        };
+        let syncs = syncs.get_or_insert_with(HashMap::new);
+        if let Some(waiting) = syncs.get_mut(&lane) {
+            *waiting = Some(docs);
+            return;
+        }
+        syncs.insert(lane.clone(), None);
+    }
+    std::thread::spawn(move || {
+        let mut docs = docs;
+        loop {
+            match Store::open(&dir.join(DB_FILE)) {
+                Ok(mut store) => {
+                    if let Err(error) =
+                        documents::sync(&mut store, &embedder, corpus, scope, &docs, DIMS)
+                    {
+                        eprintln!("semantic index: {corpus} sync failed: {error}");
+                    }
+                }
+                Err(error) => eprintln!("semantic index: {error}"),
+            }
+            let Ok(mut syncs) = DOC_SYNCS.lock() else {
+                return;
+            };
+            let syncs = syncs.get_or_insert_with(HashMap::new);
+            match syncs.get_mut(&lane).and_then(Option::take) {
+                Some(next) => docs = next,
+                None => {
+                    syncs.remove(&lane);
+                    return;
+                }
+            }
+        }
+    });
+}
+
+/// Document ids by meaning, best first, with their cosine. None while
+/// semantic search is off.
+pub(crate) fn rank_documents(
+    app: &AppHandle,
+    corpus: &str,
+    scope: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Option<Vec<(String, f32)>>, String> {
+    let dir = data_dir(app)?;
+    let Some((endpoint, key)) = active(&dir)? else {
+        return Ok(None);
+    };
+    let query: String = query.chars().take(MAX_QUERY_CHARS).collect();
+    let vector = client::Client::for_query(&endpoint, &key, DIMS)?
+        .embed(&[query], client::Task::Query)?
+        .pop()
+        .unwrap_or_default();
+    let store = Store::open(&dir.join(DB_FILE))?;
+    documents::rank(&store, corpus, scope, &vector, limit).map(Some)
+}
+
+/// The folder name at the end of a path, for showing a project by name.
+pub(crate) fn last_path_segment(path: &str) -> &str {
+    path.trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
 }
