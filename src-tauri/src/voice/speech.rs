@@ -500,6 +500,8 @@ mod tests {
         let mut player = tempfile::NamedTempFile::new().unwrap();
         writeln!(player, "#!/bin/sh\nexec sleep 30").unwrap();
         std::fs::set_permissions(player.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        // Linux refuses to exec a file still open for writing (ETXTBSY).
+        let player = player.into_temp_path();
         let speaker = Box::leak(Box::new(Speaker::new()));
         let (endpoint, request, release) = server(wav());
         let (tx, rx) = mpsc::channel();
@@ -507,7 +509,7 @@ mod tests {
         speaker.speak_at(
             SpeechProvider::Drama,
             endpoint,
-            player.path().to_string_lossy().into_owned(),
+            player.to_string_lossy().into_owned(),
             "first".into(),
             "Hi".into(),
             move |end| {

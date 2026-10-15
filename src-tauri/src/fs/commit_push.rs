@@ -650,16 +650,14 @@ mod tests {
         git_stdout(dir, &["rev-parse", spec]).unwrap()
     }
 
+    #[cfg(unix)]
     fn hook(repo: &Path, name: &str, script: &str) {
+        use std::os::unix::fs::PermissionsExt;
         let hooks = repo.join("test-hooks");
         std::fs::create_dir_all(&hooks).unwrap();
         let path = hooks.join(name);
         std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         let hooks = hooks.to_string_lossy().into_owned();
         git(repo, &["config", "core.hooksPath", &hooks]);
     }
