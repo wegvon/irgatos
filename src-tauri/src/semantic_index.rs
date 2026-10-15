@@ -632,7 +632,7 @@ pub(crate) fn rank_documents(
     };
     let query: String = query.chars().take(MAX_QUERY_CHARS).collect();
     let vector = client::Client::for_query(&endpoint, &key, DIMS)?
-        .embed(&[query], client::Task::Query)?
+        .embed(&[query], client::Task::SearchQuery)?
         .pop()
         .unwrap_or_default();
     let store = Store::open(&dir.join(DB_FILE))?;
