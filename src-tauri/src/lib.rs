@@ -70,6 +70,7 @@ mod trackpad_zoom;
 #[cfg(target_os = "windows")]
 mod tray;
 mod voice;
+mod web_access;
 mod window;
 mod window_transfer;
 #[cfg(windows)]
@@ -283,6 +284,7 @@ pub fn run() {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
             control::init(app.handle())?;
+            web_access::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
             menu::install(app.handle())?;
@@ -524,6 +526,10 @@ pub fn run() {
             feed::feed_set_threshold,
             feed::feed_save_collector,
             service_status::service_status_check,
+            web_access::web_access_status,
+            web_access::web_access_set_enabled,
+            web_access::web_access_rotate_token,
+            web_access::web_access_reply,
             mail::mail_settings,
             mail::mail_accounts,
             mail::mail_save_settings,

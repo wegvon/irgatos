@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#16161a">
+<title>Irgatos</title>
+<style>
+:root {
+  --bg: #f7f7f8; --panel: #ffffff; --text: #18181b; --muted: #71717a; --line: #e4e4e7;
+  --accent: #2563eb; --accent-text: #ffffff; --warn: #b45309; --warn-bg: #fef3c7;
+  --run: #059669; --danger: #dc2626; --user: #eef2ff; --code: #f4f4f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a; --panel: #1f1f24; --text: #ececf1; --muted: #9b9ba6; --line: #2e2e35;
+    --accent: #3b82f6; --accent-text: #ffffff; --warn: #fbbf24; --warn-bg: #3a2d10;
+    --run: #34d399; --danger: #f87171; --user: #23263a; --code: #26262d;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-text-size-adjust: 100%; }
+header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--bg); border-bottom: 1px solid var(--line); }
+header h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header .sub { color: var(--muted); font-size: 12px; font-weight: 400; }
+button { font: inherit; border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; background: var(--line); color: var(--text); }
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.danger { background: transparent; color: var(--danger); border: 1px solid var(--line); }
+button:disabled { opacity: .45; cursor: default; }
+main { max-width: 860px; margin: 0 auto; padding: 12px 16px calc(24px + env(safe-area-inset-bottom)); }
+.group h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 6px; font-weight: 600; }
+.card { display: block; width: 100%; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; color: inherit; }
+.card .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .meta { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--muted); }
+.dot.needsYou { background: var(--warn); } .dot.running { background: var(--run); } .dot.review { background: var(--accent); }
+.empty, .note { color: var(--muted); text-align: center; padding: 40px 0; }
+.msg { margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.msg.user { background: var(--user); margin-left: 12%; }
+.msg.system, .msg.tool, .msg.reasoning { background: transparent; border: 0; padding: 2px 4px; color: var(--muted); font-size: 13px; }
+.msg pre { background: var(--code); padding: 10px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+.msg code { background: var(--code); padding: 1px 4px; border-radius: 4px; font-size: 13px; }
+.msg pre code { background: none; padding: 0; }
+.msg p { margin: 0 0 8px; } .msg p:last-child { margin-bottom: 0; }
+.msg a { color: var(--accent); }
+.request { background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 12px; padding: 12px; margin: 12px 0; }
+.request .label { font-weight: 600; margin-bottom: 4px; }
+.request .detail { font: 12px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); margin-bottom: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.request .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.request label { display: block; margin: 4px 0; }
+.composer { position: sticky; bottom: 0; background: var(--bg); padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: flex-end; }
+textarea, input[type=text], input[type=password] { flex: 1; width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; resize: none; }
+.error { color: var(--danger); font-size: 13px; padding: 6px 0; }
+.login { max-width: 420px; margin: 60px auto; display: flex; flex-direction: column; gap: 10px; }
+.working { color: var(--run); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <button id="back" hidden aria-label="Back">‹</button>
+  <h1 id="title">Irgatos</h1>
+  <button id="stop" class="danger" hidden>Stop</button>
+</header>
+<main id="main"><div class="note">Loading…</div></main>
+<script>
+"use strict";
+const $main = document.getElementById("main");
+const $title = document.getElementById("title");
+const $back = document.getElementById("back");
+const $stop = document.getElementById("stop");
+const BUCKETS = [["needsYou", "Needs you"], ["running", "Running"], ["review", "Ready to review"], ["interrupted", "Interrupted"], ["idle", "Idle"]];
+let current = null;      // open session id
+let timer = 0;
+let lastSession = null;
+let draft = "";
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/** Small, safe Markdown: code, bold, links, headings and paragraphs. */
+function md(src) {
+  const parts = String(src ?? "").split(/```[^\n]*\n?/);
+  return parts.map((part, i) => {
+    if (i % 2) return `<pre><code>${esc(part.replace(/\n$/, ""))}</code></pre>`;
+    return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) => {
+      let h = esc(p)
+        .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+        .replace(/^#{1,6}\s+(.*)$/gm, "<strong>$1</strong>")
+        .replace(/\n/g, "<br>");
+      return `<p>${h}</p>`;
+    }).join("");
+  }).join("");
+}
+
+async function api(action, input, write) {
+  const url = write ? `/api/${action}` : `/api/${action}?${new URLSearchParams(input || {})}`;
+  const res = await fetch(url, write ? {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json", "X-Irgatos-Web": "1" },
+    body: JSON.stringify(input || {}),
+  } : { credentials: "same-origin" });
+  const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  if (res.status === 401) { showLogin(body.error); throw new Error("signed out"); }
+  if (!body.ok) throw new Error(body.error || "Something went wrong");
+  return body.result;
+}
+
+function schedule(fn, ms) { clearTimeout(timer); timer = setTimeout(fn, document.hidden ? Math.max(ms, 15000) : ms); }
+
+function showLogin(error) {
+  clearTimeout(timer);
+  current = null;
+  $back.hidden = true; $stop.hidden = true; $title.textContent = "Irgatos";
+  $main.innerHTML = `<form class="login" id="login">
+    <div>Paste the access token from <strong>Irgatos → Settings → Connections → Browser access</strong>.</div>
+    <input type="password" id="token" autocomplete="off" placeholder="Access token" autofocus>
+    <button class="primary">Sign in</button>
+    ${error && error !== "Sign in with the access token from Irgatos Settings." ? `<div class="error">${esc(error)}</div>` : ""}
+  </form>`;
+  document.getElementById("login").onsubmit = (e) => {
+    e.preventDefault();
+    const t = document.getElementById("token").value.trim();
+    if (t) location.href = `/?token=${encodeURIComponent(t)}`;
+  };
+}
+
+function ago(at) {
+  if (!at) return "";
+  const s = Math.max(0, (Date.now() - at) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+}
+
+async function showOverview() {
+  current = null; lastSession = null;
+  $back.hidden = true; $stop.hidden = true;
+  $title.innerHTML = `Irgatos <span class="sub">on your Mac</span>`;
+  try {
+    const data = await api("overview");
+    if (current) return;
+    const html = BUCKETS.map(([key, label]) => {
+      const rows = data[key] || [];
+      if (!rows.length) return "";
+      return `<section class="group"><h2>${label}</h2>${rows.map((e) => {
+        const what = e.requests.length ? e.requests.map((r) => r.kind === "question" ? "Question" : r.label).join(" · ")
+          : e.activity || ago(e.at);
+        return `<button class="card" data-id="${esc(e.sessionId)}">
+          <div class="title"><span class="dot ${key}"></span>${esc(e.title)}</div>
+          <div class="meta">${esc(e.projectLabel)}${e.branch ? " · " + esc(e.branch) : ""} · ${esc(what)}</div></button>`;
+      }).join("")}</section>`;
+    }).join("");
+    $main.innerHTML = html || `<div class="empty">No chats are open in Irgatos.</div>`;
+    $main.querySelectorAll(".card").forEach((el) => el.onclick = () => openSession(el.dataset.id));
+    schedule(showOverview, 3000);
+  } catch (error) {
+    if (error.message === "signed out") return;
+    $main.innerHTML = `<div class="note">${esc(error.message)}</div>`;
+    schedule(showOverview, 5000);
+  }
+}
+
+function openSession(id) {
+  current = id; lastSession = null; draft = "";
+  history.pushState({ id }, "", `#${encodeURIComponent(id)}`);
+  renderSession();
+}
+
+function requestHtml(r) {
+  if (r.kind === "approval") {
+    return `<div class="request"><div class="label">${esc(r.label)}</div>
+      ${r.detail ? `<div class="detail">${esc(r.detail)}</div>` : ""}
+      <div class="row"><button class="primary" data-approve="${r.requestId}" data-decision="allow">Allow</button>
+      <button data-approve="${r.requestId}" data-decision="deny">Deny</button></div></div>`;
+  }
+  const p = r.prompt;
+  return `<form class="request" data-question="${r.requestId}">
+    ${p.title ? `<div class="label">${esc(p.title)}</div>` : ""}
+    ${p.questions.map((q) => `<div style="margin:8px 0">
+      <div class="label">${esc(q.prompt)}</div>
+      ${q.options.map((o) => `<label><input type="${q.multiSelect ? "checkbox" : "radio"}" name="${esc(q.id)}" value="${esc(o.id)}"> ${esc(o.label)}${o.description ? ` <span class="sub">— ${esc(o.description)}</span>` : ""}</label>`).join("")}
+      ${q.allowCustom || !q.options.length ? `<input type="text" data-custom="${esc(q.id)}" placeholder="Your answer">` : ""}
+    </div>`).join("")}
+    <div class="row"><button class="primary">Answer</button><button type="button" data-skip>Skip</button></div></form>`;
+}
+
+function blockHtml(b) {
+  if (b.role === "tool") return `<div class="msg tool">${esc(b.tool ? b.tool.label : "Tool")}${b.tool && b.tool.status ? ` · ${esc(b.tool.status)}` : ""}</div>`;
+  if (b.role === "reasoning") return "";
+  if (b.role === "approval" || (!b.text && !b.tool)) return "";
+  return `<div class="msg ${esc(b.role)}">${md(b.text)}</div>`;
+}
+
+async function renderSession() {
+  const id = current;
+  if (!id) return;
+  $back.hidden = false;
+  try {
+    const s = await api("session", { id });
+    if (current !== id) return;
+    const signature = JSON.stringify([s.blocks, s.requests, s.busy]);
+    $title.textContent = s.title;
+    $stop.hidden = !s.busy;
+    if (!lastSession || lastSession !== signature) {
+      const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
+      const active = document.activeElement;
+      const typing = active && active.id === "text";
+      if (typing) draft = active.value;
+      const sub = [s.irgat, s.cwd].filter(Boolean).join(" · ");
+      $main.innerHTML = `<div class="sub" style="color:var(--muted);font-size:12px">${esc(sub)}</div>
+        ${s.omitted ? `<div class="note" style="padding:8px 0">${s.omitted} earlier messages are on the Mac.</div>` : ""}
+        ${s.blocks.map(blockHtml).join("")}
+        ${s.requests.map(requestHtml).join("")}
+        ${s.busy ? `<div class="working">Working…</div>` : ""}
+        <div id="err" class="error"></div>
+        <form class="composer" id="composer"><textarea id="text" rows="2" placeholder="${s.busy ? "Send a follow-up" : "Message"}"></textarea>
+        <button class="primary" id="send">Send</button></form>`;
+      const box = document.getElementById("text");
+      box.value = draft;
+      box.oninput = () => { draft = box.value; };
+      box.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } };
+      document.getElementById("composer").onsubmit = (e) => { e.preventDefault(); send(); };
+      $main.querySelectorAll("[data-approve]").forEach((el) => el.onclick = () =>
+        act("approval", { sessionId: id, requestId: Number(el.dataset.approve), decision: el.dataset.decision }));
+      $main.querySelectorAll("form[data-question]").forEach((form) => {
+        const reqId = Number(form.dataset.question);
+        form.onsubmit = (e) => { e.preventDefault(); act("answer", { sessionId: id, requestId: reqId, ...collect(form) }); };
+        form.querySelector("[data-skip]").onclick = () => act("answer", { sessionId: id, requestId: reqId, skip: true });
+      });
+      if (typing) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+      if (!lastSession || nearBottom) window.scrollTo(0, document.body.scrollHeight);
+      lastSession = signature;
+    }
+    schedule(renderSession, s.busy || s.requests.length ? 1500 : 4000);
+  } catch (error) {
+    if (error.message === "signed out" || current !== id) return;
+    const err = document.getElementById("err");
+    if (err) err.textContent = error.message; else $main.innerHTML = `<div class="note">${esc(error.message)}</div>`;
+    schedule(renderSession, 5000);
+  }
+}
+
+function collect(form) {
+  const answers = {}, custom = {};
+  form.querySelectorAll("input:checked").forEach((el) => (answers[el.name] ||= []).push(el.value));
+  form.querySelectorAll("[data-custom]").forEach((el) => { if (el.value.trim()) custom[el.dataset.custom] = el.value.trim(); });
+  return { answers, custom };
+}
+
+async function act(action, input) {
+  const err = document.getElementById("err");
+  $main.querySelectorAll("button").forEach((b) => b.disabled = true);
+  try {
+    await api(action, input, true);
+    if (action === "send") draft = "";
+    lastSession = null;
+  } catch (error) {
+    if (err) err.textContent = error.message;
+  }
+  $main.querySelectorAll("button").forEach((b) => b.disabled = false);
+  renderSession();
+}
+
+function send() {
+  const box = document.getElementById("text");
+  const text = box.value.trim();
+  if (!text || !current) return;
+  draft = box.value;
+  act("send", { sessionId: current, text });
+}
+
+$back.onclick = () => history.back();
+$stop.onclick = () => current && act("stop", { sessionId: current });
+window.onpopstate = () => {
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (id) { current = id; lastSession = null; renderSession(); } else showOverview();
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden) (current ? renderSession : showOverview)(); });
+
+const start = decodeURIComponent(location.hash.slice(1));
+if (start) { current = start; renderSession(); } else showOverview();
+</script>
+</body>
+</html>

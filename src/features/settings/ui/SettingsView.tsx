@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
+import { WebAccessSettings } from "../../web-access/ui/WebAccessSettings";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownCircle,
@@ -666,7 +667,12 @@ export function SettingsView({
               {section === "general" ? (
                 <GeneralPage onOpenWhatsNew={onOpenWhatsNew} />
               ) : null}
-              {section === "connections" ? <ConnectionsSettings /> : null}
+              {section === "connections" ? (
+                <>
+                  <ConnectionsSettings />
+                  <WebAccessSettings />
+                </>
+              ) : null}
               {section === "appearance" ? (
                 <AppearancePage appearance={appearance} />
               ) : null}
