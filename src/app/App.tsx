@@ -1444,6 +1444,11 @@ function Workspace({
   const [inboxViewOpen, setInboxViewOpen] = useState(false);
   // Mounted on first open so the page survives hiding the panel.
   const [browserMounted, setBrowserMounted] = useState(false);
+  const [browserHost] = useState(() => {
+    const host = document.createElement("div");
+    host.className = "contents";
+    return host;
+  });
   const [browserOpen, setBrowserOpen] = useState(false);
   const onToggleBrowser = useCallback(() => {
     setBrowserMounted(true);
@@ -15187,7 +15192,14 @@ function Workspace({
                           }
                         />
                       ))}
-                      {browserMounted ? (
+                      {browserMounted && !chatViewOpen ? (
+                        <DockHostSlot host={browserHost} className="contents" />
+                      ) : null}
+                      {browserMounted
+                        ? // One browser for the whole window: it sits beside
+                          // the session, or beside the open chat, and keeps
+                          // its pages while it moves between them.
+                          createPortal(
                         <BrowserPanel
                           visible={
                             browserOpen &&
@@ -15199,12 +15211,14 @@ function Workspace({
                             !kanbanViewOpen &&
                             !fleetViewOpen &&
                             !mailViewOpen &&
-                            !chatViewOpen
+                            (!chatViewOpen || !!freeChat)
                           }
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
-                        />
-                      ) : null}
+                        />,
+                            browserHost,
+                          )
+                        : null}
                     </main>
                   </div>
                   {irgatCovers ? irgatOverviewPanel : null}
@@ -15393,7 +15407,14 @@ function Workspace({
                           openSettings("providers", "provider-accounts")
                         }
                         {...viewTerminalFooterProps}
+                        browserOpen={browserOpen}
+                        onToggleBrowser={onToggleBrowser}
                       />
+                    ) : undefined
+                  }
+                  aside={
+                    freeChat && browserMounted ? (
+                      <DockHostSlot host={browserHost} className="contents" />
                     ) : undefined
                   }
                   dock={
