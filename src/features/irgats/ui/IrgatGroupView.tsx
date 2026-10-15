@@ -52,6 +52,7 @@ import {
   type IrgatGroupMessage,
 } from "../model/irgatGroups";
 import { applyAdhdCommand, parseAdhdCommand } from "../../adhd/model/adhdMode";
+import { AdhdModeChip } from "../../adhd/ui/AdhdModeChip";
 import { getComposerDraft } from "../../sessions/model/draftCache";
 import { IrgatComposer } from "./IrgatComposer";
 import { GroupMascots } from "./IrgatGroupRail";
@@ -342,6 +343,15 @@ export function IrgatGroupView({
           mentions={members}
           onDraftChange={setDraft}
           onSubmit={send}
+          // The room's own switch, keyed like /i-have-adhd and the runner.
+          tools={
+            <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55">
+              <AdhdModeChip
+                session={{ id: irgatGroupViewKey(groupId) }}
+                variant="composer"
+              />
+            </div>
+          }
           controls={
             busy ? (
               <button
