@@ -34,6 +34,7 @@ describe("isFromMe", () => {
 describe("mailContext", () => {
   it("names the tools, forbids sending and marks mail as untrusted", () => {
     const text = mailContext("/bin/irgat app", {
+      account: "google.org.work.",
       threadId: "t1",
       subject: 'Say "hi"',
     });

@@ -47,12 +47,22 @@ export type MailThread = {
   me: string;
 };
 
+/** One Gmail connection in Executor; `id` is its tool prefix. */
+export type MailAccount = { id: string; email: string };
+
+/** A thread in a list, with the account it belongs to. */
+export type MailRow = MailThreadSummary & { account: string };
+
 export type MailPage = {
-  threads: MailThreadSummary[];
-  nextPageToken: string | null;
+  /** Newest first across the accounts asked for. */
+  threads: MailRow[];
+  /** Per account; empty when every account is at its end. */
+  nextPageTokens: Record<string, string>;
+  errors: { account: string; message: string }[];
 };
 
-export type MailLink = { threadId: string; subject: string };
+/** `account` is empty in links saved before accounts existed. */
+export type MailLink = { account: string; threadId: string; subject: string };
 
 /** The Gmail searches offered above the list. */
 export const MAIL_FOLDERS = [
@@ -76,31 +86,53 @@ export const loadMailSettings = () => invoke<MailSettings>("mail_settings");
 export const saveMailSettings = (endpoint: string, key?: string) =>
   invoke<MailSettings>("mail_save_settings", { endpoint, key: key ?? null });
 
-export const listMail = (query: string, pageToken?: string | null) =>
-  invoke<MailPage>("mail_list", { query, pageToken: pageToken ?? null });
+/** `fresh` looks for accounts added in Executor since the last look. */
+export const loadMailAccounts = (fresh = false) =>
+  invoke<MailAccount[]>("mail_accounts", { fresh });
 
-export const loadMailThread = (threadId: string) =>
-  invoke<MailThread>("mail_thread", { threadId });
+/**
+ * `accounts`: empty means every account. `pageTokens`: the previous page's
+ * `nextPageTokens` to load more; accounts without a token are skipped then.
+ */
+export const listMail = (
+  query: string,
+  accounts: string[],
+  pageTokens?: Record<string, string> | null,
+) =>
+  invoke<MailPage>("mail_list", {
+    query,
+    accounts,
+    pageTokens: pageTokens ?? null,
+  });
 
-export const saveMailDraft = (threadId: string, body: string) =>
-  invoke<MailDraft>("mail_save_draft", { threadId, body });
+export const loadMailThread = (account: string, threadId: string) =>
+  invoke<MailThread>("mail_thread", { account, threadId });
 
-export const sendMailDraft = (draftId: string) =>
-  invoke<void>("mail_send_draft", { draftId });
+export const saveMailDraft = (
+  account: string,
+  threadId: string,
+  body: string,
+) => invoke<MailDraft>("mail_save_draft", { account, threadId, body });
+
+export const sendMailDraft = (account: string, draftId: string) =>
+  invoke<void>("mail_send_draft", { account, draftId });
 
 export const modifyMailThread = (
+  account: string,
   threadId: string,
   action: "read" | "archive",
-) => invoke<void>("mail_modify", { threadId, action });
+) => invoke<void>("mail_modify", { account, threadId, action });
 
 export const linkMailSession = (
   sessionId: string,
+  account: string,
   threadId: string,
   subject: string,
-) => invoke<void>("mail_link_session", { sessionId, threadId, subject });
+) =>
+  invoke<void>("mail_link_session", { sessionId, account, threadId, subject });
 
-export const mailThreadSessions = (threadId: string) =>
-  invoke<string[]>("mail_thread_sessions", { threadId }).catch(
+export const mailThreadSessions = (account: string, threadId: string) =>
+  invoke<string[]>("mail_thread_sessions", { account, threadId }).catch(
     () => [] as string[],
   );
 

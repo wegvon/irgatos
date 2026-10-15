@@ -21,6 +21,7 @@ import {
   MAIL_FOLDERS,
   isFromMe,
   listMail,
+  loadMailAccounts,
   loadMailSettings,
   loadMailThread,
   mailQuery,
@@ -30,13 +31,16 @@ import {
   saveMailSettings,
   sendMailDraft,
   senderName,
+  type MailAccount,
   type MailFolderId,
+  type MailRow,
   type MailSettings,
   type MailThread,
   type MailThreadSummary,
 } from "../model/mail";
 
 export type MailAskRequest = {
+  account: string;
   threadId: string;
   subject: string;
   project: string;
@@ -65,8 +69,18 @@ const message = (error: unknown) =>
 const time = (ms: number) =>
   ms ? formatRelativeTime(new Date(ms).toISOString()) : "";
 
+/** A thread is only unique within its account. */
+type Selection = { account: string; id: string };
+
+const rowKey = (account: string, id: string) => `${account}\n${id}`;
+
+/** `work@x.com` → `work`, short enough for a list row. */
+const shortAddress = (email: string) => email.split("@")[0] || email;
+
 let rememberedFolder: MailFolderId = "inbox";
-let rememberedThreadId: string | null = null;
+/** "" shows every account. */
+let rememberedAccount = "";
+let rememberedSelection: Selection | null = null;
 
 export function MailView({
   besideRail = false,
@@ -86,12 +100,17 @@ export function MailView({
   const [folder, setFolder] = useState<MailFolderId>(rememberedFolder);
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
-  const [threads, setThreads] = useState<MailThreadSummary[]>([]);
-  const [nextPage, setNextPage] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<MailAccount[] | null>(null);
+  const [account, setAccount] = useState(rememberedAccount);
+  const [threads, setThreads] = useState<MailRow[]>([]);
+  const [nextPages, setNextPages] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    rememberedThreadId,
+  const [accountErrors, setAccountErrors] = useState<
+    { account: string; message: string }[]
+  >([]);
+  const [selected, setSelected] = useState<Selection | null>(
+    rememberedSelection,
   );
   const listRequest = useRef(0);
   const listLock = useLockOverscroll<HTMLDivElement>();
@@ -106,8 +125,35 @@ export function MailView({
 
   useEffect(() => {
     rememberedFolder = folder;
-    rememberedThreadId = selectedId;
-  }, [folder, selectedId]);
+    rememberedAccount = account;
+    rememberedSelection = selected;
+  }, [folder, account, selected]);
+
+  const loadAccounts = useCallback(async (fresh = false) => {
+    try {
+      const found = await loadMailAccounts(fresh);
+      setAccounts(found);
+      // An account removed in Executor falls back to all accounts.
+      setAccount((current) =>
+        found.some((a) => a.id === current) ? current : "",
+      );
+    } catch (err: unknown) {
+      setAccounts([]);
+      setError(message(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (connected) void loadAccounts();
+    else setAccounts(null);
+  }, [connected, loadAccounts]);
+
+  const emailOf = useCallback(
+    (id: string) =>
+      accounts?.find((a) => a.id === id)?.email ??
+      (accounts?.length === 1 ? accounts[0].email : ""),
+    [accounts],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -128,13 +174,15 @@ export function MailView({
       try {
         const page = await listMail(
           mailQuery(folder, appliedSearch),
-          more ? nextPage : null,
+          account ? [account] : [],
+          more ? nextPages : null,
         );
         if (request !== listRequest.current) return;
         setThreads((current) =>
           more ? [...current, ...page.threads] : page.threads,
         );
-        setNextPage(page.nextPageToken);
+        setNextPages(page.nextPageTokens);
+        setAccountErrors(page.errors);
         setError(null);
       } catch (err: unknown) {
         if (request === listRequest.current) setError(message(err));
@@ -142,25 +190,30 @@ export function MailView({
         if (request === listRequest.current) setLoading(false);
       }
     },
-    [folder, appliedSearch, nextPage],
+    [folder, appliedSearch, account, nextPages],
   );
   const loadRef = useRef(load);
   loadRef.current = load;
 
   useEffect(() => {
-    if (connected) void loadRef.current();
-  }, [connected, folder, appliedSearch]);
+    if (connected && accounts) void loadRef.current();
+  }, [connected, accounts, folder, appliedSearch, account]);
 
   const onThreadChanged = useCallback(
-    (id: string, change: Partial<MailThreadSummary> | "removed") => {
+    (target: Selection, change: Partial<MailThreadSummary> | "removed") => {
+      const same = (t: MailRow) =>
+        t.id === target.id && t.account === target.account;
       setThreads((current) =>
         change === "removed"
-          ? current.filter((t) => t.id !== id)
-          : current.map((t) => (t.id === id ? { ...t, ...change } : t)),
+          ? current.filter((t) => !same(t))
+          : current.map((t) => (same(t) ? { ...t, ...change } : t)),
       );
     },
     [],
   );
+
+  const showAccount = account === "" && (accounts?.length ?? 0) > 1;
+  const hasMore = Object.keys(nextPages).length > 0;
 
   const header = (
     <div
@@ -183,7 +236,7 @@ export function MailView({
         <div className="flex items-center gap-1 px-2">
           <IconAction
             label="Refresh"
-            onClick={() => void load()}
+            onClick={() => void loadAccounts(true)}
             disabled={loading}
           >
             <RefreshCw
@@ -223,6 +276,8 @@ export function MailView({
             setSettings(next);
             setEditingSettings(false);
             setError(null);
+            setSelected(null);
+            if (next.endpoint && next.hasKey) void loadAccounts(true);
           }}
           onCancel={connected ? () => setEditingSettings(false) : undefined}
         />
@@ -255,6 +310,23 @@ export function MailView({
               </button>
             ))}
           </div>
+          {accounts && accounts.length > 1 ? (
+            <div className="shrink-0 px-3 pt-2">
+              <select
+                value={account}
+                onChange={(event) => setAccount(event.target.value)}
+                aria-label="Mail account"
+                className="w-full rounded-md border border-stroke bg-transparent px-2 py-1 text-[12px] text-content outline-none focus:border-content/40"
+              >
+                <option value="">All accounts ({accounts.length})</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <form
             className="flex shrink-0 items-center gap-1.5 border-b border-stroke px-3 py-2"
             onSubmit={(event) => {
@@ -282,6 +354,14 @@ export function MailView({
             {error ? (
               <p className="px-2 py-3 text-[12px] text-red-400">{error}</p>
             ) : null}
+            {accountErrors.map((e) => (
+              <p
+                key={e.account}
+                className="px-2 py-1.5 text-[12px] text-red-400"
+              >
+                {emailOf(e.account) || "An account"}: {e.message}
+              </p>
+            ))}
             {!loading && !error && threads.length === 0 ? (
               <p className="px-2 py-3 text-[12px] text-content/45">
                 No mail here.
@@ -289,13 +369,21 @@ export function MailView({
             ) : null}
             {threads.map((thread) => (
               <ThreadRow
-                key={thread.id}
+                key={rowKey(thread.account, thread.id)}
                 thread={thread}
-                active={thread.id === selectedId}
-                onSelect={() => setSelectedId(thread.id)}
+                account={
+                  showAccount ? shortAddress(emailOf(thread.account)) : ""
+                }
+                active={
+                  thread.id === selected?.id &&
+                  thread.account === selected.account
+                }
+                onSelect={() =>
+                  setSelected({ account: thread.account, id: thread.id })
+                }
               />
             ))}
-            {nextPage ? (
+            {hasMore ? (
               <button
                 type="button"
                 disabled={loading}
@@ -307,19 +395,23 @@ export function MailView({
             ) : null}
           </div>
         </div>
-        {selectedId ? (
+        {selected ? (
           <ThreadDetail
-            key={selectedId}
-            threadId={selectedId}
+            key={rowKey(selected.account, selected.id)}
+            account={selected.account}
+            accountEmail={
+              (accounts?.length ?? 0) > 1 ? emailOf(selected.account) : ""
+            }
+            threadId={selected.id}
             cwd={cwd}
             recents={recents}
             describeChat={describeChat}
             onAsk={onAsk}
             onOpenSession={onOpenSession}
-            onChanged={(change) => onThreadChanged(selectedId, change)}
+            onChanged={(change) => onThreadChanged(selected, change)}
             onArchived={() => {
-              onThreadChanged(selectedId, "removed");
-              setSelectedId(null);
+              onThreadChanged(selected, "removed");
+              setSelected(null);
             }}
           />
         ) : (
@@ -501,10 +593,13 @@ function ConnectionForm({
 
 function ThreadRow({
   thread,
+  account,
   active,
   onSelect,
 }: {
   thread: MailThreadSummary;
+  /** Which mailbox, shown when several are listed together. */
+  account: string;
   active: boolean;
   onSelect: () => void;
 }) {
@@ -536,6 +631,11 @@ function ThreadRow({
             <span className="ml-1 text-content/40">{thread.messageCount}</span>
           ) : null}
         </span>
+        {account ? (
+          <span className="max-w-[90px] shrink-0 truncate rounded bg-content/5 px-1 text-[10px] text-content/55">
+            {account}
+          </span>
+        ) : null}
         <span className="shrink-0 text-[11px] tabular-nums text-content/45">
           {time(thread.date)}
         </span>
@@ -555,6 +655,8 @@ function ThreadRow({
 }
 
 function ThreadDetail({
+  account,
+  accountEmail,
   threadId,
   cwd,
   recents,
@@ -564,6 +666,9 @@ function ThreadDetail({
   onChanged,
   onArchived,
 }: {
+  account: string;
+  /** Shown above the thread when there are several accounts. */
+  accountEmail: string;
   threadId: string;
   cwd?: string;
   recents: RecentProject[];
@@ -596,8 +701,8 @@ function ThreadDetail({
     setLoading(true);
     try {
       const [next, sessions] = await Promise.all([
-        loadMailThread(threadId),
-        mailThreadSessions(threadId),
+        loadMailThread(account, threadId),
+        mailThreadSessions(account, threadId),
       ]);
       setThread(next);
       setChats(sessions);
@@ -605,7 +710,7 @@ function ThreadDetail({
       if (!replyDirtyRef.current)
         setReply(next.drafts[next.drafts.length - 1]?.body ?? "");
       if (next.unread) {
-        modifyMailThread(threadId, "read")
+        modifyMailThread(account, threadId, "read")
           .then(() => onChangedRef.current({ unread: false }))
           .catch(() => undefined);
       }
@@ -614,7 +719,7 @@ function ThreadDetail({
     } finally {
       setLoading(false);
     }
-  }, [threadId]);
+  }, [account, threadId]);
 
   useEffect(() => {
     void refresh();
@@ -647,7 +752,7 @@ function ThreadDetail({
 
   const saveReply = () =>
     run("save", async () => {
-      const saved = await saveMailDraft(threadId, reply);
+      const saved = await saveMailDraft(account, threadId, reply);
       setThread((current) =>
         current
           ? {
@@ -667,7 +772,9 @@ function ThreadDetail({
     run("send", async () => {
       // Whatever is on screen is what goes out.
       const saved =
-        replyDirty || !draft ? await saveMailDraft(threadId, reply) : draft;
+        replyDirty || !draft
+          ? await saveMailDraft(account, threadId, reply)
+          : draft;
       if (!window.confirm(`Send this reply to ${saved.to}?`)) {
         setReplyDirty(false);
         setThread((current) =>
@@ -683,7 +790,7 @@ function ThreadDetail({
         );
         return;
       }
-      await sendMailDraft(saved.id);
+      await sendMailDraft(account, saved.id);
       setReply("");
       setReplyDirty(false);
       await refresh();
@@ -692,7 +799,7 @@ function ThreadDetail({
 
   const archive = () =>
     run("archive", async () => {
-      await modifyMailThread(threadId, "archive");
+      await modifyMailThread(account, threadId, "archive");
       onArchived();
     });
 
@@ -701,6 +808,7 @@ function ThreadDetail({
       if (!thread) return;
       if (!project) throw new Error("Choose a project for the chat.");
       await onAsk({
+        account,
         threadId,
         subject: thread.subject,
         project,
@@ -727,9 +835,16 @@ function ThreadDetail({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-stroke px-4 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-[14px] font-semibold">
-          {thread.subject}
-        </h2>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[14px] font-semibold">
+            {thread.subject}
+          </h2>
+          {accountEmail ? (
+            <p className="truncate text-[11px] text-content/45">
+              {accountEmail}
+            </p>
+          ) : null}
+        </div>
         <IconAction
           label="Reload thread"
           onClick={() => void refresh()}

@@ -512,6 +512,7 @@ pub fn run() {
             semantic_index::semantic_index_remove,
             semantic_index::semantic_index_available,
             mail::mail_settings,
+            mail::mail_accounts,
             mail::mail_save_settings,
             mail::mail_list,
             mail::mail_thread,

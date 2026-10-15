@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
-use executor::Executor;
+use executor::{Account, Executor};
 pub use gmail::{Draft, Thread, ThreadSummary};
 
 const CONFIG_FILE: &str = "mail.json";
@@ -46,15 +46,35 @@ pub struct MailSettings {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct MailLink {
+    /// Empty in links saved before accounts existed: the first account.
+    account: String,
     thread_id: String,
     subject: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MailRow {
+    account: String,
+    #[serde(flatten)]
+    thread: ThreadSummary,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountError {
+    account: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MailPage {
-    threads: Vec<ThreadSummary>,
-    next_page_token: Option<String>,
+    /// Newest first, across the accounts asked for.
+    threads: Vec<MailRow>,
+    /// Per account; empty when every account is at its end.
+    next_page_tokens: HashMap<String, String>,
+    errors: Vec<AccountError>,
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -120,7 +140,7 @@ pub async fn mail_save_settings(
                 endpoint: endpoint.clone(),
                 key: key.clone(),
             }
-            .run(executor::CHECK, json!({}))?;
+            .accounts()?;
         }
         crate::voice::store_secret(&dir.join(KEY_FILE), key.as_deref().unwrap_or(""))?;
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -131,10 +151,21 @@ pub async fn mail_save_settings(
 }
 
 #[tauri::command]
+pub async fn mail_accounts(app: AppHandle, fresh: bool) -> Result<Vec<Account>, String> {
+    if fresh {
+        executor::forget_connection();
+    }
+    blocking(app, move |dir| connect(dir)?.accounts()).await
+}
+
+/// `accounts`: the ids to read, all when empty. `page_tokens`: the previous
+/// page's tokens to continue; then only accounts with one are read.
+#[tauri::command]
 pub async fn mail_list(
     app: AppHandle,
     query: String,
-    page_token: Option<String>,
+    accounts: Vec<String>,
+    page_tokens: Option<HashMap<String, String>>,
 ) -> Result<MailPage, String> {
     let query = query.trim().to_string();
     if query.chars().count() > MAX_QUERY_CHARS {
@@ -143,27 +174,76 @@ pub async fn mail_list(
         ));
     }
     blocking(app, move |dir| {
-        let answer = connect(dir)?.run(
+        let executor = connect(dir)?;
+        let known = executor.accounts()?;
+        let wanted: Vec<String> = if accounts.is_empty() {
+            known.iter().map(|a| a.id.clone()).collect()
+        } else {
+            accounts
+                .iter()
+                .map(|id| executor.account(id))
+                .collect::<Result<_, _>>()?
+        };
+        let paged = page_tokens.is_some();
+        let answer = executor.run(
             executor::LIST,
-            json!({ "query": query, "pageToken": page_token }),
+            "",
+            json!({
+                "query": query,
+                "accounts": wanted,
+                "pageTokens": page_tokens.unwrap_or_default(),
+                "paged": paged,
+                "perAccount": if wanted.len() > 1 { 15 } else { 25 },
+            }),
         )?;
-        Ok(MailPage {
-            threads: answer
-                .get("threads")
-                .and_then(Value::as_array)
-                .map(|list| list.iter().filter_map(gmail::summary).collect())
-                .unwrap_or_default(),
-            next_page_token: answer
-                .get("nextPageToken")
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        })
+        Ok(merge_pages(&answer))
     })
     .await
 }
 
-fn read_thread(executor: &Executor, thread_id: &str) -> Result<Thread, String> {
-    let answer = executor.run(executor::READ, json!({ "threadId": thread_id }))?;
+/// One newest-first list from each account's page.
+fn merge_pages(answer: &Value) -> MailPage {
+    let mut page = MailPage {
+        threads: Vec::new(),
+        next_page_tokens: HashMap::new(),
+        errors: Vec::new(),
+    };
+    for part in answer.as_array().into_iter().flatten() {
+        let account = part
+            .get("account")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if let Some(message) = part.get("error").and_then(Value::as_str) {
+            page.errors.push(AccountError {
+                account: account.clone(),
+                message: message.to_string(),
+            });
+        }
+        if let Some(next) = part.get("next").and_then(Value::as_str) {
+            page.next_page_tokens
+                .insert(account.clone(), next.to_string());
+        }
+        for thread in part
+            .get("threads")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(gmail::summary)
+        {
+            page.threads.push(MailRow {
+                account: account.clone(),
+                thread,
+            });
+        }
+    }
+    page.threads
+        .sort_by_key(|row| std::cmp::Reverse(row.thread.date));
+    page
+}
+
+fn read_thread(executor: &Executor, account: &str, thread_id: &str) -> Result<Thread, String> {
+    let answer = executor.run(executor::READ, account, json!({ "threadId": thread_id }))?;
     let mut drafts: Vec<Draft> = answer
         .get("drafts")
         .and_then(Value::as_array)
@@ -191,14 +271,28 @@ fn valid_id(id: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn mail_thread(app: AppHandle, thread_id: String) -> Result<Thread, String> {
+pub async fn mail_thread(
+    app: AppHandle,
+    account: String,
+    thread_id: String,
+) -> Result<Thread, String> {
     let thread_id = valid_id(&thread_id)?;
-    blocking(app, move |dir| read_thread(&connect(dir)?, &thread_id)).await
+    blocking(app, move |dir| {
+        let executor = connect(dir)?;
+        let account = executor.account(&account)?;
+        read_thread(&executor, &account, &thread_id)
+    })
+    .await
 }
 
 /// Writes `body` into the thread's latest draft, or a new one. The recipient
 /// is always derived from the thread, never taken from the caller.
-fn save_draft(executor: &Executor, thread_id: &str, body: &str) -> Result<Draft, String> {
+fn save_draft(
+    executor: &Executor,
+    account: &str,
+    thread_id: &str,
+    body: &str,
+) -> Result<Draft, String> {
     if body.trim().is_empty() {
         return Err("The reply is empty".into());
     }
@@ -207,11 +301,12 @@ fn save_draft(executor: &Executor, thread_id: &str, body: &str) -> Result<Draft,
             "The reply is longer than {MAX_DRAFT_CHARS} characters"
         ));
     }
-    let thread = read_thread(executor, thread_id)?;
+    let thread = read_thread(executor, account, thread_id)?;
     let to = gmail::reply_recipient(&thread.messages, &thread.me);
     let raw = gmail::reply_raw(&thread, &to, body)?;
     let saved = executor.run(
         executor::SAVE_DRAFT,
+        account,
         json!({
             "threadId": thread_id,
             "draftId": thread.drafts.last().map(|d| d.id.clone()),
@@ -224,12 +319,15 @@ fn save_draft(executor: &Executor, thread_id: &str, body: &str) -> Result<Draft,
 #[tauri::command]
 pub async fn mail_save_draft(
     app: AppHandle,
+    account: String,
     thread_id: String,
     body: String,
 ) -> Result<Draft, String> {
     let thread_id = valid_id(&thread_id)?;
     blocking(app, move |dir| {
-        save_draft(&connect(dir)?, &thread_id, &body)
+        let executor = connect(dir)?;
+        let account = executor.account(&account)?;
+        save_draft(&executor, &account, &thread_id, &body)
     })
     .await
 }
@@ -237,10 +335,20 @@ pub async fn mail_save_draft(
 /// Sends a draft. Only the Mail page's Send button calls this, after the
 /// user confirms; agents have no way to reach it.
 #[tauri::command]
-pub async fn mail_send_draft(app: AppHandle, draft_id: String) -> Result<(), String> {
+pub async fn mail_send_draft(
+    app: AppHandle,
+    account: String,
+    draft_id: String,
+) -> Result<(), String> {
     let draft_id = valid_id(&draft_id)?;
     blocking(app, move |dir| {
-        connect(dir)?.run(executor::SEND_DRAFT, json!({ "draftId": draft_id }))?;
+        let executor = connect(dir)?;
+        let account = executor.account(&account)?;
+        executor.run(
+            executor::SEND_DRAFT,
+            &account,
+            json!({ "draftId": draft_id }),
+        )?;
         Ok(())
     })
     .await
@@ -248,7 +356,12 @@ pub async fn mail_send_draft(app: AppHandle, draft_id: String) -> Result<(), Str
 
 /// `action`: "read" marks the thread read, "archive" takes it out of Inbox.
 #[tauri::command]
-pub async fn mail_modify(app: AppHandle, thread_id: String, action: String) -> Result<(), String> {
+pub async fn mail_modify(
+    app: AppHandle,
+    account: String,
+    thread_id: String,
+    action: String,
+) -> Result<(), String> {
     let thread_id = valid_id(&thread_id)?;
     let remove = match action.as_str() {
         "read" => "UNREAD",
@@ -256,8 +369,11 @@ pub async fn mail_modify(app: AppHandle, thread_id: String, action: String) -> R
         _ => return Err("Unknown mail action".into()),
     };
     blocking(app, move |dir| {
-        connect(dir)?.run(
+        let executor = connect(dir)?;
+        let account = executor.account(&account)?;
+        executor.run(
             executor::MODIFY,
+            &account,
             json!({ "threadId": thread_id, "remove": [remove] }),
         )?;
         Ok(())
@@ -282,6 +398,7 @@ fn link_of(dir: &Path, session_id: &str) -> Option<MailLink> {
 pub fn mail_link_session(
     app: AppHandle,
     session_id: String,
+    account: String,
     thread_id: String,
     subject: String,
 ) -> Result<(), String> {
@@ -295,6 +412,7 @@ pub fn mail_link_session(
     links.insert(
         session_id,
         MailLink {
+            account: gmail::truncate(account.trim(), 200),
             thread_id,
             subject: gmail::truncate(subject.trim(), 200),
         },
@@ -311,10 +429,16 @@ pub fn mail_session_link(app: AppHandle, session_id: String) -> Result<Option<Ma
 
 /// Chats started for a thread, oldest first.
 #[tauri::command]
-pub fn mail_thread_sessions(app: AppHandle, thread_id: String) -> Result<Vec<String>, String> {
+pub fn mail_thread_sessions(
+    app: AppHandle,
+    account: String,
+    thread_id: String,
+) -> Result<Vec<String>, String> {
     Ok(load_links(&data_dir(&app)?)
         .into_iter()
-        .filter(|(_, link)| link.thread_id == thread_id)
+        .filter(|(_, link)| {
+            link.thread_id == thread_id && (link.account.is_empty() || link.account == account)
+        })
         .map(|(session, _)| session)
         .collect())
 }
@@ -339,18 +463,19 @@ pub(crate) fn agent_action(
     let link = link_of(&dir, session_id)
         .ok_or("mail.* works only in a chat started from a thread on the Mail page")?;
     let executor = connect(&dir)?;
+    let account = executor.account(&link.account)?;
     match action {
         "mail.read" => {
             if input.as_object().is_some_and(|o| !o.is_empty()) {
                 return Err("mail.read takes {}".into());
             }
-            let thread = read_thread(&executor, &link.thread_id)?;
+            let thread = read_thread(&executor, &account, &link.thread_id)?;
             Ok(agent_view(&thread))
         }
         "mail.draft" => {
             let input: DraftInput = serde_json::from_value(input.clone())
                 .map_err(|e| format!("mail.draft takes {{\"body\":\"...\"}}: {e}"))?;
-            let draft = save_draft(&executor, &link.thread_id, &input.body)?;
+            let draft = save_draft(&executor, &account, &link.thread_id, &input.body)?;
             Ok(json!({
                 "saved": true,
                 "to": draft.to,
@@ -399,6 +524,7 @@ mod tests {
         links.insert(
             "s1".to_string(),
             MailLink {
+                account: "google.org.work.".into(),
                 thread_id: "t1".into(),
                 subject: "Fatura".into(),
             },

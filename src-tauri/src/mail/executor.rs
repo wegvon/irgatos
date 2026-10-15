@@ -6,17 +6,27 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const HTTP_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// The connection's tool prefix found last time, so later calls skip the
-/// catalog search. Cleared when the endpoint or key changes.
-static GMAIL_PREFIX: Mutex<Option<String>> = Mutex::new(None);
+/// One Gmail connection in Executor. `id` is its tool prefix, such as
+/// `google.org.work.`, so it is only ever passed back, never shown.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Account {
+    pub id: String,
+    pub email: String,
+}
+
+/// The Gmail connections found last time, so calls skip the catalog search.
+/// Cleared when the endpoint or key changes, or a call fails.
+static ACCOUNTS: Mutex<Option<Vec<Account>>> = Mutex::new(None);
 
 pub fn forget_connection() {
-    if let Ok(mut prefix) = GMAIL_PREFIX.lock() {
-        *prefix = None;
+    if let Ok(mut accounts) = ACCOUNTS.lock() {
+        *accounts = None;
     }
 }
 
@@ -46,8 +56,8 @@ pub fn normalize_endpoint(raw: &str) -> Result<String, String> {
     Ok(url.as_str().trim_end_matches('/').to_string())
 }
 
-/// Shared by every script: unwraps `{ ok, data }` tool results and finds the
-/// Gmail connection by a tool only Gmail has.
+/// Shared by every script: unwraps `{ ok, data }` tool results and calls a
+/// Gmail tool on one account. `ACCOUNT` is the account the call is for.
 const PRELUDE: &str = r#"
 const unwrap = (result, what) => {
   if (result && typeof result === "object" && "ok" in result) {
@@ -57,16 +67,8 @@ const unwrap = (result, what) => {
   }
   return result;
 };
-const findGmail = async () => {
-  if (KNOWN_PREFIX) return KNOWN_PREFIX;
-  const found = unwrap(await tools.search({ query: "gmail users threads list", limit: 25 }), "search");
-  const paths = ((found && found.items) || []).map((item) => String(item.path || "").replace(/^tools\./, ""));
-  const hit = paths.find((path) => path.endsWith("users.threads.list"));
-  if (!hit) throw new Error("NO_GMAIL");
-  return hit.slice(0, -"users.threads.list".length);
-};
-const prefix = await findGmail();
-const gmail = async (op, args) => unwrap(await tools[prefix + op](args), op);
+const call = async (account, op, args) => unwrap(await tools[account + op](args), op);
+const gmail = (op, args) => call(ACCOUNT, op, args);
 "#;
 
 pub struct Executor {
@@ -75,26 +77,49 @@ pub struct Executor {
 }
 
 impl Executor {
-    /// Runs `body` after the prelude with `input` bound as `INPUT`.
-    pub fn run(&self, body: &str, input: Value) -> Result<Value, String> {
-        let known = GMAIL_PREFIX.lock().ok().and_then(|p| p.clone());
+    /// Runs `body` after the prelude with `input` bound as `INPUT` and
+    /// `account` (an id from [`Executor::accounts`]) as `ACCOUNT`.
+    pub fn run(&self, body: &str, account: &str, input: Value) -> Result<Value, String> {
         let code = format!(
-            "const INPUT = {};\nconst KNOWN_PREFIX = {};\n{PRELUDE}\nconst result = await (async () => {{\n{body}\n}})();\nreturn {{ prefix, result }};",
+            "const INPUT = {};\nconst ACCOUNT = {};\n{PRELUDE}\nreturn await (async () => {{\n{body}\n}})();",
             serde_json::to_string(&input).map_err(|e| e.to_string())?,
-            serde_json::to_string(&known).map_err(|e| e.to_string())?,
+            serde_json::to_string(account).map_err(|e| e.to_string())?,
         );
-        let value = self
-            .post(&code)
-            .and_then(|answer| completed_result(&answer));
         // A renamed or removed connection is found again on the next call.
         // Never retried here: the failed call may have sent mail already.
-        let value = value.inspect_err(|_| forget_connection())?;
-        if let Some(prefix) = value.get("prefix").and_then(Value::as_str) {
-            if let Ok(mut known) = GMAIL_PREFIX.lock() {
-                *known = Some(prefix.to_string());
-            }
+        self.post(&code)
+            .and_then(|answer| completed_result(&answer))
+            .inspect_err(|_| forget_connection())
+    }
+
+    /// Every Gmail connection in Executor, with its address.
+    pub fn accounts(&self) -> Result<Vec<Account>, String> {
+        if let Some(known) = ACCOUNTS.lock().ok().and_then(|a| a.clone()) {
+            return Ok(known);
         }
-        Ok(value.get("result").cloned().unwrap_or(Value::Null))
+        let found = self.run(DISCOVER, "", json!({}))?;
+        let accounts = parse_accounts(&found)?;
+        if let Ok(mut known) = ACCOUNTS.lock() {
+            *known = Some(accounts.clone());
+        }
+        Ok(accounts)
+    }
+
+    /// `id` when it names one of the Gmail connections, so a caller cannot
+    /// point a script at any other tool.
+    pub fn account(&self, id: &str) -> Result<String, String> {
+        let accounts = self.accounts()?;
+        if id.is_empty() {
+            return accounts
+                .first()
+                .map(|a| a.id.clone())
+                .ok_or_else(|| "Executor has no Gmail connection".into());
+        }
+        accounts
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.id.clone())
+            .ok_or_else(|| "This Gmail account is no longer connected in Executor".into())
     }
 
     fn post(&self, code: &str) -> Result<Value, String> {
@@ -177,19 +202,100 @@ pub fn completed_result(answer: &Value) -> Result<Value, String> {
     Ok(structured.get("result").cloned().unwrap_or(Value::Null))
 }
 
-pub const LIST: &str = r#"
-const list = await gmail("users.threads.list", {
-  userId: "me",
-  q: INPUT.query,
-  maxResults: 25,
-  ...(INPUT.pageToken ? { pageToken: INPUT.pageToken } : {}),
-});
-const threads = await Promise.all(
-  ((list && list.threads) || []).map((thread) =>
-    gmail("users.threads.get", { userId: "me", id: thread.id, format: "metadata" })
-  )
+/// Accounts from the discovery script, one per mailbox.
+fn parse_accounts(found: &Value) -> Result<Vec<Account>, String> {
+    let mut accounts: Vec<Account> = Vec::new();
+    for item in found.as_array().into_iter().flatten() {
+        let Some(id) = item.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let email = item
+            .get("email")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        // The same mailbox connected twice is one account.
+        if accounts
+            .iter()
+            .any(|a| a.id == id || (!email.is_empty() && a.email.eq_ignore_ascii_case(&email)))
+        {
+            continue;
+        }
+        accounts.push(Account {
+            id: id.to_string(),
+            email,
+        });
+    }
+    if accounts.is_empty() {
+        return Err("Executor has no Gmail connection. Add Gmail in Executor first.".into());
+    }
+    accounts.sort_by_key(|a| a.email.to_lowercase());
+    Ok(accounts)
+}
+
+/// Finds every Gmail connection: by the catalog search, and by asking each
+/// saved connection for a tool only Gmail has.
+const DISCOVER: &str = r#"
+const strip = (path) => String(path || "").replace(/^tools\./, "");
+const TOOL = "users.threads.list";
+const prefixes = new Set();
+const found = unwrap(await tools.search({ query: "gmail users threads list", limit: 100 }), "search");
+for (const item of (found && found.items) || []) {
+  const path = strip(item.path);
+  if (path.endsWith(TOOL)) prefixes.add(path.slice(0, -TOOL.length));
+}
+try {
+  const listed = unwrap(await tools.executor.coreTools.connections.list({}), "connections");
+  for (const connection of (listed && listed.connections) || []) {
+    const base = strip(connection.address);
+    if (!base) continue;
+    for (const candidate of [base + ".", base + ".gmail."]) {
+      if (prefixes.has(candidate)) continue;
+      try {
+        const described = unwrap(await tools.describe.tool({ path: candidate + TOOL }), "describe");
+        if (described && !described.error) prefixes.add(candidate);
+      } catch (error) {}
+    }
+  }
+} catch (error) {}
+return Promise.all(
+  [...prefixes].map(async (id) => {
+    try {
+      const profile = await call(id, "users.getProfile", { userId: "me" });
+      return { id, email: (profile && profile.emailAddress) || "" };
+    } catch (error) {
+      return { id, email: "" };
+    }
+  })
 );
-return { threads, nextPageToken: (list && list.nextPageToken) || null };
+"#;
+
+/// Threads of several accounts at once. With `paged`, only accounts that
+/// have a next page are read. One account failing does not hide the others.
+pub const LIST: &str = r#"
+return Promise.all(
+  INPUT.accounts.map(async (account) => {
+    const pageToken = INPUT.pageTokens[account];
+    if (INPUT.paged && !pageToken) return { account, threads: [], next: null };
+    try {
+      const list = await call(account, "users.threads.list", {
+        userId: "me",
+        q: INPUT.query,
+        maxResults: INPUT.perAccount,
+        ...(pageToken ? { pageToken } : {}),
+      });
+      const threads = await Promise.all(
+        ((list && list.threads) || []).map((thread) =>
+          call(account, "users.threads.get", { userId: "me", id: thread.id, format: "metadata" })
+        )
+      );
+      return { account, threads, next: (list && list.nextPageToken) || null };
+    } catch (error) {
+      return { account, threads: [], next: null, error: String((error && error.message) || error) };
+    }
+  })
+);
 "#;
 
 /// The thread, the mailbox address and the drafts that belong to it.
@@ -229,13 +335,27 @@ await gmail("users.threads.modify", {
 return true;
 "#;
 
-pub const CHECK: &str = r#"
-return gmail("users.getProfile", { userId: "me" });
-"#;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accounts_are_one_per_mailbox_sorted_by_address() {
+        let found = json!([
+            {"id": "google.org.work.", "email": "turel@work.com"},
+            {"id": "google.org.home.", "email": "Turel@Gmail.com"},
+            {"id": "google.org.again.", "email": "turel@gmail.com"},
+            {"id": "google.org.broken.", "email": ""},
+            {"email": "no-id@x"}
+        ]);
+        let accounts = parse_accounts(&found).unwrap();
+        let ids: Vec<&str> = accounts.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["google.org.broken.", "google.org.home.", "google.org.work."]
+        );
+        assert!(parse_accounts(&json!([])).is_err());
+    }
 
     #[test]
     fn normalizes_pasted_urls() {
