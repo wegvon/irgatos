@@ -65,10 +65,15 @@ async function loadIrgatSession(
 export function createIrgatChildSession(
   irgatId: string,
   parent: Session,
+  titleOf: (sessionId: string) => string | undefined = () => undefined,
 ): Session {
   const irgat = findIrgat(irgatId);
   if (!irgat || irgatForSession(parent.id)?.id !== irgatId)
     throw new Error("Irgat is no longer available");
+  // A deleted chat frees its number, so skip names still in use.
+  const taken = new Set((irgat.childSessionIds ?? []).map(titleOf));
+  let number = (irgat.childSessionIds?.length ?? 0) + 1;
+  while (taken.has(`Chat ${number}`)) number += 1;
   const child = {
     ...newSession(
       parent.harness,
@@ -77,7 +82,7 @@ export function createIrgatChildSession(
       parent.runtimeMode,
       parent.modelSettings,
     ),
-    title: `Chat ${(irgat.childSessionIds?.length ?? 0) + 1}`,
+    title: `Chat ${number}`,
     providerAccountId: parent.providerAccountId,
   };
   updateIrgat(irgatId, (current) => ({

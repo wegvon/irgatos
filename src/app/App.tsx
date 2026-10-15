@@ -5171,7 +5171,11 @@ function Workspace({
       const owner = irgatForSession(current.id);
       const session = {
         ...(owner
-          ? createIrgatChildSession(owner.id, current)
+          ? createIrgatChildSession(
+              owner.id,
+              current,
+              (id) => sessionsRef.current.find((entry) => entry.id === id)?.title,
+            )
           : newSession(
               current.harness,
               current.cwd,
@@ -5186,8 +5190,28 @@ function Workspace({
         ...sessions,
         session,
       ]);
-      if (owner) void onOpenIrgat(owner.id, session.id);
-      else if (isFreeChatSession(current)) openFreeChat(session.id);
+      if (owner) {
+        // Like New chat: the roster lists this child, so store it before
+        // opening, or a restart leaves a row with nothing behind it.
+        void upsertSession(session).then(
+          () => onOpenIrgat(owner.id, session.id),
+          (error) => {
+            updateIrgat(owner.id, (irgat) => ({
+              ...irgat,
+              childSessionIds: irgat.childSessionIds?.filter(
+                (id) => id !== session.id,
+              ),
+            }));
+            updateSessionState(sessionsRef, setSessions, (sessions) =>
+              sessions.filter((entry) => entry.id !== session.id),
+            );
+            void message(String(error), {
+              title: "Could not open a chat for this account",
+              kind: "error",
+            });
+          },
+        );
+      } else if (isFreeChatSession(current)) openFreeChat(session.id);
       else {
         appendTab(tab, current.cwd);
         setActiveTabId(tab.id);
@@ -13072,13 +13096,16 @@ function Workspace({
   }, [openFreeChat]);
 
   const onNewChat = useCallback(async () => {
-    // A blank chat is reused rather than piling up empty ones.
+    // A blank chat is reused rather than piling up empty ones. One holding
+    // a typed draft or a board card's prompt is not blank.
     const blank = sessionsRef.current.find(
       (session) =>
         isFreeChatSession(session) &&
         !session.ephemeral &&
         !session.busy &&
-        session.blocks.length === 0,
+        session.blocks.length === 0 &&
+        !session.composerSeed &&
+        !getComposerDraft(session.id)?.trim(),
     );
     if (blank) {
       openFreeChat(blank.id);
@@ -13131,24 +13158,6 @@ function Workspace({
       void refreshFreeChats();
     },
     [onRemoveHistorySession, refreshFreeChats],
-  );
-  // What a Fleet row offers on right-click, as the sidebar's card does.
-  const fleetActions = useMemo(
-    () => ({
-      onStop: (sessionId: string) => onStop(sessionId),
-      onArchive: (sessionId: string) =>
-        void onArchiveHistorySession(sessionId, true),
-      onDelete: (sessionId: string) => void onDeleteHistorySession(sessionId),
-      onBoard: (sessionId: string) => void onSessionBoard(sessionId),
-      boardIds: kanbanSessions.linkedIds,
-    }),
-    [
-      onStop,
-      onArchiveHistorySession,
-      onDeleteHistorySession,
-      onSessionBoard,
-      kanbanSessions.linkedIds,
-    ],
   );
   const onFreeChatBoard = useCallback(
     async (id: string) => {
@@ -14324,15 +14333,19 @@ function Workspace({
         chats.find((entry) => entry.busy) ??
         chats[0];
       if (session) states.set(irgat.id, irgatState(session));
+      // Only the chat on screen is read; its siblings' replies still count.
       const count = allIrgatSessionIds(irgat).reduce(
-        (total, id) => total + (irgatReplies.counts.get(id) ?? 0),
+        (total, id) =>
+          id === irgatViewId
+            ? total
+            : total + (irgatReplies.counts.get(id) ?? 0),
         0,
       );
       if (count) unseen.set(irgat.id, count);
     }
     return { states, unseen };
     // The roster is read through its snapshot.
-  }, [irgatsSnap, sessions, irgatReplies.counts]);
+  }, [irgatsSnap, sessions, irgatReplies.counts, irgatViewId]);
   const irgatRail = useStableValue(irgatRailState);
   const busyProjectPaths = useStableValue(
     promptableSessions.flatMap((session) =>
@@ -14350,7 +14363,11 @@ function Workspace({
       if (!irgat?.sessionId) return;
       const parent = await ensureOpenSession(irgat.sessionId);
       if (!parent) return;
-      const child = createIrgatChildSession(irgatId, parent);
+      const child = createIrgatChildSession(
+        irgatId,
+        parent,
+        (id) => sessionsRef.current.find((entry) => entry.id === id)?.title,
+      );
       sessionsRef.current = [...sessionsRef.current, child];
       setSessions(sessionsRef.current);
       try {
@@ -14395,6 +14412,40 @@ function Workspace({
         await onOpenIrgat(irgatId);
     },
     [onRemoveHistorySession, onOpenIrgat],
+  );
+  // What a Fleet row offers on right-click, as the sidebar's card does.
+  // An Irgat's chats are deleted through the Irgat, so it drops them too.
+  const onDeleteFleetSession = useCallback(
+    (sessionId: string) => {
+      const irgat = irgatForSession(sessionId);
+      if (!irgat) return void onDeleteHistorySession(sessionId);
+      if (irgat.sessionId === sessionId) return void onDeleteIrgat(irgat.id);
+      void onDeleteIrgatChat(irgat.id, sessionId).catch((error) =>
+        message(String(error), {
+          title: "Could not delete chat",
+          kind: "error",
+        }),
+      );
+    },
+    [onDeleteHistorySession, onDeleteIrgat, onDeleteIrgatChat],
+  );
+  const fleetActions = useMemo(
+    () => ({
+      onStop: (sessionId: string) => onStop(sessionId),
+      onArchive: (sessionId: string) =>
+        void onArchiveHistorySession(sessionId, true),
+      canArchive: (sessionId: string) => !irgatForSession(sessionId),
+      onDelete: onDeleteFleetSession,
+      onBoard: (sessionId: string) => void onSessionBoard(sessionId),
+      boardIds: kanbanSessions.linkedIds,
+    }),
+    [
+      onStop,
+      onArchiveHistorySession,
+      onDeleteFleetSession,
+      onSessionBoard,
+      kanbanSessions.linkedIds,
+    ],
   );
   const onDeleteRailIrgatGroup = useCallback(
     (groupId: string) => void onDeleteIrgatGroup(groupId),
