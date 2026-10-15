@@ -79,9 +79,9 @@ const SUMMARY_LIMIT = 400;
 /** The lead is a sentence or two; the rest of the reply stays on screen. */
 const LEAD_SENTENCES = 2;
 const LEAD_LIMIT = 240;
-/** Openers that answer the user, so they stay when the address goes. */
-const KEPT_OPENERS = new Set(
-  "yes no ok okay sure done also now so but evet hayır tamam peki ayrıca şimdi ama ancak yani".split(
+/** Ways a reply addresses the user; only these are dropped as an opener. */
+const ADDRESSES = new Set(
+  "boss chief sir captain patron şef hocam abi abla efendim reis kaptan usta".split(
     " ",
   ),
 );
@@ -143,8 +143,8 @@ const questions = (text: string) =>
 
 /** "Boss, done." → "done.": the name a reply opens with is not news. */
 function dropAddress(text: string): string {
-  const match = /^(\p{Lu}\p{L}{1,14}),\s+(?=\S)/u.exec(text);
-  if (!match || KEPT_OPENERS.has(match[1].toLocaleLowerCase("tr"))) return text;
+  const match = /^(\p{L}{2,15}),\s+(?=\S)/u.exec(text);
+  if (!match || !ADDRESSES.has(match[1].toLocaleLowerCase("tr"))) return text;
   return text.slice(match[0].length);
 }
 
