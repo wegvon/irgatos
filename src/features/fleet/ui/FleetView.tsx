@@ -80,6 +80,8 @@ export type FleetRowActions = {
   onArchive?: (sessionId: string) => void;
   onDelete?: (sessionId: string) => void;
   onBoard?: (sessionId: string) => void;
+  /** Rows that can be archived; Irgat chats live with their Irgat. */
+  canArchive?: (sessionId: string) => boolean;
   /** Sessions that already have a card on the board. */
   boardIds?: ReadonlySet<string>;
 };
@@ -104,7 +106,7 @@ function fleetMenuItems(
           },
         ]
       : []),
-    ...(actions.onArchive
+    ...(actions.onArchive && (actions.canArchive?.(entry.sessionId) ?? true)
       ? [{ kind: "item" as const, id: "archive", label: "Archive" }]
       : []),
     ...(actions.onDelete

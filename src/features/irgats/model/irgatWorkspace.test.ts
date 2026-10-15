@@ -71,6 +71,20 @@ it("deletes a child only after storage succeeds and preserves its Irgat and sibl
   expect(remove).not.toHaveBeenCalled();
 });
 
+it("names a new child after the numbers its siblings still use", async () => {
+  const parent = chat("parent");
+  const irgatId = irgatFor(parent.cwd, parent.id);
+  const first = createIrgatChildSession(irgatId, parent);
+  const second = createIrgatChildSession(irgatId, parent);
+  expect([first.title, second.title]).toEqual(["Chat 1", "Chat 2"]);
+  await deleteIrgatChildSession(irgatId, first.id, async () => true);
+  const titles = new Map([[second.id, second.title]]);
+  const third = createIrgatChildSession(irgatId, parent, (id) =>
+    titles.get(id),
+  );
+  expect(third.title).toBe("Chat 3");
+});
+
 it("loads an existing resident conversation without creating a session", async () => {
   const agent = { ...chat("resident"), runtimeMode: "full-access" as const };
   const irgatId = irgatFor(agent.cwd, agent.id);
