@@ -1565,6 +1565,17 @@ function VoicePage() {
           />
         </Row>
         <Row
+          id="voice-mode-speech-summary"
+          label="Read a short summary"
+          description="Read a short summary instead of the whole reply: what was done, its effect, and any question for you. Uses Gemini when a Live voice key is set, otherwise the reply's opening and closing lines."
+        >
+          <Toggle
+            label="Read a short summary"
+            on={voice.speechSummary}
+            onChange={(next) => saveVoiceSettings({ speechSummary: next })}
+          />
+        </Row>
+        <Row
           id="voice-mode-voice"
           label="Reading voice"
           description="Spoken Content follows System Settings › Accessibility › Spoken Content. Download more voices there."

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Block } from "../../sessions/model/session";
-import { latestReply, spokenReply } from "./spokenReply";
+import { latestReply, replySummary, spokenReply } from "./spokenReply";
 
 function block(id: string, role: Block["role"], text: string): Block {
   return { id, role, text } as Block;
@@ -89,5 +89,101 @@ describe("spokenReply", () => {
     expect(spokenReply("Use max_retries, so 2 * 3 is 6")).toBe(
       "Use max_retries, so 2 * 3 is 6.",
     );
+  });
+});
+
+describe("replySummary", () => {
+  it("keeps the lead and the closing question, not the file list or code", () => {
+    const reply = [
+      "I fixed the flaky login test by waiting for the session cookie before asserting.",
+      "",
+      "**Files changed:**",
+      "- `src/auth/login.ts`",
+      "- `tests/login.test.ts`",
+      "",
+      "```ts",
+      "await page.waitForResponse(/session/);",
+      "```",
+      "",
+      "| Suite | Result |",
+      "| --- | --- |",
+      "| auth | 12 passed |",
+      "",
+      "All 12 auth tests pass now. Should I also open a PR?",
+    ].join("\n");
+    expect(replySummary(reply)).toBe(
+      "I fixed the flaky login test by waiting for the session cookie before asserting. Should I also open a PR?",
+    );
+  });
+
+  it("reads Next: lines and the first item under a next-steps label", () => {
+    const reply = [
+      "## Summary",
+      "",
+      "The release workflow now uploads the notarized build.",
+      "",
+      "- Bumped the action to v4",
+      "- Removed the stale cache step",
+      "",
+      "Next steps:",
+      "1. Tag v0.4.1 to try it",
+      "2. Watch the run",
+    ].join("\n");
+    expect(replySummary(reply)).toBe(
+      "The release workflow now uploads the notarized build. Next steps: Tag v0.4.1 to try it.",
+    );
+    expect(
+      replySummary(
+        "Moved the cache to Redis.\n\nDetails are below.\n\n**Next:** restart the worker.",
+      ),
+    ).toBe("Moved the cache to Redis. Next: restart the worker.");
+  });
+
+  it("summarises a Turkish reply the same way", () => {
+    const reply = [
+      "Ses modundaki gecikmeyi düzelttim; mikrofon artık cevap bitince hemen açılıyor.",
+      "",
+      "Değişen dosyalar:",
+      "- `useVoiceConversation.ts`",
+      "- `voice.rs`",
+      "",
+      "Testler geçti.",
+      "",
+      "Sonraki adım: uygulamayı yeniden başlatıp denemen yeterli. Değişikliği commit edeyim mi?",
+    ].join("\n");
+    expect(replySummary(reply)).toBe(
+      "Ses modundaki gecikmeyi düzelttim; mikrofon artık cevap bitince hemen açılıyor. Sonraki adım: uygulamayı yeniden başlatıp denemen yeterli. Değişikliği commit edeyim mi?",
+    );
+  });
+
+  it("keeps a closing offer and questions asked in a list", () => {
+    const reply = [
+      "Two options for the migration:",
+      "",
+      "- Keep the old column and backfill. Which one do you prefer?",
+      "- Drop it in one step",
+      "",
+      "I left the schema untouched for now.",
+      "",
+      "If you want, I can write the backfill script.",
+    ].join("\n");
+    expect(replySummary(reply)).toBe(
+      "I left the schema untouched for now. Which one do you prefer? If you want, I can write the backfill script.",
+    );
+  });
+
+  it("shortens a long lead but never drops the question", () => {
+    const lead = "This sentence is about forty characters. ".repeat(20);
+    const spoken = replySummary(`${lead}\n\nShall I continue?`);
+    expect(spoken.length).toBeLessThanOrEqual(400);
+    expect(spoken).toMatch(/characters\. Shall I continue\?$/);
+  });
+
+  it("falls back to the whole reply when it has no prose", () => {
+    expect(replySummary("- one\n- two")).toBe("one. two.");
+    expect(replySummary("```diff\n- a\n+ b\n```")).toBe(
+      "The reply is code. It is on screen.",
+    );
+    expect(replySummary("")).toBe("");
   });
 });

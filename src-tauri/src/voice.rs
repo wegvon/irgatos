@@ -8,7 +8,8 @@
 //! server on localhost) is an opt-in alternative that receives the recording
 //! once capture stops. Other platforms report voice as unsupported.
 //!
-//! Voice mode reads agent replies back with the macOS system voice.
+//! Voice mode reads agent replies back with the macOS system voice, as a
+//! short Gemini summary when a Live voice key is set.
 
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -23,6 +24,7 @@ mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
 mod speech;
+mod summary;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod transcription;
 
@@ -198,12 +200,36 @@ pub fn voice_set_live_key(app: AppHandle, key: String) -> Result<bool, String> {
 /// WebSocket URL, so unlike the transcription key it has to reach the webview.
 #[tauri::command]
 pub async fn voice_live_key(app: AppHandle) -> Result<Option<String>, String> {
-    if let Some(key) = read_secret(&secret_path(&app, LIVE_KEY_FILE)?)? {
+    live_key(&app).await
+}
+
+async fn live_key(app: &AppHandle) -> Result<Option<String>, String> {
+    if let Some(key) = read_secret(&secret_path(app, LIVE_KEY_FILE)?)? {
         return Ok(Some(key));
     }
     tauri::async_runtime::spawn_blocking(|| live_env_key(env_value).map(|(_, key)| key))
         .await
         .map_err(|error| error.to_string())
+}
+
+/// A few spoken sentences for an agent reply, written by Gemini with the Live
+/// voice key. Nothing without a key, so voice mode uses its own excerpt.
+#[tauri::command]
+pub async fn voice_summarize(
+    app: AppHandle,
+    text: String,
+    locale: Option<String>,
+) -> Result<Option<String>, String> {
+    let Some(key) = live_key(&app).await? else {
+        return Ok(None);
+    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let locale = locale.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || summary::summarize(&key, &text, &locale))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn env_value(name: &str) -> Option<String> {

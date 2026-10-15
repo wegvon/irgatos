@@ -343,6 +343,7 @@ pub fn run() {
             voice::voice_live_key_status,
             voice::voice_set_live_key,
             voice::voice_live_key,
+            voice::voice_summarize,
             voice::voice_open_privacy_settings,
             voice::voice_speak,
             voice::voice_stop_speaking,

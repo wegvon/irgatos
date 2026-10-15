@@ -264,6 +264,26 @@ export async function speak(
   };
 }
 
+/**
+ * A few spoken sentences for an agent reply from Gemini, or null without a
+ * Live voice key, outside the app, or when the call fails.
+ */
+export async function summarizeReply(
+  text: string,
+  locale = "",
+): Promise<string | null> {
+  try {
+    if (!isTauri()) return null;
+    const summary = await invoke<string | null>("voice_summarize", {
+      text,
+      locale: locale || null,
+    });
+    return summary?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function systemVoices(): Promise<SystemVoice[]> {
   try {
     if (!isTauri()) return [];
