@@ -5,11 +5,70 @@ All notable changes to Irgatos are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Irgatos restarts version numbering at 0.1.0. The history of the MonoCode
-releases it grew out of (0.1.0 through 0.13.0) is archived in
-[docs/monocode-changelog.md](docs/monocode-changelog.md).
-
 ## [Unreleased]
+
+## [0.5.3] - 2026-10-15
+
+### Added
+
+- Choose Drama, EMA Lightning or Kahya TTS in Voice settings. The saved choice applies to previews and spoken replies.
+- Collapse each Irgat's child chats and delete an individual child chat with confirmation while keeping the Irgat's identity, memory and other chats.
+
+### Changed
+
+- Chats appear directly below Projects in the sidebar.
+
+### Fixed
+
+- Irgats can list and read their own primary and child chats without requesting project access. Other projects still require approval.
+- Project access requests remain visible in chat until the user allows or denies them, including after an assistant reply, a failed turn or an app restart.
+
+## [0.5.2] - 2026-10-14
+
+### Changed
+
+- **chore(rebrand): drop remaining /mono alias and mc/ worktree prefixes.** New worktree branches are created as `irgat/<id>` (orchestration workers as `irgat/orch-<id>`), and the remote host accepts only `irgat/` names for automatically created branches. Existing `mc/` branches stay as they are, but are now treated like any other branch: rename them with git, and delete old `mc/orch-` branches by hand.
+- **HTML artifacts are served from `irgatartifact://`.** Nothing to do: artifact links are built when they are shown.
+
+### Removed
+
+- **The `/mono` command alias.** Use `/operator` (or `/irgat`).
+
+### Fixed
+
+- **The remote host no longer rewrites the git index while reading.** Status and diff reads ran with optional locks, so they could refresh `.git/index` behind your back and collide with your own git commands.
+
+## [0.5.1] - 2026-10-14
+
+### Changed
+
+- **chore(rebrand): scrub remaining references to the former name.** Irgatos is the only name left in the app, its settings keys, its folders, its docs and its tests.
+- **Updates come only from `wegvon/irgatos`** (or a configured repository, or the checkout's `origin`). The fallback to the former repository is gone.
+
+### Removed
+
+- **One-time import of pre-Irgatos app data.** The app no longer looks for data folders, the database file, browser settings or host data left by the app it grew out of. Nothing on disk is deleted; data already carried over by an earlier version stays where it is.
+- **Old command and tag aliases** that existed only under the former name. `/irgat` and `/operator` still work.
+
+## [0.5.0] - 2026-10-14
+
+### Added
+
+- **Chat.** Ask about anything, with no project and no Irgat. A new **Chat** entry under Inbox in the menu (and on the compact rail) opens a list of your chats beside the open conversation. It works even when no project is open.
+  - Chats run in a private scratch folder (`~/.irgatos/scratch`, or the system temp folder when the home folder can't be used). There is no git, no worktree, and the folder never shows up in recent projects.
+  - A chat is a full session: streaming, approvals, questions, stop and resume, usage limits, the model and harness picker, attachments, the microphone and the ADHD switch all work as in a project chat. The branch and worktree controls are hidden.
+  - **New chat** (`⌘⇧H` / `Ctrl+Shift+H`) starts one and reuses an empty chat rather than piling them up. `⌘⇧N` stays **New Window**.
+  - Chats are titled automatically and can be renamed, pinned and deleted (with a confirmation). They persist across restarts, and the chat that was open comes back where you left it.
+  - The list shows which chats are running, which need you, and which have a reply you haven't read. The menu badge counts chats that need you first, then unread replies.
+- **Chats on the Board.** Chats get cards on their own **Chats** board, which a new **Chats** button on the Board header switches to. Cards move between In progress, Review and Done as the chat works, waits on you or finishes, and show a **Chat** badge.
+  - **Add to Board** in the chat header and the row menu files a chat, or shows its card once it has one. Starting a card from the Chats board opens a new chat with the card's text ready to send.
+  - Clicking a card's chat opens it in the Chat view. When a chat or session is waiting on a tool permission, **Allow** and **Deny** sit right on its card and in the card's dialog.
+  - The "Other projects" strip names the Chats board when chats are working or waiting on you.
+- **Fleet lists chats** under a **Chat** label, with their approvals and questions answered from Fleet as for any session.
+
+### Changed
+
+- **Artifacts moved into the menu.** It is no longer a tab in the project sidebar header (now Sessions, Explorer and Changes). It sits in the menu right under Board and Fleet, with the same live count, and opens the same Artifacts panel for the current project. Links that open an artifact still land on the panel, and the Irgat Overview keeps its own Artifacts tab.
 
 ## [0.4.0] - 2026-10-14
 
@@ -97,7 +156,7 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 
 ### Added
 
-- **Irgatos identity.** The app is named Irgatos, ships as `com.irgatos.desktop` with its own icon, and carries settings, sessions and Irgats over from the MonoCode-era app data on first launch.
+- **Irgatos identity.** The app is named Irgatos, ships as `com.irgatos.desktop` with its own icon.
 - **One-click commit and push** from the source control panel, with progress that survives React StrictMode.
 - **Dictation and voice mode in the Irgat chat box**, sharing one implementation with the session composer.
 - **Attach folders** from the Irgat chat box and the session composer's plus menu, or by dropping them on the floating chat. The agent gets the folder's path and a summary of its top level, leaving out version control, dependency, build and gitignored entries.
@@ -105,7 +164,7 @@ releases it grew out of (0.1.0 through 0.13.0) is archived in
 - **Kanban boards that fill themselves.** Every project session gets a card in the column for its state and moves when that state changes. Sessions waiting on an approval or an AskUserQuestion answer move to Review with a badge, the board opens on the sidebar's project, and a strip lists other projects with active sessions. Cards you delete or unlink stay off until the session needs you again.
 - **Version at a glance.** The running version appears beside Settings in the sidebar, in the Settings header, and under Settings › General › About together with the commit it was built from. `npm run version:bump -- <x.y.z|patch|minor|major>` updates every version file at once, and `npm run version:check` verifies they agree.
 - **Check for Updates that works.** The macOS app menu, Settings and the sidebar share one Software Update window that shows the installed and available versions and walks through Checking, Up to date or Update available, Downloading, Installing and Relaunching.
-  - **GitHub Releases:** Irgatos checks the latest release on `wegvon/irgatos` (falling back to `wegvon/monocode`, a configured repository or the checkout's `origin`), compares versions and commits, downloads the macOS `.app.tar.gz` or `.dmg` for your architecture, removes the quarantine flag, replaces `/Applications/Irgatos.app` (asking for an administrator password only when needed) and relaunches.
+  - **GitHub Releases:** Irgatos checks the latest release on `wegvon/irgatos` (or a configured repository, or the checkout's `origin`), compares versions and commits, downloads the macOS `.app.tar.gz` or `.dmg` for your architecture, removes the quarantine flag, replaces `/Applications/Irgatos.app` (asking for an administrator password only when needed) and relaunches.
   - **Source checkout:** when Irgatos runs from a git checkout, newer commits on its branch are offered as **Rebuild & Relaunch**, which fast-forwards the checkout, rebuilds the app and installs it.
 - The Release workflow runs for `v*` tags or by hand and publishes the macOS archives and disk images the updater consumes. Apple signing, notarization and Tauri updater signatures are used when their secrets exist; without them the workflow publishes ad-hoc signed builds.
 

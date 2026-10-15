@@ -160,7 +160,7 @@ const recoveryTurn = (reason: string) =>
   `Continue the existing assignment from its retained worker checkout. The previous turn was stopped because the orchestration run was interrupted: ${reason}\n\nInspect the current files and prior conversation before acting. Preserve completed work, do not repeat destructive or external operations, remain inside the assigned write scope, run the remaining focused checks, and report what was already done versus what you completed now.`;
 
 const ASSIGNMENT_BLOCK =
-  /(?:\r?\n[ \t]*)*<(monocode|irgat)_assignment\b[^>]*>[\s\S]*?<\/\1_assignment>/gi;
+  /(?:\r?\n[ \t]*)*<irgat_assignment\b[^>]*>[\s\S]*?<\/irgat_assignment>/gi;
 
 /** Prompt the worker receives, including the envelope the transcript hides. */
 export function workerTurnPrompt(

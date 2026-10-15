@@ -237,6 +237,25 @@ it("keeps the resident conversation mounted independently of ordinary tabs", asy
   expect(mocks.forgetHarnessSession).not.toHaveBeenCalled();
 });
 
+it.each([{ blocks: [] }, { blocks: [{ id: "user", role: "user" as const, text: "Hello" }] }])(
+  "keeps free chats mounted without project tabs (blocks: %j)",
+  async ({ blocks }) => {
+    const session = chat("free-chat", { cwd: "/Users/test/.irgatos/scratch", blocks });
+    const workspace = mountWorkspace({
+      sessions: [session],
+      tabs: [],
+      orchestrationRuns: [],
+      liveAgentsEnabled: false,
+      busySessionIds: new Set(),
+      activeSessionId: session.id,
+    });
+    await advance();
+    expect(workspace.snapshot().sessions).toEqual([session]);
+    expect(workspace.persistSession).not.toHaveBeenCalled();
+    expect(mocks.forgetHarnessSession).not.toHaveBeenCalled();
+  },
+);
+
 describe("orchestration worker detachment", () => {
   it("retains finished workers until their lead closes, then persists and forgets them", async () => {
     const workspace = mountWorkspace();

@@ -8,11 +8,9 @@ import { announceUpdateAvailable } from "../../features/settings/model/sounds";
 import { formatVersion } from "./appVersion";
 import { rememberInstalledUpdate } from "./updateNotice";
 
-/**
- * Irgatos's own repository is the only default release source.
- */
+/** Irgatos's own repository. */
 export const DEFAULT_UPDATE_REPOS = ["wegvon/irgatos"] as const;
-/** Upstream MonoCode owners ship a different app under the same asset names. */
+/** These owners ship a different app under the same asset names. */
 const BLOCKED_REPO_OWNERS = ["cretou", "hardbeat920"];
 const REPO_KEY = "irgatos.update.repo";
 const SOURCE_DIR_KEY = "irgatos.update.sourceDir";
@@ -235,7 +233,7 @@ export function saveUpdateRepo(input: string): string | null {
   const slug = normalizeRepoSlug(input);
   if (!slug) throw new Error("Use owner/repo, e.g. wegvon/irgatos.");
   if (isBlockedRepo(slug)) {
-    throw new Error(`${slug} is upstream MonoCode, not Irgatos.`);
+    throw new Error(`${slug} ships a different app, not Irgatos.`);
   }
   store?.setItem(REPO_KEY, slug);
   return slug;

@@ -257,11 +257,11 @@ import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubti
 import {
   saveComposerAutocorrect,
   saveMaskEmails,
-  saveRailMonosPinned,
+  saveRailIrgatsPinned,
   saveShowRemainingUsage,
   useComposerAutocorrect,
   useMaskEmails,
-  useRailMonosPinned,
+  useRailIrgatsPinned,
   useShowRemainingUsage,
 } from "../model/displayPrefs";
 import {
@@ -325,7 +325,7 @@ import {
   listIrgats,
   irgatLook,
   irgatProjectsPhrase,
-  monosSnapshot,
+  irgatsSnapshot,
   subscribeIrgats,
   updateIrgat,
   type Irgat,
@@ -348,7 +348,7 @@ import {
   loadLiveAgentsEnabled,
   loadModelControls,
   loadNotesEnabled,
-  loadMonosEnabled,
+  loadIrgatsEnabled,
   loadIrgatMenuBarIcon,
   loadKeybindingOverrides,
   keybindingShortcutLabel,
@@ -372,8 +372,8 @@ import {
   saveLiveAgentsEnabled,
   saveModelControls,
   saveNotesEnabled,
-  saveMonosEnabled,
-  subscribeMonosEnabled,
+  saveIrgatsEnabled,
+  subscribeIrgatsEnabled,
   saveKeybindingOverride,
   validateKeybindingShortcut,
   saveQuickComposerEnabled,
@@ -425,7 +425,10 @@ import {
   DEFAULT_UPDATE_REPOS,
 } from "../../../app/model/updater";
 import { formatVersion, shortCommit } from "../../../app/model/appVersion";
-import { updateActionLabel, updateHeadline } from "../../../app/model/updateStatus";
+import {
+  updateActionLabel,
+  updateHeadline,
+} from "../../../app/model/updateStatus";
 import { useAppBuild, useUpdater } from "../../../app/model/useUpdater";
 
 import { SkillsPage } from "../../skills/ui/SkillsPage";
@@ -441,10 +444,9 @@ import {
   requestVoiceAccess,
   saveTranscriptionKey,
   speak,
-  systemVoices,
   type SpeechHandle,
-  type SystemVoice,
   voiceStatus,
+  type SpeechProvider,
   type VoiceEngine,
   type VoiceStatus,
 } from "../../../platform/tauri/voice";
@@ -455,7 +457,7 @@ import {
   saveVoiceSettings,
   subscribeVoiceSettings,
   CONVERSATION_PAUSES,
-  SPEECH_RATES,
+  SPEECH_PROVIDERS,
   VOICE_LANGUAGES,
 } from "../../voice/model/voiceSettings";
 import {
@@ -658,7 +660,7 @@ export function SettingsView({
               {section === "voice" ? <VoicePage /> : null}
               {section === "adhd" ? <AdhdPage /> : null}
               {section === "keybindings" ? <KeybindingsPage /> : null}
-              {section === "irgats" ? <MonosPage /> : null}
+              {section === "irgats" ? <IrgatsPage /> : null}
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
               ) : null}
@@ -1266,14 +1268,6 @@ function voiceAccessLabel(status: VoiceStatus, engine: VoiceEngine): string {
   return "Allowed";
 }
 
-function voiceLanguageNote(status: VoiceStatus | null): string {
-  if (!status?.supported) return "";
-  if (!status.languageAvailable)
-    return " Apple's recognizer does not support this language.";
-  if (status.onDevice) return " This language transcribes on this Mac.";
-  return " This language has no on-device model yet. Add it under System Settings › Keyboard › Dictation, or allow Apple servers.";
-}
-
 function AdhdPage() {
   const adhd = useAdhdState();
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -1388,17 +1382,14 @@ function VoicePage() {
   const [key, setKey] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
-  const [voices, setVoices] = useState<SystemVoice[]>([]);
   const [previewing, setPreviewing] = useState(false);
   const preview = useRef<SpeechHandle | null>(null);
+  const speechProvider = SPEECH_PROVIDERS.find(
+    (provider) => provider.value === voice.speechProvider,
+  )!;
 
   useEffect(() => {
-    let live = true;
-    void systemVoices().then((list) => {
-      if (live) setVoices(list);
-    });
     return () => {
-      live = false;
       preview.current?.stop();
     };
   }, []);
@@ -1409,15 +1400,15 @@ function VoicePage() {
       return;
     }
     setPreviewing(true);
-    void speak("This is how Irgatos reads an agent's reply in voice mode.", {
-      voice: voice.speechVoice,
-      rate: voice.speechRate,
-    })
+    setKeyError(null);
+    void speak("Merhaba Boss, bu bir ses denemesidir.", voice.speechProvider)
       .then((handle) => {
         preview.current = handle;
         return handle.done;
       })
-      .catch(() => {})
+      .catch((reason: unknown) => {
+        setKeyError(reason instanceof Error ? reason.message : String(reason));
+      })
       .finally(() => {
         preview.current = null;
         setPreviewing(false);
@@ -1497,15 +1488,13 @@ function VoicePage() {
         </Row>
         <Row
           id="voice-access"
-          label="Microphone and speech access"
+          label="Microphone access"
           description={
             status == null
               ? "Checking…"
               : !supported
                 ? "Voice input is available on macOS for now."
-                : voice.engine === "apple"
-                  ? "macOS asks once for the microphone and once for speech recognition. Only System Settings can change a decision afterwards."
-                  : "macOS asks once for the microphone. Only System Settings can change the decision afterwards."
+                : "macOS asks once for the microphone. Only System Settings can change the decision afterwards."
           }
         >
           {status != null && supported ? (
@@ -1556,7 +1545,7 @@ function VoicePage() {
         <Row
           id="voice-mode-read-replies"
           label="Read replies aloud"
-          description="Read the agent's final message in each turn with the system voice. Code blocks and links are skipped, and long replies stop early."
+          description="Read replies with the selected speech model. Code blocks and links are skipped, and long replies stop early."
         >
           <Toggle
             label="Read replies aloud"
@@ -1566,39 +1555,27 @@ function VoicePage() {
         </Row>
         <Row
           id="voice-mode-voice"
-          label="Reading voice"
-          description="Spoken Content follows System Settings › Accessibility › Spoken Content. Download more voices there."
+          label="Speech model"
+          description={`Text is sent over HTTPS to ${speechProvider.host}.`}
         >
           <Select
-            label="Reading voice"
-            value={voice.speechVoice}
-            options={[
-              { value: "", label: "Spoken Content voice" },
-              ...voices.map((option) => ({
-                value: option.name,
-                label: `${option.name} · ${option.locale}`,
-              })),
-            ]}
-            onChange={(next) => saveVoiceSettings({ speechVoice: next })}
+            label="Speech model"
+            value={voice.speechProvider}
+            options={SPEECH_PROVIDERS}
+            onChange={(next) => {
+              preview.current?.stop();
+              setKeyError(null);
+              saveVoiceSettings({ speechProvider: next as SpeechProvider });
+            }}
           />
           <SecondaryButton onClick={onPreview}>
             {previewing ? "Stop" : "Preview"}
           </SecondaryButton>
-        </Row>
-        <Row
-          id="voice-mode-rate"
-          label="Reading speed"
-          description="Normal uses the Spoken Content rate."
-        >
-          <Segmented
-            label="Reading speed"
-            value={String(voice.speechRate)}
-            options={SPEECH_RATES.map((rate) => ({
-              value: String(rate),
-              label: rate === 0 ? "Normal" : rate < 180 ? "Slower" : "Faster",
-            }))}
-            onChange={(next) => saveVoiceSettings({ speechRate: Number(next) })}
-          />
+          {keyError ? (
+            <span role="alert" className="text-xs text-red-500">
+              {keyError}
+            </span>
+          ) : null}
         </Row>
       </Group>
 
@@ -1606,14 +1583,14 @@ function VoicePage() {
 
       <Group
         title="Transcription"
-        description="Where speech becomes text. On this Mac uses Apple's recognizer with live text as you speak. A service uploads the recording when you finish."
+        description="Qwen3-ASR transcribes your microphone live on Rem. Audio is sent over HTTPS to qasr.turel.se."
       >
         <Row
           id="voice-engine"
           label="Transcription engine"
           description={
-            voice.engine === "apple"
-              ? "Apple speech recognition. Audio stays on this Mac when the language is installed, and no key is needed."
+            voice.engine === "qwen"
+              ? "Qwen3-ASR-1.7B on Rem. Live Turkish transcription, no API key required."
               : "Any OpenAI-compatible transcription endpoint, such as OpenAI, Groq, or a local whisper.cpp server. Audio leaves this Mac unless the endpoint is local."
           }
         >
@@ -1621,7 +1598,7 @@ function VoicePage() {
             label="Transcription engine"
             value={voice.engine}
             options={[
-              { value: "apple", label: "On this Mac" },
+              { value: "qwen", label: "Qwen3-ASR" },
               { value: "cloud", label: "Service" },
             ]}
             onChange={(next) => saveVoiceSettings({ engine: next })}
@@ -1630,27 +1607,17 @@ function VoicePage() {
         <Row
           id="voice-language"
           label="Language"
-          description={`The language you speak. System language follows macOS.${
-            voice.engine === "apple" ? voiceLanguageNote(status) : ""
-          }`}
+          description={
+            voice.engine === "qwen"
+              ? "Qwen detects the language automatically, including Turkish."
+              : "The language hint sent to your transcription service."
+          }
         >
           <Select
             label="Language"
             value={voice.locale}
             options={VOICE_LANGUAGES}
             onChange={(next) => saveVoiceSettings({ locale: next })}
-          />
-        </Row>
-        <Row
-          id="voice-allow-server"
-          label="Allow Apple servers"
-          description="When a language has no on-device model, let Apple's servers transcribe it. Off keeps audio on this Mac and asks you to install the language instead."
-        >
-          <Toggle
-            label="Allow Apple servers"
-            on={voice.allowServer}
-            disabled={voice.engine !== "apple"}
-            onChange={(next) => saveVoiceSettings({ allowServer: next })}
           />
         </Row>
       </Group>
@@ -1864,7 +1831,9 @@ function LiveVoiceGroup({
             value: name,
             label: `${name} · ${LIVE_VOICE_HINTS[name]}`,
           }))}
-          onChange={(next) => saveLiveSettings({ voice: next as LiveVoiceName })}
+          onChange={(next) =>
+            saveLiveSettings({ voice: next as LiveVoiceName })
+          }
         />
       </Row>
       <Row
@@ -1880,7 +1849,12 @@ function LiveVoiceGroup({
               ...LIVE_MODELS,
               ...(known
                 ? []
-                : [{ value: live.model, label: live.model.replace(/^models\//, "") }]),
+                : [
+                    {
+                      value: live.model,
+                      label: live.model.replace(/^models\//, ""),
+                    },
+                  ]),
             ]}
             onChange={(next) => saveLiveSettings({ model: next })}
           />
@@ -2528,7 +2502,10 @@ function UpdateRow({
         ? snapshot.packageManaged
           ? packageManagerHint(snapshot.packageManaged)
           : "Irgatos checks its GitHub Releases and the source checkout it was built from."
-        : [updateHeadline(snapshot), snapshot.phase === "current" ? snapshot.note : null]
+        : [
+            updateHeadline(snapshot),
+            snapshot.phase === "current" ? snapshot.note : null,
+          ]
             .filter(Boolean)
             .join(". ");
   const commit = shortCommit(snapshot.currentCommit);
@@ -4852,10 +4829,10 @@ function formatDate(value: number): string {
 }
 
 /** Irgats on or off, and each Irgat the user has. */
-function MonosPage() {
+function IrgatsPage() {
   const enabled = useSyncExternalStore(
-    subscribeMonosEnabled,
-    loadMonosEnabled,
+    subscribeIrgatsEnabled,
+    loadIrgatsEnabled,
     () => true,
   );
   const menuBarIcon = useSyncExternalStore(
@@ -4863,8 +4840,8 @@ function MonosPage() {
     loadIrgatMenuBarIcon,
     () => true,
   );
-  const railPinned = useRailMonosPinned();
-  const snapshot = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const railPinned = useRailIrgatsPinned();
+  const snapshot = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const irgats = useMemo(() => listIrgats(), [snapshot]);
 
   return (
@@ -4875,7 +4852,11 @@ function MonosPage() {
           label="Show irgats"
           description="Agents of your own on the project rail. Each works on the projects you give it, remembers what matters and picks up habits it runs on its own. Turn this off to hide them."
         >
-          <Toggle label="Show irgats" on={enabled} onChange={saveMonosEnabled} />
+          <Toggle
+            label="Show irgats"
+            on={enabled}
+            onChange={saveIrgatsEnabled}
+          />
         </Row>
         <Row
           id="rail-irgats-pinned"
@@ -4885,7 +4866,7 @@ function MonosPage() {
           <Toggle
             label="Pin irgats to the icon rail"
             on={railPinned}
-            onChange={saveRailMonosPinned}
+            onChange={saveRailIrgatsPinned}
             disabled={!enabled}
           />
         </Row>

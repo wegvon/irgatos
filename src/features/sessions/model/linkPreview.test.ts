@@ -35,16 +35,16 @@ describe("parseUserMessageLink", () => {
   it("extracts a URL followed by a comment", () => {
     expect(
       parseUserMessageLink(
-        "https://github.com/wegvon/monocode/pull/226 check this",
+        "https://github.com/wegvon/irgatos/pull/226 check this",
       ),
     ).toEqual({
       link: {
-        url: "https://github.com/wegvon/monocode/pull/226",
+        url: "https://github.com/wegvon/irgatos/pull/226",
         host: "github.com",
-        displayUrl: "github.com/wegvon/monocode/pull/226",
+        displayUrl: "github.com/wegvon/irgatos/pull/226",
         githubWorkItem: {
           kind: "pr",
-          repo: "wegvon/monocode",
+          repo: "wegvon/irgatos",
           number: 226,
         },
       },

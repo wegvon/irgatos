@@ -538,7 +538,7 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
 }
 
 /**
- * Approval request ids are live only for the turn that produced them. Once
+ * Harness approval request ids are live only for the turn that produced them. Once
  * that turn has stopped (or a later turn is about to start), leaving one
  * undecided makes its old Allow/Deny controls and notification actionable
  * even though the harness can no longer receive the response.
@@ -546,6 +546,8 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
 function settlePendingApprovals(session: Session): Session {
   let changed = false;
   const blocks = session.blocks.flatMap((block) => {
+    // Project access is decided by the app's user, independently of a provider turn.
+    if (block.irgatProjectAccess) return [block];
     if (!block.approval || block.approval.decided) return [block];
     changed = true;
     if (block.role === "approval") return [];
@@ -593,6 +595,7 @@ function failStreaming(session: Session): Session {
   return {
     ...stopped,
     blocks: stopped.blocks.map((block) => {
+      if (block.irgatProjectAccess) return block;
       const open = openTools.has(block.id);
       const pendingApproval = !!block.approval && !block.approval.decided;
       if (!open && !pendingApproval) return block;

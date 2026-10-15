@@ -25,7 +25,7 @@ test("dictation streams words into the composer and leaves them editable", async
   await mic.click();
   const strip = page.locator("[data-dictation-strip]");
   await expect(strip).toContainText("Listening");
-  await expect(strip).toContainText("On this Mac");
+  await expect(strip).toContainText("Qwen3-ASR · Rem");
 
   const words = SENTENCE.split(" ");
   for (let count = 1; count <= words.length; count += 1) {
@@ -57,11 +57,11 @@ test("a refused permission explains itself and links to System Settings", async 
 }, testInfo) => {
   await page.goto("/tests/browser/voice-composer.html");
   await page.evaluate(() => {
-    window.voice.status = { ...window.voice.status, speech: "denied" };
+    window.voice.status = { ...window.voice.status, microphone: "denied" };
   });
   await page.getByRole("button", { name: "Dictate" }).click();
   const alert = page.getByRole("alert");
-  await expect(alert).toContainText("Speech recognition is off for Irgatos.");
+  await expect(alert).toContainText("Microphone access is off for Irgatos.");
   await expect(
     alert.getByRole("button", { name: "Open System Settings" }),
   ).toBeVisible();
@@ -81,17 +81,21 @@ test("voice mode sends after a pause and reads the reply aloud", async ({
   await page.evaluate(() => window.voice.partial("What changed in the last"));
   await speakLevels(page, [0.5, 0.8, 0.7, 0.6, 0.85, 0.5]);
   await expect(strip).toContainText("Sends after a 1.2 s pause");
+  await page.evaluate(() =>
+    window.voice.partial("What changed in the last commit"),
+  );
   await page.screenshot({
     path: testInfo.outputPath("voice-mode-listening.png"),
   });
 
-  await page.evaluate(() => window.voice.partial("What changed in the last commit"));
   await expect(page.locator("[data-sent]")).toHaveText(
     "What changed in the last commit",
     { timeout: 4000 },
   );
   await expect(strip).toHaveAttribute("data-phase", "waiting");
-  await page.screenshot({ path: testInfo.outputPath("voice-mode-waiting.png") });
+  await page.screenshot({
+    path: testInfo.outputPath("voice-mode-waiting.png"),
+  });
 
   await page.evaluate(() =>
     window.voice.reply(
@@ -121,6 +125,58 @@ test("the Voice settings page lays out every option", async ({
   await expect(page.getByText("Transcription engine")).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("voice-settings.png"),
+    fullPage: true,
+  });
+});
+
+test("provider quota is immediately left of the model selector", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/voice-composer.html");
+  const picker = page.getByRole("button", { name: "Codex Codex", exact: true });
+  await expect(picker).toBeVisible();
+  const previous = page.getByRole("button", {
+    name: "Codex usage details",
+    exact: true,
+  });
+  await expect(previous).toContainText("25%");
+  const quotaBox = await previous.boundingBox();
+  const modelBox = await picker.boundingBox();
+  expect(quotaBox!.x + quotaBox!.width).toBeLessThanOrEqual(modelBox!.x + 1);
+});
+
+test("speech models persist and preview uses the selected service", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/tests/browser/voice-composer.html?view=settings");
+  let current = "Drama";
+  for (const [provider, label] of [
+    ["ema", "EMA Lightning"],
+    ["kahya", "Kahya TTS"],
+  ]) {
+    await page
+      .getByRole("button", { name: `Speech model: ${current}`, exact: true })
+      .click();
+    await page.getByRole("option", { name: label, exact: true }).click();
+    await page.getByRole("button", { name: "Preview", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => window.voice.speechProvider)).toBe(
+      provider,
+    );
+    await page.evaluate(() => window.voice.finishSpeech());
+    await expect(
+      page.getByRole("button", { name: "Preview", exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("button", { name: `Speech model: ${label}`, exact: true }),
+    ).toBeVisible();
+    current = label;
+  }
+  await page.screenshot({
+    path: testInfo.outputPath("speech-models.png"),
     fullPage: true,
   });
 });

@@ -493,3 +493,74 @@ it("draws the column drop line where the column will land", () => {
   ]);
   expect(columnDropSide({ columnId: "b", slot: 1 }, ids, 2)).toBeNull();
 });
+
+it("switches to the Chats board and labels chat cards", async () => {
+  const SCRATCH = "/Users/me/.irgatos/scratch";
+  board.columns[0]!.cards[0]!.session = { id: "chat-1", status: "running", saved: true };
+  board.columns[1]!.cards[0]!.session = { id: "old-chat", status: "finished", saved: true };
+  await render(PROJECT, {
+    chatBoard: SCRATCH,
+    liveSessions: new Map([
+      ["chat-1", { status: "running", title: "Explain monads", harness: "claude", chat: true, project: SCRATCH }],
+    ]),
+  });
+  const toggle = container.querySelector<HTMLButtonElement>("[data-kanban-chats-toggle]")!;
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(cardElement("c1").querySelector("[data-card-chat]")).not.toBeNull();
+  expect(cardElement("c2").querySelector("[data-card-chat]")).toBeNull();
+  expect(cardElement("c3").querySelector("[data-card-chat]")).toBeNull();
+
+  await act(async () => toggle.click());
+  await act(async () => {});
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector("[data-kanban-chats-title]")?.textContent).toBe("Chats");
+  expect(writes("kanban_board").some((args) => args.project === SCRATCH)).toBe(true);
+  // Every linked card on the Chats board is a chat, loaded or not.
+  expect(cardElement("c3").querySelector("[data-card-chat]")).not.toBeNull();
+
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(container.querySelector("[data-kanban-chats-title]")).toBeNull();
+});
+
+it("names the Chats board in the other-projects strip", async () => {
+  await render(PROJECT, {
+    liveSessions: new Map([
+      ["chat-1", { status: "needs-input", title: "Explain", harness: "claude", chat: true, project: "/Users/me/.irgatos/scratch" }],
+    ]),
+  });
+  const strip = container.querySelector("[data-kanban-elsewhere]")!;
+  expect(strip.textContent).toContain("Chats");
+  expect(strip.textContent).not.toContain("scratch");
+});
+
+it("allows or denies a waiting permission from the card", async () => {
+  board.columns[0]!.cards[0]!.session = { id: "s1", status: "needs-input", saved: true };
+  const answers: unknown[] = [];
+  await render(PROJECT, {
+    liveSessions: new Map([
+      [
+        "s1",
+        {
+          status: "needs-input",
+          title: "Fix",
+          harness: "claude",
+          attention: "approval",
+          approval: { requestId: 4, label: "Run npm test" },
+        },
+      ],
+    ]),
+    onApproval: (...args) => {
+      answers.push(args);
+    },
+  });
+  const approval = cardElement("c1").querySelector<HTMLElement>("[data-card-approval]")!;
+  expect(approval.textContent).toContain("Run npm test");
+  await act(async () =>
+    approval.querySelector<HTMLButtonElement>('button[aria-label^="Allow"]')!.click(),
+  );
+  expect(answers).toEqual([["s1", 4, "allow"]]);
+  // Answering does not open the card.
+  expect(document.querySelector("[data-card-session]")).toBeNull();
+  expect(cardElement("c2").querySelector("[data-card-approval]")).toBeNull();
+});

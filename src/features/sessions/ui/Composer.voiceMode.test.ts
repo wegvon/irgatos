@@ -103,6 +103,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  saveVoiceSettings({ readReplies: true });
   resetVoiceSupportForTests();
   captures = [];
   finishSpeech = null;
@@ -170,6 +171,7 @@ describe("Composer voice mode", () => {
     expect(strip()?.dataset.phase).toBe("waiting");
     expect(captures).toHaveLength(1);
 
+    saveVoiceSettings({ speechProvider: "kahya" });
     await render({
       busy: false,
       voiceReply: {
@@ -179,7 +181,7 @@ describe("Composer voice mode", () => {
     });
     expect(voice.speak).toHaveBeenCalledExactlyOnceWith(
       "Done. All 42 tests pass.",
-      { voice: "", rate: 0 },
+      "kahya",
     );
     expect(strip()?.dataset.phase).toBe("speaking");
     expect(captures).toHaveLength(1);

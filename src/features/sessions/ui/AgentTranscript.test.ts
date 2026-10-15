@@ -33,7 +33,11 @@ describe("AgentTranscript collapsed work", () => {
       irgatProjectAccess: { irgatId: "irgat", project: "/code/repguard" },
     };
     const markup = renderToStaticMarkup(createElement(AgentTranscript, {
-      blocks: [{ id: "u", role: "user", text: "Start agents" }, request],
+      blocks: [
+        { id: "u", role: "user", text: "Start agents" },
+        tool("lookup"), request,
+        { id: "answer", role: "assistant", text: "Onay isteğini gönderdim." },
+      ],
       busy, inlineWork, agentName: "IrgatCat", onApproval: () => {},
     }));
     expect(markup).toContain("repguard projesine erişmeme izin veriyor musun?");

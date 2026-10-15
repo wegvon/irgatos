@@ -854,6 +854,34 @@ export function loadSidebarTabOrder(): SidebarTabId[] {
   }
 }
 
+/** Panels opened from the navigation menu rather than the workspace tab row. */
+const MENU_SIDEBAR_TABS: ReadonlySet<SidebarTabId> = new Set([
+  "inbox",
+  "artifacts",
+]);
+
+export function isWorkspaceHeaderTab(tab: SidebarTabId): boolean {
+  return !MENU_SIDEBAR_TABS.has(tab);
+}
+
+/** The `Sessions | Explorer | Changes` row, in the user's saved order. */
+export function workspaceHeaderTabs(
+  order: readonly SidebarTabId[],
+): SidebarTabId[] {
+  return order.filter(isWorkspaceHeaderTab);
+}
+
+/** Apply a reorder of the header row, leaving menu panels where they were. */
+export function reorderWorkspaceHeaderTabs(
+  order: readonly SidebarTabId[],
+  headerIds: readonly SidebarTabId[],
+): SidebarTabId[] {
+  let index = 0;
+  return order.map((tab) =>
+    isWorkspaceHeaderTab(tab) ? (headerIds[index++] ?? tab) : tab,
+  );
+}
+
 export function saveSidebarTabOrder(order: SidebarTabId[]) {
   try {
     localStorage.setItem(SIDEBAR_TAB_ORDER_KEY, JSON.stringify(order));

@@ -44,7 +44,7 @@ PUBLIC = ROOT / "public"
 
 CANVAS = 1024
 
-# Deep copper, deliberately far from MonoCode's near-black greyscale tile.
+# Deep copper, so the tile reads as warm metal rather than a greyscale slab.
 BG_STOPS = [(0.0, "#E05D1D"), (0.52, "#B33B0C"), (1.0, "#8A2607")]
 BG_SOLID = "#B8400F"  # flat stand-in for Icon Composer's background fill
 CREAM_STOPS = [(0.0, "#FFFDF9"), (1.0, "#FFE9CE")]

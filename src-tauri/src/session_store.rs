@@ -90,6 +90,8 @@ impl SessionStore {
     }
 }
 
+const DB_FILE: &str = "irgat.db";
+
 pub fn init(app: &AppHandle) -> Result<(), String> {
     init_with(
         || app.path().app_data_dir().map_err(|e| e.to_string()),
@@ -107,8 +109,7 @@ fn init_with(
     manage: impl FnOnce(SessionStore),
 ) -> Result<(), String> {
     let dir = data_dir()?;
-    crate::legacy_data::import_legacy_data(&dir);
-    let store = open(dir.join(crate::legacy_data::DB_FILE))?;
+    let store = open(dir.join(DB_FILE))?;
     manage(store);
     Ok(())
 }

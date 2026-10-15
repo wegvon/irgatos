@@ -298,8 +298,8 @@ describe("Irgat composer dictation", () => {
   });
 
   it("explains a refused permission without touching the draft", async () => {
-    voice.status.mockResolvedValue({ ...GRANTED, speech: "prompt" });
-    voice.request.mockResolvedValue({ ...GRANTED, speech: "denied" });
+    voice.status.mockResolvedValue({ ...GRANTED, microphone: "prompt" });
+    voice.request.mockResolvedValue({ ...GRANTED, microphone: "denied" });
     setComposerDraft("irgat-voice-test", "draft");
     await renderComposer();
     await act(async () => micButton()!.click());
@@ -307,14 +307,14 @@ describe("Irgat composer dictation", () => {
 
     expect(voice.start).not.toHaveBeenCalled();
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain("Speech recognition is off");
+    expect(alert?.textContent).toContain("Microphone access is off");
     expect(textarea().value).toBe("draft");
 
     const open = [...alert!.querySelectorAll("button")].find(
       (button) => button.textContent === "Open System Settings",
     );
     await act(async () => open!.click());
-    expect(voice.openSettings).toHaveBeenCalledWith("speech");
+    expect(voice.openSettings).toHaveBeenCalledWith("microphone");
   });
 
   it("makes room for the buttons in the one-line chat box too", async () => {

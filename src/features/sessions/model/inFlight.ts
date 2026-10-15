@@ -160,6 +160,7 @@ function sealOpenWork(session: Session): Session {
     ...session,
     busy: false,
     blocks: session.blocks.flatMap((block) => {
+      if (block.irgatProjectAccess) return [block];
       if (block.role === "approval" && !block.approval?.decided) return [];
       if (!shouldCancelTool(block)) return [block];
       const { approval, ...rest } = block;

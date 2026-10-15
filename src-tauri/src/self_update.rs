@@ -21,9 +21,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
-/// Irgatos is the only default release source.
+/// Checked after any configured override.
 pub const DEFAULT_REPOS: [&str; 1] = ["wegvon/irgatos"];
-/// Upstream MonoCode owners ship a different app under the same asset names.
+/// These owners ship a different app under the same asset names.
 /// Never offer their releases, whatever a remote or override says.
 const BLOCKED_OWNERS: [&str; 2] = ["cretou", "hardbeat920"];
 const REPO_ENV: &str = "IRGATOS_UPDATE_REPO";
@@ -1737,10 +1737,10 @@ mod tests {
     fn slugs_come_from_urls_remotes_and_plain_text() {
         for (input, expected) in [
             ("wegvon/irgatos", Some("wegvon/irgatos")),
-            (" wegvon/monocode ", Some("wegvon/monocode")),
+            (" wegvon/irgatos ", Some("wegvon/irgatos")),
             (
-                "https://github.com/wegvon/monocode.git",
-                Some("wegvon/monocode"),
+                "https://github.com/turel/irgatos-fork.git",
+                Some("turel/irgatos-fork"),
             ),
             (
                 "https://x-access-token:abc@github.com/wegvon/irgatos",
@@ -1767,17 +1767,17 @@ mod tests {
     #[test]
     fn the_upstream_is_never_a_candidate() {
         let repos = candidate_repos(
-            Some("cretou/monocode"),
+            Some("cretou/irgatos"),
             Some("CRETOU/irgatos"),
-            Some("git@github.com:hardbeat920/monocode.git"),
+            Some("git@github.com:hardbeat920/irgatos.git"),
         );
         assert_eq!(repos, vec!["wegvon/irgatos"]);
         assert!(repos
             .iter()
             .all(|repo| !repo.to_ascii_lowercase().contains("cretou")));
         assert!(!is_release_download(
-            "https://github.com/cretou/monocode/releases/download/v1.0.0/Irgatos.app.tar.gz",
-            "cretou/monocode"
+            "https://github.com/cretou/irgatos/releases/download/v1.0.0/Irgatos.app.tar.gz",
+            "cretou/irgatos"
         ));
     }
 
@@ -1787,9 +1787,9 @@ mod tests {
             candidate_repos(
                 Some("turel/irgatos-fork"),
                 None,
-                Some("https://github.com/wegvon/monocode.git")
+                Some("https://github.com/wegvon/irgatos.git")
             ),
-            vec!["turel/irgatos-fork", "wegvon/irgatos", "wegvon/monocode"]
+            vec!["turel/irgatos-fork", "wegvon/irgatos"]
         );
         assert_eq!(
             candidate_repos(None, None, Some("git@github.com:someone/else.git")),
@@ -1803,7 +1803,7 @@ mod tests {
         let url = "https://github.com/wegvon/irgatos/releases/download/v0.2.0/Irgatos_0.2.0_aarch64.app.tar.gz";
         assert!(is_release_download(url, "wegvon/irgatos"));
         assert!(is_release_download(url, "WEGVON/Irgatos"));
-        assert!(!is_release_download(url, "wegvon/monocode"));
+        assert!(!is_release_download(url, "wegvon/irgatos-old"));
         assert!(!is_release_download(
             "https://evil.example/Irgatos.app.tar.gz",
             "wegvon/irgatos"
@@ -1890,8 +1890,8 @@ mod tests {
                   "browser_download_url": "https://github.com/wegvon/irgatos/releases/download/v0.2.0/latest.json" }
             ]
         });
-        // Queried under the old name; GitHub answered for the renamed repo.
-        let release = parse_release("wegvon/monocode", &body, "aarch64").unwrap();
+        // Queried under a former name; GitHub answered for the renamed repo.
+        let release = parse_release("wegvon/irgat", &body, "aarch64").unwrap();
         assert_eq!(release.repo, "wegvon/irgatos");
         assert_eq!(release.version, "0.2.0");
         assert_eq!(

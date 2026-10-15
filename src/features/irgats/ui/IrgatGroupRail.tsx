@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import { MoreHorizontal, Trash2 } from "../../../shared/ui/icons";
-import { irgatLook, listIrgats, monosSnapshot, subscribeIrgats } from "../model/irgat";
+import { irgatLook, listIrgats, irgatsSnapshot, subscribeIrgats } from "../model/irgat";
 import {
   groupMembers,
   irgatGroupName,
@@ -52,7 +52,7 @@ export function GroupMascots({
 /** The user's group rooms, under their Irgats on the rail. */
 export function IrgatGroupRail({ activeId, busy, onOpen, onDelete }: IrgatGroupRailProps) {
   const groupsSnap = useSyncExternalStore(subscribeIrgatGroups, irgatGroupsSnapshot);
-  const rosterSnap = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const rosterSnap = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const rows = useMemo(() => {
     const roster = listIrgats();
     return listIrgatGroups().map((group) => ({

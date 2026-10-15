@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { Block } from "../../sessions/model/session";
+import { newSession, type Block, type Session } from "../../sessions/model/session";
+import { kanbanProject } from "./kanban";
 import {
+  boardSessions,
   boardSyncBatches,
   cardSessionLabel,
   cardSessionView,
+  liveCardSession,
   liveSessionAttention,
   liveSessionStatus,
+  pendingCardApproval,
   type BoardSession,
   liveSessionsKey,
   projectActivity,
@@ -192,5 +196,46 @@ describe("projectActivity with terminal agents", () => {
   it("matches the session-only result without terminal agents", () => {
     const sessions = new Map<string, LiveCardSession>([["s1", live("/a", "running")]]);
     expect(projectActivity(sessions, null)).toEqual(projectActivity(sessions, null, []));
+  });
+});
+
+describe("project-free chats on the board", () => {
+  const SCRATCH = "/Users/me/.irgatos/scratch";
+
+  it("files a chat on the Chats board and flags it", () => {
+    const chat = {
+      ...newSession("claude", SCRATCH),
+      title: "Explain monads",
+      blocks: [block("user"), block("assistant")],
+    };
+    const work = { ...newSession("codex", "/repo/app"), blocks: [block("user")] };
+    const board = boardSessions([chat, work]);
+    expect(board.get(chat.id)).toMatchObject({
+      chat: true,
+      project: kanbanProject(SCRATCH),
+      status: "finished",
+      fileable: true,
+    });
+    expect(board.get(work.id)?.chat).toBeUndefined();
+  });
+
+  it("carries the oldest waiting permission so the card can answer it", () => {
+    const chat = {
+      ...newSession("claude", SCRATCH),
+      busy: true,
+      blocks: [
+        block("user"),
+        block("tool", { text: "Run ls", approval: { requestId: 7, decided: "allow" } }),
+        block("tool", { text: "Run pwd", approval: { requestId: 8 } }),
+      ],
+    } as Session;
+    const live = liveCardSession(chat);
+    expect(live).toMatchObject({ status: "needs-input", attention: "approval" });
+    expect(live.approval?.requestId).toBe(8);
+    expect(pendingCardApproval({ ...chat, worktreeRemoved: true })).toBeUndefined();
+    const key = liveSessionsKey(new Map([[chat.id, live]]));
+    expect(key).not.toBe(
+      liveSessionsKey(new Map([[chat.id, { ...live, approval: undefined }]])),
+    );
   });
 });

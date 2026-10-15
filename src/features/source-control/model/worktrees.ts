@@ -76,20 +76,20 @@ export function temporaryWorktreeBranchName(
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, 8)
     .toLowerCase();
-  return `mc/${token || Date.now().toString(36)}`;
+  return `irgat/${token || Date.now().toString(36)}`;
 }
 
 export function orchestrationWorktreeBranchName(id: string): string {
   const token = id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12).toLowerCase();
-  return `mc/orch-${token || Date.now().toString(36)}`;
+  return `irgat/orch-${token || Date.now().toString(36)}`;
 }
 
 export function namedWorktreeBranch(fragment: string): string | null {
   const clean = fragment
     .trim()
-    .replace(/^(?:mc|irgat|monocode)\/+/, "")
+    .replace(/^irgat\/+/, "")
     .replace(/^\/+|\/+$/g, "");
-  return clean ? `mc/${clean}` : null;
+  return clean ? `irgat/${clean}` : null;
 }
 
 export async function removeWorktree(

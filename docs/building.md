@@ -10,6 +10,17 @@ On Windows, the packaging script uses `stable-x86_64-pc-windows-msvc`. The insta
 
 ## Run locally
 
+### Personal macOS updates
+
+Run `npm run update:local` from the checkout containing your latest development.
+It builds the local working tree, verifies the app signature, and installs it at
+`/Applications/Irgatos.app`. If Irgatos is open, save your work and quit it when
+prompted. The previous app is retained as a timestamped backup in `/Applications`.
+Chats and settings are not modified. No GitHub Release, tag, push, or pull is needed.
+Dependencies are installed on the first run and whenever the lockfile changes.
+For a build without installation, use `npm run update:local -- --build-only`.
+GitHub can be used separately to back up committed source changes.
+
 From the repository root:
 
 ```bash
@@ -97,7 +108,7 @@ The release notes end with `Commit: <sha>` so installed apps can compare commits
 **Irgatos › Check for Updates…** in the macOS menu, the version badge, and **Settings › General › About** all open the same Software Update window. It shows the installed version and commit, the newest available version, and progress through Checking, Up to date or Update available, Downloading, Installing and Relaunching. It checks, in order:
 
 1. **The Tauri updater**, when the build was configured with a public key and an endpoint. The default `tauri.conf.json` has neither, so this step is skipped instead of failing with "does not have any endpoints set". Tauri's updater only accepts archives signed with the matching private key and described by a `latest.json` feed, which is why it cannot work without `TAURI_SIGNING_PRIVATE_KEY` and a published `latest.json`.
-2. **GitHub Releases**, with no keys needed. The repository is the one set in **Settings › General › Update source**, or `IRGATOS_UPDATE_REPO`, or `wegvon/irgatos`, or the checkout's `origin` remote. Upstream MonoCode repositories (`cretou/*`, `hardbeat920/*`) are never used. A release counts as newer when its version is higher, or when the version matches and GitHub reports that its commit is ahead of the running build. **Update & Relaunch** downloads the archive for your architecture (or the DMG), checks the bundle identifier, removes the `com.apple.quarantine` attribute, verifies or ad-hoc re-signs the bundle, and swaps it into place, rolling back if the swap fails. An app running from `/Applications` or `~/Applications` is replaced in place; otherwise the update installs to `/Applications/Irgatos.app`. macOS asks for an administrator password only when that folder is not writable. Irgatos then quits and reopens.
+2. **GitHub Releases**, with no keys needed. The repository is the one set in **Settings › General › Update source**, or `IRGATOS_UPDATE_REPO`, or `wegvon/irgatos`, or the checkout's `origin` remote. Repositories owned by `cretou` or `hardbeat920` ship a different app and are never used. A release counts as newer when its version is higher, or when the version matches and GitHub reports that its commit is ahead of the running build. **Update & Relaunch** downloads the archive for your architecture (or the DMG), checks the bundle identifier, removes the `com.apple.quarantine` attribute, verifies or ad-hoc re-signs the bundle, and swaps it into place, rolling back if the swap fails. An app running from `/Applications` or `~/Applications` is replaced in place; otherwise the update installs to `/Applications/Irgatos.app`. macOS asks for an administrator password only when that folder is not writable. Irgatos then quits and reopens.
 3. **The source checkout**, when the app was built from a git clone (or one is set under **Update source**). Irgatos fetches the branch's upstream and reports how many new commits it has. **Rebuild & Relaunch** fast-forwards the checkout (stashing local edits), runs `npm ci` if `package-lock.json` changed, builds the `.app` as shown above, installs it the same way, and relaunches. A diverged branch is reported instead of being merged.
 
 GitHub's anonymous API allows 60 requests an hour. Set `IRGATOS_GITHUB_TOKEN` (or `GITHUB_TOKEN`/`GH_TOKEN`, or sign in with `gh`) for private repositories or heavier use.

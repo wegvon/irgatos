@@ -301,6 +301,7 @@ type Props = {
   usageLimit?: UsageLimit;
   /** Account the session runs on, for the provider's quota-hold banner. */
   providerAccountId?: string;
+  modelLeading?: ReactNode;
   /** Hide the quota-hold banner, e.g. for remote host sessions. */
   hideQuotaHold?: boolean;
   /** The quota hold this queue was told to run anyway past. */
@@ -473,6 +474,7 @@ export function Composer({
   queueStatus,
   usageLimit,
   providerAccountId,
+  modelLeading,
   hideQuotaHold = false,
   queueHoldOverride,
   onRunQueueAnyway,
@@ -680,8 +682,6 @@ export function Composer({
                 ![
                   OPERATOR_COMMAND.name,
                   "irgat",
-                  "mono",
-                  "monocode",
                   ADHD_COMMAND.name,
                 ].includes(skill.name) &&
                 (skill.kind === "native" ||
@@ -2055,6 +2055,7 @@ export function Composer({
     >
       {question && onQuestionReply ? (
         <QuestionForm
+          key={`${question.requestId}:${question.questions.map((entry) => entry.id).join(":")}`}
           prompt={question}
           onReply={onQuestionReply}
           onInteraction={onQuestionInteraction}
@@ -2790,6 +2791,7 @@ export function Composer({
               }}
             >
               <div className="flex shrink-0 items-center gap-1">
+                {modelLeading}
                 <ModelPicker
                   harness={harness}
                   model={model}

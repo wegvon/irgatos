@@ -195,6 +195,26 @@ describe("fleetEntry", () => {
       projectLabel: "Ada",
     });
   });
+
+  it("lists project-free chats under Chat, without a branch", () => {
+    const entry = fleetEntry(
+      chat("/Users/me/.irgatos/scratch", {
+        branch: "main",
+        busy: true,
+        blocks: [sent(NOW)],
+      }),
+      { now: NOW, projectLabel: () => "scratch" },
+    );
+    expect(entry).toMatchObject({
+      chat: true,
+      projectLabel: "Chat",
+      bucket: "running",
+    });
+    expect(entry?.branch).toBeUndefined();
+    expect(
+      fleetEntry(chat("/repo/a", { blocks: [sent(NOW)] }), { now: NOW })?.chat,
+    ).toBeUndefined();
+  });
 });
 
 describe("buildFleet", () => {

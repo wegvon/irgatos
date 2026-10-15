@@ -99,6 +99,16 @@ describe("inFlightRefs", () => {
 });
 
 describe("markTurnInterrupted", () => {
+  it("preserves app-owned project access requests when quitting", () => {
+    const request = {
+      id: "project-access", role: "approval" as const, text: "Allow access?",
+      approval: { requestId: -1 },
+      irgatProjectAccess: { irgatId: "owner", project: "/code/repguard" },
+    };
+    const interrupted = markTurnInterrupted(chat("/tmp/a", { busy: true, blocks: [request] }));
+    expect(interrupted.blocks).toContainEqual(request);
+  });
+
   it("seals the stream, cancels open tools, and appends a system note", () => {
     const interrupted = markTurnInterrupted(
       chat("/tmp/a", {

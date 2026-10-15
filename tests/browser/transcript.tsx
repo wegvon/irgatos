@@ -4,6 +4,10 @@ import { AgentTranscript } from "../../src/features/sessions/ui/AgentTranscript"
 import { IrgatComposer } from "../../src/features/irgats/ui/IrgatComposer";
 import { MessageQueue } from "../../src/features/sessions/ui/MessageQueue";
 import { visibleIrgatCompletionMessages } from "../../src/features/irgats/model/irgatMessaging";
+import { projectAccessBlock, approveProjectAccess } from "../../src/features/irgats/model/irgatProjectAccess";
+import { createIrgat, saveIrgatSessionId, findIrgat } from "../../src/features/irgats/model/irgat";
+import { applyHarnessEvent, stopStreaming } from "../../src/integrations/harness/core/apply";
+import { sanitizeSessionForPersist } from "../../src/features/sessions/data/sessionStore";
 import {
   newSession,
   type Block,
@@ -243,10 +247,39 @@ function IrgatCompletionFixture() {
   );
 }
 
+const approvalOwner = createIrgat();
+const approvalSession = newSession("codex", "/home/user");
+saveIrgatSessionId(approvalOwner.id, approvalSession.id);
+approvalSession.blocks = [{ id: "access-user", role: "user", text: "repguard projesini oku" }];
+approvalSession.blocks.push(projectAccessBlock(approvalSession, approvalOwner.id, "/code/repguard"));
+
+function ProjectApprovalFixture() {
+  const [session, setSession] = useState({ ...approvalSession, busy: true });
+  useEffect(() => {
+    Object.assign(window, {
+      finishProjectReply: () => setSession((current) => stopStreaming(applyHarnessEvent(current, {
+        type: "message.delta", text: "Boss, erişim onayını bekliyorum.",
+      }))),
+      reloadProjectChat: () => setSession((current) => ({ ...current, ...sanitizeSessionForPersist(current) })),
+    });
+  }, []);
+  return <div className="flex h-full flex-col">
+    <div data-project-grants>{findIrgat(approvalOwner.id)?.projects.join(",")}</div>
+    <AgentTranscript blocks={session.blocks} busy={session.busy} agentName="IrgatInvader" inlineWork
+      onApproval={(requestId, decision) => setSession((current) => {
+        const block = current.blocks.find((item) => item.approval?.requestId === requestId)!;
+        if (decision === "allow" && !approveProjectAccess(current, block)) throw new Error("Grant failed");
+        return { ...current, blocks: current.blocks.map((item) => item === block
+          ? { ...item, approval: { ...item.approval!, decided: decision } } : item) };
+      })}
+    />
+  </div>;
+}
+
 const params = new URLSearchParams(location.search);
 const irgat = params.has("irgat");
 const completion = params.has("irgatCompletion");
 if (irgat || completion) root.style.width = "540px";
 createRoot(host).render(
-  completion ? <IrgatCompletionFixture /> : irgat ? <IrgatFixture /> : <Fixture />,
+  params.has("projectApproval") ? <ProjectApprovalFixture /> : completion ? <IrgatCompletionFixture /> : irgat ? <IrgatFixture /> : <Fixture />,
 );

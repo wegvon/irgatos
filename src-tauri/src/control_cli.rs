@@ -146,12 +146,15 @@ Actions:
                   access the project or substitute provider-native subagents.
                   Approval saves access and resumes the request automatically.
   models.list    {}  Available providers, models, settings and permission modes.
-  sessions.list  {}  Project sessions with IDs, busy status, hasDraft and archived.
+  sessions.list  {}  Your Irgat's main and child chats, without project access.
+                  Add "project":"<path>" to list an assigned project's sessions.
+                  Regular sessions list their current project's sessions.
   sessions.read  {"sessionId":"...","before":"<turnId>","limit":3,"maxChars":1200}
                   Read up to 3 recent user/assistant exchanges. Tools and
                   reasoning are omitted. Omit before for the newest page;
                   pass nextBefore from a result for older exchanges. maxChars
                   caps each message (200-6000, default 1200).
+                  Your Irgat's own main and child chats need no project access.
   sessions.send  {"sessionId":"...","prompt":"...","notifyOnComplete":true}
                   Submit a follow-up to an idle session in this project.
                   A busy session is rejected. Reuse --request-id on retries.

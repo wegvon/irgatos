@@ -14,11 +14,11 @@ afterEach(() => {
 });
 
 describe("voice settings", () => {
-  it("defaults to on-device Apple dictation that never uses a server", () => {
+  it("defaults to Qwen streaming dictation", () => {
     expect(loadVoiceSettings()).toEqual(VOICE_SETTINGS_DEFAULTS);
     expect(VOICE_SETTINGS_DEFAULTS).toMatchObject({
       dictation: true,
-      engine: "apple",
+      engine: "qwen",
       allowServer: false,
     });
   });
@@ -38,6 +38,26 @@ describe("voice settings", () => {
       dictation: false,
     });
     expect(loadVoiceSettings()).toBe(loaded);
+  });
+
+  it("keeps Drama for existing settings and persists either alternative", () => {
+    localStorage.setItem("irgat.voice", JSON.stringify({ readReplies: false }));
+    expect(loadVoiceSettings()).toMatchObject({
+      speechProvider: "drama",
+      readReplies: false,
+    });
+    for (const speechProvider of ["ema", "kahya", "drama"] as const) {
+      saveVoiceSettings({ speechProvider });
+      expect(loadVoiceSettings().speechProvider).toBe(speechProvider);
+      expect(
+        JSON.parse(localStorage.getItem("irgat.voice")!).speechProvider,
+      ).toBe(speechProvider);
+    }
+    localStorage.setItem(
+      "irgat.voice",
+      JSON.stringify({ speechProvider: "unknown" }),
+    );
+    expect(loadVoiceSettings().speechProvider).toBe("drama");
   });
 
   it("falls back per field on stored values it does not understand", () => {
@@ -75,5 +95,23 @@ describe("voice settings", () => {
     expect(serviceLanguage("tr-TR")).toBe("tr");
     expect(serviceLanguage("zh_CN")).toBe("zh");
     expect(serviceLanguage("")).toBe("");
+  });
+});
+
+it("migrates saved Apple dictation to Qwen without losing microphone preferences", () => {
+  localStorage.setItem(
+    "irgat.voice",
+    JSON.stringify({
+      engine: "apple",
+      dictation: false,
+      locale: "tr-TR",
+      conversationPauseMs: 2000,
+    }),
+  );
+  expect(loadVoiceSettings()).toMatchObject({
+    engine: "qwen",
+    dictation: false,
+    locale: "tr-TR",
+    conversationPauseMs: 2000,
   });
 });

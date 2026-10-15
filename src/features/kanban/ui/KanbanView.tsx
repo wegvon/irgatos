@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Kanban,
   LoaderCircle,
+  MessageSquare,
   Plus,
   Search,
   Undo2,
@@ -78,7 +79,8 @@ import { terminalAgentsForProject } from "../../terminal/model/agentDetection/te
 import { TerminalAgentPill } from "../../terminal/ui/TerminalAgentBadge";
 import { useTerminalAgents } from "../../terminal/hooks/useTerminalAgents";
 import { CardDialog } from "./CardDialog";
-import { CardSessionSection, SessionChip } from "./CardSession";
+import { CardApprovalActions, CardSessionSection, SessionChip } from "./CardSession";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 import { KanbanCardItem } from "./KanbanCardItem";
 import { KanbanColumnView } from "./KanbanColumnView";
 import { useCardDrag } from "./useCardDrag";
@@ -95,6 +97,8 @@ type SessionProps = {
   onStartSession?: (card: KanbanCard, project: string) => void;
   /** Rejects when the session can't be opened; the board says so and stays put. */
   onOpenSession?: (sessionId: string) => void | Promise<void>;
+  /** Answers a linked session's tool permission from its card. */
+  onApproval?: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
 };
 
 type Props = SessionProps & {
@@ -104,6 +108,8 @@ type Props = SessionProps & {
   recents: RecentProject[];
   /** Opens the board on a project with one card focused. */
   focusRequest?: KanbanFocusRequest | null;
+  /** Folder project-free chats run in; their cards live on its board. */
+  chatBoard?: string | null;
   /**
    * Coding agents running in raw terminals, which have no session or card.
    * Defaults to the live terminal agent store.
@@ -120,6 +126,7 @@ export function KanbanView({
   cwd,
   recents,
   focusRequest,
+  chatBoard,
   terminalAgents: terminalAgentsProp,
   onOpenTerminal,
   onClose,
@@ -136,6 +143,7 @@ export function KanbanView({
   }, [focusRequest]);
   useEffect(() => setQuery(""), [project]);
   const hasProject = looksLikeProject(project);
+  const onChats = hasProject && isFreeChatCwd(project);
   const { liveSessions } = sessionProps;
   const liveTerminalAgents = useTerminalAgents();
   const terminalAgents = terminalAgentsProp ?? liveTerminalAgents;
@@ -179,14 +187,43 @@ export function KanbanView({
           <span aria-hidden className="shrink-0 text-content/20">
             /
           </span>
+          {onChats ? (
+            <span
+              data-kanban-chats-title
+              className="inline-flex shrink-0 items-center gap-1.5 px-1.5 text-content"
+            >
+              <MessageSquare className="size-3.5 shrink-0 text-content/55" strokeWidth={1.75} />
+              Chats
+            </span>
+          ) : null}
           <SearchableProjectPicker
-            cwd={project || "~"}
+            cwd={onChats ? "~" : project || "~"}
             recents={recents}
             railCwd={cwd}
             buttonClassName="px-1.5"
             onSelectProject={setProject}
           />
         </div>
+        {chatBoard ? (
+          <button
+            type="button"
+            aria-pressed={onChats}
+            data-kanban-chats-toggle
+            data-tauri-drag-region="false"
+            title={onChats ? "Back to the project board" : "Board for your chats"}
+            onClick={() =>
+              setProject(onChats ? (cwd && !isFreeChatCwd(cwd) ? cwd : "") : chatBoard)
+            }
+            className={`mr-2 inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2 text-[12px] ${
+              onChats
+                ? "border-content/25 bg-selection text-content"
+                : "border-content/10 text-content/70 hover:border-content/25 hover:bg-content/8 hover:text-content"
+            }`}
+          >
+            <MessageSquare className="size-3.5 shrink-0" strokeWidth={1.75} />
+            Chats
+          </button>
+        ) : null}
         {hasProject ? (
           <label
             className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
@@ -266,7 +303,9 @@ function KanbanBoardContent({
   liveSessions,
   onStartSession,
   onOpenSession,
+  onApproval,
 }: ContentProps) {
+  const chatsBoard = isFreeChatCwd(project);
   const [board, setBoard] = useState<KanbanBoard | null>(() => peekKanbanBoard(project));
   const [loading, setLoading] = useState(() => peekKanbanBoard(project) === null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -876,13 +915,27 @@ function KanbanBoardContent({
                   !!card.session &&
                   liveSessions?.get(card.session.id)?.status === "needs-input"
                 }
-                cardAccessory={(card) => (
-                  <SessionChip
-                    card={card}
-                    live={card.session ? liveSessions?.get(card.session.id) : undefined}
-                    onOpen={openSession}
-                  />
-                )}
+                cardAccessory={(card) => {
+                  const live = card.session ? liveSessions?.get(card.session.id) : undefined;
+                  return (
+                    <>
+                      <SessionChip
+                        card={card}
+                        live={live}
+                        chat={chatsBoard}
+                        onOpen={openSession}
+                      />
+                      {card.session && live?.approval && onApproval ? (
+                        <CardApprovalActions
+                          compact
+                          sessionId={card.session.id}
+                          approval={live.approval}
+                          onApproval={onApproval}
+                        />
+                      ) : null}
+                    </>
+                  );
+                }}
                 hintId={hintId}
                 editing={renaming === column.id}
                 composing={composing === column.id}
@@ -1019,6 +1072,7 @@ function KanbanBoardContent({
           <CardSessionSection
             card={openCard.card}
             project={project}
+            onApproval={onApproval}
             live={
               openCard.card.session ? liveSessions?.get(openCard.card.session.id) : undefined
             }
@@ -1163,7 +1217,9 @@ function ElsewhereStrip({
     >
       <span className="shrink-0 text-content/45">Other projects</span>
       {projects.map((item) => {
-        const name = basename(item.project) || item.project;
+        const name = isFreeChatCwd(item.project)
+          ? "Chats"
+          : basename(item.project) || item.project;
         const parts = [
           item.waiting ? `${item.waiting} waiting on you` : "",
           item.running ? `${item.running} running` : "",

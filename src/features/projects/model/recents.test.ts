@@ -158,6 +158,16 @@ describe("forgetProject", () => {
       "c:/users/ME/code/app",
     ]);
   });
+
+  it("never lists the free chat scratch folder as a project", () => {
+    rememberProject("/tmp/keep");
+    expect(
+      rememberProject("/Users/me/.irgatos/scratch").map((item) => item.path),
+    ).toEqual(["/tmp/keep"]);
+    rememberProject("C:\\Users\\me\\.irgatos\\scratch\\");
+    expect(loadRecents().map((item) => item.path)).toEqual(["/tmp/keep"]);
+    expect(looksLikeProject("/Users/me/.irgatos/scratch")).toBe(true);
+  });
 });
 
 describe("replaceProjectPath", () => {

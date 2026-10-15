@@ -125,7 +125,7 @@ fn topics(dir: &Path) -> Vec<String> {
     names
 }
 
-fn monos_root(app: &AppHandle) -> Result<PathBuf, String> {
+fn irgats_root(app: &AppHandle) -> Result<PathBuf, String> {
     let data = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let root = data.join(IRGATS_DIR);
     let legacy = data.join(LEGACY_DIR);
@@ -278,7 +278,7 @@ pub async fn irgat_load(
     irgat: String,
     legacy_project: Option<String>,
 ) -> Result<AgentFiles, String> {
-    let root = monos_root(&app)?;
+    let root = irgats_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || load(&root, &irgat, legacy_project.as_deref()))
         .await
         .map_err(|e| e.to_string())?
@@ -291,7 +291,7 @@ pub async fn irgat_read(
     legacy_project: Option<String>,
     path: String,
 ) -> Result<AgentFile, String> {
-    let root = monos_root(&app)?;
+    let root = irgats_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         read(&root, &irgat, legacy_project.as_deref(), &path)
     })
@@ -308,7 +308,7 @@ pub async fn irgat_save(
     text: String,
     expected_hash: Option<String>,
 ) -> Result<String, String> {
-    let root = monos_root(&app)?;
+    let root = irgats_root(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         save(
             &root,

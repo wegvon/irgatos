@@ -1,4 +1,7 @@
-import type { VoiceEngine } from "../../../platform/tauri/voice";
+import type {
+  SpeechProvider,
+  VoiceEngine,
+} from "../../../platform/tauri/voice";
 
 const KEY = "irgat.voice";
 
@@ -22,29 +25,33 @@ export type VoiceSettings = {
   conversationPauseMs: number;
   /** Voice mode reads each finished reply aloud. */
   readReplies: boolean;
-  /** A `say` voice name; empty uses the Spoken Content voice. */
-  speechVoice: string;
-  /** Words per minute; 0 uses the Spoken Content rate. */
-  speechRate: number;
+  speechProvider: SpeechProvider;
 };
 
-export const CONVERSATION_PAUSES = [800, 1200, 2000] as const;
-export const SPEECH_RATES = [160, 0, 230] as const;
+export const SPEECH_PROVIDERS: {
+  value: SpeechProvider;
+  label: string;
+  host: string;
+}[] = [
+  { value: "drama", label: "Drama", host: "drama.turel.se" },
+  { value: "ema", label: "EMA Lightning", host: "ema.turel.se" },
+  { value: "kahya", label: "Kahya TTS", host: "tts.turel.se" },
+];
 
+export const CONVERSATION_PAUSES = [800, 1200, 2000] as const;
 export const VOICE_SETTINGS_DEFAULTS: VoiceSettings = {
   dictation: true,
-  engine: "apple",
-  locale: "",
+  engine: "qwen",
+  locale: "tr-TR",
   allowServer: false,
   cloudEndpoint: DEFAULT_CLOUD_ENDPOINT,
   cloudModel: DEFAULT_CLOUD_MODEL,
   conversationPauseMs: 1200,
   readReplies: true,
-  speechVoice: "",
-  speechRate: 0,
+  speechProvider: "drama",
 };
 
-/** Languages Apple's recognizer ships on-device models for on recent macOS. */
+/** Optional language hints for compatible transcription services. */
 export const VOICE_LANGUAGES: { value: string; label: string }[] = [
   { value: "", label: "System language" },
   { value: "en-US", label: "English (US)" },
@@ -89,7 +96,7 @@ function parse(raw: string | null): VoiceSettings {
     const isText = (value: unknown) => typeof value === "string";
     return {
       dictation: pick("dictation", isBool),
-      engine: pick("engine", (value) => value === "apple" || value === "cloud"),
+      engine: pick("engine", (value) => value === "qwen" || value === "cloud"),
       locale: pick("locale", isText),
       allowServer: pick("allowServer", isBool),
       cloudEndpoint: pick(
@@ -104,9 +111,8 @@ function parse(raw: string | null): VoiceSettings {
         (CONVERSATION_PAUSES as readonly unknown[]).includes(value),
       ),
       readReplies: pick("readReplies", isBool),
-      speechVoice: pick("speechVoice", isText),
-      speechRate: pick("speechRate", (value) =>
-        (SPEECH_RATES as readonly unknown[]).includes(value),
+      speechProvider: pick("speechProvider", (value) =>
+        SPEECH_PROVIDERS.some((provider) => provider.value === value),
       ),
     };
   } catch {

@@ -19,7 +19,6 @@ import {
 } from "../src/integrations/harness/core/child";
 import { HostChildBackend } from "./child-backend";
 import { HostStore } from "./store";
-import { importLegacyHostData, LEGACY_HOST_DIR } from "./legacy-data";
 import { acquireHostOwner } from "./owner";
 import { HostEngine } from "./engine";
 import { hostProviders } from "./providers";
@@ -96,8 +95,6 @@ Connect another computer using an SSH forward to the loopback port.`);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
-  if (!args.includes("--data-dir"))
-    importLegacyHostData(directory, join(homedir(), LEGACY_HOST_DIR));
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory)));
     return;

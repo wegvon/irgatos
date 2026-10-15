@@ -54,7 +54,7 @@ function setup() {
           projectCwd: run.cwd,
           checkoutCwd: `/worktrees/${task.id}`,
           kind: "worktree" as const,
-          branch: `mc/orch-${task.id}`,
+          branch: `irgat/orch-${task.id}`,
         },
       };
     }),
@@ -130,7 +130,7 @@ describe("worker assignment prompts", () => {
     expect(visibleUserPrompt(sent)).toBe("Review the branch.");
     expect(
       visibleUserPrompt(
-        "Review the branch.\n\n<monocode_assignment>\nYou are a worker.\n</monocode_assignment>",
+        "Review the branch.\n\n<irgat_assignment>\nYou are a worker.\n</irgat_assignment>",
       ),
     ).toBe("Review the branch.");
   });

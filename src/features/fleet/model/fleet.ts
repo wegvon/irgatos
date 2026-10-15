@@ -9,6 +9,7 @@ import {
 import { toolCallLabel } from "../../sessions/model/transcriptActivity";
 import type { UserQuestionPrompt } from "../../sessions/model/userQuestion";
 import { pathKey, projectName } from "../../../shared/lib/paths";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 
 /** Attention list order: what blocks on the user first. */
 export const FLEET_BUCKETS = ["needsYou", "review", "running", "idle"] as const;
@@ -49,6 +50,8 @@ export type FleetEntry = {
   branch?: string;
   /** Name of the Irgat this chat belongs to. */
   irgat?: string;
+  /** A project-free chat from the Chat view. */
+  chat?: boolean;
   /** Orchestration lead an internal worker reports to. */
   leadId?: string;
   requests: FleetRequest[];
@@ -211,18 +214,23 @@ export function fleetEntry(
         : "idle";
   const workCwd = sessionWorkCwd(session);
   const irgat = options.irgatName?.(session.id);
+  const chat = !irgat && isFreeChatCwd(session.cwd);
   return {
     sessionId: session.id,
     bucket,
     title: sessionDisplayTitle(session.title, session.harness),
     harness: session.harness,
     project: session.cwd,
-    projectLabel:
-      irgat ?? options.projectLabel?.(session.cwd) ?? projectName(session.cwd),
+    projectLabel: chat
+      ? "Chat"
+      : (irgat ??
+        options.projectLabel?.(session.cwd) ??
+        projectName(session.cwd)),
     worktree: pathKey(workCwd) !== pathKey(session.cwd),
     workCwd,
-    ...(session.branch ? { branch: session.branch } : {}),
+    ...(session.branch && !chat ? { branch: session.branch } : {}),
     ...(irgat ? { irgat } : {}),
+    ...(chat ? { chat } : {}),
     ...(session.orchestrationLeadId
       ? { leadId: session.orchestrationLeadId }
       : {}),

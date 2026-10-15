@@ -1,4 +1,5 @@
 import { pathKey, prettyCwd, slash } from "../../../shared/lib/paths";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 const KEY = "irgat.recentProjects";
@@ -64,7 +65,7 @@ function save(next: RecentProject[]) {
 
 export function rememberProject(path: string): RecentProject[] {
   const normalized = normalize(path);
-  if (normalized === "~") return loadRecents();
+  if (normalized === "~" || isFreeChatCwd(normalized)) return loadRecents();
   dropArchived(normalized);
   const prev = loadRecents().filter((p) => !sameProjectPath(p.path, normalized));
   const next = [{ path: normalized, openedAt: Date.now() }, ...prev].slice(

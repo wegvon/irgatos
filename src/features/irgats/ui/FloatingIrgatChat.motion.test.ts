@@ -107,7 +107,9 @@ beforeEach(() => {
       return { top: y, bottom: y + 100, height: 100 } as DOMRect;
     },
   );
-  native.invoke.mockReset().mockResolvedValue(initial);
+  native.invoke.mockReset().mockImplementation(async (command) =>
+      command === "irgat_chat_state" ? initial : null,
+    );
   native.listen.mockReset().mockImplementation(async (_event, handler) => {
     receive = handler;
     return () => {};

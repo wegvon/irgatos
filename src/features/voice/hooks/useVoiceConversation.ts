@@ -80,7 +80,6 @@ export function useVoiceConversation({
   );
 
   const startSpeaking = useCallback((text: string) => {
-    const settings = loadVoiceSettings();
     speakingRef.current = true;
     setSpeaking(true);
     const finish = () => {
@@ -88,10 +87,7 @@ export function useVoiceConversation({
       speakingRef.current = false;
       setSpeaking(false);
     };
-    void speak(text, {
-      voice: settings.speechVoice,
-      rate: settings.speechRate,
-    })
+    void speak(text, loadVoiceSettings().speechProvider)
       .then((handle) => {
         speechRef.current = handle;
         if (!speakingRef.current) handle.stop();

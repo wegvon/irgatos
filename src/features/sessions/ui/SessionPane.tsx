@@ -1,3 +1,4 @@
+import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import { GripVertical, X } from "../../../shared/ui/icons";
 import {
   memo,
@@ -8,6 +9,7 @@ import {
   useState,
   useSyncExternalStore,
   type CSSProperties,
+  type ComponentProps,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { Composer } from "./Composer";
@@ -74,7 +76,7 @@ import { EmptySession } from "./EmptySession";
 import {
   irgatForSession,
   irgatLook,
-  monosSnapshot,
+  irgatsSnapshot,
   subscribeIrgats,
 } from "../../irgats/model/irgat";
 import { IrgatHeader } from "../../irgats/ui/IrgatHeader";
@@ -94,6 +96,11 @@ import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
 import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
 import { sessionInterruption } from "../model/sessionInterruption";
 import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
+import {
+  textQuestion,
+  textQuestionAnswer,
+  TEXT_QUESTION_ID,
+} from "../model/interactiveQuestion";
 import { QuestionForm } from "./QuestionForm";
 import {
   irgatMessageDeliveries,
@@ -145,6 +152,7 @@ import type { SessionFolderTarget } from "../model/sessionFolders";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/ui/RemoteSession";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 import type { HostSession } from "../../connections/model/protocol";
 
 export type SessionPaneProps = {
@@ -195,6 +203,14 @@ export type SessionPaneProps = {
     settings: Record<string, string>,
   ) => void;
   onRuntimeModeChange: (sessionId: string, mode: RuntimeMode) => void;
+  onSelectProviderAccount?: (
+    provider: ProviderAccountProvider,
+    accountId: string,
+    sessionId?: string,
+  ) => void;
+  onManageProviderAccounts?: ComponentProps<
+    typeof UsageChips
+  >["onManageAccounts"];
   onSubmit: (
     sessionId: string,
     text: string,
@@ -354,6 +370,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onSaveDraft,
   onRemoveDraft,
   onSubmit,
+  onSelectProviderAccount,
+  onManageProviderAccounts,
   onStop,
   onCompactContext,
   onPlaceSessionInFolder,
@@ -411,6 +429,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       (run.status === "active" || run.status === "paused") &&
       sameCheckout(orchestrationCheckoutCwd(run), sessionWorkCwd(session)),
   );
+  // A free chat's scratch folder has no repository to branch or check out.
+  const freeChat = isFreeChatCwd(session.cwd);
   const title = sessionDisplayTitle(session.title, session.harness);
   const isEmpty = session.blocks.length === 0;
   const editedPaths = useMemo(
@@ -459,7 +479,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     loadNewThreadBackgroundEffect,
   );
   // Renames, instructions and mascot picks re-render the agent's look.
-  useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const irgat = irgatForSession(session.id);
   const agent = irgat ? irgatLook(irgat) : undefined;
   // A Irgat shows only its own background, never the project's or the app's.
@@ -489,10 +509,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
+  const question = session.pendingQuestion ?? textQuestion(session);
   const replyQuestion = useCallback(
-    (requestId: number, reply: UserQuestionReply) =>
-      onQuestionReply(session.id, requestId, reply),
-    [onQuestionReply, session.id],
+    (requestId: number, reply: UserQuestionReply) => {
+      if (!session.pendingQuestion && requestId === TEXT_QUESTION_ID) {
+        const prompt = textQuestion(session);
+        if (prompt) onSubmit(session.id, textQuestionAnswer(prompt, reply), []);
+        return;
+      }
+      onQuestionReply(session.id, requestId, reply);
+    },
+    [onQuestionReply, onSubmit, session],
   );
   const openPlan = useCallback(
     (blockId: string) => onOpenPlan(session.id, blockId),
@@ -770,7 +797,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         !!session.inboxAsk ||
         (hideProjectPicker ? !showDeckProjectPicker : false)
       }
-      hideBranchPicker={!!session.inboxAsk || managed}
+      hideBranchPicker={!!session.inboxAsk || managed || freeChat}
       hideTopBar={!!session.inboxAsk}
       context={session.context}
       quoteRequest={quoteRequest}
@@ -787,7 +814,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       inboxCard={session.inboxCard}
       noteCard={session.noteCard}
       handoffCard={session.handoffCard}
-      question={session.pendingQuestion}
+      question={question}
       onQuoteRequestConsumed={acknowledgeQuote}
       onInboxCardDismiss={() => onInboxCardDismiss?.(session.id)}
       onNoteCardDismiss={() => onNoteCardDismiss?.(session.id)}
@@ -806,6 +833,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         !session.inboxAsk &&
         !session.worktreeRemoved &&
         !managed &&
+        !freeChat &&
         (remote
           ? !remoteSessionStarted
           : (isEmpty || !!session.workspaceMode) && !session.worktreeCwd)
@@ -870,6 +898,25 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onResumeQueue={() => onResumeQueue(session.id)}
       usageLimit={session.usageLimit}
+      modelLeading={
+        remote ? undefined : (
+          <UsageChips
+            providers={irgatUsageProviders(session.harness)}
+            session={{
+              id: session.id,
+              harness: session.harness,
+              model: session.model,
+              providerAccountId: session.providerAccountId,
+            }}
+            project={session.cwd}
+            variant="composer"
+            onSelectAccount={(provider, id) =>
+              onSelectProviderAccount?.(provider, id, session.id)
+            }
+            onManageAccounts={onManageProviderAccounts}
+          />
+        )
+      }
       providerAccountId={session.providerAccountId}
       hideQuotaHold={remote}
       queueHoldOverride={session.queueHoldOverride}
@@ -1266,9 +1313,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     onResume={() => onResumeQueue(session.id)}
                     variant="messages"
                   />
-                  {session.pendingQuestion ? (
+                  {question ? (
                     <QuestionForm
-                      prompt={session.pendingQuestion}
+                      key={`${question.requestId}:${question.questions.map((entry) => entry.id).join(":")}`}
+                      prompt={question}
                       onReply={replyQuestion}
                       onInteraction={(id) =>
                         onQuestionInteraction?.(session.id, id)
@@ -1334,6 +1382,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     // with the usage-limit notice, not here.
                     tools={
                       <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55">
+                        <AdhdModeChip session={session} variant="composer" />
+                      </div>
+                    }
+                    controls={
+                      <>
                         <UsageChips
                           providers={irgatUsageProviders(session.harness)}
                           session={{
@@ -1346,11 +1399,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
                           accountPicker={false}
                           variant="composer"
                         />
-                        <AdhdModeChip session={session} variant="composer" />
-                      </div>
-                    }
-                    controls={
-                      <>
                         <ModelPicker
                           harness={session.harness}
                           model={session.model}

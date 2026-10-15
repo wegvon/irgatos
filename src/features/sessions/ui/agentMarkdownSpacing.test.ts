@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { AgentMarkdown } from "./AgentMarkdown";
 
 /**
- * https://github.com/wegvon/monocode/issues/218 - a reply with several
+ * https://github.com/wegvon/irgatos/issues/218 - a reply with several
  * "\n\n"-separated sections rendered as one dense block.
  *
  * AgentMarkdown passes dir="auto", so every block sits in its own

@@ -6,6 +6,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
   ImagePlus,
   MoreHorizontal,
   Plus,
@@ -39,7 +41,7 @@ import {
   nextIrgatLook,
   irgatLook,
   irgatProjectsPhrase,
-  monosSnapshot,
+  irgatsSnapshot,
   reorderIrgats,
   saveIrgatMascot,
   saveIrgatName,
@@ -57,6 +59,11 @@ export type IrgatRailProps = {
   unseenCounts?: ReadonlyMap<string, number>;
   onOpen: (irgatId: string) => void;
   onCreate: () => void;
+  activeSessionId?: string;
+  chatTitles?: ReadonlyMap<string, string>;
+  onOpenChat?: (irgatId: string, sessionId: string) => void;
+  onCreateChat?: (irgatId: string) => void;
+  onDeleteChat?: (irgatId: string, sessionId: string) => void;
   onDelete: (irgatId: string) => void;
   /** Whether the intro may show now, when there is no Irgat yet. */
   introAvailable?: boolean;
@@ -86,11 +93,16 @@ export function IrgatRailSection({
   unseenCounts,
   onOpen,
   onCreate,
+  activeSessionId,
+  chatTitles,
+  onOpenChat,
+  onCreateChat,
+  onDeleteChat,
   onDelete,
   introAvailable = false,
   groups,
 }: IrgatRailProps) {
-  const snapshot = useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  const snapshot = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const irgats = useMemo(() => listIrgats(), [snapshot]);
   const [addButton, setAddButton] = useState<HTMLButtonElement | null>(null);
   // Shown once ever, and only the user's choice puts it away.
@@ -99,6 +111,11 @@ export function IrgatRailSection({
   const ids = irgats.map((irgat) => irgat.id);
   const sortable = useAnimatedReorder(ids, reorderIrgats, "y");
   const [menu, setMenu] = useState<{ id: string; anchor: PopoverAnchor }>();
+  const [chatMenu, setChatMenu] = useState<{
+    irgatId: string;
+    sessionId: string;
+    anchor: PopoverAnchor;
+  }>();
   const [background, setBackground] = useState<string>();
   const backgroundIrgat = background ? findIrgat(background) : undefined;
   const [newGroup, setNewGroup] = useState(false);
@@ -162,6 +179,8 @@ export function IrgatRailSection({
           const look = irgatLook(irgat);
           const state = states.get(irgat.id) ?? IDLE;
           const selected = irgat.id === activeId;
+          const expanded = irgat.chatsCollapsed === false;
+          const Chevron = expanded ? ChevronDown : ChevronRight;
           const unseen = selected ? 0 : (unseenCounts?.get(irgat.id) ?? 0);
           const projects = look.projects.length
             ? irgatProjectsPhrase(look.projects)
@@ -171,99 +190,182 @@ export function IrgatRailSection({
               ? undefined
               : (state.activity ?? IRGAT_STATUS_LABEL[state.status]);
           return (
-            <div
-              key={irgat.id}
-              ref={(el) => sortable.setItemRef(irgat.id, el)}
-              data-selected={selected || undefined}
-              data-irgat-status={state.status}
-              className={`reorder-item project-reorder-item group relative flex h-8 cursor-default touch-none items-stretch rounded-md px-2 ${
-                selected ? "bg-selection-strong text-content" : "opacity-65"
-              }`}
-              onPointerDown={(event) => {
-                if (event.button !== 0) return;
-                if (
-                  (event.target as HTMLElement | null)?.closest(
-                    "[data-no-drag]",
+            <div key={irgat.id}>
+              <div
+                ref={(el) => sortable.setItemRef(irgat.id, el)}
+                data-selected={selected || undefined}
+                data-irgat-status={state.status}
+                className={`reorder-item project-reorder-item group relative flex h-8 cursor-default touch-none items-stretch rounded-md px-2 ${
+                  selected ? "bg-selection-strong text-content" : "opacity-65"
+                }`}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+                  if (
+                    (event.target as HTMLElement | null)?.closest(
+                      "[data-no-drag]",
+                    )
                   )
-                )
-                  return;
-                sortable.onItemPointerDown(irgat.id, event);
-              }}
-              onClick={(event) => {
-                if (
-                  (event.target as HTMLElement | null)?.closest(
-                    "[data-no-drag]",
-                  )
-                )
-                  return;
-                if (sortable.consumeClick()) return;
-                onOpen(irgat.id);
-              }}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                setMenu({
-                  id: irgat.id,
-                  anchor: { x: event.clientX, y: event.clientY },
-                });
-              }}
-            >
-              <button
-                type="button"
-                title={[look.name, projects, status].filter(Boolean).join("\n")}
-                aria-label={[
-                  look.name,
-                  status ?? "idle",
-                  unseen ? unreadLabel(unseen) : undefined,
-                  projects,
-                ]
-                  .filter(Boolean)
-                  .join(", ")}
-                aria-current={selected ? "true" : undefined}
-                className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
-              >
-                <IrgatRailMascot
-                  name={look.mascot}
-                  color={look.color}
-                  status={state.status}
-                />
-                {state.status === "working" ? (
-                  <Shimmer
-                    as="span"
-                    duration={1.4}
-                    className="min-w-0 flex-1 truncate text-sm font-medium leading-tight"
-                  >
-                    {look.name}
-                  </Shimmer>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
-                    {look.name}
-                  </span>
-                )}
-                {unseen ? (
-                  <span
-                    aria-hidden
-                    data-irgat-unread={unseen}
-                    className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-content/15 px-1 text-[10px] font-medium tabular-nums leading-none text-content/80 group-hover:hidden group-has-[:focus-visible]:hidden"
-                  >
-                    {unreadBadge(unseen)}
-                  </span>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                data-no-drag
-                title="Irgat options"
-                aria-label={`${look.name} options`}
-                aria-haspopup="menu"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setMenu({ id: irgat.id, anchor: event.currentTarget });
+                    return;
+                  sortable.onItemPointerDown(irgat.id, event);
                 }}
-                className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+                onClick={(event) => {
+                  if (
+                    (event.target as HTMLElement | null)?.closest(
+                      "[data-no-drag]",
+                    )
+                  )
+                    return;
+                  if (sortable.consumeClick()) return;
+                  if (onCreateChat)
+                    updateIrgat(irgat.id, (current) => ({
+                      ...current,
+                      chatsCollapsed: expanded,
+                    }));
+                  onOpen(irgat.id);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({
+                    id: irgat.id,
+                    anchor: { x: event.clientX, y: event.clientY },
+                  });
+                }}
               >
-                <MoreHorizontal className="size-4" strokeWidth={1.75} />
-              </button>
+                <button
+                  type="button"
+                  title={[look.name, projects, status]
+                    .filter(Boolean)
+                    .join("\n")}
+                  aria-label={[
+                    look.name,
+                    status ?? "idle",
+                    unseen ? unreadLabel(unseen) : undefined,
+                    projects,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                  aria-current={selected ? "true" : undefined}
+                  aria-expanded={onCreateChat ? expanded : undefined}
+                  aria-controls={
+                    onCreateChat ? `irgat-chats-${irgat.id}` : undefined
+                  }
+                  className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
+                >
+                  {onCreateChat ? (
+                    <Chevron className="size-3 shrink-0" />
+                  ) : null}
+                  <IrgatRailMascot
+                    name={look.mascot}
+                    color={look.color}
+                    status={state.status}
+                  />
+                  {state.status === "working" ? (
+                    <Shimmer
+                      as="span"
+                      duration={1.4}
+                      className="min-w-0 flex-1 truncate text-sm font-medium leading-tight"
+                    >
+                      {look.name}
+                    </Shimmer>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
+                      {look.name}
+                    </span>
+                  )}
+                  {unseen ? (
+                    <span
+                      aria-hidden
+                      data-irgat-unread={unseen}
+                      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-content/15 px-1 text-[10px] font-medium tabular-nums leading-none text-content/80 group-hover:hidden group-has-[:focus-visible]:hidden"
+                    >
+                      {unreadBadge(unseen)}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  data-no-drag
+                  title="Irgat options"
+                  aria-label={`${look.name} options`}
+                  aria-haspopup="menu"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenu({ id: irgat.id, anchor: event.currentTarget });
+                  }}
+                  className="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 place-items-center rounded-md text-content/55 hover:bg-content/8 hover:text-content group-hover:grid group-has-[:focus-visible]:grid"
+                >
+                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
+                </button>
+              </div>
+              {onCreateChat && expanded ? (
+                <div
+                  id={`irgat-chats-${irgat.id}`}
+                  className="ml-5 border-l border-content/10 pl-2"
+                  data-irgat-chats={irgat.id}
+                >
+                  {(irgat.childSessionIds ?? []).map((id, index) => {
+                    const title = chatTitles?.get(id) || `Chat ${index + 1}`;
+                    return (
+                      <div
+                        key={id}
+                        className="group/chat relative flex items-center"
+                        onContextMenu={
+                          onDeleteChat
+                            ? (event) => {
+                                event.preventDefault();
+                                setChatMenu({
+                                  irgatId: irgat.id,
+                                  sessionId: id,
+                                  anchor: {
+                                    x: event.clientX,
+                                    y: event.clientY,
+                                  },
+                                });
+                              }
+                            : undefined
+                        }
+                      >
+                        <button
+                          type="button"
+                          aria-current={
+                            activeSessionId === id ? "page" : undefined
+                          }
+                          className={`flex h-7 w-full items-center truncate rounded-md px-2 pr-7 text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
+                          onClick={() => onOpenChat?.(irgat.id, id)}
+                        >
+                          {title}
+                        </button>
+                        {onDeleteChat ? (
+                          <button
+                            type="button"
+                            aria-label={`${title} options`}
+                            aria-haspopup="menu"
+                            onClick={(event) =>
+                              setChatMenu({
+                                irgatId: irgat.id,
+                                sessionId: id,
+                                anchor: event.currentTarget,
+                              })
+                            }
+                            className="absolute right-1 hidden size-5 place-items-center rounded text-content/55 hover:bg-content/8 hover:text-content group-hover/chat:grid group-focus-within/chat:grid"
+                          >
+                            <MoreHorizontal className="size-3.5" />
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    aria-label={`New chat under ${look.name}`}
+                    onClick={() => onCreateChat(irgat.id)}
+                    className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-xs text-content/45 hover:bg-content/8 hover:text-content"
+                  >
+                    <Plus className="size-3" /> New chat
+                  </button>
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -303,6 +405,30 @@ export function IrgatRailSection({
           onClose={() => setBackground(undefined)}
         />
       ) : null}
+      {chatMenu && onDeleteChat ? (
+        <Popover
+          anchor={chatMenu.anchor}
+          side="right"
+          align="start"
+          width={200}
+          role="menu"
+          aria-label="Chat options"
+          onDismiss={() => setChatMenu(undefined)}
+          className="p-1"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setChatMenu(undefined);
+              onDeleteChat(chatMenu.irgatId, chatMenu.sessionId);
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-red-400 hover:bg-content/8"
+          >
+            <Trash2 className="size-3.5" /> Delete chat…
+          </button>
+        </Popover>
+      ) : null}
     </div>
   );
 }
@@ -324,7 +450,7 @@ function IrgatMenu({
   onDelete: () => void;
   onClose: () => void;
 }) {
-  useSyncExternalStore(subscribeIrgats, monosSnapshot);
+  useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const irgat = findIrgat(irgatId);
   const input = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(irgat?.name ?? "");
@@ -383,7 +509,9 @@ function IrgatMenu({
         <ColorPicker
           inline
           current={look.color}
-          onPick={(color) => updateIrgat(irgatId, (irgat) => ({ ...irgat, color }))}
+          onPick={(color) =>
+            updateIrgat(irgatId, (irgat) => ({ ...irgat, color }))
+          }
         />
       </div>
       <div role="separator" className="my-1 h-px bg-content/10" />

@@ -1,3 +1,8 @@
+import {
+  textQuestion,
+  textQuestionAnswer,
+  TEXT_QUESTION_ID,
+} from "../../sessions/model/interactiveQuestion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -395,6 +400,7 @@ function FloatingConversation({
     () => (session.busy ? null : latestReply(session.blocks)),
     [session.blocks, session.busy],
   );
+  const question = session.pendingQuestion ?? textQuestion(session);
   return (
     <div
       data-session-drop={session.id}
@@ -452,7 +458,7 @@ function FloatingConversation({
           harness={session.harness}
           model={session.model}
           modelSettings={session.modelSettings}
-          pendingQuestion={!!session.pendingQuestion}
+          pendingQuestion={!!question}
           backgroundTasks={session.backgroundTasks}
           onApproval={(requestId, decision) =>
             void action({ kind: "approval", requestId, decision })
@@ -464,13 +470,20 @@ function FloatingConversation({
           onOpenSession={() => void action({ kind: "reveal" })}
         />
       </div>
-      {session.pendingQuestion ? (
+      {question ? (
         <div className="max-h-[45%] shrink-0 overflow-y-auto px-2 pb-2">
           <QuestionForm
-            prompt={session.pendingQuestion}
-            onReply={(requestId, reply) =>
-              void action({ kind: "question", requestId, reply })
-            }
+            key={`${question.requestId}:${question.questions.map((entry) => entry.id).join(":")}`}
+            prompt={question}
+            onReply={(requestId, reply) => {
+              if (!session.pendingQuestion && requestId === TEXT_QUESTION_ID)
+                void action({
+                  kind: "submit",
+                  text: textQuestionAnswer(question, reply),
+                  attachments: [],
+                });
+              else void action({ kind: "question", requestId, reply });
+            }}
             onInteraction={(requestId) =>
               void action({ kind: "questionInteraction", requestId })
             }

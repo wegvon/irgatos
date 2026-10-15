@@ -323,7 +323,7 @@ describe("update repository", () => {
 
   it.each([
     ["wegvon/irgatos", "wegvon/irgatos"],
-    ["https://github.com/wegvon/monocode.git", "wegvon/monocode"],
+    ["https://github.com/turel/irgatos-fork.git", "turel/irgatos-fork"],
     ["git@github.com:wegvon/irgatos.git", "wegvon/irgatos"],
     ["https://github.com/wegvon/irgatos/releases", "wegvon/irgatos"],
     ["wegvon/irgatos/extra", null],
@@ -333,11 +333,11 @@ describe("update repository", () => {
     expect(normalizeRepoSlug(input)).toBe(expected);
   });
 
-  it("never points at upstream MonoCode", () => {
-    expect(isBlockedRepo("cretou/monocode")).toBe(true);
+  it("never points at a blocked owner's repository", () => {
+    expect(isBlockedRepo("hardbeat920/irgatos")).toBe(true);
     expect(isBlockedRepo("Cretou/irgatos")).toBe(true);
-    expect(() => saveUpdateRepo("https://github.com/cretou/monocode")).toThrow(/upstream MonoCode/);
-    store.set("irgatos.update.repo", "cretou/monocode");
+    expect(() => saveUpdateRepo("https://github.com/cretou/irgatos")).toThrow(/different app/);
+    store.set("irgatos.update.repo", "cretou/irgatos");
     expect(loadUpdateRepo()).toBeNull();
     expect(packageManagerHint("deb")).toContain("https://github.com/wegvon/irgatos/releases/latest");
     expect(packageManagerHint("deb")).not.toContain("cretou");

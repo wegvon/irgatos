@@ -4,10 +4,13 @@ import {
   sessionDisplayTitle,
   sessionDraftBlock,
   sessionNeedsInput,
+  sessionWorkCwd,
   type HarnessId,
   type Session,
 } from "../../sessions/model/session";
+import { toolCallLabel } from "../../sessions/model/transcriptActivity";
 import { looksLikeProject } from "../../projects/model/recents";
+import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
 import {
   kanbanProject,
   type KanbanCardSession,
@@ -28,6 +31,9 @@ export type CardSessionState = StoredSessionStatus | "interrupted" | "missing";
  */
 export type SessionAttention = "approval" | "question";
 
+/** The oldest tool permission a session is waiting on. */
+export type CardApproval = { requestId: number; label: string };
+
 export type LiveCardSession = {
   status: StoredSessionStatus;
   title: string;
@@ -35,6 +41,9 @@ export type LiveCardSession = {
   /** Board the session belongs on, when it is project work. */
   project?: string;
   attention?: SessionAttention;
+  /** A project-free chat from the Chat view. */
+  chat?: boolean;
+  approval?: CardApproval;
 };
 
 export const SESSION_ATTENTION_LABEL: Record<SessionAttention, string> = {
@@ -88,15 +97,32 @@ export function liveSessionAttention(
   return undefined;
 }
 
+export function pendingCardApproval(
+  session: Pick<Session, "blocks" | "cwd" | "worktreeCwd" | "worktreeRemoved">,
+): CardApproval | undefined {
+  if (session.worktreeRemoved) return undefined;
+  const block = session.blocks.find(
+    (item) => item.approval && !item.approval.decided,
+  );
+  if (!block?.approval) return undefined;
+  return {
+    requestId: block.approval.requestId,
+    label: toolCallLabel(block, sessionWorkCwd(session)),
+  };
+}
+
 export function liveCardSession(session: Session): LiveCardSession {
   const status = liveSessionStatus(session);
   const attention = status === "needs-input" ? liveSessionAttention(session) : undefined;
+  const approval = attention === "approval" ? pendingCardApproval(session) : undefined;
   return {
     status,
     title: sessionDisplayTitle(session.title, session.harness),
     harness: session.harness,
     ...(looksLikeProject(session.cwd) ? { project: kanbanProject(session.cwd) } : {}),
     ...(attention ? { attention } : {}),
+    ...(isFreeChatCwd(session.cwd) ? { chat: true } : {}),
+    ...(approval ? { approval } : {}),
   };
 }
 
@@ -260,7 +286,9 @@ export function liveSessionsKey(sessions: ReadonlyMap<string, LiveCardSession>):
   for (const [id, session] of sessions) {
     key += `${id}\u0000${session.status}\u0000${session.harness}\u0000${session.title}\u0000${
       session.project ?? ""
-    }\u0000${session.attention ?? ""}\u0001`;
+    }\u0000${session.attention ?? ""}\u0000${session.approval?.requestId ?? ""}\u0000${
+      session.chat ? 1 : 0
+    }\u0001`;
   }
   return key;
 }

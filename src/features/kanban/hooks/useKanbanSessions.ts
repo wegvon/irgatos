@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listIrgats } from "../../irgats/model/irgat";
+import { irgatSessionIds as allIrgatSessionIds, listIrgats } from "../../irgats/model/irgat";
 import type { Session } from "../../sessions/model/session";
 import {
   loadKanbanSessionLinks,
@@ -64,7 +64,7 @@ export function useKanbanSessions(sessions: readonly Session[]): KanbanSessions 
   const sessionIdsKey = sessions.map((session) => session.id).join("\u0000");
   // The roster only changes alongside the set of loaded sessions.
   const irgatSessionIds = useMemo(
-    () => new Set(listIrgats().flatMap((irgat) => (irgat.sessionId ? [irgat.sessionId] : []))),
+    () => new Set(listIrgats().flatMap(allIrgatSessionIds)),
     [sessionIdsKey],
   );
 

@@ -12,6 +12,7 @@ import {
   isIrgatSession,
   irgatForSession,
   saveIrgatSessionId,
+  updateIrgat,
 } from "./irgat";
 import { forgetAgentContext } from "./irgatFiles";
 import { forgetIrgatRotation } from "./irgatRotation";
@@ -60,6 +61,50 @@ async function loadIrgatSession(
   return session;
 }
 
+/** A fresh conversation inherits configuration, never another chat’s history. */
+export function createIrgatChildSession(
+  irgatId: string,
+  parent: Session,
+): Session {
+  const irgat = findIrgat(irgatId);
+  if (!irgat || irgatForSession(parent.id)?.id !== irgatId)
+    throw new Error("Irgat is no longer available");
+  const child = {
+    ...newSession(
+      parent.harness,
+      parent.cwd,
+      parent.model,
+      parent.runtimeMode,
+      parent.modelSettings,
+    ),
+    title: `Chat ${(irgat.childSessionIds?.length ?? 0) + 1}`,
+    providerAccountId: parent.providerAccountId,
+  };
+  updateIrgat(irgatId, (current) => ({
+    ...current,
+    childSessionIds: [...(current.childSessionIds ?? []), child.id],
+    chatsCollapsed: false,
+  }));
+  return child;
+}
+
+/** Remove only this child after storage succeeds; shared Irgat files stay. */
+export async function deleteIrgatChildSession(
+  irgatId: string,
+  sessionId: string,
+  remove: () => Promise<boolean>,
+): Promise<boolean> {
+  if (!findIrgat(irgatId)?.childSessionIds?.includes(sessionId)) return false;
+  if (!(await remove())) return false;
+  updateIrgat(irgatId, (irgat) => ({
+    ...irgat,
+    childSessionIds: irgat.childSessionIds?.filter((id) => id !== sessionId),
+  }));
+  forgetAgentContext(sessionId);
+  forgetIrgatRotation(sessionId);
+  return true;
+}
+
 /** Reset only the Irgat's chat, keeping its identity, habits and memory. */
 export async function resetIrgatSession(
   current: Session,
@@ -82,7 +127,17 @@ export async function resetIrgatSession(
   await host.remove(stopped);
   forgetAgentContext(current.id);
   forgetIrgatRotation(current.id);
-  if (irgatId) saveIrgatSessionId(irgatId, fresh.id);
+  if (irgatId)
+    updateIrgat(irgatId, (irgat) =>
+      irgat.sessionId === current.id
+        ? { ...irgat, sessionId: fresh.id }
+        : {
+            ...irgat,
+            childSessionIds: irgat.childSessionIds?.map((id) =>
+              id === current.id ? fresh.id : id,
+            ),
+          },
+    );
   host.replace(fresh);
   return fresh;
 }

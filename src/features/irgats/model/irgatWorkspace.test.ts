@@ -3,12 +3,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession } from "../../sessions/model/session";
 import { leafIds, newTab, splitPane } from "../../workspace/model/layout";
 import { planWorkspaceTabClose } from "../../workspace/model/workspaceTabGroups";
-import { createIrgat, findIrgat, saveIrgatName, saveIrgatSessionId } from "./irgat";
+import {
+  createIrgat,
+  findIrgat,
+  saveIrgatName,
+  saveIrgatSessionId,
+} from "./irgat";
 import { planAgentContext, recordAgentContext } from "./irgatFiles";
 import { loadIrgatRotation, saveIrgatRotation } from "./irgatRotation";
 import {
   detachIrgatTabs,
   ensureIrgatSession,
+  createIrgatChildSession,
+  deleteIrgatChildSession,
   resetIrgatSession,
 } from "./irgatWorkspace";
 
@@ -34,6 +41,35 @@ function irgatFor(cwd: string, sessionId: string): string {
   return irgat.id;
 }
 const sessionOf = (irgatId: string) => findIrgat(irgatId)?.sessionId;
+
+it("deletes a child only after storage succeeds and preserves its Irgat and siblings", async () => {
+  const parent = chat("parent");
+  const irgatId = irgatFor(parent.cwd, parent.id);
+  const child = createIrgatChildSession(irgatId, parent);
+  const sibling = createIrgatChildSession(irgatId, parent);
+  const before = findIrgat(irgatId)!;
+  const remove = vi.fn(async () => {
+    expect(findIrgat(irgatId)?.childSessionIds).toContain(child.id);
+    return false;
+  });
+  expect(await deleteIrgatChildSession(irgatId, child.id, remove)).toBe(false);
+  expect(findIrgat(irgatId)).toEqual(before);
+  remove.mockRejectedValueOnce(new Error("Storage unavailable"));
+  await expect(
+    deleteIrgatChildSession(irgatId, child.id, remove),
+  ).rejects.toThrow("Storage unavailable");
+  expect(findIrgat(irgatId)).toEqual(before);
+  remove.mockResolvedValueOnce(true);
+  expect(await deleteIrgatChildSession(irgatId, child.id, remove)).toBe(true);
+  expect(findIrgat(irgatId)).toEqual({
+    ...before,
+    childSessionIds: [sibling.id],
+  });
+  remove.mockClear();
+  for (const id of [parent.id, "unrelated", child.id])
+    expect(await deleteIrgatChildSession(irgatId, id, remove)).toBe(false);
+  expect(remove).not.toHaveBeenCalled();
+});
 
 it("loads an existing resident conversation without creating a session", async () => {
   const agent = { ...chat("resident"), runtimeMode: "full-access" as const };
@@ -342,4 +378,37 @@ it("restores a blank tab for a background project without switching the active t
   expect(migration.agentViewId).toBeUndefined();
   expect(migration.tabs[0]).toBe(active);
   expect(migration.addedSessions[0].cwd).toBe(agent.cwd);
+});
+
+it("creates independent child chats sharing the parent Irgat and persistent settings", async () => {
+  const { createIrgatChildSession } = await import("./irgatWorkspace");
+  const { irgatForSession, listIrgats } = await import("./irgat");
+  const parent = {
+    ...chat("parent"),
+    model: "gpt-test",
+    providerAccountId: "parent-account",
+    modelSettings: { effort: "high" },
+    blocks: [{ id: "old", role: "user" as const, text: "Parent history" }],
+  };
+  const irgatId = irgatFor(parent.cwd, parent.id);
+  const child = createIrgatChildSession(irgatId, parent);
+  const sibling = createIrgatChildSession(irgatId, parent);
+  expect(child.id).not.toBe(parent.id);
+  expect(child.blocks).toEqual([]);
+  expect(child.model).toBe(parent.model);
+  expect(child.providerAccountId).toBe("parent-account");
+  expect(child.modelSettings).toEqual(parent.modelSettings);
+  expect(irgatForSession(child.id)?.id).toBe(irgatId);
+  expect(irgatForSession(sibling.id)?.id).toBe(irgatId);
+  expect(listIrgats()[0].childSessionIds).toEqual([child.id, sibling.id]);
+  expect(findIrgat(irgatId)?.sessionId).toBe(parent.id);
+  const fresh = await resetIrgatSession(child, {
+    stop: async () => child,
+    remove: async () => {},
+    replace: () => {},
+  });
+  expect(irgatForSession(fresh.id)?.id).toBe(irgatId);
+  expect(irgatForSession(child.id)).toBeUndefined();
+  expect(findIrgat(irgatId)?.childSessionIds).toEqual([fresh.id, sibling.id]);
+  expect(findIrgat(irgatId)?.sessionId).toBe(parent.id);
 });

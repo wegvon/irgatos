@@ -42,6 +42,9 @@ import {
   saveDiffPalette,
   initAppearance,
   isLightScheme,
+  isWorkspaceHeaderTab,
+  reorderWorkspaceHeaderTabs,
+  workspaceHeaderTabs,
 } from "./appearance";
 
 const KEY = "irgat.transcriptLayout";
@@ -79,6 +82,25 @@ function mockLocalStorage() {
     configurable: true,
   });
 }
+
+describe("workspace header tabs", () => {
+  it("leaves Inbox and Artifacts to the navigation menu", () => {
+    expect(isWorkspaceHeaderTab("artifacts")).toBe(false);
+    expect(isWorkspaceHeaderTab("inbox")).toBe(false);
+    expect(
+      workspaceHeaderTabs(["sessions", "inbox", "files", "changes", "artifacts"]),
+    ).toEqual(["sessions", "files", "changes"]);
+  });
+
+  it("reorders the header row without moving menu panels", () => {
+    expect(
+      reorderWorkspaceHeaderTabs(
+        ["sessions", "inbox", "files", "artifacts", "changes"],
+        ["changes", "sessions", "files"],
+      ),
+    ).toEqual(["changes", "inbox", "sessions", "artifacts", "files"]);
+  });
+});
 
 describe("accent color setting", () => {
   beforeEach(mockLocalStorage);

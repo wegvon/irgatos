@@ -61,7 +61,7 @@ it.each([false, true])("applies generated worktree names only to retained sessio
     rmSync(root, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   });
-  const tree = await createHostWorktree(cwd, "mc/12345678", "HEAD", false);
+  const tree = await createHostWorktree(cwd, "irgat/12345678", "HEAD", false);
   const { sessionId } = engine.command({
     type: "create",
     commandId: "create-named",
@@ -86,7 +86,7 @@ it.each([false, true])("applies generated worktree names only to retained sessio
     try {
       finishBranch("remote-naming");
       await vi.waitFor(() => expect(logged).toHaveBeenCalledWith("[irgat] remote worktree branch", expect.any(Error)));
-      expect((await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch).toBe("mc/12345678");
+      expect((await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)?.branch).toBe("irgat/12345678");
     } finally { logged.mockRestore(); }
     return;
   }
@@ -94,14 +94,14 @@ it.each([false, true])("applies generated worktree names only to retained sessio
   await vi.waitFor(() => {
     expect(store.session(sessionId).session).toMatchObject({
       title: "codex · Fix remote naming",
-      branch: "mc/remote-naming",
+      branch: "irgat/remote-naming",
       worktreeCwd: tree.path,
     });
   });
   expect(
     (await hostWorktrees(cwd)).worktrees.find((item) => item.path === tree.path)
       ?.branch,
-  ).toBe("mc/remote-naming");
+  ).toBe("irgat/remote-naming");
   expect(title).toHaveBeenCalledTimes(1);
   expect(branch).toHaveBeenCalledTimes(1);
   engine.command({
@@ -114,7 +114,7 @@ it.each([false, true])("applies generated worktree names only to retained sessio
   expect(title).toHaveBeenCalledTimes(1);
   expect(branch).toHaveBeenCalledTimes(1);
   await expect(
-    renameHostWorktreeBranch(cwd, tree.path, "mc/12345678", "mc/other"),
+    renameHostWorktreeBranch(cwd, tree.path, "irgat/12345678", "irgat/other"),
   ).rejects.toThrow("changed");
 });
 

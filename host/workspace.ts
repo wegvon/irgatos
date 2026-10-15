@@ -67,7 +67,7 @@ async function git(root: string, args: string[], maxBuffer = 4 * 1024 * 1024) {
       timeout: 10_000,
       maxBuffer,
       encoding: "utf8",
-      env: { ...process.env, LC_ALL: "C" },
+      env: { ...process.env, LC_ALL: "C", GIT_OPTIONAL_LOCKS: "0" },
     })
   ).stdout;
 }

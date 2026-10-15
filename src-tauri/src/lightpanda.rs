@@ -66,17 +66,12 @@ fn install_dir(home: &Path) -> PathBuf {
     home.join(".irgatos/bin")
 }
 
-fn legacy_install_dir(home: &Path) -> PathBuf {
-    home.join(".monocode/bin")
-}
-
 fn candidates(home: Option<&Path>, from_path: Option<PathBuf>) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = from_path.into_iter().collect();
     paths.push(PathBuf::from("/opt/homebrew/bin").join(BINARY));
     paths.push(PathBuf::from("/usr/local/bin").join(BINARY));
     if let Some(home) = home {
         paths.push(install_dir(home).join(BINARY));
-        paths.push(legacy_install_dir(home).join(BINARY));
     }
     paths
 }
@@ -521,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn looks_on_path_then_homebrew_then_irgatos_then_legacy() {
+    fn looks_on_path_then_homebrew_then_irgatos() {
         let home = Path::new("/Users/me");
         let paths = candidates(Some(home), Some(PathBuf::from("/custom/bin/lightpanda")));
         assert_eq!(
@@ -531,7 +526,6 @@ mod tests {
                 PathBuf::from("/opt/homebrew/bin/lightpanda"),
                 PathBuf::from("/usr/local/bin/lightpanda"),
                 PathBuf::from("/Users/me/.irgatos/bin/lightpanda"),
-                PathBuf::from("/Users/me/.monocode/bin/lightpanda"),
             ]
         );
         assert_eq!(candidates(None, None).len(), 2);
@@ -545,7 +539,7 @@ mod tests {
             Some(home)
         ));
         assert!(!is_managed(
-            Path::new("/Users/me/.monocode/bin/lightpanda"),
+            Path::new("/Users/me/.local/bin/lightpanda"),
             Some(home)
         ));
         assert!(!is_managed(

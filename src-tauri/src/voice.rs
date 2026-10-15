@@ -22,6 +22,8 @@ use crate::notifications::Permission;
 mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod qwen;
 mod speech;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod transcription;
@@ -56,9 +58,10 @@ pub type Sink = Arc<dyn Fn(VoiceEvent) + Send + Sync>;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
-    #[default]
     Apple,
     Cloud,
+    #[default]
+    Qwen,
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -268,15 +271,13 @@ pub fn voice_speak(
     app: AppHandle,
     id: String,
     text: String,
-    voice: Option<String>,
-    rate: Option<u32>,
+    provider: Option<speech::SpeechProvider>,
 ) -> Result<(), String> {
     let text = speech::speakable(&text);
     if text.is_empty() {
         return Err("Nothing to read aloud".into());
     }
-    let command = platform::speech_command(voice.as_deref(), rate)?;
-    SPEAKER.speak(command, id, text, move |ended| {
+    SPEAKER.speak(provider.unwrap_or_default(), id, text, move |ended| {
         let _ = app.emit(speech::EVENT, ended);
     })
 }
@@ -285,12 +286,6 @@ pub fn voice_speak(
 #[tauri::command]
 pub fn voice_stop_speaking(id: Option<String>) {
     SPEAKER.stop_if(id.as_deref());
-}
-
-/// The system voices `say` can use, for the voice picker.
-#[tauri::command]
-pub async fn voice_list_voices() -> Vec<speech::SystemVoice> {
-    platform::list_voices().await
 }
 
 fn event_sink(app: &AppHandle) -> Sink {
@@ -401,25 +396,6 @@ mod platform {
         on_main(app, move || apple::cancel(&capture)).await;
     }
 
-    pub(super) fn speech_command(
-        voice: Option<&str>,
-        rate: Option<u32>,
-    ) -> Result<std::process::Command, String> {
-        Ok(super::speech::say_command(voice, rate))
-    }
-
-    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
-        tauri::async_runtime::spawn_blocking(|| {
-            std::process::Command::new("/usr/bin/say")
-                .args(["-v", "?"])
-                .output()
-                .map(|output| super::speech::parse_voices(&String::from_utf8_lossy(&output.stdout)))
-                .unwrap_or_default()
-        })
-        .await
-        .unwrap_or_default()
-    }
-
     pub(super) fn open_privacy_settings(pane: &str) -> Result<(), String> {
         let anchor = match pane {
             "speech" => "Privacy_SpeechRecognition",
@@ -476,17 +452,6 @@ mod platform {
 
     pub(super) fn open_privacy_settings(_pane: &str) -> Result<(), String> {
         Err(UNSUPPORTED.into())
-    }
-
-    pub(super) fn speech_command(
-        _voice: Option<&str>,
-        _rate: Option<u32>,
-    ) -> Result<std::process::Command, String> {
-        Err("Reading aloud uses the macOS system voice".into())
-    }
-
-    pub(super) async fn list_voices() -> Vec<super::speech::SystemVoice> {
-        Vec::new()
     }
 }
 
@@ -570,13 +535,13 @@ mod tests {
     }
 
     #[test]
-    fn start_options_default_to_the_apple_engine() {
+    fn start_options_default_to_the_qwen_engine() {
         let options: StartOptions = serde_json::from_value(serde_json::json!({
             "capture": "c1",
             "cloudKey": "smuggled",
         }))
         .unwrap();
-        assert_eq!(options.engine, Engine::Apple);
+        assert_eq!(options.engine, Engine::Qwen);
         assert!(options.locale.is_empty());
         assert!(!options.allow_server);
         assert_eq!(

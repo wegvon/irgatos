@@ -149,13 +149,13 @@ describe("Composer dictation", () => {
     await startDictating();
 
     expect(capture!.options).toEqual({
-      engine: "apple",
+      engine: "qwen",
       locale: "tr-TR",
       allowServer: false,
       cloud: undefined,
     });
     expect(strip()?.textContent).toContain("Listening");
-    expect(strip()?.textContent).toContain("On this Mac");
+    expect(strip()?.textContent).toContain("Qwen3-ASR");
     expect(micButton()?.getAttribute("aria-label")).toBe("Finish dictation");
 
     await emit((h) => h.onPartial?.("fix"));
@@ -214,7 +214,7 @@ describe("Composer dictation", () => {
     expect(onSubmit.mock.calls[0][0]).toBe("run the tests");
   });
 
-  it("keeps the last partial when the recognizer never answers Stop", async () => {
+  it("waits for the Qwen final result without dropping the live transcript", async () => {
     await renderComposer();
     await startDictating();
     await emit((h) => h.onPartial?.("almost done"));
@@ -225,11 +225,12 @@ describe("Composer dictation", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(voice.cancel).toHaveBeenCalledOnce();
+    expect(voice.cancel).not.toHaveBeenCalled();
+    expect(strip()).not.toBeNull();
+    expect(textarea().value).toBe("almost done");
+    await emit((h) => h.onFinal("complete result"));
     expect(strip()).toBeNull();
-    expect(textarea().value).toBe("almost done");
-    await emit((h) => h.onFinal("too late"));
-    expect(textarea().value).toBe("almost done");
+    expect(textarea().value).toBe("complete result");
   });
 
   it("lets typing take over and keeps what was heard", async () => {
@@ -278,23 +279,23 @@ describe("Composer dictation", () => {
   });
 
   it("asks for undecided permissions and explains a refusal", async () => {
-    voice.status.mockResolvedValue({ ...GRANTED, speech: "prompt" });
-    voice.request.mockResolvedValue({ ...GRANTED, speech: "denied" });
+    voice.status.mockResolvedValue({ ...GRANTED, microphone: "prompt" });
+    voice.request.mockResolvedValue({ ...GRANTED, microphone: "denied" });
     await renderComposer("draft");
     await act(async () => micButton()!.click());
     await flush();
 
-    expect(voice.request).toHaveBeenCalledWith("apple", "");
+    expect(voice.request).toHaveBeenCalledWith("qwen", "tr-TR");
     expect(voice.start).not.toHaveBeenCalled();
     const alert = container.querySelector('[role="alert"]');
-    expect(alert?.textContent).toContain("Speech recognition is off");
+    expect(alert?.textContent).toContain("Microphone access is off");
     expect(textarea().value).toBe("draft");
 
     const open = [...alert!.querySelectorAll("button")].find(
       (button) => button.textContent === "Open System Settings",
     );
     await act(async () => open!.click());
-    expect(voice.openSettings).toHaveBeenCalledWith("speech");
+    expect(voice.openSettings).toHaveBeenCalledWith("microphone");
   });
 
   it("shows a recognizer failure and leaves the words it heard", async () => {

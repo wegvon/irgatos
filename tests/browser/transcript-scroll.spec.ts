@@ -1,5 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+for (const decision of ["İzin ver", "Reddet"]) {
+  test(`project approval stays in chat after the reply and reload until ${decision}`, async ({ page }, testInfo) => {
+    await page.goto("/tests/browser/transcript.html?projectApproval");
+    const allow = page.getByRole("button", { name: "İzin ver", exact: true });
+    await expect(allow).toBeVisible();
+    await page.evaluate(() => (window as unknown as { finishProjectReply(): void }).finishProjectReply());
+    await expect(page.getByText("Boss, erişim onayını bekliyorum.", { exact: true })).toBeVisible();
+    await expect(allow).toBeVisible();
+    await page.evaluate(() => (window as unknown as { reloadProjectChat(): void }).reloadProjectChat());
+    await expect(allow).toBeVisible();
+    await expect(page.locator("[data-project-grants]")).toHaveText("");
+    await page.screenshot({ path: testInfo.outputPath("pending-project-approval.png") });
+    await page.getByRole("button", { name: decision, exact: true }).click();
+    await expect(allow).toHaveCount(0);
+    await expect(page.getByText(decision === "İzin ver" ? "Erişim onaylandı" : "Erişim reddedildi", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-project-grants]")).toHaveText(decision === "İzin ver" ? "/code/repguard" : "");
+  });
+}
+
 type IrgatScrollWindow = Window & {
   completeIrgatReply: (text?: string) => void;
   finishIrgatSamples: () => {

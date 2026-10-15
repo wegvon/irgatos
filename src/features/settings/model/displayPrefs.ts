@@ -20,7 +20,7 @@ export const MASK_EMAILS_CHANGE_EVENT = "irgat:maskemailschange";
 export const COMPOSER_AUTOCORRECT_CHANGE_EVENT =
   "irgat:composerautocorrectchange";
 /** Fired on `window` whenever Irgats are pinned to or unpinned from the icon rail (detail: boolean). */
-export const RAIL_IRGATS_PINNED_CHANGE_EVENT = "irgat:railmonospinnedchange";
+export const RAIL_IRGATS_PINNED_CHANGE_EVENT = "irgat:railirgatspinnedchange";
 
 function flagStore(key: string, fallback: boolean, event: string) {
   // Holds a saved value only while storage failed to keep it, so the switch
@@ -67,7 +67,7 @@ const composerAutocorrect = flagStore(
   COMPOSER_AUTOCORRECT_DEFAULT,
   COMPOSER_AUTOCORRECT_CHANGE_EVENT,
 );
-const railMonosPinned = flagStore(
+const railIrgatsPinned = flagStore(
   RAIL_IRGATS_PINNED_KEY,
   RAIL_IRGATS_PINNED_DEFAULT,
   RAIL_IRGATS_PINNED_CHANGE_EVENT,
@@ -92,7 +92,7 @@ export const subscribeComposerAutocorrect = composerAutocorrect.subscribe;
 export const useComposerAutocorrect = composerAutocorrect.useFlag;
 
 /** Irgats sit at the top of the icon rail instead of inside the project picker. */
-export const loadRailMonosPinned = railMonosPinned.load;
-export const saveRailMonosPinned = railMonosPinned.save;
-export const subscribeRailMonosPinned = railMonosPinned.subscribe;
-export const useRailMonosPinned = railMonosPinned.useFlag;
+export const loadRailIrgatsPinned = railIrgatsPinned.load;
+export const saveRailIrgatsPinned = railIrgatsPinned.save;
+export const subscribeRailIrgatsPinned = railIrgatsPinned.subscribe;
+export const useRailIrgatsPinned = railIrgatsPinned.useFlag;

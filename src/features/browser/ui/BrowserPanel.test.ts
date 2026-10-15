@@ -512,7 +512,7 @@ it("explains when macOS blocks Chrome profile discovery", async () => {
     if (command === "browser_chrome_profiles") {
       return Promise.reject(
         new Error(
-          "No Chrome profiles are accessible. Grant MonoCode Full Disk Access in System Settings > Privacy & Security, then restart MonoCode.",
+          "No Chrome profiles are accessible. Grant Irgatos Full Disk Access in System Settings > Privacy & Security, then restart Irgatos.",
         ),
       );
     }
@@ -537,7 +537,7 @@ it("explains when macOS blocks Chrome profile discovery", async () => {
     await flush();
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Grant MonoCode Full Disk Access",
+      "Grant Irgatos Full Disk Access",
     );
     expect(
       [...container.querySelectorAll("button")].find(
