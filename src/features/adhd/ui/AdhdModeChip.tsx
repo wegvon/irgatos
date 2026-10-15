@@ -50,7 +50,8 @@ export function AdhdModeChip({
         playCue("switch");
       }}
       className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 hover:bg-content/10 ${
-        variant === "composer" ? "h-6" : "h-5"
+        // The composer row sizes the quota chip and model name the same way.
+        variant === "composer" ? "h-6.5 text-[12px]" : "h-5"
       } ${on ? "text-accent" : "text-content/40 hover:text-content"}`}
     >
       <Brain className="size-3.5" strokeWidth={1.75} aria-hidden />

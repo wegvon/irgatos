@@ -716,6 +716,24 @@ describe("settings pages", () => {
     expect(row.textContent).toContain("wins over the environment");
   });
 
+  it("shows a failed speech preview only beside the speech model", async () => {
+    await render("voice");
+    const speech = container.querySelector(
+      '[data-setting-id="voice-mode-voice"]',
+    )!;
+    const preview = [...speech.querySelectorAll("button")].find(
+      (button) => button.textContent === "Preview",
+    )!;
+    await act(async () => preview.click());
+    await act(async () => {});
+    const message = speech.querySelector('[role="alert"]')?.textContent ?? "";
+    expect(message).not.toBe("");
+    const others = [...container.querySelectorAll("p, span")].filter(
+      (node) => node.textContent === message && !speech.contains(node),
+    );
+    expect(others).toHaveLength(0);
+  });
+
   it("keeps the Live voice choices", async () => {
     await render("voice");
     const bargeIn = container.querySelector<HTMLButtonElement>(

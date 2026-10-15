@@ -234,6 +234,16 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     label: "Pin irgats to the icon rail",
     keywords: "irgat rail compact collapsed icons top divider project picker",
   },
+  ...(IS_MAC
+    ? [
+        {
+          id: "irgat-menu-bar-icon",
+          section: "irgats" as const,
+          label: "Menu bar icon",
+          keywords: "irgat menu bar tray status icon quick composer macos hide",
+        },
+      ]
+    : []),
   {
     id: "irgat-list",
     section: "irgats",

@@ -1370,6 +1370,8 @@ function VoicePage() {
   const [key, setKey] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
+  // The speech preview fails on its own, apart from the transcription key.
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const preview = useRef<SpeechHandle | null>(null);
   const speechProvider = SPEECH_PROVIDERS.find(
@@ -1388,14 +1390,16 @@ function VoicePage() {
       return;
     }
     setPreviewing(true);
-    setKeyError(null);
+    setSpeechError(null);
     void speak("Merhaba Boss, bu bir ses denemesidir.", voice.speechProvider)
       .then((handle) => {
         preview.current = handle;
         return handle.done;
       })
       .catch((reason: unknown) => {
-        setKeyError(reason instanceof Error ? reason.message : String(reason));
+        setSpeechError(
+          reason instanceof Error ? reason.message : String(reason),
+        );
       })
       .finally(() => {
         preview.current = null;
@@ -1563,16 +1567,16 @@ function VoicePage() {
             options={SPEECH_PROVIDERS}
             onChange={(next) => {
               preview.current?.stop();
-              setKeyError(null);
+              setSpeechError(null);
               saveVoiceSettings({ speechProvider: next as SpeechProvider });
             }}
           />
           <SecondaryButton onClick={onPreview}>
             {previewing ? "Stop" : "Preview"}
           </SecondaryButton>
-          {keyError ? (
+          {speechError ? (
             <span role="alert" className="text-xs text-red-500">
-              {keyError}
+              {speechError}
             </span>
           ) : null}
         </Row>
