@@ -5186,8 +5186,28 @@ function Workspace({
         ...sessions,
         session,
       ]);
-      if (owner) void onOpenIrgat(owner.id, session.id);
-      else if (isFreeChatSession(current)) openFreeChat(session.id);
+      if (owner) {
+        // Like New chat: the roster lists this child, so store it before
+        // opening, or a restart leaves a row with nothing behind it.
+        void upsertSession(session).then(
+          () => onOpenIrgat(owner.id, session.id),
+          (error) => {
+            updateIrgat(owner.id, (irgat) => ({
+              ...irgat,
+              childSessionIds: irgat.childSessionIds?.filter(
+                (id) => id !== session.id,
+              ),
+            }));
+            updateSessionState(sessionsRef, setSessions, (sessions) =>
+              sessions.filter((entry) => entry.id !== session.id),
+            );
+            void message(String(error), {
+              title: "Could not open a chat for this account",
+              kind: "error",
+            });
+          },
+        );
+      } else if (isFreeChatSession(current)) openFreeChat(session.id);
       else {
         appendTab(tab, current.cwd);
         setActiveTabId(tab.id);
