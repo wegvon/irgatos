@@ -13062,13 +13062,16 @@ function Workspace({
   }, [openFreeChat]);
 
   const onNewChat = useCallback(async () => {
-    // A blank chat is reused rather than piling up empty ones.
+    // A blank chat is reused rather than piling up empty ones. One holding
+    // a typed draft or a board card's prompt is not blank.
     const blank = sessionsRef.current.find(
       (session) =>
         isFreeChatSession(session) &&
         !session.ephemeral &&
         !session.busy &&
-        session.blocks.length === 0,
+        session.blocks.length === 0 &&
+        !session.composerSeed &&
+        !getComposerDraft(session.id)?.trim(),
     );
     if (blank) {
       openFreeChat(blank.id);
