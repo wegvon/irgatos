@@ -26,6 +26,7 @@ import {
   Inbox,
   Mail,
   Idea,
+  Feed,
   Kanban,
   MessageSquare,
   ListFilter,
@@ -349,6 +350,7 @@ type Props = {
   onOpenFleet?: () => void;
   onOpenMail?: () => void;
   onOpenIdeas?: () => void;
+  onOpenFeed?: () => void;
   /** Opens the project-free Chat view; works with no project open. */
   onOpenChat?: () => void;
   chatActive?: boolean;
@@ -368,6 +370,7 @@ type Props = {
   fleetActive?: boolean;
   mailActive?: boolean;
   ideasActive?: boolean;
+  feedActive?: boolean;
   /** Sessions waiting on the user, shown as the Fleet badge. */
   fleetNeedsYou?: number;
   notesEnabled?: boolean;
@@ -475,6 +478,7 @@ function SidebarComponent({
   onOpenFleet,
   onOpenMail,
   onOpenIdeas,
+  onOpenFeed,
   onOpenChat,
   chatActive = false,
   chatIndicator,
@@ -491,6 +495,7 @@ function SidebarComponent({
   fleetActive = false,
   mailActive = false,
   ideasActive = false,
+  feedActive = false,
   fleetNeedsYou = 0,
   notesEnabled = true,
   onToggleProjectRail,
@@ -867,6 +872,7 @@ function SidebarComponent({
     fleetActive ||
     mailActive ||
     ideasActive ||
+    feedActive ||
     chatActive ||
     settingsOpen;
   // A remembered Irgat sits underneath these views; select it only while visible.
@@ -1844,6 +1850,7 @@ function SidebarComponent({
               onOpenFleet={onOpenFleet}
               onOpenMail={onOpenMail}
               onOpenIdeas={onOpenIdeas}
+              onOpenFeed={onOpenFeed}
               searchActive={searchActive}
               inboxActive={inboxActive}
               notesActive={notesActive}
@@ -1852,6 +1859,7 @@ function SidebarComponent({
               fleetActive={fleetActive}
               mailActive={mailActive}
               ideasActive={ideasActive}
+              feedActive={feedActive}
               fleetNeedsYou={fleetNeedsYou}
               onOpenArtifacts={openArtifacts}
               artifactsActive={artifactsActive}
@@ -2397,10 +2405,12 @@ function SidebarComponent({
           onOpenFleet={onOpenFleet}
           onOpenMail={onOpenMail}
           onOpenIdeas={onOpenIdeas}
+          onOpenFeed={onOpenFeed}
           kanbanActive={kanbanActive}
           fleetActive={fleetActive}
           mailActive={mailActive}
           ideasActive={ideasActive}
+          feedActive={feedActive}
           fleetNeedsYou={fleetNeedsYou}
           onOpenSettings={onOpenSettings}
           onTogglePanel={onToggleProjectRail}
@@ -2444,8 +2454,10 @@ function SidebarComponent({
           fleetActive={fleetActive}
           onOpenMail={onOpenMail}
           onOpenIdeas={onOpenIdeas}
+          onOpenFeed={onOpenFeed}
           mailActive={mailActive}
           ideasActive={ideasActive}
+          feedActive={feedActive}
           onOpenArtifacts={openArtifacts}
           artifactsActive={artifactsActive}
           artifactCount={artifactCount}
@@ -2535,6 +2547,7 @@ function SidebarProjectPicker({
   onOpenFleet,
   onOpenMail,
   onOpenIdeas,
+  onOpenFeed,
   searchActive = false,
   inboxActive = false,
   notesActive = false,
@@ -2543,6 +2556,7 @@ function SidebarProjectPicker({
   fleetActive = false,
   mailActive = false,
   ideasActive = false,
+  feedActive = false,
   fleetNeedsYou = 0,
   onOpenArtifacts,
   artifactsActive = false,
@@ -2574,6 +2588,7 @@ function SidebarProjectPicker({
   onOpenFleet?: () => void;
   onOpenMail?: () => void;
   onOpenIdeas?: () => void;
+  onOpenFeed?: () => void;
   searchActive?: boolean;
   inboxActive?: boolean;
   notesActive?: boolean;
@@ -2582,6 +2597,7 @@ function SidebarProjectPicker({
   fleetActive?: boolean;
   mailActive?: boolean;
   ideasActive?: boolean;
+  feedActive?: boolean;
   /** Sessions waiting on the user, shown as the Fleet badge. */
   fleetNeedsYou?: number;
   inboxUnseen?: boolean;
@@ -2653,6 +2669,11 @@ function SidebarProjectPicker({
         {onOpenIdeas ? (
           <IconButton label="Ideas" active={ideasActive} onClick={onOpenIdeas}>
             <Idea className="size-3.5" strokeWidth={1.75} />
+          </IconButton>
+        ) : null}
+        {onOpenFeed ? (
+          <IconButton label="Feed" active={feedActive} onClick={onOpenFeed}>
+            <Feed className="size-3.5" strokeWidth={1.75} />
           </IconButton>
         ) : null}
         {onOpenChat ? (
@@ -2774,10 +2795,12 @@ function CompactProjectRail({
   onOpenFleet,
   onOpenMail,
   onOpenIdeas,
+  onOpenFeed,
   kanbanActive = false,
   fleetActive = false,
   mailActive = false,
   ideasActive = false,
+  feedActive = false,
   fleetNeedsYou = 0,
   onOpenSettings,
   onTogglePanel,
@@ -2821,10 +2844,12 @@ function CompactProjectRail({
   onOpenFleet?: () => void;
   onOpenMail?: () => void;
   onOpenIdeas?: () => void;
+  onOpenFeed?: () => void;
   kanbanActive?: boolean;
   fleetActive?: boolean;
   mailActive?: boolean;
   ideasActive?: boolean;
+  feedActive?: boolean;
   /** Sessions waiting on the user, shown as the Fleet badge. */
   fleetNeedsYou?: number;
   onOpenSettings?: () => void;
@@ -2880,6 +2905,7 @@ function CompactProjectRail({
     !fleetActive &&
     !mailActive &&
     !ideasActive &&
+    !feedActive &&
     !chatActive &&
     !irgatViewActive;
   const openWorkspaceTab = (nextTab: SidebarTab) => {
@@ -3026,6 +3052,14 @@ function CompactProjectRail({
             icon={Idea}
             active={ideasActive}
             onClick={action(ideasActive, onOpenIdeas)}
+          />
+        ) : null}
+        {onOpenFeed ? (
+          <CompactRailAction
+            label="Feed"
+            icon={Feed}
+            active={feedActive}
+            onClick={action(feedActive, onOpenFeed)}
           />
         ) : null}
         {onOpenChat ? (

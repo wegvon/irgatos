@@ -647,3 +647,39 @@ pub(crate) fn last_path_segment(path: &str) -> &str {
         .filter(|name| !name.is_empty())
         .unwrap_or(path)
 }
+
+/// Embeds short texts for the Feed: posts as documents, interests as
+/// queries. Items go out ahead of indexing, with a search's short deadline.
+/// None while semantic search is off.
+pub(crate) fn embed_texts(
+    app: &AppHandle,
+    texts: &[String],
+    query: bool,
+) -> Result<Option<Vec<Vec<f32>>>, String> {
+    let Some((endpoint, key)) = active(&data_dir(app)?)? else {
+        return Ok(None);
+    };
+    if texts.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let client = client::Client::for_query(&endpoint, &key, DIMS)?;
+    let task = if query {
+        client::Task::Query
+    } else {
+        client::Task::Document
+    };
+    match client.embed(texts, task) {
+        // A server without a query prompt still ranks with plain documents.
+        Err(error) if query && error.contains("(422)") => {
+            client.embed(texts, client::Task::Document).map(Some)
+        }
+        other => other.map(Some),
+    }
+}
+
+/// Whether the Feed can score posts by meaning right now.
+pub(crate) fn embeddings_on(app: &AppHandle) -> bool {
+    data_dir(app)
+        .and_then(|dir| active(&dir))
+        .is_ok_and(|active| active.is_some())
+}

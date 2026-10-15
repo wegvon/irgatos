@@ -182,7 +182,8 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
 /// Read-only actions the app answers itself, without the webview executor.
 /// They need a live turn but not the /operator opt-in: they only read the
 /// checkout the agent is already working in. `mail.*` actions are answered
-/// the same way, scoped to the thread the chat was started for.
+/// the same way, scoped to the thread the chat was started for, and so are
+/// `feed.*`, which only read the user's interests and add posts to the Feed.
 const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
 
 /// The session and folder an app action answered by the app itself is scoped
@@ -261,7 +262,8 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
         let action = request.action.as_str();
         if request.namespace == "app"
             && (READ_ONLY_APP_ACTIONS.contains(&action)
-                || crate::mail::AGENT_ACTIONS.contains(&action))
+                || crate::mail::AGENT_ACTIONS.contains(&action)
+                || crate::feed::AGENT_ACTIONS.contains(&action))
         {
             let (session, cwd) = {
                 let host = inner.lock().map_err(|_| "Control service unavailable")?;
@@ -269,6 +271,8 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             };
             let result = if action == "code.search" {
                 crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?
+            } else if action.starts_with("feed.") {
+                crate::feed::agent_action(app, &session, action, &request.input)?
             } else {
                 crate::mail::agent_action(app, &session, action, &request.input)?
             };
