@@ -90,7 +90,6 @@ import type { LaunchedSessionView } from "../../irgats/model/irgatSpawnedSession
 import { ModelControlPills, ModelPicker } from "./ModelPicker";
 import { ContextMeter } from "./ContextMeter";
 import { UsageChips } from "../../../app/shell/UsageFooter";
-import { AdhdModeChip } from "../../adhd/ui/AdhdModeChip";
 import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
 import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
@@ -1379,12 +1378,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     }
                     // The plan's usage, as the session footer shows it,
                     // which a Irgat in full view covers. Its account moves
-                    // with the usage-limit notice, not here.
-                    tools={
-                      <div className="flex shrink-0 items-center gap-0.5 text-[11px] text-content/55">
-                        <AdhdModeChip session={session} variant="composer" />
-                      </div>
-                    }
+                    // with the usage-limit notice, not here. The ADHD switch
+                    // sits in the status bar below, as in every other view.
                     controls={
                       <>
                         <UsageChips

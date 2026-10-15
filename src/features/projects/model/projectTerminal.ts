@@ -7,6 +7,8 @@ import {
   type WorkspaceTab,
 } from "../../workspace/model/layout";
 import {
+  isLocalProject,
+  isRemoteProjectPath,
   normalizeProjectPath,
   sameProjectPath,
 } from "./recents";
@@ -68,6 +70,36 @@ export function clampDockSize(
   const max = Math.max(min, Math.floor(span * 0.7));
   if (!Number.isFinite(value)) return defaultDockSize(side);
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * The dock the view on screen owns. An open chat or a Irgat in full view
+ * brings its own folder's dock; otherwise it is the project's. An empty
+ * folder (a Irgat still loading) stays empty rather than falling back to
+ * the project, so its terminal never lands in the project's dock.
+ */
+export type ViewDock = { path: string; kind: "project" | "irgat" | "chat" };
+
+export function viewDock(view: {
+  projectCwd: string;
+  irgatCwd?: string;
+  chatCwd?: string;
+}): ViewDock {
+  if (view.chatCwd !== undefined) return { path: view.chatCwd, kind: "chat" };
+  if (view.irgatCwd !== undefined) {
+    return { path: view.irgatCwd, kind: "irgat" };
+  }
+  return { path: view.projectCwd, kind: "project" };
+}
+
+/**
+ * Whether a terminal may open in the view's dock. A project needs a real
+ * project folder, but a shell in home is fine for a Irgat or chat (only
+ * indexing must keep out of home); a remote folder never gets a local shell.
+ */
+export function canOpenDockTerminal(dock: ViewDock): boolean {
+  if (dock.kind === "project") return isLocalProject(dock.path);
+  return !!dock.path.trim() && !isRemoteProjectPath(dock.path);
 }
 
 export function findProjectTerminal(
