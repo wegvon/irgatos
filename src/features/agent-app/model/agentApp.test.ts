@@ -13,6 +13,9 @@ import type { Note } from "../../notes";
 import type { Artifact } from "../../artifacts/artifacts";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { handleAgentApp, notePreview, canAccessAgentAppProject, type AgentAppHost } from "./agentApp";
+import { createIrgat, irgatKnownProjects, irgatLook, findIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
+import { approveProjectAccess, projectAccessBlock } from "../../irgats/model/irgatProjectAccess";
+import { rememberProject } from "../../projects/model/recents";
 
 vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "codex",
@@ -124,6 +127,19 @@ function fixture() {
 }
 
 describe("agent app commands", () => {
+  it("uses the authenticated source chat for window calls, without requiring a project", async () => {
+    const { source, host } = fixture();
+    host.computer = vi.fn(async () => ({ screenshot_file_path: "/tmp/window.png" }));
+    await handleAgentApp(source, "read-1", "computer.read", {}, host);
+    expect(host.computer).toHaveBeenCalledWith(source.id, "get_window_state", {});
+    await handleAgentApp(source, "act-1", "computer.act", { tool: "type_text", args: { text: "Hello" } }, host);
+    expect(host.computer).toHaveBeenCalledWith(source.id, "type_text", { text: "Hello" });
+    await expect(handleAgentApp(source, "bad-1", "computer.act", { tool: "kill_app", args: {} }, host)).rejects.toThrow("Unsupported");
+    await expect(handleAgentApp(source, "bad-2", "computer.read", { sessionId: "other" }, host)).rejects.toThrow();
+    host.isHabitRun = () => true;
+    await expect(handleAgentApp(source, "habit-read", "computer.read", {}, host)).rejects.toThrow("Scheduled habits");
+    await expect(handleAgentApp(source, "habit-act", "computer.act", { tool: "click", args: {} }, host)).rejects.toThrow("Scheduled habits");
+  });
   it.each([undefined, true, false])(
     "uses the Irgat's sidebar preference for both submitted and draft sessions: %s",
     async (showStartedSessionsInSidebar) => {
@@ -856,6 +872,78 @@ describe("agent app commands", () => {
     const launch = vi.mocked(host.start).mock.calls[0][0];
     expect(launch.cwd).toBe(project);
     expect(launch.worktreeCwd).toBe(expectedWorktree);
+  });
+
+  it("only requests access from Irgat chats and rejects ambiguous or unregistered names", async () => {
+    const { source, host } = fixture();
+    const request = vi.fn();
+    host.requestProjectAccess = request;
+    await expect(handleAgentApp(source, "ordinary", "projects.requestAccess", { project: "app" }, host))
+      .rejects.toThrow("only available in a Irgat chat");
+    host.isIrgat = () => true;
+    host.irgatOf = () => ({ id: "irgat", projects: [] });
+    host.projects = () => [{ name: "app", path: "/code/app" }, { name: "app", path: "/other/app" }];
+    await expect(handleAgentApp(source, "ambiguous", "projects.requestAccess", { project: "app" }, host))
+      .rejects.toThrow("registered project path");
+    await expect(handleAgentApp(source, "unregistered", "projects.requestAccess", { project: "/code/private" }, host))
+      .rejects.toThrow("registered project path");
+    await expect(handleAgentApp(source, "forged", "projects.requestAccess", { project: "/code/app", approved: true }, host))
+      .rejects.toThrow();
+    expect(request).not.toHaveBeenCalled();
+    expect(host.start).not.toHaveBeenCalled();
+    expect(await handleAgentApp(source, "valid", "projects.requestAccess", { project: "/code/app" }, host))
+      .toMatchObject({ pending: true, access: false });
+    expect(request).toHaveBeenCalledWith(source.id, "irgat", "/code/app");
+  });
+
+  it("requires user approval once before starting four sessions in a sidebar project", async () => {
+    const { source, host } = fixture();
+    source.cwd = "/home/user";
+    const irgat = createIrgat();
+    saveIrgatSessionId(irgat.id, source.id);
+    rememberProject("/code/repguard");
+    host.isIrgat = (id) => id === source.id;
+    host.irgatOf = () => findIrgat(irgat.id);
+    host.projects = () => irgatLook({ ...irgat, projects: irgatKnownProjects(irgat, "~") }).projects;
+    host.requestProjectAccess = vi.fn((sessionId, irgatId, project) => {
+      const block = projectAccessBlock(source, irgatId, project);
+      if (!source.blocks.some((item) => item.id === block.id)) source.blocks.push(block);
+    });
+    expect(await handleAgentApp(source, "discover", "projects.list", {}, host)).toEqual([
+      { name: "repguard", path: "/code/repguard", access: false },
+    ]);
+    await expect(handleAgentApp(source, "early", "sessions.start", {
+      project: "repguard", prompt: "Weather",
+    }, host)).rejects.toThrow("projects.requestAccess");
+    expect(host.start).not.toHaveBeenCalled();
+    expect(await handleAgentApp(source, "ask", "projects.requestAccess", { project: "Repguard" }, host))
+      .toMatchObject({ pending: true, access: false });
+    await handleAgentApp(source, "retry", "projects.requestAccess", { project: "/code/repguard" }, host);
+    expect(source.blocks.filter((block) => block.irgatProjectAccess)).toHaveLength(1);
+    expect(findIrgat(irgat.id)?.projects).toEqual([]);
+    expect(canAccessAgentAppProject(source, "/code/repguard", findIrgat(irgat.id)?.projects)).toBe(false);
+    const approval = source.blocks.find((block) => block.irgatProjectAccess)!;
+    expect(approveProjectAccess(source, approval)).toBe(true);
+    expect(findIrgat(irgat.id)?.projects).toEqual(["/code/repguard"]);
+    expect(canAccessAgentAppProject(source, "/code/repguard", findIrgat(irgat.id)?.projects)).toBe(true);
+    expect(await handleAgentApp(source, "ask-again", "projects.requestAccess", { project: "repguard" }, host))
+      .toEqual({ project: "/code/repguard", access: true });
+    expect(host.requestProjectAccess).toHaveBeenCalledTimes(2);
+    for (let i = 0; i < 4; i++) {
+      await handleAgentApp(source, `launch-${i}`, "sessions.start", {
+        project: "repguard", prompt: `Weather agent ${i + 1}`,
+      }, host);
+    }
+    expect(host.start).toHaveBeenCalledTimes(4);
+    expect(new Set(vi.mocked(host.start).mock.calls.map((call) => call[1])).size).toBe(4);
+    for (const [launch] of vi.mocked(host.start).mock.calls) expect(launch.cwd).toBe("/code/repguard");
+    await expect(handleAgentApp(source, "outside", "projects.requestAccess", {
+      project: "/code/unregistered",
+    }, host)).rejects.toThrow("registered project");
+    await expect(handleAgentApp(source, "outside-launch", "sessions.start", {
+      project: "/code/unregistered", prompt: "Outside",
+    }, host)).rejects.toThrow("Not one of your projects");
+    expect(host.start).toHaveBeenCalledTimes(4);
   });
 
   it("validates an explicit worktree in the Irgat's selected project", async () => {

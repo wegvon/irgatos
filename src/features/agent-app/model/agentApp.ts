@@ -100,6 +100,7 @@ export type AppSessionPlacement = {
 };
 
 export type AgentAppHost = {
+  computer?(sessionId: string, tool: string, args: Record<string, unknown>): Promise<unknown>;
   start(
     launch: QuickLaunch,
     id: string,
@@ -138,6 +139,8 @@ export type AgentAppHost = {
   postArtifact?(sourceSessionId: string, card: ArtifactCard): void | Promise<void>;
   /** Whether the session is a Irgat's own conversation, which owns memory. */
   isIrgat(sessionId: string): boolean;
+  projects?(): { path: string; name: string }[];
+  requestProjectAccess?(sessionId: string, irgatId: string, project: string): void;
   /**
    * The Irgat a session works for: its own conversation or one of its habit
    * runs. Its projects are the ones it may name with "project".
@@ -177,6 +180,10 @@ export type AgentAppHost = {
 };
 
 const FIELDS = new Map<string, readonly string[]>([
+  ["computer.read", ["query"]],
+  ["computer.act", ["tool", "args"]],
+  ["projects.list", []],
+  ["projects.requestAccess", ["project"]],
   ["models.list", []],
   ["sessions.list", ["project"]],
   ["sessions.read", ["sessionId", "before", "limit", "maxChars", "project"]],
@@ -352,7 +359,7 @@ function requireProject(
       (path) => projectName(path) === named,
     );
     const match = byPath ?? (byName.length === 1 ? byName[0] : undefined);
-    if (!match) throw new Error(`Not one of your projects. Yours: ${choices()}`);
+    if (!match) throw new Error(`Not one of your projects. Yours: ${choices()}. Use projects.list to find registered projects and projects.requestAccess to ask the user for access. Do not access it before approval.`);
     return match;
   }
   const own = irgat.projects.find(
@@ -1051,6 +1058,42 @@ export async function handleAgentApp(
   host: AgentAppHost,
 ): Promise<unknown> {
   fields(action, input);
+  if (action === "computer.read" || action === "computer.act") {
+    if (host.isHabitRun?.(source.id)) throw new Error("Scheduled habits cannot use shared application windows");
+    if (!host.computer) throw new Error("Application control is unavailable");
+    if (action === "computer.read") {
+      const query = input.query == null ? undefined : requiredString(input.query, "query", 1000);
+      return host.computer(source.id, "get_window_state", query ? { query } : {});
+    }
+    const tool = requiredString(input.tool, "tool", 40);
+    if (!["click", "type_text", "scroll", "press_key", "hotkey"].includes(tool))
+      throw new Error("Unsupported window action");
+    if (!input.args || typeof input.args !== "object" || Array.isArray(input.args))
+      throw new Error("args must be an object");
+    return host.computer(source.id, tool, input.args as Record<string, unknown>);
+  }
+  if (action === "projects.list" || action === "projects.requestAccess") {
+    const irgat = host.irgatOf?.(source.id);
+    if (!irgat || !host.isIrgat(source.id))
+      throw new Error("Project access requests are only available in a Irgat chat");
+    const projects = host.projects?.() ?? [];
+    if (action === "projects.list")
+      return projects.map((project) => ({
+        ...project,
+        access: irgat.projects.some((path) => pathKey(path) === pathKey(project.path)),
+      }));
+    const named = requiredString(input.project, "project", 4096);
+    const byPath = projects.find((project) => pathKey(project.path) === pathKey(named));
+    const byName = projects.filter((project) => project.name.toLowerCase() === named.toLowerCase());
+    const project = byPath ?? (byName.length === 1 ? byName[0] : undefined);
+    if (!project) throw new Error("Choose a registered project path from projects.list");
+    if (irgat.projects.some((path) => pathKey(path) === pathKey(project.path)))
+      return { project: project.path, access: true };
+    if (!host.requestProjectAccess) throw new Error("Project approval is unavailable");
+    host.requestProjectAccess(source.id, irgat.id, project.path);
+    return { project: project.path, access: false, pending: true,
+      note: "The user must approve in the chat. End your turn and wait; do not access the project or substitute provider-native subagents. After approval Irgatos will continue your request." };
+  }
   if (action.startsWith("artifacts."))
     return handleArtifacts(source, requestId, action, input, host);
   if (action.startsWith("soul."))

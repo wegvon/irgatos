@@ -401,6 +401,8 @@ export type Block = {
   statusKey?: string;
   /** Posted to a Irgat's chat by one of its habits, outside any turn. */
   irgatHabit?: { id: string; name: string; at: number };
+  /** User approval to permanently assign a registered project to this Irgat. */
+  irgatProjectAccess?: { irgatId: string; project: string; userTurnId?: string };
   /**
    * Said out loud in a Live voice call, outside any harness turn; the next
    * typed turn hands it over. See `features/voice/live/liveTranscript`.

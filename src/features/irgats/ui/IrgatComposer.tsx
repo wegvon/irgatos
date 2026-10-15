@@ -14,11 +14,19 @@ import {
   replaceMentionToken,
   type MentionToken,
 } from "../../files/model/fileMentions";
-import {
-  mentionHandle,
-  mentionSuggestions,
-} from "../model/irgatGroupMentions";
+import { mentionHandle, mentionSuggestions } from "../model/irgatGroupMentions";
 import { IrgatMentionPicker, type ComposerMention } from "./IrgatMentionPicker";
+import { useAppWindows } from "../../sessions/hooks/useAppWindows";
+import {
+  AppWindowPicker,
+  SharedAppWindow,
+} from "../../sessions/ui/AppWindowPicker";
+import {
+  appWindowToken,
+  appWindowTokens,
+  withAppWindow,
+  type AppWindow,
+} from "../../sessions/model/appWindows";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ArrowUp, FolderPlus, Plus, SmilePlus } from "../../../shared/ui/icons";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
@@ -110,6 +118,8 @@ type Props = {
   placeholder?: string;
   /** Offers a Live voice call with the agent; real chats only. */
   live?: boolean;
+  computerUse?: boolean;
+  onStop?: () => void;
 };
 
 /**
@@ -137,6 +147,8 @@ export function IrgatComposer({
   mentions,
   placeholder,
   live = false,
+  computerUse = true,
+  onStop,
 }: Props) {
   const [text, setText] = useState(() => getComposerDraft(sessionId) ?? "");
   const [mentionToken, setMentionToken] = useState<MentionToken | null>(null);
@@ -148,9 +160,20 @@ export function IrgatComposer({
         : [],
     [mentions, mentionToken],
   );
-  const mentionOpen = mentionOptions.length > 0;
+  const appWindows = useAppWindows(
+    sessionId.replace(/^floating:/, ""),
+    mentionToken !== null,
+    mentionToken?.query ?? "",
+    computerUse,
+  );
+  const appOptions = computerUse ? appWindows.windows : [];
+  const mentionCount = mentionOptions.length + appOptions.length;
+  const mentionOpen =
+    mentionToken !== null &&
+    (mentionCount > 0 ||
+      (computerUse && (appWindows.loading || !!appWindows.error)));
   const trackMention = (value: string, caret: number) => {
-    if (!mentions?.length) return;
+    if (!mentions?.length && !computerUse) return;
     const token = mentionTokenAt(value, caret);
     if (
       token?.start === mentionToken?.start &&
@@ -179,6 +202,7 @@ export function IrgatComposer({
   const ready =
     enabled &&
     !submitting &&
+    !appWindows.selecting &&
     pendingReads === 0 &&
     (text.trim().length > 0 || attachments.length > 0);
   const inline = !controls;
@@ -334,7 +358,12 @@ export function IrgatComposer({
     onError: setDropError,
   });
   const send = () => {
-    if (!enabled || submittingRef.current || pendingReadsRef.current > 0)
+    if (
+      !enabled ||
+      submittingRef.current ||
+      pendingReadsRef.current > 0 ||
+      appWindows.selecting
+    )
       return;
     const message = textRef.current.trim();
     const draft = textRef.current;
@@ -353,7 +382,10 @@ export function IrgatComposer({
       setAttachments([]);
       setDropError(null);
     };
-    const result = onSubmit(message, files);
+    const result = onSubmit(
+      withAppWindow(message, appWindows.selection),
+      files,
+    );
     if (result instanceof Promise) {
       submittingRef.current = true;
       setSubmitting(true);
@@ -395,15 +427,40 @@ export function IrgatComposer({
     writeDraft(next, mentionToken.start + handle.length + 2);
     field.current?.focus();
   };
+  const pickApp = async (window: AppWindow) => {
+    const token = mentionToken;
+    const draft = textRef.current;
+    if (!token) return;
+    const selection = await appWindows.select(window);
+    if (!selection || textRef.current !== draft) return;
+    const label = appWindowToken(window).slice(1);
+    const next = replaceMentionToken(draft, token, label);
+    setMentionToken(null);
+    writeDraft(next, token.start + label.length + 2);
+    field.current?.focus();
+  };
   /** Arrows, Enter, Tab and Escape steer the @ picker while it is open. */
   const handleMentionKey = (event: ReactKeyboardEvent): boolean => {
     if (!mentionOpen) return false;
-    const count = mentionOptions.length;
+    const count = mentionCount;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!count) {
+        event.preventDefault();
+        return true;
+      }
       const step = event.key === "ArrowDown" ? 1 : -1;
       setMentionActive((index) => (index + step + count) % count);
-    } else if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
-      pickMention(mentionOptions[Math.min(mentionActive, count - 1)]);
+    } else if (
+      (event.key === "Enter" || event.key === "Tab") &&
+      !event.shiftKey
+    ) {
+      const index = Math.min(mentionActive, count - 1);
+      if (index < 0) {
+        event.preventDefault();
+        return true;
+      }
+      if (index < mentionOptions.length) pickMention(mentionOptions[index]);
+      else void pickApp(appOptions[index - mentionOptions.length]);
     } else if (event.key === "Escape") {
       setMentionToken(null);
     } else return false;
@@ -527,13 +584,56 @@ export function IrgatComposer({
         {live ? <LiveVoicePill sessionId={sessionId} /> : null}
         {mentionOpen ? (
           <div className="absolute inset-x-0 bottom-full z-30 mb-1.5">
-            <IrgatMentionPicker
-              options={mentionOptions}
-              active={Math.min(mentionActive, mentionOptions.length - 1)}
-              onActive={setMentionActive}
-              onPick={pickMention}
-            />
+            {mentionOptions.length ? (
+              <IrgatMentionPicker
+                options={mentionOptions}
+                active={mentionActive}
+                onActive={setMentionActive}
+                onPick={pickMention}
+              />
+            ) : null}
+            {computerUse ? (
+              <AppWindowPicker
+                windows={appOptions}
+                active={mentionActive - mentionOptions.length}
+                onActive={(index) =>
+                  setMentionActive(index + mentionOptions.length)
+                }
+                onPick={(window) => void pickApp(window)}
+                loading={appWindows.loading}
+                error={appWindows.error}
+              />
+            ) : null}
           </div>
+        ) : null}
+        {appWindows.selection ? (
+          <SharedAppWindow
+            selection={appWindows.selection}
+            disabled={appWindows.selecting}
+            onControl={(allowed) =>
+              void appWindows.select(appWindows.selection!.window, allowed)
+            }
+            onRemove={() => {
+              void appWindows.revoke();
+              let next = textRef.current;
+              for (const token of appWindowTokens(next))
+                next = next.replace(token, "");
+              update(next);
+            }}
+            onStop={
+              busy
+                ? () => {
+                    void appWindows.revoke();
+                    onStop?.();
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {appWindows.error && !mentionOpen ? (
+          <p role="alert" className="px-3 py-2 text-xs text-red-400">
+            {appWindows.error}
+          </p>
         ) : null}
         {fileDrag ? (
           <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-accent/8 text-[12px] text-content/70">

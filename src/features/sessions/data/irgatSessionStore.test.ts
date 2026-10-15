@@ -52,6 +52,33 @@ function saved(session: Session) {
 }
 
 describe("Irgat database pagination and writes", () => {
+  it("preserves project access approvals through saves and reloads", async () => {
+    const session = await load();
+    const request = {
+      id: "project-request", role: "approval" as const,
+      text: "repguard projesine erişmeme izin veriyor musun?",
+      approval: { requestId: -123 },
+      irgatProjectAccess: { irgatId: "irgat-owner", project: "/code/repguard", userTurnId: "u" },
+    };
+    session.blocks = [...session.blocks, request];
+    call.mockResolvedValueOnce(saved(session));
+    await upsertSession(session);
+    const payload = (call.mock.calls.at(-1)![1] as { session: Session }).session;
+    expect(payload.blocks).toContainEqual(request);
+    call.mockResolvedValueOnce({ ...session, blocks: payload.blocks });
+    const restored = (await getSession(session.id))!;
+    expect(restored.blocks).toContainEqual(request);
+    restored.blocks = restored.blocks.map((block) => block.id === request.id
+      ? { ...block, approval: { requestId: -123, decided: "deny" as const } } : block);
+    call.mockResolvedValueOnce(saved(restored));
+    await upsertSession(restored);
+    const denied = (call.mock.calls.at(-1)![1] as { session: Session }).session;
+    expect(denied.blocks.at(-1)).toMatchObject({
+      irgatProjectAccess: request.irgatProjectAccess,
+      approval: { requestId: -123, decided: "deny" },
+    });
+  });
+
   it("keeps document and visual references on the source turn after saving and reopening", async () => {
     let session = await load();
     const card = {

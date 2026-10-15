@@ -41,6 +41,7 @@ type Props = {
   sessions: readonly Session[];
   unseenFinishedIds: ReadonlySet<string>;
   besideRail?: boolean;
+  sidebar?: boolean;
   compactRail?: boolean;
   onClose: () => void;
   onToggleSidebar?: () => void;
@@ -91,6 +92,7 @@ export function FleetView({
   sessions,
   unseenFinishedIds,
   besideRail = false,
+  sidebar = false,
   compactRail = false,
   onClose,
   onToggleSidebar,
@@ -140,53 +142,64 @@ export function FleetView({
       role="region"
       aria-label="Fleet"
       data-app-fleet
-      className="flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      className={
+        sidebar
+          ? "flex min-h-0 max-h-[40vh] shrink-0 flex-col border-t border-stroke text-content [&_[data-fleet-request]]:flex-col [&_[data-fleet-request]]:items-stretch [&_article>button]:flex-wrap [&_article>button]:gap-1.5 [&_article>button]:px-2"
+          : "flex min-h-0 min-w-0 flex-1 flex-col text-content"
+      }
     >
-      <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
-        data-tauri-drag-region="deep"
-      >
-        {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        {besideRail ? null : (
-          <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
-        )}
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-          <Radar className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
-          <span className="shrink-0 text-content">Fleet</span>
-          <span className="hidden truncate text-[12px] text-content/40 sm:inline">
-            {fleet.total === 0
-              ? "Every project"
-              : `${fleet.total} ${fleet.total === 1 ? "session" : "sessions"} across every project`}
-          </span>
-        </div>
-        {!empty ? (
-          <label
-            className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
-            data-tauri-drag-region="false"
-          >
-            <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape" && query) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setQuery("");
-                }
-              }}
-              placeholder="Filter sessions"
-              aria-label="Filter sessions"
-              spellCheck={false}
-              autoComplete="off"
-              data-tauri-drag-region="false"
-              className="h-7 w-full rounded-md border border-content/10 bg-transparent pl-7 pr-2 text-[12px] text-content outline-none select-text placeholder:text-content/40 focus:border-content/25"
+      {sidebar ? (
+        <div className="px-3 pt-2 text-[12px] text-content/50">Fleet</div>
+      ) : (
+        <div
+          className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+          data-tauri-drag-region="deep"
+        >
+          {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
+          {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
+          {besideRail ? null : (
+            <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
+          )}
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
+            <Radar
+              className="size-3.5 shrink-0 text-content/45"
+              strokeWidth={1.75}
             />
-          </label>
-        ) : null}
-        {IS_MAC ? null : <WindowControls />}
-      </div>
+            <span className="shrink-0 text-content">Fleet</span>
+            <span className="hidden truncate text-[12px] text-content/40 sm:inline">
+              {fleet.total === 0
+                ? "Every project"
+                : `${fleet.total} ${fleet.total === 1 ? "session" : "sessions"} across every project`}
+            </span>
+          </div>
+          {!empty ? (
+            <label
+              className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
+              data-tauri-drag-region="false"
+            >
+              <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && query) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setQuery("");
+                  }
+                }}
+                placeholder="Filter sessions"
+                aria-label="Filter sessions"
+                spellCheck={false}
+                autoComplete="off"
+                data-tauri-drag-region="false"
+                className="h-7 w-full rounded-md border border-content/10 bg-transparent pl-7 pr-2 text-[12px] text-content outline-none select-text placeholder:text-content/40 focus:border-content/25"
+              />
+            </label>
+          ) : null}
+          {IS_MAC ? null : <WindowControls />}
+        </div>
+      )}
       {empty ? (
         <FleetMessage
           title="No agents yet"
@@ -208,7 +221,13 @@ export function FleetView({
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-3 py-4 sm:px-6 sm:py-6">
+          <div
+            className={
+              sidebar
+                ? "flex flex-col gap-2 px-2 py-2"
+                : "mx-auto flex w-full max-w-4xl flex-col gap-5 px-3 py-4 sm:px-6 sm:py-6"
+            }
+          >
             {FLEET_BUCKETS.map((bucket) => {
               const entries = shown[bucket];
               const habits = bucket === "needsYou" ? shownHabits : [];
@@ -242,19 +261,22 @@ export function FleetView({
                   </button>
                   {open ? (
                     count === 0 ? (
-                      <p className="px-6 text-[12px] text-content/35">
+                      <p className="pl-6 text-[12px] text-content/35">
                         {EMPTY_COPY[bucket]}
                       </p>
                     ) : (
                       <ul className="flex flex-col gap-2">
                         {habits.map((approval) => (
-                          <li key={`habit:${approval.irgatId}:${approval.habit.id}`}>
+                          <li
+                            key={`habit:${approval.irgatId}:${approval.habit.id}`}
+                          >
                             <HabitApprovalCard
                               entry={approval}
                               now={now}
                               onOpen={
                                 approval.irgatSessionId
-                                  ? () => onOpenSession(approval.irgatSessionId!)
+                                  ? () =>
+                                      onOpenSession(approval.irgatSessionId!)
                                   : undefined
                               }
                               onDecide={(decision) =>
@@ -273,7 +295,11 @@ export function FleetView({
                                 onApproval(entry.sessionId, requestId, decision)
                               }
                               onQuestionReply={(requestId, reply) =>
-                                onQuestionReply(entry.sessionId, requestId, reply)
+                                onQuestionReply(
+                                  entry.sessionId,
+                                  requestId,
+                                  reply,
+                                )
                               }
                               onQuestionInteraction={
                                 onQuestionInteraction

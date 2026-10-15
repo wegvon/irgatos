@@ -1307,6 +1307,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   <IrgatComposer
                     key={session.id}
                     sessionId={session.id}
+                    computerUse={!remote}
+                    onStop={() => onStop(session.id)}
                     name={agent.name}
                     live
                     enabled={visible}

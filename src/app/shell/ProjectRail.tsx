@@ -11,12 +11,18 @@ import {
   PinOff,
   File,
   Plus,
-  Radar,
   Search,
   Settings,
   Zap,
 } from "../../shared/ui/icons";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type MouseEvent,
+} from "react";
 import { useDragResize } from "../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
@@ -29,10 +35,7 @@ import {
   PROJECT_RAIL_WIDTH_MIN,
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
-import {
-  basename,
-  type GitDiffStats,
-} from "../../platform/tauri/fs";
+import { basename, type GitDiffStats } from "../../platform/tauri/fs";
 import { IS_MAC, MOD } from "../../platform/tauri/platform";
 import { formatInteger } from "../../shared/lib/numbers";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
@@ -71,7 +74,7 @@ import type { LiveAgent } from "../../features/sessions/model/liveAgents";
 import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { FleetNeedsYouCount, RailAction, RailSearch } from "./RailAction";
+import { RailAction, RailSearch } from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
 import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
@@ -113,11 +116,9 @@ type Props = {
   onOpenAutomations?: () => void;
   automationsActive?: boolean;
   onOpenKanban?: () => void;
-  onOpenFleet?: () => void;
+  fleetPanel?: ReactNode;
   kanbanActive?: boolean;
   fleetActive?: boolean;
-  /** Sessions waiting on the user, shown as the Fleet badge. */
-  fleetNeedsYou?: number;
   onTogglePanel?: () => void;
   onSelectProject: (path: string) => void;
   onOpenProject: () => void;
@@ -158,10 +159,9 @@ export function ProjectRail({
   onOpenAutomations,
   automationsActive = false,
   onOpenKanban,
-  onOpenFleet,
+  fleetPanel,
   kanbanActive = false,
   fleetActive = false,
-  fleetNeedsYou = 0,
   onTogglePanel,
   onSelectProject,
   onOpenProject,
@@ -436,20 +436,6 @@ export function ProjectRail({
                 ariaLabel="Board"
               />
             ) : null}
-            {onOpenFleet ? (
-              <RailAction
-                label="Fleet"
-                icon={Radar}
-                onClick={onOpenFleet}
-                active={fleetActive}
-                ariaLabel={
-                  fleetNeedsYou
-                    ? `Fleet, ${fleetNeedsYou} ${fleetNeedsYou === 1 ? "session needs" : "sessions need"} you`
-                    : "Fleet"
-                }
-                meta={<FleetNeedsYouCount count={fleetNeedsYou} />}
-              />
-            ) : null}
           </div>
 
           <div
@@ -558,15 +544,18 @@ export function ProjectRail({
               groupMascots={groupMascots}
             />
           </div>
-          <LiveAgentsPreview
-            agents={liveAgents}
-            activeSessionId={activeSessionId}
-            onSelect={onSelectAgent}
-            groupLabels={groupLabels}
-            groupColors={groupColors}
-            groupCustomColors={groupCustomColors}
-            groupMascots={groupMascots}
-          />
+          {fleetPanel}
+          {fleetPanel ? null : (
+            <LiveAgentsPreview
+              agents={liveAgents}
+              activeSessionId={activeSessionId}
+              onSelect={onSelectAgent}
+              groupLabels={groupLabels}
+              groupColors={groupColors}
+              groupCustomColors={groupCustomColors}
+              groupMascots={groupMascots}
+            />
+          )}
           <SidebarUpdateFooter
             update={updateNotice}
             onOpenWhatsNew={onOpenWhatsNew}

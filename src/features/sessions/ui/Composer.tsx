@@ -114,6 +114,14 @@ import {
 import type { Worktree } from "../../source-control/model/worktrees";
 import { CwdPicker } from "../../projects/ui/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
+import { AppWindowPicker, SharedAppWindow } from "./AppWindowPicker";
+import { useAppWindows } from "../hooks/useAppWindows";
+import {
+  appWindowToken,
+  appWindowTokens,
+  withAppWindow,
+  type AppWindow,
+} from "../model/appWindows";
 import {
   SessionReferencePicker,
   type SessionReferencePickerHandle,
@@ -631,6 +639,13 @@ export function Composer({
     !remote &&
     mention !== null &&
     (looksLikeProject(cwd) || notesEnabled || !!sessionId);
+  const appWindows = useAppWindows(
+    sessionId,
+    mentionOpen && sessionMentionQuery == null,
+    mention?.query ?? "",
+    !remote,
+  );
+  const appOptions = !remote && sessionId ? appWindows.windows : [];
   const navigationEmpty =
     draft.length === 0 &&
     attachments.length === 0 &&
@@ -1053,9 +1068,11 @@ export function Composer({
 
   useEffect(() => {
     setMentionActive((index) =>
-      rankedFiles.length === 0 ? 0 : Math.min(index, rankedFiles.length - 1),
+      rankedFiles.length + appOptions.length === 0
+        ? 0
+        : Math.min(index, rankedFiles.length + appOptions.length - 1),
     );
-  }, [rankedFiles.length]);
+  }, [rankedFiles.length, appOptions.length]);
 
   useEffect(() => {
     const el = ref.current;
@@ -1315,6 +1332,37 @@ export function Composer({
     [onDraftChange, syncHasValue],
   );
 
+  const pickAppWindow = async (window: AppWindow) => {
+    const el = ref.current;
+    const token = mentionRef.current;
+    if (!el || !token) return;
+    const draft = el.value;
+    const selection = await appWindows.select(window);
+    if (!selection || ref.current !== el || el.value !== draft) return;
+    const label = appWindowToken(window).slice(1);
+    const next = replaceMentionToken(draft, token, label);
+    el.value = next;
+    resizeComposer(el);
+    const cursor = token.start + label.length + 2;
+    el.setSelectionRange(cursor, cursor);
+    setDraft(next);
+    onDraftChange?.(next);
+    syncHasValue(next, attachmentsRef.current);
+    setMention(null);
+    el.focus();
+  };
+  const removeAppWindow = () => {
+    void appWindows.revoke();
+    const el = ref.current;
+    if (!el) return;
+    let next = el.value;
+    for (const token of appWindowTokens(next)) next = next.replace(token, "");
+    el.value = next;
+    setDraft(next);
+    onDraftChange?.(next);
+    syncHasValue(next, attachmentsRef.current);
+  };
+
   const removeSessionReference = useCallback(
     (label: string) => {
       const el = ref.current;
@@ -1364,8 +1412,7 @@ export function Composer({
   useEffect(() => {
     if (!sessionId || remote) return;
     const onInsert = (event: Event) => {
-      const detail = (event as CustomEvent<InsertSessionMessageRequest>)
-        .detail;
+      const detail = (event as CustomEvent<InsertSessionMessageRequest>).detail;
       const el = ref.current;
       if (!el || detail?.targetSessionId !== sessionId || detail.handled)
         return;
@@ -1652,7 +1699,11 @@ export function Composer({
         ? `/operator ${text}`
         : text;
     const files = attachmentsRef.current;
-    if (!text && files.length === 0 && !noteCard && !handoffCard) return;
+    if (
+      appWindows.selecting ||
+      (!text && files.length === 0 && !noteCard && !handoffCard)
+    )
+      return;
     // Clear the parent draft before onSubmit. The app can synchronously remount
     // the composer when the first message leaves an empty session (EmptySession →
     // docked layout). If draftRef still holds the sent text, the new instance
@@ -1666,7 +1717,7 @@ export function Composer({
     const accepted = onSubmit(
       mcpContextText(
         taggedMcpServers(submittedText, selectedMcp),
-        submittedText,
+        withAppWindow(submittedText, appWindows.selection),
       ),
       files,
       {
@@ -1759,15 +1810,19 @@ export function Composer({
     } else if (mentionOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (rankedFiles.length === 0) return;
-        setMentionActive((index) => (index + 1) % rankedFiles.length);
+        if (rankedFiles.length + appOptions.length === 0) return;
+        setMentionActive(
+          (index) => (index + 1) % (rankedFiles.length + appOptions.length),
+        );
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        if (rankedFiles.length === 0) return;
+        if (rankedFiles.length + appOptions.length === 0) return;
         setMentionActive(
-          (index) => (index - 1 + rankedFiles.length) % rankedFiles.length,
+          (index) =>
+            (index - 1 + (rankedFiles.length + appOptions.length)) %
+            (rankedFiles.length + appOptions.length),
         );
         return;
       }
@@ -1780,6 +1835,8 @@ export function Composer({
         e.preventDefault();
         const file = rankedFiles[mentionActive];
         if (file) pickMention(file);
+        else if (appOptions[mentionActive - rankedFiles.length])
+          void pickAppWindow(appOptions[mentionActive - rankedFiles.length]);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
@@ -1787,6 +1844,12 @@ export function Composer({
         if (file) {
           e.preventDefault();
           pickMention(file);
+          return;
+        }
+        const app = appOptions[mentionActive - rankedFiles.length];
+        if (app) {
+          e.preventDefault();
+          void pickAppWindow(app);
           return;
         }
         setMention(null);
@@ -2210,6 +2273,18 @@ export function Composer({
               onActive={setMentionActive}
               onPick={pickMention}
             />
+            {sessionId ? (
+              <AppWindowPicker
+                windows={appOptions}
+                active={mentionActive - rankedFiles.length}
+                onActive={(index) =>
+                  setMentionActive(index + rankedFiles.length)
+                }
+                onPick={(window) => void pickAppWindow(window)}
+                loading={appWindows.loading}
+                error={appWindows.error}
+              />
+            ) : null}
           </div>
         ) : null}
         {live && sessionId ? <LiveVoicePill sessionId={sessionId} /> : null}
@@ -2316,6 +2391,29 @@ export function Composer({
             </div>
           )}
 
+          {appWindows.selection ? (
+            <SharedAppWindow
+              selection={appWindows.selection}
+              disabled={appWindows.selecting}
+              onControl={(allowed) =>
+                void appWindows.select(appWindows.selection!.window, allowed)
+              }
+              onRemove={removeAppWindow}
+              onStop={
+                busy
+                  ? () => {
+                      removeAppWindow();
+                      onStop?.();
+                    }
+                  : undefined
+              }
+            />
+          ) : null}
+          {appWindows.error && !mentionOpen ? (
+            <p role="alert" className="px-3 py-2 text-xs text-red-400">
+              {appWindows.error}
+            </p>
+          ) : null}
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((file) => (

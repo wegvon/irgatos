@@ -1,4 +1,5 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
+import { appWindowTokens, hasAppWindowUserTurn } from "../features/sessions/model/appWindows";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
 import {
   resumeIrgatUsageLimit,
@@ -108,6 +109,7 @@ import {
   type LaunchedSessionView,
 } from "../features/irgats/model/irgatSpawnedSessions";
 import { groupIrgatTurns } from "../features/sessions/model/transcriptActivity";
+import { approveProjectAccess, projectAccessBlock } from "../features/irgats/model/irgatProjectAccess";
 import {
   resolveIrgatActivity,
   type IrgatActivitySelection,
@@ -635,6 +637,7 @@ import {
   loadOpenIrgat,
   irgatForSession,
   irgatLook,
+  irgatKnownProjects,
   monosSnapshot,
   irgatState,
   removeIrgat,
@@ -1007,6 +1010,8 @@ type SubmitOptions = ComposerTurnOptions & {
   managed?: boolean;
   orchestrationRetry?: OrchestrationProposal;
   appRequestId?: string;
+  /** App-written continuation after a user approves project access. */
+  internal?: boolean;
   irgatSessionCompletion?: Block["irgatSessionCompletion"];
   /** An automatic retry after the Completion Gate's validator failed. */
   completionGateBounce?: boolean;
@@ -7322,6 +7327,7 @@ function Workspace({
       flushHarnessEvents();
       const adhdCommand =
         !options?.managed &&
+        !options?.internal &&
         !options?.irgatSessionCompletion &&
         !options?.queuedMessageId &&
         !options?.resendEdited &&
@@ -7514,6 +7520,7 @@ function Workspace({
         operatorCommand.matched ||
         irgat ||
         operatorEnabledInThread(current.blocks);
+      const computerAccess = appWindowTokens(submittedText).length > 0;
       const irgatFirstTurn =
         irgat &&
         !current.blocks.some((block) => block.role === "user" && !block.draft);
@@ -7901,7 +7908,7 @@ function Workspace({
           ? { appRequestId: options.appRequestId }
           : {}),
         // The orchestrator writes these turns, not the user; hide them.
-        ...(options?.managed || options?.irgatSessionCompletion
+        ...(options?.managed || options?.internal || options?.irgatSessionCompletion
           ? { internal: true }
           : {}),
         ...(options?.irgatSessionCompletion
@@ -8405,7 +8412,7 @@ function Workspace({
                 ephemeral: current.ephemeral === true,
                 codexStore: irgat ? "irgat" : undefined,
                 controlsAgents:
-                  operatorAccess ||
+                  operatorAccess || computerAccess ||
                   orchestrator.run(sessionId)?.status === "active",
                 ...(editedProviderTurnId
                   ? { providerTurnId: editedProviderTurnId }
@@ -8462,9 +8469,9 @@ function Workspace({
               // A /operator user turn enables app access for this thread;
               // orchestration leads retain their separate control access.
               controlsAgents:
-                operatorAccess ||
+                operatorAccess || computerAccess ||
                 orchestrator.run(sessionId)?.status === "active",
-              appAccess: operatorAccess,
+              appAccess: operatorAccess || computerAccess,
               text,
               attachments: turnAttachments,
               ...(editedResend ? { onAccepted: acceptEditedResend } : {}),
@@ -10899,6 +10906,7 @@ function Workspace({
 
   const onStop = useCallback(
     (sessionId: string, managed = false) => {
+      void invoke("computer_use_revoke", { sessionId }).catch(console.error);
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
       if (remote && remoteProjectFor(remote.cwd)) {
         remoteSessionActions(sessionId)?.stop();
@@ -11009,6 +11017,28 @@ function Workspace({
     (sessionId: string, requestId: number, decision: ApprovalDecision) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.worktreeRemoved) return;
+      const projectRequest = session.blocks.find((block) =>
+        block.irgatProjectAccess && block.approval?.requestId === requestId,
+      );
+      if (projectRequest) {
+        if (projectRequest.approval?.decided) return;
+        const granted = decision === "allow" && approveProjectAccess(session, projectRequest);
+        decideIrgatBlockRef.current(sessionId, projectRequest.id,
+          granted ? "allow" : decision === "deny" ? "deny" : "cancelled");
+        if (granted) {
+          const project = projectRequest.irgatProjectAccess!.project;
+          appendLiveRef.current(sessionId, {
+            id: crypto.randomUUID(), role: "system",
+            text: `${projectName(project)} projesine erişim onaylandı.`,
+          }, (latest) => {
+            // A newer user request supersedes the work this approval was for.
+            if (latest.blocks.slice().reverse().find((block) => block.role === "user")?.id !== projectRequest.irgatProjectAccess?.userTurnId) return;
+            void submitSessionRef.current(sessionId,
+              `Irgatos: The user approved your access to ${JSON.stringify(project)}. It is now assigned to you. Continue the user's pending request using app sessions.start for requested project agents; do not substitute provider-native subagents.`, [], { internal: true });
+          });
+        }
+        return;
+      }
       // An approval a habit's hidden run asked for, put to the user in the
       // Irgat's chat: answer the run, and settle the question in the chat.
       if (isIrgatSession(sessionId)) {
@@ -11577,6 +11607,9 @@ function Workspace({
           orchestrator.run(source.id)
         )
           throw new Error("This session cannot use the Irgatos app CLI");
+        if (!isIrgatSession(source.id) && !operatorEnabledInThread(source.blocks) && hasAppWindowUserTurn(source.blocks)
+          && !["computer.read", "computer.act"].includes(payload.action))
+          throw new Error("Sharing an application only enables computer.read and computer.act. Use /operator for other app commands.");
         const key = `${source.id}:${payload.requestId}`;
         const signature = JSON.stringify([payload.action, payload.input]);
         const previous = appReceipts.current.get(key);
@@ -11659,6 +11692,7 @@ function Workspace({
           payload.action,
           payload.input,
           {
+            computer: (sessionId, tool, args) => invoke("computer_use_call", { sessionId, tool, args }),
             start: async (launch, id, placement, notifyIrgatId) => {
               const rememberLaunch = () => {
                 const created =
@@ -11966,6 +12000,24 @@ function Workspace({
               if (!isHabitRun(sessionId)) await upsertSession(updated);
             },
             isIrgat: (id) => isIrgatSession(id),
+            projects: () => {
+              const irgat = irgatForSession(source.id);
+              return irgat ? irgatLook({
+                ...irgat,
+                projects: irgatKnownProjects(irgat, sidebarCwdRef.current),
+              }).projects : [];
+            },
+            requestProjectAccess: (sessionId, irgatId, project) => {
+              const session = sessionsRef.current.find((item) => item.id === sessionId);
+              if (!session || irgatForSession(sessionId)?.id !== irgatId)
+                throw new Error("The Irgat chat is no longer available");
+              const block = projectAccessBlock(session, irgatId, project);
+              if (session.blocks.some((item) => item.id === block.id)) return;
+              const updated = { ...session, blocks: [...session.blocks, block] };
+              sessionsRef.current = sessionsRef.current.map((item) => item.id === sessionId ? updated : item);
+              setSessions(sessionsRef.current);
+              persistSession(updated);
+            },
             isHabitRun: (id) => isHabitRun(id),
             irgatOf: (id) => {
               const irgat =
@@ -14234,6 +14286,23 @@ function Workspace({
               onOpenNotes={notesEnabled ? onOpenNotes : undefined}
               onOpenAutomations={onOpenAutomations}
               onOpenKanban={onOpenKanban}
+              fleetPanel={
+                <FleetView
+                  sidebar
+                  sessions={promptableSessions}
+                  unseenFinishedIds={unseenFinishedIds}
+                  onClose={onLeaveFleet}
+                  onOpenSession={onOpenFleetSession}
+                  onApproval={onApproval}
+                  onQuestionReply={onQuestionReply}
+                  onQuestionInteraction={onQuestionInteraction}
+                  habitApprovals={habitApprovals}
+                  onHabitApproval={(entry, decision) =>
+                    void decideHabitApproval(entry.irgatId, entry.habit.id, decision)
+                      .catch((error) => console.warn("Could not answer the habit", error))
+                  }
+                />
+              }
               onOpenFleet={onOpenFleet}
               fleetNeedsYou={fleetNeedsYouCount}
               onSessionBoard={onSessionBoard}

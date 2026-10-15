@@ -973,12 +973,46 @@ fn bundle_identifier(bundle: &Path) -> Option<String> {
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Unsigned and ad-hoc builds: drop quarantine so Gatekeeper doesn't call the
-/// relaunched app "damaged", and re-sign ad hoc if the signature broke, since
-/// Apple Silicon refuses to run unsigned code at all.
+#[cfg(target_os = "macos")]
+fn certificate_requirement(bundle: &Path) -> Result<Option<String>, String> {
+    let output = Command::new("/usr/bin/codesign")
+        .args(["--display", "--verbose=2", "-r-"])
+        .arg(bundle)
+        .output()
+        .map_err(|e| format!("Couldn't inspect the installed signature: {e}"))?;
+    if !output.status.success() {
+        return Err("Couldn't inspect the installed signing identity; update cancelled".into());
+    }
+    let details = String::from_utf8_lossy(&output.stderr);
+    if details.lines().any(|line| line == "Signature=adhoc") {
+        return Ok(None);
+    }
+    let requirements = String::from_utf8_lossy(&output.stdout);
+    requirements
+        .lines()
+        .find_map(|line| line.trim_start_matches("# ").strip_prefix("designated => "))
+        .filter(|requirement| !requirement.is_empty())
+        .map(|requirement| Some(requirement.to_owned()))
+        .ok_or_else(|| "The installed app has no readable signing requirement".into())
+}
+
+/// Keep a certificate-signed installation's identity; only legacy ad-hoc
+/// installations may use the ad-hoc repair path.
 #[cfg(target_os = "macos")]
 fn prepare_bundle(app: &AppHandle, bundle: &Path) -> Result<(), String> {
-    let expected = app.config().identifier.clone();
+    prepare_bundle_for_update(
+        &app.config().identifier,
+        bundle,
+        running_bundle().as_deref(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_bundle_for_update(
+    expected: &str,
+    bundle: &Path,
+    current: Option<&Path>,
+) -> Result<(), String> {
     match bundle_identifier(bundle) {
         Some(found) if found == expected => {}
         Some(found) => {
@@ -992,13 +1026,21 @@ fn prepare_bundle(app: &AppHandle, bundle: &Path) -> Result<(), String> {
         .args(["-dr", "com.apple.quarantine"])
         .arg(bundle)
         .status();
-    let verified = Command::new("/usr/bin/codesign")
-        .args(["--verify", "--deep", "--strict"])
+    let requirement = current.map(certificate_requirement).transpose()?.flatten();
+    let mut verify = Command::new("/usr/bin/codesign");
+    verify.args(["--verify", "--deep", "--strict"]);
+    if let Some(requirement) = &requirement {
+        verify.args(["--test-requirement", &format!("={requirement}")]);
+    }
+    let verified = verify
         .arg(bundle)
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success());
     if !verified {
+        if requirement.is_some() {
+            return Err("The update's signature is invalid or uses a different signing identity. Rebuild with this installation's signing certificate; the installed app was kept.".into());
+        }
         let signed = Command::new("/usr/bin/codesign")
             .args(["--force", "--deep", "--sign", "-"])
             .arg(bundle)
@@ -1222,7 +1264,46 @@ fn built_bundle(dir: &Path, product: &str) -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
+fn source_build_config(identity: Option<&str>) -> Result<String, String> {
+    let mut config = serde_json::json!({"bundle":{"createUpdaterArtifacts":false}});
+    if let Some(identity) = identity {
+        let identity = identity.trim();
+        if identity.is_empty() || identity == "-" {
+            return Err("Configure a persistent code-signing identity; ad-hoc signing would reset macOS permissions".into());
+        }
+        config["bundle"]["macOS"] = serde_json::json!({"signingIdentity":identity});
+    }
+    Ok(config.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn local_signing_identity() -> Result<Option<String>, String> {
+    if let Ok(identity) = std::env::var("APPLE_SIGNING_IDENTITY") {
+        return Ok(Some(identity));
+    }
+    let Some(home) = std::env::var_os("HOME") else {
+        return Ok(None);
+    };
+    match std::fs::read_to_string(PathBuf::from(home).join(".irgatos/macos-signing-identity")) {
+        Ok(identity) => Ok(Some(identity)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Couldn't read the local signing identity: {error}")),
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn install_source(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, String> {
+    let identity = local_signing_identity()?;
+    let build_config = source_build_config(identity.as_deref())?;
+    if identity.is_none()
+        && running_bundle()
+            .map(|bundle| certificate_requirement(&bundle))
+            .transpose()?
+            .flatten()
+            .is_some()
+    {
+        return Err("Set APPLE_SIGNING_IDENTITY to this installation's signing certificate before rebuilding".into());
+    }
     let dir = resolve_source_dir(configured)
         .ok_or_else(|| "No Irgatos source checkout found on this Mac".to_string())?;
     emit(app, "pulling", format!("Fetching {}", dir.display()), None);
@@ -1293,8 +1374,7 @@ fn install_source(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, 
         "Building Irgatos (this takes a few minutes)",
         None,
     );
-    // No signing key on a local build, so skip the updater artifacts that
-    // would otherwise fail the build after the .app is already bundled.
+    // Preserve the local certificate without requiring a separate updater key.
     run_streaming(
         npm_command(&[
             "run",
@@ -1304,7 +1384,7 @@ fn install_source(app: &AppHandle, configured: Option<&str>) -> Result<PathBuf, 
             "--bundles",
             "app",
             "--config",
-            r#"{"bundle":{"createUpdaterArtifacts":false}}"#,
+            &build_config,
         ]),
         BUILD_TIMEOUT,
         |line| emit(app, "building", line, None),
@@ -1557,6 +1637,73 @@ pub fn self_update_relaunch(app: AppHandle, bundle: String) -> Result<(), String
 mod tests {
     use super::*;
     use std::cmp::Ordering;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    #[ignore = "Requires the approved persistent local signing identity in Keychain"]
+    fn live_stable_signature_accepts_new_code_and_rejects_ad_hoc_updates() {
+        let identity = std::fs::read_to_string(
+            Path::new(&std::env::var("HOME").unwrap()).join(".irgatos/macos-signing-identity"),
+        )
+        .unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let identifier = "com.irgatos.signing-test";
+        let make_bundle = |name: &str, executable: &str, signer: &str| {
+            let bundle = root.path().join(format!("{name}.app"));
+            let contents = bundle.join("Contents");
+            std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+            std::fs::write(contents.join("Info.plist"), format!(
+                "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>{identifier}</string><key>CFBundleExecutable</key><string>probe</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>"
+            )).unwrap();
+            std::fs::copy(executable, contents.join("MacOS/probe")).unwrap();
+            let signed = Command::new("/usr/bin/codesign")
+                .args(["--force", "--sign", signer, "--timestamp=none"])
+                .arg(&bundle)
+                .output()
+                .unwrap();
+            assert!(
+                signed.status.success(),
+                "{}",
+                String::from_utf8_lossy(&signed.stderr)
+            );
+            bundle
+        };
+        let current = make_bundle("current", "/usr/bin/true", identity.trim());
+        let update = make_bundle("update", "/usr/bin/false", identity.trim());
+        let requirement = |bundle: &Path| {
+            let output = Command::new("/usr/bin/codesign")
+                .args(["--display", "-r-"])
+                .arg(bundle)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            String::from_utf8(output.stdout).unwrap()
+        };
+        assert_eq!(requirement(&current), requirement(&update));
+        prepare_bundle_for_update(identifier, &update, Some(&current)).unwrap();
+        let ad_hoc = make_bundle("ad-hoc", "/usr/bin/true", "-");
+        assert!(prepare_bundle_for_update(identifier, &ad_hoc, Some(&current)).is_err());
+        prepare_bundle_for_update(identifier, &update, Some(&ad_hoc)).unwrap();
+        std::fs::write(update.join("Contents/MacOS/probe"), "tampered").unwrap();
+        assert!(prepare_bundle_for_update(identifier, &update, Some(&current)).is_err());
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn source_rebuild_preserves_the_configured_signer_and_rejects_ad_hoc() {
+        let config: Value =
+            serde_json::from_str(&source_build_config(Some("  certificate-id\n")).unwrap())
+                .unwrap();
+        assert_eq!(
+            config["bundle"]["macOS"]["signingIdentity"],
+            "certificate-id"
+        );
+        assert_eq!(config["bundle"]["createUpdaterArtifacts"], false);
+        assert!(source_build_config(Some("-")).is_err());
+        assert!(source_build_config(Some(" ")).is_err());
+        let legacy: Value = serde_json::from_str(&source_build_config(None).unwrap()).unwrap();
+        assert!(legacy["bundle"].get("macOS").is_none());
+    }
 
     #[test]
     fn versions_compare_semantically() {

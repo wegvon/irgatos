@@ -6,6 +6,7 @@ import {
   findIrgat,
   listIrgats,
   irgatLook,
+  irgatKnownProjects,
   irgatProjectsPhrase,
   irgatWorksOn,
   removeIrgat,
@@ -14,6 +15,7 @@ import {
 } from "./irgat";
 import { irgatBackgroundKey, irgatChatBackground } from "./irgatBackground";
 import { saveProjectChatBackgroundSettings } from "../../projects/model/projectChatBackground";
+import { rememberProject } from "../../projects/model/recents";
 
 beforeEach(() => {
   const stored = new Map<string, string>();
@@ -42,6 +44,16 @@ it("adds each project once and takes one away by its path", () => {
   expect(irgatWorksOn(findIrgat(id)!, "/code/site/")).toBe(true);
   removeIrgatProject(id, "/code/app/");
   expect(findIrgat(id)?.projects).toEqual(["/code/site"]);
+});
+
+it("discovers sidebar and current projects without changing access assignments", () => {
+  const irgat = createIrgat(["/code/assigned/"]);
+  rememberProject("/code/assigned");
+  rememberProject("/code/repguard");
+  const projects = irgatKnownProjects(irgat, "/code/current");
+  expect(projects).toEqual(["/code/assigned/", "/code/repguard", "/code/current"]);
+  expect(irgat.projects).toEqual(["/code/assigned/"]);
+  expect(irgatKnownProjects(createIrgat(), "~")).toEqual(["/code/repguard", "/code/assigned"]);
 });
 
 it("keeps the rail's order and forgets a removed Irgat", () => {

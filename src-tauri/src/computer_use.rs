@@ -1,8 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, OnceLock,
+};
 
 use crate::dirs_home;
 use crate::harness::{exec_output, first_binary, which_via_login_shell};
@@ -153,6 +158,296 @@ fn require_binary() -> Result<PathBuf, String> {
     resolve_binary().ok_or_else(|| "Cua Driver is not installed".to_owned())
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AppWindow {
+    pid: u32,
+    window_id: u64,
+    app_name: String,
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowSelection {
+    window: AppWindow,
+    allow_control: bool,
+}
+
+struct WindowGrant {
+    selection: WindowSelection,
+    revoked: AtomicBool,
+    ready: AtomicBool,
+    operation: Mutex<()>,
+    images: tempfile::TempDir,
+}
+
+fn selections() -> &'static Mutex<HashMap<String, Arc<WindowGrant>>> {
+    static SELECTIONS: OnceLock<Mutex<HashMap<String, Arc<WindowGrant>>>> = OnceLock::new();
+    SELECTIONS.get_or_init(Mutex::default)
+}
+
+fn call_driver(tool: &str, args: Value) -> Result<Value, String> {
+    let binary = require_binary()?;
+    let encoded = args.to_string();
+    let output = run(&binary, &["call", tool, &encoded], Duration::from_secs(30))?;
+    let value: Value = serde_json::from_str(&output)
+        .map_err(|_| "Cua Driver returned an unreadable response".to_owned())?;
+    if value.get("isError").and_then(Value::as_bool) == Some(true) || value.get("error").is_some() {
+        return Err(value.to_string());
+    }
+    Ok(value)
+}
+
+fn windows() -> Result<Vec<AppWindow>, String> {
+    parse_windows(call_driver("list_windows", json!({}))?)
+}
+
+fn parse_windows(value: Value) -> Result<Vec<AppWindow>, String> {
+    let windows = value
+        .get("windows")
+        .and_then(Value::as_array)
+        .ok_or("Cua Driver did not return a window list")?;
+    // shortcut: omit tiny or hidden unnamed helpers; revisit for utility windows below 100×80.
+    let windows: Vec<Value> = windows
+        .iter()
+        .filter(|w| {
+            w["layer"].as_i64().unwrap_or(0) == 0
+                && w["bounds"]["width"].as_f64().unwrap_or(0.0) >= 100.0
+                && w["bounds"]["height"].as_f64().unwrap_or(0.0) >= 80.0
+                && (w["is_on_screen"].as_bool() == Some(true)
+                    || w["title"].as_str().is_some_and(|t| !t.trim().is_empty()))
+        })
+        .cloned()
+        .collect();
+    let windows: Vec<AppWindow> = serde_json::from_value(Value::Array(windows))
+        .map_err(|e| format!("Could not read windows: {e}"))?;
+    Ok(windows
+        .into_iter()
+        .filter(|w| {
+            w.pid > 0
+                && w.window_id > 0
+                && !matches!(w.app_name.as_str(), "Cua Driver" | "ChatGPT Computer Use")
+        })
+        .collect())
+}
+
+fn live_window(expected: &AppWindow) -> Result<AppWindow, String> {
+    windows()?
+        .into_iter()
+        .find(|w| {
+            w.pid == expected.pid
+                && w.window_id == expected.window_id
+                && w.app_name == expected.app_name
+        })
+        .ok_or_else(|| {
+            "The shared window was closed or replaced. Select it again with @.".to_owned()
+        })
+}
+
+#[tauri::command]
+pub async fn computer_use_windows() -> Result<Vec<AppWindow>, String> {
+    tauri::async_runtime::spawn_blocking(windows)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn computer_use_select(
+    session_id: String,
+    window: AppWindow,
+    allow_control: bool,
+) -> Result<WindowSelection, String> {
+    if session_id.is_empty() {
+        return Err("Choose a chat first".into());
+    }
+    let selection = WindowSelection {
+        window,
+        allow_control,
+    };
+    let grant = Arc::new(WindowGrant {
+        selection: selection.clone(),
+        revoked: AtomicBool::new(false),
+        ready: AtomicBool::new(false),
+        operation: Mutex::new(()),
+        images: tempfile::Builder::new()
+            .prefix("irgatos-window-")
+            .tempdir()
+            .map_err(|e| e.to_string())?,
+    });
+    // Reserve before awaiting the driver, so Stop also revokes an in-flight selection.
+    if let Some(old) = selections()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(session_id.clone(), grant.clone())
+    {
+        old.revoked.store(true, Ordering::SeqCst);
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = live_window(&selection.window) {
+            let mut selections = selections().lock().map_err(|e| e.to_string())?;
+            if selections
+                .get(&session_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &grant))
+            {
+                selections.remove(&session_id);
+            }
+            return Err(error);
+        }
+        if grant.revoked.load(Ordering::SeqCst) {
+            return Err("Window sharing was stopped".into());
+        }
+        grant.ready.store(true, Ordering::SeqCst);
+        Ok(selection)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn computer_use_selected(session_id: String) -> Result<Option<WindowSelection>, String> {
+    Ok(selections()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&session_id)
+        .filter(|g| g.ready.load(Ordering::SeqCst) && !g.revoked.load(Ordering::SeqCst))
+        .map(|g| g.selection.clone()))
+}
+
+#[tauri::command]
+pub fn computer_use_revoke(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
+    use tauri::Emitter;
+    revoke_selection(&session_id)?;
+    app.emit("computer-use-stopped", session_id)
+        .map_err(|e| e.to_string())
+}
+
+fn revoke_selection(session_id: &str) -> Result<(), String> {
+    if let Some(grant) = selections()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(session_id)
+    {
+        grant.revoked.store(true, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+// Keep target selection in the UI: the agent CLI can only read or act on an existing grant.
+fn scoped_args(selection: &WindowSelection, tool: &str, args: Value) -> Result<Value, String> {
+    let allowed: &[&str] = match tool {
+        "get_window_state" => &["query"],
+        "click" => &[
+            "x",
+            "y",
+            "element_index",
+            "snapshot_id",
+            "element_token",
+            "button",
+            "count",
+            "modifier",
+            "action",
+            "delivery_mode",
+        ],
+        "type_text" => &[
+            "text",
+            "x",
+            "y",
+            "element_index",
+            "snapshot_id",
+            "element_token",
+            "delivery_mode",
+        ],
+        "scroll" => &[
+            "direction",
+            "amount",
+            "by",
+            "x",
+            "y",
+            "element_index",
+            "snapshot_id",
+            "element_token",
+            "delivery_mode",
+        ],
+        "press_key" => &[
+            "key",
+            "modifiers",
+            "x",
+            "y",
+            "element_index",
+            "snapshot_id",
+            "element_token",
+            "delivery_mode",
+        ],
+        "hotkey" => &[
+            "keys",
+            "x",
+            "y",
+            "element_index",
+            "snapshot_id",
+            "element_token",
+            "delivery_mode",
+        ],
+        _ => return Err("Unsupported window action".into()),
+    };
+    if tool != "get_window_state" && !selection.allow_control {
+        return Err(
+            "This window is read only. Ask the user to enable Allow control in the chat.".into(),
+        );
+    }
+    let mut args = args
+        .as_object()
+        .cloned()
+        .ok_or("Arguments must be an object")?;
+    if let Some(key) = args.keys().find(|key| !allowed.contains(&key.as_str())) {
+        return Err(format!("Unsupported argument: {key}"));
+    }
+    args.insert("pid".into(), json!(selection.window.pid));
+    args.insert("window_id".into(), json!(selection.window.window_id));
+    Ok(Value::Object(args))
+}
+
+#[tauri::command]
+pub async fn computer_use_call(
+    session_id: String,
+    tool: String,
+    args: Value,
+) -> Result<Value, String> {
+    let grant = selections()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&session_id)
+        .cloned()
+        .ok_or("No window is shared. Ask the user to select one with @ in this chat.")?;
+    if !grant.ready.load(Ordering::SeqCst) {
+        return Err("Window selection is still being checked".into());
+    }
+    let mut args = scoped_args(&grant.selection, &tool, args)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _operation = grant
+            .operation
+            .try_lock()
+            .map_err(|_| "Another window action is still running")?;
+        live_window(&grant.selection.window)?;
+        if grant.revoked.load(Ordering::SeqCst) {
+            return Err("Window sharing was stopped".into());
+        }
+        if tool == "get_window_state" {
+            args["max_elements"] = json!(500);
+            args["max_depth"] = json!(20);
+            args["screenshot_out_file"] = json!(grant.images.path().join("window.png"));
+        }
+        let result = call_driver(&tool, args)?;
+        if grant.revoked.load(Ordering::SeqCst) {
+            return Err("Window sharing was stopped".into());
+        }
+        Ok(result)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn computer_use_status() -> Result<ComputerUseStatus, String> {
     tauri::async_runtime::spawn_blocking(status)
@@ -194,6 +489,213 @@ pub async fn computer_use_grant_permissions() -> Result<ComputerUseStatus, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn selection(allow_control: bool) -> WindowSelection {
+        WindowSelection {
+            window: AppWindow {
+                pid: 42,
+                window_id: 19,
+                app_name: "TextEdit".into(),
+                title: "Scratch".into(),
+            },
+            allow_control,
+        }
+    }
+
+    #[test]
+    fn picker_keeps_document_titles_and_omits_helper_surfaces() {
+        let entry = |id, app, title, width, height, visible| {
+            json!({"pid":42,"window_id":id,"app_name":app,"title":title,
+                "bounds":{"width":width,"height":height},"layer":0,"is_on_screen":visible})
+        };
+        let windows = parse_windows(json!({"windows":[
+            entry(1, "Google Chrome", "Window", 66, 20, true),
+            entry(2, "Google Chrome", "", 5120, 30, false),
+            entry(3, "Google Chrome", "Irgatos computer-use test", 1900, 1296, true),
+            entry(4, "Google Chrome", "", 1540, 498, false),
+            entry(5, "TextEdit", "", 600, 400, true),
+            entry(6, "TextEdit", "Document", 600, 400, false)
+        ]}))
+        .unwrap();
+        assert_eq!(
+            windows.iter().map(|w| w.window_id).collect::<Vec<_>>(),
+            [3, 5, 6]
+        );
+        assert_eq!(windows[0].title, "Irgatos computer-use test");
+    }
+
+    #[test]
+    #[ignore = "Open tests/browser/computer-control.html in Chrome first; reads the real desktop window list"]
+    fn live_window_picker_omits_browser_helper_windows() {
+        let windows = windows().unwrap();
+        assert!(windows
+            .iter()
+            .any(|w| w.title == "Irgatos computer-use test"));
+        for window in windows.iter().filter(|w| w.app_name == "Google Chrome") {
+            assert!(
+                !window.title.is_empty() && window.title != "Window",
+                "Browser helper window should not be selectable: {window:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Open tests/browser/computer-control.html in Chrome first; uses the real desktop driver"]
+    fn live_shared_window_can_read_type_click_and_revoke() {
+        tauri::async_runtime::block_on(async {
+            let window = windows()
+                .unwrap()
+                .into_iter()
+                .find(|w| w.title == "Irgatos computer-use test")
+                .expect("Open the isolated computer-control test page in Chrome");
+            let session = "computer-use-smoke".to_owned();
+            computer_use_select(session.clone(), window.clone(), false)
+                .await
+                .unwrap();
+            let state = computer_use_call(session.clone(), "get_window_state".into(), json!({}))
+                .await
+                .unwrap();
+            let screenshot = state["screenshot_file_path"]
+                .as_str()
+                .expect("window screenshot");
+            assert!(Path::new(screenshot).is_file());
+            assert!(state["tree_markdown"]
+                .as_str()
+                .unwrap()
+                .contains("Test message"));
+            assert!(computer_use_call(
+                session.clone(),
+                "type_text".into(),
+                json!({"text":"blocked"})
+            )
+            .await
+            .is_err());
+            computer_use_select(session.clone(), window, true)
+                .await
+                .unwrap();
+            let state = computer_use_call(session.clone(), "get_window_state".into(), json!({}))
+                .await
+                .unwrap();
+            let input = state["elements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| {
+                    e["label"].as_str() == Some("Test message")
+                        && e["role"].as_str().is_some_and(|r| r.contains("TextField"))
+                })
+                .expect("test text field");
+            let token = input["element_token"].clone();
+            computer_use_call(session.clone(), "type_text".into(), json!({"text":"Irgatos verified", "element_token":token, "delivery_mode":"foreground"})).await.unwrap();
+            let state = computer_use_call(session.clone(), "get_window_state".into(), json!({}))
+                .await
+                .unwrap();
+            let button = state["elements"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| {
+                    e["label"].as_str() == Some("Verify message")
+                        && e["role"].as_str().is_some_and(|r| r.contains("Button"))
+                })
+                .expect("test button");
+            computer_use_call(
+                session.clone(),
+                "click".into(),
+                json!({"element_token":button["element_token"], "delivery_mode":"foreground"}),
+            )
+            .await
+            .unwrap();
+            let state = computer_use_call(session.clone(), "get_window_state".into(), json!({}))
+                .await
+                .unwrap();
+            assert!(state["tree_markdown"]
+                .as_str()
+                .unwrap()
+                .contains("Irgatos verified"));
+            computer_use_call(
+                session.clone(),
+                "scroll".into(),
+                json!({"direction":"down","amount":2}),
+            )
+            .await
+            .unwrap();
+            revoke_selection(&session).unwrap();
+            assert!(
+                computer_use_call(session, "get_window_state".into(), json!({}))
+                    .await
+                    .is_err()
+            );
+        });
+    }
+
+    #[test]
+    fn shared_window_actions_cannot_override_the_target_or_write_arbitrary_files() {
+        for (key, value) in [
+            ("pid", json!(99)),
+            ("window_id", json!(99)),
+            ("target", json!({"kind":"desktop"})),
+            ("scope", json!("desktop")),
+            ("screenshot_out_file", json!("/tmp/other")),
+            ("debug_image_out", json!("/tmp/other")),
+        ] {
+            assert!(
+                scoped_args(&selection(true), "click", json!({key:value})).is_err(),
+                "{key}"
+            );
+        }
+        assert!(scoped_args(&selection(true), "kill_app", json!({})).is_err());
+        assert_eq!(
+            scoped_args(&selection(true), "click", json!({"x":10,"y":20})).unwrap(),
+            json!({"x":10,"y":20,"pid":42,"window_id":19})
+        );
+    }
+
+    #[test]
+    fn read_only_windows_reject_every_input_action() {
+        for tool in ["click", "type_text", "scroll", "press_key", "hotkey"] {
+            assert!(scoped_args(&selection(false), tool, json!({}))
+                .unwrap_err()
+                .contains("read only"));
+        }
+        assert!(scoped_args(
+            &selection(false),
+            "get_window_state",
+            json!({"query":"text"})
+        )
+        .is_ok());
+        assert!(scoped_args(&selection(true), "click", json!([])).is_err());
+    }
+
+    #[test]
+    fn stopping_revokes_pending_and_existing_session_grants() {
+        let grant = Arc::new(WindowGrant {
+            selection: selection(true),
+            revoked: AtomicBool::new(false),
+            ready: AtomicBool::new(false),
+            operation: Mutex::new(()),
+            images: tempfile::tempdir().unwrap(),
+        });
+        selections()
+            .lock()
+            .unwrap()
+            .insert("pending-test".into(), grant.clone());
+        assert!(computer_use_selected("pending-test".into())
+            .unwrap()
+            .is_none());
+        revoke_selection("pending-test").unwrap();
+        assert!(grant.revoked.load(Ordering::SeqCst));
+        assert!(computer_use_selected("pending-test".into())
+            .unwrap()
+            .is_none());
+        tauri::async_runtime::block_on(async {
+            assert!(
+                computer_use_call("pending-test".into(), "click".into(), json!({}))
+                    .await
+                    .is_err()
+            );
+        });
+    }
 
     #[test]
     fn prefers_the_app_bundle_over_path_installs() {

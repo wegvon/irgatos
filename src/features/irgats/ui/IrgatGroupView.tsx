@@ -304,6 +304,7 @@ export function IrgatGroupView({
         ) : null}
         <IrgatComposer
           sessionId={irgatGroupViewKey(groupId)}
+          computerUse={false}
           name={name}
           placeholder={`Message ${name} — type @ to address one member`}
           hotkeys={visible}

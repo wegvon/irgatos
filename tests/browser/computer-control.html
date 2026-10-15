@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Irgatos computer-use test</title></head>
+<body style="font:18px system-ui;max-width:600px;margin:60px auto">
+<h1>Irgatos computer-use test</h1>
+<p>This isolated page verifies reading, typing, clicking and scrolling.</p>
+<label>Test message <input aria-label="Test message" id="message"></label>
+<button id="verify" onclick="document.getElementById('result').textContent=document.getElementById('message').value">Verify message</button>
+<p role="status" id="result">Waiting</p>
+<div style="height:150vh"></div><p>End of test page</p>
+</body></html>

@@ -972,7 +972,17 @@ function sanitizeBlock(
   const turnMetrics = sanitizeTurnMetrics(block.turnMetrics);
   if (block.role === "user" && turnMetrics) next.turnMetrics = turnMetrics;
   if (block.tool) next.tool = block.tool;
-  if (block.approval?.decided) {
+  const projectAccess = block.irgatProjectAccess;
+  if (block.role === "approval" &&
+      typeof projectAccess?.irgatId === "string" && projectAccess.irgatId.trim() &&
+      typeof projectAccess.project === "string" && projectAccess.project.trim() &&
+      typeof block.approval?.requestId === "number" && Number.isFinite(block.approval.requestId)) {
+    next.irgatProjectAccess = {
+      irgatId: projectAccess.irgatId, project: projectAccess.project,
+      ...(typeof projectAccess.userTurnId === "string" ? { userTurnId: projectAccess.userTurnId } : {}),
+    };
+    next.approval = { ...block.approval };
+  } else if (block.approval?.decided) {
     next.approval = {
       requestId: block.approval.requestId,
       decided: block.approval.decided,

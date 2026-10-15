@@ -25,6 +25,29 @@ function render(
 }
 
 describe("AgentTranscript collapsed work", () => {
+  it.each([[true, true], [false, true], [true, false], [false, false]])("shows the full project permission request and approval buttons (busy=%s, inline=%s)", (busy, inlineWork) => {
+    const request: Block = {
+      id: "project-access", role: "approval",
+      text: "repguard projesine erişmeme izin veriyor musun?\n/code/repguard",
+      approval: { requestId: -123 },
+      irgatProjectAccess: { irgatId: "irgat", project: "/code/repguard" },
+    };
+    const markup = renderToStaticMarkup(createElement(AgentTranscript, {
+      blocks: [{ id: "u", role: "user", text: "Start agents" }, request],
+      busy, inlineWork, agentName: "IrgatCat", onApproval: () => {},
+    }));
+    expect(markup).toContain("repguard projesine erişmeme izin veriyor musun?");
+    expect(markup).toContain("/code/repguard");
+    expect(markup).toContain("İzin ver</button>");
+    expect(markup).toContain("Reddet</button>");
+    const denied = renderToStaticMarkup(createElement(AgentTranscript, {
+      blocks: [{ ...request, approval: { requestId: -123, decided: "deny" } }],
+      busy: false, inlineWork, agentName: "IrgatCat", onApproval: () => {},
+    }));
+    expect(denied).toContain("Erişim reddedildi");
+    expect(denied).not.toContain("İzin ver</button>");
+  });
+
   it("keeps the completed time beside actions when a turn has no BTW control", () => {
     const markup = render([
       {

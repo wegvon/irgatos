@@ -241,3 +241,18 @@ it("lists habit runs waiting for approval in Needs you and answers them", () => 
   });
   expect(container.textContent).toContain("No sessions match");
 });
+
+
+it("shows collapsible Fleet sessions inline without a page toolbar", () => {
+  const props = render([chat("inline", "/repo", "Sidebar session", { blocks: [sent()] })], { sidebar: true });
+  expect(container.querySelector('input[aria-label="Filter sessions"]')).toBeNull();
+  expect(container.querySelector('[data-app-fleet]')?.className).toContain("max-h-[40vh]");
+  for (const name of ["needsYou", "review", "running", "idle"]) {
+    expect(bucket(name)).not.toBeNull();
+  }
+  const idle = bucket("idle").querySelector<HTMLButtonElement>("button")!;
+  expect(idle.getAttribute("aria-expanded")).toBe("false");
+  act(() => idle.click());
+  act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Open Sidebar session"]')!.click());
+  expect(props.onOpenSession).toHaveBeenCalledWith("inline");
+});

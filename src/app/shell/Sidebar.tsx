@@ -330,6 +330,7 @@ type Props = {
   onOpenNotes?: () => void;
   onOpenAutomations?: () => void;
   onOpenKanban?: () => void;
+  fleetPanel?: ReactNode;
   onOpenFleet?: () => void;
   /** Opens the session's board card, filing one first when it has none. */
   onSessionBoard?: (sessionId: string) => void | Promise<void>;
@@ -440,6 +441,7 @@ function SidebarComponent({
   onOpenNotes,
   onOpenAutomations,
   onOpenKanban,
+  fleetPanel,
   onOpenFleet,
   onSessionBoard,
   boardSessionIds,
@@ -2357,6 +2359,7 @@ function SidebarComponent({
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
         <ProjectRail
+          fleetPanel={fleetPanel}
           visible={railVisible}
           cwd={cwd}
           recents={recents}
@@ -2379,10 +2382,8 @@ function SidebarComponent({
           onOpenAutomations={onOpenAutomations}
           automationsActive={automationsActive}
           onOpenKanban={onOpenKanban}
-          onOpenFleet={onOpenFleet}
           kanbanActive={kanbanActive}
           fleetActive={fleetActive}
-          fleetNeedsYou={fleetNeedsYou}
           onTogglePanel={onToggleProjectRail}
           onSelectProject={onSelectProject}
           onOpenProject={onOpenProject}

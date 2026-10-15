@@ -2389,6 +2389,15 @@ const TranscriptBlock = memo(function TranscriptBlock({
   }
 
   if (block.role === "approval") {
+    if (block.irgatProjectAccess) return (
+      <div className={`${embedded ? "" : "px-4"} py-2`}>
+        <p className="whitespace-pre-wrap break-words text-sm">{block.text}</p>
+        <ApprovalControls block={block} onApproval={onApproval} />
+        {block.approval?.decided && <p className="mt-1 text-xs text-content/50">
+          {block.approval.decided === "allow" ? "Erişim onaylandı" : block.approval.decided === "deny" ? "Erişim reddedildi" : "İstek iptal edildi"}
+        </p>}
+      </div>
+    );
     return (
       <ToolCall
         block={block}
@@ -5015,14 +5024,14 @@ function ApprovalControls({
         className="rounded-md bg-content px-2.5 py-0.5 text-[11px] hover:bg-content/80     text-background-base"
         onClick={() => onApproval(approval.requestId, "allow")}
       >
-        Allow
+        {block.irgatProjectAccess ? "İzin ver" : "Allow"}
       </button>
       <button
         type="button"
         className="rounded-md bg-content/10 px-2.5 py-0.5 text-[11px] text-content/70 hover:bg-content/20"
         onClick={() => onApproval(approval.requestId, "deny")}
       >
-        Deny
+        {block.irgatProjectAccess ? "Reddet" : "Deny"}
       </button>
     </div>
   );

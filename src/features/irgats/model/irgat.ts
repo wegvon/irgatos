@@ -20,6 +20,7 @@ import {
   projectMascot,
 } from "../../projects/model/projectMascots";
 import { removeIrgatBackground } from "./irgatBackground";
+import { collectRailProjects, loadRecents } from "../../projects/model/recents";
 
 /** The project palette's colors, plus indigo for a Irgat's ninth preset. */
 export const IRGAT_COLORS = [
@@ -283,6 +284,14 @@ function uniqueProjects(paths: readonly string[]): string[] {
     seen.add(key);
     return true;
   });
+}
+
+/** Discover sidebar projects without granting access or changing assignments. */
+export function irgatKnownProjects(irgat: Pick<Irgat, "projects">, currentCwd: string): string[] {
+  return uniqueProjects([
+    ...irgat.projects,
+    ...[...collectRailProjects(loadRecents(), currentCwd).values()].map((project) => project.path),
+  ]);
 }
 
 export function updateIrgat(

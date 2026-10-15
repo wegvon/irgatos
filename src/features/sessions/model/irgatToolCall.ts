@@ -7,6 +7,10 @@ export type IrgatToolCall = {
 };
 
 const ACTION_LABELS: Record<string, string> = {
+  "computer.read": "Read shared application",
+  "computer.act": "Control shared application",
+  "projects.list": "List projects",
+  "projects.requestAccess": "Request project access",
   "models.list": "List models",
   "sessions.list": "List sessions",
   "sessions.read": "Read a session",

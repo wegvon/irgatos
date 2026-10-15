@@ -500,6 +500,7 @@ function FloatingConversation({
       <div className="shrink-0 px-1 pb-1">
         <IrgatComposer
           sessionId={`floating:${session.id}`}
+          onStop={() => void action({ kind: "stop" })}
           name={irgat.name}
           enabled={!session.worktreeRemoved}
           hotkeys

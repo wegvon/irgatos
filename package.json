@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:stable": "vite --mode stable",
     "build": "tsc && vite build",
+    "update:local": "bash scripts/update-local-macos.sh",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

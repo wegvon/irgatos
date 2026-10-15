@@ -9,6 +9,7 @@ import {
 import { nativeCommandPrompt } from "../../../integrations/harness/core/nativeCommands";
 import { applySessionReferencesToTurn } from "../data/sessionReferenceDirectory";
 import { applyCooperativeBridgeToTurn } from "./sessionMessageRouter";
+import { applyAppWindowToTurn } from "./appWindows";
 
 export async function preparePrompt(
   text: string,
@@ -25,5 +26,9 @@ export async function preparePrompt(
     withSkills,
     context,
   );
-  return applyCooperativeBridgeToTurn(withReferences, context.sessionId);
+  const withWindow = await applyAppWindowToTurn(text, context.sessionId);
+  return applyCooperativeBridgeToTurn(
+    withReferences + withWindow.slice(text.length),
+    context.sessionId,
+  );
 }

@@ -82,7 +82,11 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 32] = [
+const APP_ACTIONS: [&str; 36] = [
+    "computer.read",
+    "computer.act",
+    "projects.list",
+    "projects.requestAccess",
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -125,6 +129,22 @@ sessions.*, worktrees.* and folders.* actions to choose which one. It may be
 left out when the Irgat has a single project.
 
 Actions:
+  computer.read {} Read the window explicitly shared with this chat, with an
+                  accessibility tree and screenshot_file_path. Optional query
+                  filters the tree. Read before and after every action.
+  computer.act  {"tool":"click|type_text|scroll|press_key|hotkey","args":{...}}
+                  Act only on the shared window when Allow control is enabled.
+                  Target ids are supplied by Irgatos. Prefer element_token from
+                  computer.read; pixels are local to its screenshot. type_text
+                  takes text; scroll takes direction/amount/by; press_key takes
+                  key; hotkey takes keys. Desktop targets and arbitrary paths
+                  are rejected. Only the user can share or enable control.
+  projects.list {} Registered projects, paths and whether this Irgat has access.
+  projects.requestAccess {"project":"<registered path or unique name>"}
+                  Ask the user once to assign this project to this Irgat.
+                  Returns pending immediately; end your turn and wait. Do not
+                  access the project or substitute provider-native subagents.
+                  Approval saves access and resumes the request automatically.
   models.list    {}  Available providers, models, settings and permission modes.
   sessions.list  {}  Project sessions with IDs, busy status, hasDraft and archived.
   sessions.read  {"sessionId":"...","before":"<turnId>","limit":3,"maxChars":1200}
@@ -634,6 +654,10 @@ mod tests {
     }
     #[test]
     fn app_mode_exposes_only_app_actions_and_safe_request_ids() {
+        for action in ["projects.list", "projects.requestAccess"] {
+            assert!(parse_args_for(&args(&[action, "--json", "{}"]), true).is_ok());
+            assert!(parse_args_for(&args(&[action, "--json", "{}"]), false).is_err());
+        }
         assert!(matches!(
             parse_args_for(&args(&["notes.list"]), true),
             Ok(Parsed::Call(_, _, _))
