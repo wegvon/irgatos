@@ -193,7 +193,12 @@ pub fn ideas_board_rename(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    rename(&store.lock_conn()?, "idea_boards", &id, &normalize_name(&title, "board")?)?;
+    rename(
+        &*store.lock_conn()?,
+        "idea_boards",
+        &id,
+        &normalize_name(&title, "board")?,
+    )?;
     notify(&app, false);
     Ok(())
 }
@@ -217,7 +222,13 @@ pub fn ideas_list_create(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    create_list(&mut *store.lock_conn()?, &board_id, &id, &title, now_millis())?;
+    create_list(
+        &mut *store.lock_conn()?,
+        &board_id,
+        &id,
+        &title,
+        now_millis(),
+    )?;
     notify(&app, false);
     Ok(())
 }
@@ -229,7 +240,12 @@ pub fn ideas_list_rename(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    rename(&store.lock_conn()?, "idea_lists", &id, &normalize_name(&title, "list")?)?;
+    rename(
+        &*store.lock_conn()?,
+        "idea_lists",
+        &id,
+        &normalize_name(&title, "list")?,
+    )?;
     notify(&app, false);
     Ok(())
 }
@@ -265,7 +281,13 @@ pub fn ideas_card_create(
     card: IdeaCardInput,
     index: Option<usize>,
 ) -> Result<IdeaCard, String> {
-    let card = create_card(&mut *store.lock_conn()?, &list_id, &card, index, now_millis())?;
+    let card = create_card(
+        &mut *store.lock_conn()?,
+        &list_id,
+        &card,
+        index,
+        now_millis(),
+    )?;
     notify(&app, true);
     Ok(card)
 }
@@ -276,7 +298,7 @@ pub fn ideas_card_update(
     store: State<'_, SessionStore>,
     card: IdeaCardInput,
 ) -> Result<IdeaCard, String> {
-    let card = update_card(&store.lock_conn()?, &card, now_millis())?;
+    let card = update_card(&*store.lock_conn()?, &card, now_millis())?;
     notify(&app, true);
     Ok(card)
 }
@@ -325,7 +347,7 @@ pub fn ideas_label_save(
     board_id: String,
     label: IdeaLabel,
 ) -> Result<IdeaLabel, String> {
-    let label = save_label(&store.lock_conn()?, &board_id, &label, now_millis())?;
+    let label = save_label(&*store.lock_conn()?, &board_id, &label, now_millis())?;
     notify(&app, true);
     Ok(label)
 }
@@ -365,16 +387,23 @@ pub async fn ideas_search(
             });
         }
         let words = word_ranking(&cards, query);
-        let (semantic, ranked, note) =
-            match crate::semantic_index::rank_documents(&app, IDEAS_CORPUS, IDEAS_SCOPE, query, limit * 2) {
-                Ok(Some(ranked)) => ("on", ranked, None),
-                Ok(None) => ("off", Vec::new(), None),
-                Err(error) => (
-                    "unavailable",
-                    Vec::new(),
-                    Some(format!("Search by meaning is unavailable ({error}); showing word matches only.")),
-                ),
-            };
+        let (semantic, ranked, note) = match crate::semantic_index::rank_documents(
+            &app,
+            IDEAS_CORPUS,
+            IDEAS_SCOPE,
+            query,
+            limit * 2,
+        ) {
+            Ok(Some(ranked)) => ("on", ranked, None),
+            Ok(None) => ("off", Vec::new(), None),
+            Err(error) => (
+                "unavailable",
+                Vec::new(),
+                Some(format!(
+                    "Search by meaning is unavailable ({error}); showing word matches only."
+                )),
+            ),
+        };
         Ok(IdeaSearchResult {
             hits: fuse(&cards, &words, &ranked, limit),
             semantic,
@@ -482,15 +511,22 @@ fn word_ranking(cards: &[(IdeaCard, String)], query: &str) -> Vec<(String, f64)>
         .filter_map(|(card, text)| {
             let haystack = fold(text);
             let title = fold(&card.title);
-            let hits = terms.iter().filter(|term| haystack.contains(term.as_str())).count();
+            let hits = terms
+                .iter()
+                .filter(|term| haystack.contains(term.as_str()))
+                .count();
             if hits == 0 {
                 return None;
             }
-            let in_title = terms.iter().filter(|term| title.contains(term.as_str())).count();
+            let in_title = terms
+                .iter()
+                .filter(|term| title.contains(term.as_str()))
+                .count();
             let whole = if haystack.contains(&phrase) { 1.0 } else { 0.0 };
             Some((
                 card.id.clone(),
-                hits as f64 / terms.len() as f64 + 0.25 * in_title as f64 / terms.len() as f64
+                hits as f64 / terms.len() as f64
+                    + 0.25 * in_title as f64 / terms.len() as f64
                     + 0.5 * whole,
             ))
         })
@@ -509,7 +545,10 @@ fn fuse(
 ) -> Vec<IdeaSearchHit> {
     const K: f64 = 60.0;
     const MEANING_FLOOR: f32 = 0.35;
-    let known: HashMap<&str, ()> = cards.iter().map(|(card, _)| (card.id.as_str(), ())).collect();
+    let known: HashMap<&str, ()> = cards
+        .iter()
+        .map(|(card, _)| (card.id.as_str(), ()))
+        .collect();
     let mut scores: HashMap<String, (f64, bool)> = HashMap::new();
     for (rank, (id, _)) in words.iter().enumerate() {
         let entry = scores.entry(id.clone()).or_insert((0.0, false));
@@ -535,7 +574,11 @@ fn fuse(
             semantic_only: !word,
         })
         .collect();
-    hits.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.card_id.cmp(&b.card_id)));
+    hits.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then_with(|| a.card_id.cmp(&b.card_id))
+    });
     hits.truncate(limit);
     hits
 }
@@ -555,7 +598,12 @@ fn sql(error: rusqlite::Error) -> String {
 
 fn one_line(text: &str, max: usize) -> String {
     let single = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    single.chars().take(max).collect::<String>().trim().to_string()
+    single
+        .chars()
+        .take(max)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 fn normalize_name(name: &str, what: &str) -> Result<String, String> {
@@ -618,7 +666,11 @@ fn normalize_tasks(tasks: &[IdeaTask]) -> Result<Vec<IdeaTask>, String> {
 }
 
 /// Only labels of the card's own board, once each, in the given order.
-fn normalize_label_ids(conn: &Connection, board_id: &str, ids: &[String]) -> Result<Vec<String>, String> {
+fn normalize_label_ids(
+    conn: &Connection,
+    board_id: &str,
+    ids: &[String],
+) -> Result<Vec<String>, String> {
     let known = label_ids(conn, board_id).map_err(sql)?;
     let mut out: Vec<String> = Vec::new();
     for id in ids {
@@ -660,7 +712,12 @@ pub(crate) fn load_state(conn: &mut Connection) -> Result<IdeasState, String> {
         .query_row("SELECT COUNT(*) FROM idea_boards", [], |row| row.get(0))
         .map_err(sql)?;
     if count == 0 {
-        seed_board(&tx, &uuid::Uuid::new_v4().to_string(), DEFAULT_BOARD, now_millis())?;
+        seed_board(
+            &tx,
+            &uuid::Uuid::new_v4().to_string(),
+            DEFAULT_BOARD,
+            now_millis(),
+        )?;
     }
     let boards = read_boards(&tx).map_err(sql)?;
     tx.commit().map_err(sql)?;
@@ -669,7 +726,11 @@ pub(crate) fn load_state(conn: &mut Connection) -> Result<IdeasState, String> {
 
 fn seed_board(conn: &Connection, id: &str, title: &str, now: i64) -> Result<(), String> {
     let position: i64 = conn
-        .query_row("SELECT COALESCE(MAX(position) + 1, 0) FROM idea_boards", [], |row| row.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM idea_boards",
+            [],
+            |row| row.get(0),
+        )
         .map_err(sql)?;
     conn.execute(
         "INSERT INTO idea_boards (id, title, position, created_at, updated_at)
@@ -681,7 +742,13 @@ fn seed_board(conn: &Connection, id: &str, title: &str, now: i64) -> Result<(), 
         conn.execute(
             "INSERT INTO idea_lists (id, board_id, title, position, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-            params![uuid::Uuid::new_v4().to_string(), id, title, position as i64, now],
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                id,
+                title,
+                position as i64,
+                now
+            ],
         )
         .map_err(sql)?;
     }
@@ -785,13 +852,22 @@ fn get_card(conn: &Connection, id: &str) -> Result<IdeaCard, String> {
 }
 
 fn list_board(conn: &Connection, list_id: &str) -> Result<String, String> {
-    conn.query_row("SELECT board_id FROM idea_lists WHERE id = ?1", [list_id], |row| row.get(0))
-        .optional()
-        .map_err(sql)?
-        .ok_or_else(|| "This list no longer exists.".to_string())
+    conn.query_row(
+        "SELECT board_id FROM idea_lists WHERE id = ?1",
+        [list_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(sql)?
+    .ok_or_else(|| "This list no longer exists.".to_string())
 }
 
-fn ids_in(conn: &Connection, sql_text: &str, parent: &str, excluding: &str) -> rusqlite::Result<Vec<String>> {
+fn ids_in(
+    conn: &Connection,
+    sql_text: &str,
+    parent: &str,
+    excluding: &str,
+) -> rusqlite::Result<Vec<String>> {
     conn.prepare(sql_text)?
         .query_map(params![parent, excluding], |row| row.get(0))?
         .collect()
@@ -832,7 +908,12 @@ fn write_list_positions(conn: &Connection, ids: &[String]) -> rusqlite::Result<(
     Ok(())
 }
 
-pub(crate) fn create_board(conn: &mut Connection, id: &str, title: &str, now: i64) -> Result<(), String> {
+pub(crate) fn create_board(
+    conn: &mut Connection,
+    id: &str,
+    title: &str,
+    now: i64,
+) -> Result<(), String> {
     validate_id(id, "board")?;
     let title = normalize_name(title, "board")?;
     let tx = conn.transaction().map_err(sql)?;
@@ -879,7 +960,11 @@ pub(crate) fn create_list(
     let title = normalize_name(title, "list")?;
     let tx = conn.transaction().map_err(sql)?;
     let exists: bool = tx
-        .query_row("SELECT EXISTS(SELECT 1 FROM idea_boards WHERE id = ?1)", [board_id], |row| row.get(0))
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM idea_boards WHERE id = ?1)",
+            [board_id],
+            |row| row.get(0),
+        )
         .map_err(sql)?;
     if !exists {
         return Err("This board no longer exists.".into());
@@ -912,7 +997,11 @@ pub(crate) fn delete_list(conn: &mut Connection, id: &str) -> Result<(), String>
     validate_id(id, "list")?;
     let tx = conn.transaction().map_err(sql)?;
     let Some(board_id) = tx
-        .query_row("SELECT board_id FROM idea_lists WHERE id = ?1", [id], |row| row.get::<_, String>(0))
+        .query_row(
+            "SELECT board_id FROM idea_lists WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
         .optional()
         .map_err(sql)?
     else {
@@ -922,8 +1011,10 @@ pub(crate) fn delete_list(conn: &mut Connection, id: &str) -> Result<(), String>
     if rest.is_empty() {
         return Err("Keep at least one list on the board.".into());
     }
-    tx.execute("DELETE FROM idea_cards WHERE list_id = ?1", [id]).map_err(sql)?;
-    tx.execute("DELETE FROM idea_lists WHERE id = ?1", [id]).map_err(sql)?;
+    tx.execute("DELETE FROM idea_cards WHERE list_id = ?1", [id])
+        .map_err(sql)?;
+    tx.execute("DELETE FROM idea_lists WHERE id = ?1", [id])
+        .map_err(sql)?;
     write_list_positions(&tx, &rest).map_err(sql)?;
     tx.commit().map_err(sql)
 }
@@ -989,7 +1080,11 @@ fn insert_card_row(conn: &Connection, card: &IdeaCard) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn update_card(conn: &Connection, input: &IdeaCardInput, now: i64) -> Result<IdeaCard, String> {
+pub(crate) fn update_card(
+    conn: &Connection,
+    input: &IdeaCardInput,
+    now: i64,
+) -> Result<IdeaCard, String> {
     validate_id(&input.id, "idea")?;
     let existing = get_card(conn, &input.id)?;
     let board_id = list_board(conn, &existing.list_id)?;
@@ -1062,24 +1157,33 @@ pub(crate) fn delete_card(conn: &mut Connection, id: &str) -> Result<(), String>
     validate_id(id, "idea")?;
     let tx = conn.transaction().map_err(sql)?;
     let Some(list_id) = tx
-        .query_row("SELECT list_id FROM idea_cards WHERE id = ?1", [id], |row| row.get::<_, String>(0))
+        .query_row(
+            "SELECT list_id FROM idea_cards WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
         .optional()
         .map_err(sql)?
     else {
         return Ok(());
     };
-    tx.execute("DELETE FROM idea_cards WHERE id = ?1", [id]).map_err(sql)?;
+    tx.execute("DELETE FROM idea_cards WHERE id = ?1", [id])
+        .map_err(sql)?;
     let rest = card_ids(&tx, &list_id, id).map_err(sql)?;
     write_card_positions(&tx, &list_id, &rest).map_err(sql)?;
     tx.commit().map_err(sql)
 }
 
-pub(crate) fn restore_card(conn: &mut Connection, card: &IdeaCard, index: usize) -> Result<(), String> {
+pub(crate) fn restore_card(
+    conn: &mut Connection,
+    card: &IdeaCard,
+    index: usize,
+) -> Result<(), String> {
     validate_id(&card.id, "idea")?;
     validate_id(&card.list_id, "list")?;
     let tx = conn.transaction().map_err(sql)?;
-    let board_id =
-        list_board(&tx, &card.list_id).map_err(|_| "The list for this idea was deleted.".to_string())?;
+    let board_id = list_board(&tx, &card.list_id)
+        .map_err(|_| "The list for this idea was deleted.".to_string())?;
     let card = IdeaCard {
         title: normalize_title(&card.title),
         description: normalize_description(&card.description)?,
@@ -1109,11 +1213,17 @@ pub(crate) fn save_label(
         return Err("Pick one of the label colors.".into());
     }
     let owner: Option<String> = conn
-        .query_row("SELECT board_id FROM idea_labels WHERE id = ?1", [&label.id], |row| row.get(0))
+        .query_row(
+            "SELECT board_id FROM idea_labels WHERE id = ?1",
+            [&label.id],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(sql)?;
     match owner {
-        Some(owner) if owner != board_id => return Err("This label belongs to another board.".into()),
+        Some(owner) if owner != board_id => {
+            return Err("This label belongs to another board.".into())
+        }
         Some(_) => {
             conn.execute(
                 "UPDATE idea_labels SET name = ?1, color = ?2 WHERE id = ?3",
@@ -1124,10 +1234,16 @@ pub(crate) fn save_label(
         None => {
             let ids = label_ids(conn, board_id).map_err(sql)?;
             if ids.len() >= LABELS_PER_BOARD_MAX {
-                return Err(format!("A board holds at most {LABELS_PER_BOARD_MAX} labels."));
+                return Err(format!(
+                    "A board holds at most {LABELS_PER_BOARD_MAX} labels."
+                ));
             }
             let exists: bool = conn
-                .query_row("SELECT EXISTS(SELECT 1 FROM idea_boards WHERE id = ?1)", [board_id], |row| row.get(0))
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM idea_boards WHERE id = ?1)",
+                    [board_id],
+                    |row| row.get(0),
+                )
                 .map_err(sql)?;
             if !exists {
                 return Err("This board no longer exists.".into());
@@ -1152,7 +1268,11 @@ pub(crate) fn delete_label(conn: &mut Connection, id: &str) -> Result<(), String
     validate_id(id, "label")?;
     let tx = conn.transaction().map_err(sql)?;
     let Some(board_id) = tx
-        .query_row("SELECT board_id FROM idea_labels WHERE id = ?1", [id], |row| row.get::<_, String>(0))
+        .query_row(
+            "SELECT board_id FROM idea_labels WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
         .optional()
         .map_err(sql)?
     else {
@@ -1179,7 +1299,8 @@ pub(crate) fn delete_label(conn: &mut Connection, id: &str) -> Result<(), String
             .map_err(sql)?;
         }
     }
-    tx.execute("DELETE FROM idea_labels WHERE id = ?1", [id]).map_err(sql)?;
+    tx.execute("DELETE FROM idea_labels WHERE id = ?1", [id])
+        .map_err(sql)?;
     tx.commit().map_err(sql)
 }
 
@@ -1215,7 +1336,11 @@ mod tests {
         assert_eq!(state.boards.len(), 1);
         assert_eq!(state.boards[0].title, DEFAULT_BOARD);
         assert_eq!(
-            state.boards[0].lists.iter().map(|l| l.title.as_str()).collect::<Vec<_>>(),
+            state.boards[0]
+                .lists
+                .iter()
+                .map(|l| l.title.as_str())
+                .collect::<Vec<_>>(),
             DEFAULT_LISTS
         );
         let again = load_state(&mut conn).unwrap();
@@ -1231,15 +1356,28 @@ mod tests {
         let inbox = &board.lists[0].id;
         let next = &board.lists[2].id;
         create_card(&mut conn, inbox, &input("a", "Voice notes"), None, 1).unwrap();
-        create_card(&mut conn, inbox, &input("b", "Dark  mode\nfor mail"), None, 2).unwrap();
+        create_card(
+            &mut conn,
+            inbox,
+            &input("b", "Dark  mode\nfor mail"),
+            None,
+            2,
+        )
+        .unwrap();
         create_card(&mut conn, inbox, &input("c", ""), Some(0), 3).unwrap();
         let board = first_board(&mut conn);
-        assert_eq!(titles(&board.lists[0]), ["Untitled idea", "Voice notes", "Dark mode for mail"]);
+        assert_eq!(
+            titles(&board.lists[0]),
+            ["Untitled idea", "Voice notes", "Dark mode for mail"]
+        );
 
         move_card(&mut conn, "a", next, 0, 4).unwrap();
         move_card(&mut conn, "c", inbox, 9, 5).unwrap();
         let board = first_board(&mut conn);
-        assert_eq!(titles(&board.lists[0]), ["Dark mode for mail", "Untitled idea"]);
+        assert_eq!(
+            titles(&board.lists[0]),
+            ["Dark mode for mail", "Untitled idea"]
+        );
         assert_eq!(titles(&board.lists[2]), ["Voice notes"]);
         assert_eq!(board.lists[2].cards[0].list_id, *next);
     }
@@ -1257,7 +1395,10 @@ mod tests {
         delete_card(&mut conn, "b").unwrap();
         assert_eq!(titles(&first_board(&mut conn).lists[0]), ["One", "Three"]);
         restore_card(&mut conn, &card, 1).unwrap();
-        assert_eq!(titles(&first_board(&mut conn).lists[0]), ["One", "Two", "Three"]);
+        assert_eq!(
+            titles(&first_board(&mut conn).lists[0]),
+            ["One", "Two", "Three"]
+        );
         assert!(restore_card(&mut conn, &card, 1).is_err());
     }
 
@@ -1272,7 +1413,10 @@ mod tests {
             name: "  side   project ".into(),
             color: "teal".into(),
         };
-        assert_eq!(save_label(&conn, &board.id, &label, 1).unwrap().name, "side project");
+        assert_eq!(
+            save_label(&conn, &board.id, &label, 1).unwrap().name,
+            "side project"
+        );
         assert!(save_label(
             &conn,
             &board.id,
@@ -1363,7 +1507,14 @@ mod tests {
         let board = first_board(&mut conn);
         assert!(delete_board(&mut conn, &board.id).is_err());
         let ids: Vec<String> = board.lists.iter().map(|l| l.id.clone()).collect();
-        create_card(&mut conn, &ids[0], &input("a", "Gone with its list"), None, 1).unwrap();
+        create_card(
+            &mut conn,
+            &ids[0],
+            &input("a", "Gone with its list"),
+            None,
+            1,
+        )
+        .unwrap();
         for id in &ids[..3] {
             delete_list(&mut conn, id).unwrap();
         }
@@ -1374,7 +1525,11 @@ mod tests {
         move_list(&mut conn, "new", 0).unwrap();
         let board = first_board(&mut conn);
         assert_eq!(
-            board.lists.iter().map(|l| l.title.as_str()).collect::<Vec<_>>(),
+            board
+                .lists
+                .iter()
+                .map(|l| l.title.as_str())
+                .collect::<Vec<_>>(),
             ["Later", "Parked"]
         );
         create_board(&mut conn, "b2", "Other", 2).unwrap();
@@ -1409,7 +1564,10 @@ mod tests {
             searchable("c", "Kahve", "nothing here"),
         ];
         let ranked = word_ranking(&cards, "istanbul");
-        assert_eq!(ranked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), ["b", "a"]);
+        assert_eq!(
+            ranked.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(),
+            ["b", "a"]
+        );
         assert!(word_ranking(&cards, " ? ").is_empty());
     }
 

@@ -57,7 +57,12 @@ pub fn sync(
         }
         Ok(())
     })();
-    store.set_scope_state(corpus, scope, result.is_ok(), result.as_ref().err().map(String::as_str))?;
+    store.set_scope_state(
+        corpus,
+        scope,
+        result.is_ok(),
+        result.as_ref().err().map(String::as_str),
+    )?;
     result.map(|()| embedded)
 }
 
@@ -99,7 +104,10 @@ mod tests {
                 return Err("offline".into());
             }
             calls.push(texts.len());
-            Ok(texts.iter().map(|t| normalize(fake_vector(t, 16))).collect())
+            Ok(texts
+                .iter()
+                .map(|t| normalize(fake_vector(t, 16)))
+                .collect())
         }
     }
     fn fake(fail_after: Option<usize>) -> Fake {
@@ -120,14 +128,32 @@ mod tests {
             doc("a", "voice summaries for replies"),
             doc("b", "dark theme for the mail list"),
         ];
-        assert_eq!(sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(), 2);
-        assert_eq!(sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(), 0);
-        let docs = vec![doc("a", "voice summaries, read aloud"), doc("c", "coffee grinder")];
-        assert_eq!(sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(), 2);
+        assert_eq!(
+            sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(),
+            2
+        );
+        assert_eq!(
+            sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(),
+            0
+        );
+        let docs = vec![
+            doc("a", "voice summaries, read aloud"),
+            doc("c", "coffee grinder"),
+        ];
+        assert_eq!(
+            sync(&mut store, &embedder, "ideas", "all", &docs, 16).unwrap(),
+            2
+        );
         let mut items = store.items("ideas", "all").unwrap();
         items.sort();
         assert_eq!(items, ["a", "c"]);
-        assert!(store.scope_status("ideas", "all").unwrap().unwrap().complete);
+        assert!(
+            store
+                .scope_status("ideas", "all")
+                .unwrap()
+                .unwrap()
+                .complete
+        );
         assert!(store.items("code", "all").unwrap().is_empty());
     }
 
@@ -143,7 +169,10 @@ mod tests {
         let status = store.scope_status("ideas", "all").unwrap().unwrap();
         assert!(!status.complete);
         assert_eq!(status.last_error.as_deref(), Some("offline"));
-        assert_eq!(sync(&mut store, &fake(None), "ideas", "all", &docs, 16).unwrap(), 3);
+        assert_eq!(
+            sync(&mut store, &fake(None), "ideas", "all", &docs, 16).unwrap(),
+            3
+        );
     }
 
     #[test]

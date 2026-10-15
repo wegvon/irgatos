@@ -24,6 +24,7 @@ mod gitlab;
 mod habit_webhook;
 mod harness;
 mod harness_updates;
+mod ideas;
 mod inbox_media;
 mod irgat;
 #[cfg(target_os = "macos")]
@@ -31,7 +32,6 @@ mod irgat_chat;
 mod irgat_transcript;
 mod jira;
 mod jsonc;
-mod ideas;
 mod kanban;
 mod lightpanda;
 mod linear;

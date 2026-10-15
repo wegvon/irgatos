@@ -553,8 +553,11 @@ pub async fn semantic_index_available(app: AppHandle, cwd: String) -> Result<boo
     .map_err(|e| e.to_string())?
 }
 
+/// A document to embed: its id and its text.
+type Doc = (String, String);
+
 /// Documents waiting to be embedded per corpus/scope, while a pass runs.
-static DOC_SYNCS: Mutex<Option<HashMap<String, Option<Vec<(String, String)>>>>> = Mutex::new(None);
+static DOC_SYNCS: Mutex<Option<HashMap<String, Option<Vec<Doc>>>>> = Mutex::new(None);
 
 /// Embeds a corpus of short documents in the background: `docs` is the
 /// complete set, so missing ids are dropped. Does nothing while semantic
@@ -563,7 +566,7 @@ pub(crate) fn sync_documents(
     app: &AppHandle,
     corpus: &'static str,
     scope: &'static str,
-    docs: Vec<(String, String)>,
+    docs: Vec<Doc>,
 ) {
     let Ok(dir) = data_dir(app) else {
         return;
