@@ -61,7 +61,7 @@ export function ChatList({
           kind: "item",
           id: "board",
           label: onBoardAlready(menuRow.id) ? "Show on Board" : "Add to Board",
-          disabled: menuRow.blank,
+          disabled: menuRow.blank && !onBoardAlready(menuRow.id),
         },
         { kind: "sep" },
         { kind: "item", id: "delete", label: "Delete", danger: true },

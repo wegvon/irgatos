@@ -175,7 +175,7 @@ export function FreeChatView({
           className="mr-2 flex shrink-0 items-center gap-1"
           data-tauri-drag-region="false"
         >
-          {active && !active.blank ? (
+          {active && (!active.blank || onBoardAlready(active.id)) ? (
             <button
               type="button"
               onClick={() => onBoard(active.id)}

@@ -14400,6 +14400,7 @@ function Workspace({
       onStop: (sessionId: string) => onStop(sessionId),
       onArchive: (sessionId: string) =>
         void onArchiveHistorySession(sessionId, true),
+      canArchive: (sessionId: string) => !irgatForSession(sessionId),
       onDelete: onDeleteFleetSession,
       onBoard: (sessionId: string) => void onSessionBoard(sessionId),
       boardIds: kanbanSessions.linkedIds,
