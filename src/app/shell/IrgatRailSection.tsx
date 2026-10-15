@@ -9,7 +9,9 @@ import {
   ChevronDown,
   ChevronRight,
   ImagePlus,
+  LoaderCircle,
   MoreHorizontal,
+  Pencil,
   Plus,
   Trash2,
   UserGroup,
@@ -31,6 +33,7 @@ import {
   ColorPicker,
   MascotPicker,
 } from "../../features/irgats/ui/irgatPanelParts";
+import type { FreeChatState } from "../../features/freechat/model/freeChat";
 import {
   defaultIrgatName,
   dismissIrgatIntro,
@@ -61,6 +64,9 @@ export type IrgatRailProps = {
   onCreate: () => void;
   activeSessionId?: string;
   chatTitles?: ReadonlyMap<string, string>;
+  /** What each child chat is doing, by session id; missing reads as idle. */
+  chatStates?: ReadonlyMap<string, FreeChatState>;
+  onRenameChat?: (sessionId: string, title: string) => void;
   onOpenChat?: (irgatId: string, sessionId: string) => void;
   onCreateChat?: (irgatId: string) => void;
   onDeleteChat?: (irgatId: string, sessionId: string) => void;
@@ -72,6 +78,54 @@ export type IrgatRailProps = {
 };
 
 const IDLE: IrgatState = { status: "idle" };
+
+const CHAT_STATE_LABEL: Record<FreeChatState, string> = {
+  "needs-input": "Needs you",
+  running: "Running",
+  unread: "New reply",
+  idle: "",
+};
+
+/** The inline title field a chat row turns into while it is renamed. */
+function ChatTitleInput({
+  title,
+  onDone,
+}: {
+  title: string;
+  /** The new title, or undefined when the rename was cancelled. */
+  onDone: (title?: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  const finish = (value?: string) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(value);
+  };
+  return (
+    <input
+      ref={ref}
+      defaultValue={title}
+      aria-label="Chat title"
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          finish(event.currentTarget.value);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          finish();
+        }
+      }}
+      onBlur={(event) => finish(event.currentTarget.value)}
+      className="h-7 min-w-0 flex-1 rounded-md border border-content/20 bg-transparent px-2 text-xs text-content outline-none"
+    />
+  );
+}
 
 /** A Irgat's unread count as its badge shows it. */
 export function unreadBadge(count: number): string {
@@ -95,6 +149,8 @@ export function IrgatRailSection({
   onCreate,
   activeSessionId,
   chatTitles,
+  chatStates,
+  onRenameChat,
   onOpenChat,
   onCreateChat,
   onDeleteChat,
@@ -116,6 +172,7 @@ export function IrgatRailSection({
     sessionId: string;
     anchor: PopoverAnchor;
   }>();
+  const [renamingChat, setRenamingChat] = useState<string>();
   const [background, setBackground] = useState<string>();
   const backgroundIrgat = background ? findIrgat(background) : undefined;
   const [newGroup, setNewGroup] = useState(false);
@@ -306,12 +363,17 @@ export function IrgatRailSection({
                 >
                   {(irgat.childSessionIds ?? []).map((id, index) => {
                     const title = chatTitles?.get(id) || `Chat ${index + 1}`;
+                    const state = chatStates?.get(id) ?? "idle";
+                    const stateLabel = CHAT_STATE_LABEL[state];
+                    const hasMenu = !!(onDeleteChat || onRenameChat);
                     return (
                       <div
                         key={id}
+                        data-irgat-chat={id}
+                        data-state={state}
                         className="group/chat relative flex items-center"
                         onContextMenu={
-                          onDeleteChat
+                          hasMenu
                             ? (event) => {
                                 event.preventDefault();
                                 setChatMenu({
@@ -326,17 +388,50 @@ export function IrgatRailSection({
                             : undefined
                         }
                       >
-                        <button
-                          type="button"
-                          aria-current={
-                            activeSessionId === id ? "page" : undefined
-                          }
-                          className={`flex h-7 w-full items-center truncate rounded-md px-2 pr-7 text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
-                          onClick={() => onOpenChat?.(irgat.id, id)}
-                        >
-                          {title}
-                        </button>
-                        {onDeleteChat ? (
+                        {renamingChat === id ? (
+                          <ChatTitleInput
+                            title={title}
+                            onDone={(next) => {
+                              setRenamingChat(undefined);
+                              const trimmed = next?.trim();
+                              if (trimmed && trimmed !== title)
+                                onRenameChat?.(id, trimmed);
+                            }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            aria-current={
+                              activeSessionId === id ? "page" : undefined
+                            }
+                            aria-label={
+                              stateLabel ? `${title}, ${stateLabel}` : title
+                            }
+                            className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 pr-7 text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
+                            onClick={() => onOpenChat?.(irgat.id, id)}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {title}
+                            </span>
+                            {state === "needs-input" ? (
+                              <span
+                                aria-hidden
+                                className="size-2 shrink-0 rounded-full bg-amber-500 group-hover/chat:hidden"
+                              />
+                            ) : state === "running" ? (
+                              <LoaderCircle
+                                aria-hidden
+                                className="size-3 shrink-0 animate-spin opacity-60 group-hover/chat:hidden"
+                              />
+                            ) : state === "unread" ? (
+                              <span
+                                aria-hidden
+                                className="size-2 shrink-0 rounded-full bg-accent group-hover/chat:hidden"
+                              />
+                            ) : null}
+                          </button>
+                        )}
+                        {hasMenu && renamingChat !== id ? (
                           <button
                             type="button"
                             aria-label={`${title} options`}
@@ -405,7 +500,7 @@ export function IrgatRailSection({
           onClose={() => setBackground(undefined)}
         />
       ) : null}
-      {chatMenu && onDeleteChat ? (
+      {chatMenu && (onDeleteChat || onRenameChat) ? (
         <Popover
           anchor={chatMenu.anchor}
           side="right"
@@ -416,17 +511,32 @@ export function IrgatRailSection({
           onDismiss={() => setChatMenu(undefined)}
           className="p-1"
         >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setChatMenu(undefined);
-              onDeleteChat(chatMenu.irgatId, chatMenu.sessionId);
-            }}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-red-400 hover:bg-content/8"
-          >
-            <Trash2 className="size-3.5" /> Delete chat…
-          </button>
+          {onRenameChat ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setChatMenu(undefined);
+                setRenamingChat(chatMenu.sessionId);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs hover:bg-content/8"
+            >
+              <Pencil className="size-3.5" /> Rename
+            </button>
+          ) : null}
+          {onDeleteChat ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setChatMenu(undefined);
+                onDeleteChat?.(chatMenu.irgatId, chatMenu.sessionId);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-red-400 hover:bg-content/8"
+            >
+              <Trash2 className="size-3.5" /> Delete chat…
+            </button>
+          ) : null}
         </Popover>
       ) : null}
     </div>

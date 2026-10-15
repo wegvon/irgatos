@@ -198,3 +198,54 @@ it("offers deletion for just the selected child without opening it", () => {
   expect(onDeleteChat).toHaveBeenCalledExactlyOnceWith(irgat.id, "child");
   expect(onOpenChat).not.toHaveBeenCalled();
 });
+
+it("shows each child chat's state and renames it from its menu", () => {
+  const irgat = createIrgat();
+  updateIrgat(irgat.id, (entry) => ({
+    ...entry,
+    childSessionIds: ["busy", "asks", "quiet"],
+    chatsCollapsed: false,
+  }));
+  const onRenameChat = vi.fn();
+  render({
+    onCreateChat: vi.fn(),
+    onRenameChat,
+    chatTitles: new Map([
+      ["busy", "Busy"],
+      ["asks", "Asks"],
+      ["quiet", "Quiet"],
+    ]),
+    chatStates: new Map([
+      ["busy", "running"],
+      ["asks", "needs-input"],
+    ]),
+  });
+  const row = (id: string) =>
+    container.querySelector<HTMLElement>(`[data-irgat-chat="${id}"]`)!;
+  expect(row("busy").dataset.state).toBe("running");
+  expect(row("busy").querySelector(".animate-spin")).not.toBeNull();
+  expect(row("asks").querySelector("button")!.getAttribute("aria-label")).toBe(
+    "Asks, Needs you",
+  );
+  expect(row("quiet").dataset.state).toBe("idle");
+
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Quiet options"]')!
+      .click(),
+  );
+  const rename = [
+    ...document.body.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+  ].find((item) => item.textContent?.includes("Rename"))!;
+  act(() => rename.click());
+  const input = row("quiet").querySelector<HTMLInputElement>("input")!;
+  expect(input.value).toBe("Quiet");
+  act(() => {
+    input.value = "Release notes";
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+  });
+  expect(onRenameChat).toHaveBeenCalledWith("quiet", "Release notes");
+  expect(row("quiet").querySelector("input")).toBeNull();
+});

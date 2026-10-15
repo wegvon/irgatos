@@ -14402,6 +14402,20 @@ function Workspace({
             chatTitles: new Map(
               sessions.map((session) => [session.id, session.title]),
             ),
+            chatStates: new Map(
+              sessions.map((session) => [
+                session.id,
+                sessionNeedsInput(session)
+                  ? ("needs-input" as const)
+                  : session.busy
+                    ? ("running" as const)
+                    : unseenFinishedIds.has(session.id)
+                      ? ("unread" as const)
+                      : ("idle" as const),
+              ]),
+            ),
+            onRenameChat: (sessionId: string, title: string) =>
+              void onRenameHistorySession(sessionId, title),
             onCreate: onCreateIrgat,
             onDelete: onDeleteRailIrgat,
             // Release notes come first; the intro waits its turn.
@@ -14417,6 +14431,8 @@ function Workspace({
       onOpenIrgat,
       onCreateIrgatChat,
       onDeleteIrgatChat,
+      onRenameHistorySession,
+      unseenFinishedIds,
       irgatViewId,
       sessions,
       onCreateIrgat,
