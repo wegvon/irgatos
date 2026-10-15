@@ -3,6 +3,7 @@ import { leaf, newTab, newTerminalFile } from "../../workspace/model/layout";
 import {
   addTerminalToDock,
   applyDockGridStyle,
+  canOpenDockTerminal,
   clampDockSize,
   closeTerminalInDock,
   createProjectTerminal,
@@ -15,6 +16,7 @@ import {
   projectTerminalFileIds,
   selectDockTerminal,
   splitProjectTerminalsForMove,
+  viewDock,
   withDockOpen,
   withDockSide,
 } from "./projectTerminal";
@@ -247,5 +249,54 @@ describe("splitProjectTerminalsForMove", () => {
     const allA = splitProjectTerminalsForMove(docks, [a1, a2], [b1], sessions);
     expect(allA.moving.map((dock) => dock.projectPath)).toEqual(["/tmp/a"]);
     expect(allA.remaining.map((dock) => dock.projectPath)).toEqual(["/tmp/b"]);
+  });
+});
+
+describe("viewDock", () => {
+  it("prefers the open chat, then a covering Irgat, then the project", () => {
+    expect(viewDock({ projectCwd: "/p" })).toEqual({
+      path: "/p",
+      kind: "project",
+    });
+    expect(viewDock({ projectCwd: "/p", irgatCwd: "/Users/me" })).toEqual({
+      path: "/Users/me",
+      kind: "irgat",
+    });
+    expect(
+      viewDock({
+        projectCwd: "/p",
+        irgatCwd: "/Users/me",
+        chatCwd: "/Users/me/.irgatos/scratch",
+      }),
+    ).toEqual({ path: "/Users/me/.irgatos/scratch", kind: "chat" });
+  });
+
+  it("keeps a loading Irgat's empty folder instead of the project's", () => {
+    const dock = viewDock({ projectCwd: "/p", irgatCwd: "" });
+    expect(dock).toEqual({ path: "", kind: "irgat" });
+    expect(canOpenDockTerminal(dock)).toBe(false);
+  });
+});
+
+describe("canOpenDockTerminal", () => {
+  it("lets an Irgat or chat open a shell in home, but not a project", () => {
+    expect(canOpenDockTerminal({ path: "/Users/me", kind: "irgat" })).toBe(
+      true,
+    );
+    expect(canOpenDockTerminal({ path: "~", kind: "chat" })).toBe(true);
+    expect(canOpenDockTerminal({ path: "/Users/me", kind: "project" })).toBe(
+      false,
+    );
+    expect(
+      canOpenDockTerminal({ path: "/Users/me/app", kind: "project" }),
+    ).toBe(true);
+  });
+
+  it("never opens a local shell for a remote folder", () => {
+    for (const kind of ["project", "irgat", "chat"] as const) {
+      expect(
+        canOpenDockTerminal({ path: "remote://host/home/me/app", kind }),
+      ).toBe(false);
+    }
   });
 });

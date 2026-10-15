@@ -20,6 +20,8 @@ type Props = {
   pane?: ReactNode;
   /** Shown under the pane, e.g. the usage footer. */
   footer?: ReactNode;
+  /** The chat's terminal dock, between the pane and the footer. */
+  dock?: ReactNode;
   loading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -44,6 +46,7 @@ export function FreeChatView({
   activeId,
   pane,
   footer,
+  dock,
   loading = false,
   error = null,
   onRetry,
@@ -212,6 +215,7 @@ export function FreeChatView({
           {activeId && pane ? (
             <>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">{pane}</div>
+              {dock}
               {footer}
             </>
           ) : (

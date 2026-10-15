@@ -76,7 +76,7 @@ import {
   OrchestrationWorkers,
   type OrchestrationWorkerDetail,
 } from "../features/orchestration/ui/OrchestrationActions";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, message } from "@tauri-apps/plugin-dialog";
@@ -269,6 +269,7 @@ import { mergeOrderedSubset, orderByIds } from "../shared/lib/reorder";
 import {
   addTerminalToDock,
   applyDockGridStyle,
+  canOpenDockTerminal,
   closeTerminalInDock,
   createProjectTerminal,
   findProjectTerminal,
@@ -278,6 +279,7 @@ import {
   patchProjectTerminals,
   reorderDockTerminals,
   selectDockTerminal,
+  viewDock,
   withDockOpen,
   withDockSide,
   withDockSize,
@@ -809,6 +811,7 @@ import { PaneTree } from "../features/workspace/ui/PaneTree";
 import { SessionPane } from "../features/sessions/ui/SessionPane";
 import { SessionSurface } from "../features/sessions/ui/SessionSurface";
 import { ProjectTerminalDock } from "../features/terminal/ui/ProjectTerminalDock";
+import { DockHostSlot } from "../features/terminal/ui/DockHostSlot";
 import { lazySurface } from "../shared/ui/lazySurface";
 import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
@@ -1441,8 +1444,6 @@ function Workspace({
     loadSessionSidebarOpen,
   );
   const tabCloseScope = "project" as const;
-  const currentProjectDock = findProjectTerminal(projectTerminals, projectCwd);
-  const dockVisible = !!currentProjectDock?.open;
   const [filesSearchOpen, setFilesSearchOpen] = useState(false);
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [searchViewOpen, setSearchViewOpen] = useState(false);
@@ -1561,10 +1562,6 @@ function Workspace({
     () => true,
   );
   const irgatsSnap = useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
-  /** A Irgat hides the terminal, so reaching for one leaves it. */
-  const leaveCoveringIrgat = useCallback(() => {
-    if (irgatViewIdRef.current) closeIrgatView();
-  }, [closeIrgatView]);
   const [providerSignInRequest, setProviderSignInRequest] = useState<{
     key: string;
     sessionId: string;
@@ -2179,6 +2176,23 @@ function Workspace({
     ? sessions.find((session) => session.id === irgatViewId)
     : undefined;
   const irgatCovers = !!irgatViewId;
+  const irgatViewCwd = irgatViewSession ? sessionWorkCwd(irgatViewSession) : "";
+  const freeChat = freeChatId
+    ? sessions.find((session) => session.id === freeChatId)
+    : undefined;
+  // An open chat or a covering Irgat shows its own folder's terminal dock, so
+  // the terminal opens where its status bar is instead of leaving the view.
+  const currentViewDock = viewDock({
+    projectCwd,
+    irgatCwd: irgatCovers ? irgatViewCwd : undefined,
+    chatCwd: chatViewOpen && freeChat ? freeChat.cwd : undefined,
+  });
+  const dockPath = currentViewDock.path;
+  const viewDockRef = useRef(currentViewDock);
+  viewDockRef.current = currentViewDock;
+  const dockTerminalAllowed = canOpenDockTerminal(currentViewDock);
+  const currentProjectDock = findProjectTerminal(projectTerminals, dockPath);
+  const dockVisible = !!currentProjectDock?.open;
   const noteChatTargets = useMemo(() => {
     if (!notesViewOpen) return [];
     return openNoteChatTargets({
@@ -3304,9 +3318,9 @@ function Workspace({
 
   const openProjectTerminal = useCallback(
     (cwd: string) => {
-      const workdir = cwd || projectCwdRef.current;
-      const projectPath = projectCwdRef.current;
-      if (!isLocalProject(projectPath)) return false;
+      const projectPath = viewDockRef.current.path;
+      const workdir = cwd || projectPath;
+      if (!canOpenDockTerminal(viewDockRef.current)) return false;
       setProjectTerminals((prev) => {
         const existing = findProjectTerminal(prev, projectPath);
         const file = newTerminalFile(
@@ -3320,7 +3334,10 @@ function Workspace({
             createProjectTerminal(
               projectPath,
               file,
-              lastDockSideRef.current ?? "bottom",
+              // A chat's dock sits under its conversation and cannot move.
+              viewDockRef.current.kind === "chat"
+                ? "bottom"
+                : (lastDockSideRef.current ?? "bottom"),
             ),
           ];
         }
@@ -3337,6 +3354,13 @@ function Workspace({
   const onOpenTerminal = useCallback(
     (cwd: string, asWorkspaceTab = false, occupySessionId?: string) => {
       const workdir = cwd || terminalCwd;
+      // A Irgat or chat on screen takes the terminal into its own dock.
+      if (viewDockRef.current.kind !== "project") {
+        if (!isRemoteProjectPath(workdir)) {
+          openProjectTerminal(cwd || viewDockRef.current.path);
+        }
+        return;
+      }
       if (!isLocalProject(projectCwdRef.current) || !isLocalProject(workdir))
         return;
       if (openProjectTerminal(workdir)) return;
@@ -3381,31 +3405,28 @@ function Workspace({
   );
 
   const onNewTerminal = useCallback(() => {
+    // A Irgat or chat opens its shells in its own folder, in its own dock.
+    if (viewDockRef.current.kind !== "project") {
+      openProjectTerminal(viewDockRef.current.path);
+      return;
+    }
     onOpenTerminal(terminalCwd);
-  }, [terminalCwd, onOpenTerminal]);
+  }, [terminalCwd, onOpenTerminal, openProjectTerminal]);
 
   const onShowProjectTerminal = useCallback(() => {
-    leaveCoveringIrgat();
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
+    const path = viewDockRef.current.path;
+    const dock = findProjectTerminal(projectTerminalsRef.current, path);
     if (dock && dock.pane.files.length > 0) {
       if (!dock.open) {
         setProjectTerminals((prev) =>
-          mapProjectTerminal(prev, projectCwd, (entry) =>
-            withDockOpen(entry, true),
-          ),
+          mapProjectTerminal(prev, path, (entry) => withDockOpen(entry, true)),
         );
       }
       focusProjectTerminal();
       return;
     }
-    onOpenTerminal(terminalCwd);
-  }, [
-    terminalCwd,
-    focusProjectTerminal,
-    leaveCoveringIrgat,
-    onOpenTerminal,
-    projectCwd,
-  ]);
+    onNewTerminal();
+  }, [focusProjectTerminal, onNewTerminal]);
 
   const onNewTerminalInSession = useCallback(
     (sessionId: string) => {
@@ -3423,32 +3444,26 @@ function Workspace({
   );
 
   const onToggleProjectTerminal = useCallback(() => {
-    if (!isLocalProject(projectCwd)) return;
-    leaveCoveringIrgat();
-    const dock = findProjectTerminal(projectTerminalsRef.current, projectCwd);
+    const view = viewDockRef.current;
+    if (!canOpenDockTerminal(view)) return;
+    const dock = findProjectTerminal(projectTerminalsRef.current, view.path);
     if (!dock) {
-      openProjectTerminal(terminalCwd);
+      openProjectTerminal(view.kind === "project" ? terminalCwd : view.path);
       return;
     }
     const nextOpen = !dock.open;
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwd, (entry) =>
+      mapProjectTerminal(prev, view.path, (entry) =>
         withDockOpen(entry, nextOpen),
       ),
     );
     if (nextOpen) focusProjectTerminal();
     else setProjectTerminalFocused(false);
-  }, [
-    terminalCwd,
-    focusProjectTerminal,
-    leaveCoveringIrgat,
-    openProjectTerminal,
-    projectCwd,
-  ]);
+  }, [terminalCwd, focusProjectTerminal, openProjectTerminal]);
 
   const onHideProjectTerminal = useCallback(() => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, viewDockRef.current.path, (dock) =>
         withDockOpen(dock, false),
       ),
     );
@@ -3458,7 +3473,7 @@ function Workspace({
   const onProjectTerminalSide = useCallback((side: DockSide) => {
     setLastDockSide(side);
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, viewDockRef.current.path, (dock) =>
         withDockSide(dock, side, {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -3469,7 +3484,7 @@ function Workspace({
 
   const onProjectTerminalSize = useCallback((size: number) => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, viewDockRef.current.path, (dock) =>
         withDockSize(dock, size, {
           width: window.innerWidth,
           height: window.innerHeight,
@@ -3481,7 +3496,7 @@ function Workspace({
   const onSelectProjectTerminal = useCallback(
     (fileId: string) => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+        mapProjectTerminal(prev, viewDockRef.current.path, (dock) =>
           selectDockTerminal(dock, fileId),
         ),
       );
@@ -3492,7 +3507,7 @@ function Workspace({
 
   const onReorderProjectTerminals = useCallback((ids: string[]) => {
     setProjectTerminals((prev) =>
-      mapProjectTerminal(prev, projectCwdRef.current, (dock) =>
+      mapProjectTerminal(prev, viewDockRef.current.path, (dock) =>
         reorderDockTerminals(dock, orderByIds(dock.pane.files, ids)),
       ),
     );
@@ -3501,13 +3516,13 @@ function Workspace({
   const onCloseProjectTerminal = useCallback((fileId: string) => {
     const dock = findProjectTerminal(
       projectTerminalsRef.current,
-      projectCwdRef.current,
+      viewDockRef.current.path,
     );
     const file = dock?.pane.files.find((entry) => entry.id === fileId);
     if (!file) return;
     const finishClose = () => {
       setProjectTerminals((prev) =>
-        mapProjectTerminal(prev, projectCwdRef.current, (entry) =>
+        mapProjectTerminal(prev, viewDockRef.current.path, (entry) =>
           closeTerminalInDock(entry, fileId),
         ),
       );
@@ -3516,7 +3531,7 @@ function Workspace({
   }, []);
 
   const onCloseOtherProjectTerminals = useCallback((fileId: string) => {
-    const projectPath = projectCwdRef.current;
+    const projectPath = viewDockRef.current.path;
     const dock = findProjectTerminal(projectTerminalsRef.current, projectPath);
     if (!dock?.pane.files.some((file) => file.id === fileId)) return;
     const closingFiles = dock.pane.files.filter((file) => file.id !== fileId);
@@ -4280,7 +4295,10 @@ function Workspace({
       projectTerminalFocusedRef.current &&
       Boolean(document.activeElement?.closest("[data-project-terminal-dock]"));
     return focusedDockTerminalId(
-      findProjectTerminal(projectTerminalsRef.current, projectCwdRef.current),
+      findProjectTerminal(
+        projectTerminalsRef.current,
+        viewDockRef.current.path,
+      ),
       dockFocused,
     );
   }, []);
@@ -6726,7 +6744,17 @@ function Workspace({
       const dock = projectTerminalsRef.current.find((entry) =>
         entry.pane.files.some((file) => file.id === fileId),
       );
-      if (dock && dock.projectPath !== projectCwdRef.current) {
+      const onScreen =
+        !!dock && sameProjectPath(dock.projectPath, viewDockRef.current.path);
+      if (onScreen) {
+        // Already the dock on screen, the Irgat's or chat's included.
+      } else if (dock && isFreeChatCwd(dock.projectPath)) {
+        closeIrgatView();
+        setChatViewOpen(true);
+      } else if (dock && !looksLikeProject(dock.projectPath)) {
+        // A Irgat's dock in home is no project to switch to; the terminal
+        // shows once that Irgat is back on screen.
+      } else if (dock && dock.projectPath !== projectCwdRef.current) {
         onSelectProject(dock.projectPath);
       } else {
         closeIrgatView();
@@ -13151,9 +13179,6 @@ function Workspace({
       if (!session && freeChatIdRef.current === id) setFreeChatId(undefined);
     });
   }, [chatViewOpen, freeChatId, ensureOpenSession]);
-  const freeChat = freeChatId
-    ? sessions.find((session) => session.id === freeChatId)
-    : undefined;
   const freeChatUsage = useMemo(() => {
     if (!freeChat) return undefined;
     return {
@@ -14022,10 +14047,10 @@ function Workspace({
   const paintDockSize = useCallback((size: number) => {
     const dock = findProjectTerminal(
       projectTerminalsRef.current,
-      projectCwdRef.current,
+      viewDockRef.current.path,
     );
     const el = dockGridRef.current;
-    if (!dock || !el || irgatViewIdRef.current) return;
+    if (!dock || !el || viewDockRef.current.kind === "chat") return;
     dockDragSize.current = size;
     applyDockGridStyle(el, dock.side, size);
   }, []);
@@ -14036,19 +14061,56 @@ function Workspace({
     },
     [onProjectTerminalSize],
   );
+  // The chat's dock lives in the chat view, so the workspace grid leaves it.
+  const workspaceDocks = useMemo(
+    () => projectTerminals.filter((dock) => !isFreeChatCwd(dock.projectPath)),
+    [projectTerminals],
+  );
+  const chatDocks = useMemo(
+    () => projectTerminals.filter((dock) => isFreeChatCwd(dock.projectPath)),
+    [projectTerminals],
+  );
+  // Each chat dock renders once, into a host node the chat view adopts while
+  // it is open, so leaving the chat keeps its shells alive.
+  const chatDockHosts = useRef(new Map<string, HTMLDivElement>());
+  const chatDockHost = useCallback((projectPath: string) => {
+    const key = pathKey(projectPath);
+    let host = chatDockHosts.current.get(key);
+    if (!host) {
+      host = document.createElement("div");
+      host.className = "h-full min-h-0 min-w-0";
+      chatDockHosts.current.set(key, host);
+    }
+    return host;
+  }, []);
+  const paintChatDockSize = useCallback(
+    (size: number) => {
+      const slot = chatDockHost(viewDockRef.current.path).parentElement;
+      if (slot) slot.style.height = `${size}px`;
+    },
+    [chatDockHost],
+  );
+  // The status bar's Terminal button in an Irgat or chat, acting on its dock.
+  const viewTerminalFooterProps = dockTerminalAllowed
+    ? {
+        onNewTerminal,
+        onShowTerminal: onShowProjectTerminal,
+        projectTerminalActive:
+          !!currentProjectDock && currentProjectDock.pane.files.length > 0,
+      }
+    : {};
+  const workspaceDockShown =
+    dockVisible && currentViewDock.kind !== "chat" && !!currentProjectDock;
   useLayoutEffect(() => {
-    if (irgatCovers) dockDragSize.current = null;
     if (dockDragSize.current != null) return;
     const el = dockGridRef.current;
     if (!el) return;
     applyDockGridStyle(
       el,
-      dockVisible && !irgatCovers && currentProjectDock
-        ? currentProjectDock.side
-        : null,
+      workspaceDockShown && currentProjectDock ? currentProjectDock.side : null,
       currentProjectDock?.size ?? 0,
     );
-  }, [currentProjectDock, dockVisible, irgatCovers]);
+  }, [currentProjectDock, workspaceDockShown]);
 
   const lastRemoteSnapshot = useRef(new Map<string, HostSession>());
   const onRemoteSnapshot = useCallback(
@@ -14201,7 +14263,6 @@ function Workspace({
   const irgatSidebarOpen = irgatOverviewOpen || !!selectedIrgatActivity;
   const irgatViewBlocks = irgatViewSession?.blocks;
   const irgatViewBusy = !!irgatViewSession?.busy;
-  const irgatViewCwd = irgatViewSession ? sessionWorkCwd(irgatViewSession) : "";
   const irgatEditedPaths = useMemo(
     () =>
       irgatViewBlocks && !irgatViewBusy
@@ -14962,11 +15023,10 @@ function Workspace({
                         ref={dockGridRef}
                         className="grid h-full min-h-0 min-w-0 flex-1"
                       >
-                        {projectTerminals.map((dock) => {
+                        {workspaceDocks.map((dock) => {
                           const show =
                             dock.open &&
-                            !irgatCovers &&
-                            sameProjectPath(dock.projectPath, projectCwd);
+                            sameProjectPath(dock.projectPath, dockPath);
                           return (
                             <div
                               key={dock.projectPath}
@@ -15400,6 +15460,17 @@ function Workspace({
                         onManageAccounts={() =>
                           openSettings("providers", "provider-accounts")
                         }
+                        {...viewTerminalFooterProps}
+                      />
+                    ) : undefined
+                  }
+                  dock={
+                    freeChat &&
+                    currentViewDock.kind === "chat" &&
+                    currentProjectDock?.open ? (
+                      <DockHostSlot
+                        host={chatDockHost(currentProjectDock.projectPath)}
+                        height={currentProjectDock.size}
                       />
                     ) : undefined
                   }
@@ -15421,6 +15492,32 @@ function Workspace({
                   onBoard={(id) => void onFreeChatBoard(id)}
                 />
               ) : null}
+              {chatDocks.map((dock) =>
+                createPortal(
+                  <ProjectTerminalDock
+                    dock={dock}
+                    focused={
+                      chatViewOpen &&
+                      currentViewDock.kind === "chat" &&
+                      dock.open &&
+                      sameProjectPath(dock.projectPath, dockPath) &&
+                      projectTerminalFocused
+                    }
+                    onFocus={focusProjectTerminal}
+                    onHide={onHideProjectTerminal}
+                    onSizePaint={paintChatDockSize}
+                    onSizeCommit={commitDockSize}
+                    onAddTerminal={onNewTerminal}
+                    onSelectTerminal={onSelectProjectTerminal}
+                    onCloseTerminal={onCloseProjectTerminal}
+                    onCloseOtherTerminals={onCloseOtherProjectTerminals}
+                    onReorderTerminals={onReorderProjectTerminals}
+                    onTerminalMetaChange={onTerminalMetaChange}
+                  />,
+                  chatDockHost(dock.projectPath),
+                  dock.projectPath,
+                ),
+              )}
               {settingsOpen ? (
                 <SettingsView
                   section={settingsSection}
@@ -15459,11 +15556,13 @@ function Workspace({
               ideasViewOpen ||
               chatViewOpen ||
               settingsOpen ? null : irgatCovers ? (
-                // The Irgat's composer already shows its usage, and it has no
-                // terminal of its own, so its footer carries the browser alone.
+                // The Irgat's composer already shows its usage; its terminal
+                // opens in the Irgat's own folder, beside the Irgat.
                 <UsageFooter
                     hideUsage
                     providers={NO_USAGE_PROVIDERS}
+                  adhd={{ session: irgatViewSession }}
+                  {...viewTerminalFooterProps}
                   browserOpen={browserOpen}
                   onToggleBrowser={onToggleBrowser}
                 />

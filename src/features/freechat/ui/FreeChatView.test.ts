@@ -177,4 +177,18 @@ describe("FreeChatView", () => {
     act(() => retry.click());
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
+  it("puts the chat's terminal dock between the pane and the status bar", () => {
+    render({
+      rows: [row("a")],
+      activeId: "a",
+      pane: createElement("div", { "data-slot": "pane" }),
+      dock: createElement("div", { "data-slot": "dock" }),
+      footer: createElement("div", { "data-slot": "footer" }),
+    });
+    expect(
+      [...container.querySelectorAll<HTMLElement>("[data-slot]")].map(
+        (item) => item.dataset.slot,
+      ),
+    ).toEqual(["pane", "dock", "footer"]);
+  });
 });
