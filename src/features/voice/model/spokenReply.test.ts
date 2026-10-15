@@ -179,6 +179,27 @@ describe("replySummary", () => {
     expect(spoken).toMatch(/characters\. Shall I continue\?$/);
   });
 
+  it("drops the name a reply opens with, but not an answer", () => {
+    expect(
+      replySummary(
+        "Boss, evet; otomatik dil algılamayı kapatıp her canlı oturumu Türkçeye sabitleyeceğim. “Merhaba” ve “selam” gibi kısa ifadelerle de test edeceğim.",
+      ),
+    ).toBe(
+      "evet; otomatik dil algılamayı kapatıp her canlı oturumu Türkçeye sabitleyeceğim. “Merhaba” ve “selam” gibi kısa ifadelerle de test edeceğim.",
+    );
+    expect(replySummary("Evet, Türkçeye sabitledim.")).toBe(
+      "Evet, Türkçeye sabitledim.",
+    );
+  });
+
+  it("keeps the lead to two sentences", () => {
+    expect(
+      replySummary(
+        "Fixed the cache. Restarted the worker. Cleared old keys. Checked the logs.",
+      ),
+    ).toBe("Fixed the cache. Restarted the worker.");
+  });
+
   it("falls back to the whole reply when it has no prose", () => {
     expect(replySummary("- one\n- two")).toBe("one. two.");
     expect(replySummary("```diff\n- a\n+ b\n```")).toBe(

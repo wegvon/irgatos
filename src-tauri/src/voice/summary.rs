@@ -15,11 +15,14 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_INPUT_CHARS: usize = 12_000;
 
 const INSTRUCTION: &str = "You turn a coding agent's reply into what a voice \
-assistant says aloud to the user. Write one to three short spoken sentences in \
-the same language as the reply. Say what was done, its effect, and the next \
-step if there is one. If the reply asks the user anything, always end with that \
-question. Never include code, file paths, identifiers, URLs, numbers of lines, \
-lists or markdown. Output only the sentences.";
+assistant says aloud to the user. Write at most two short spoken sentences, \
+under 30 words in total, in the same language as the reply, even when the reply \
+is already short. Say the outcome: what was done and its effect, or for a \
+progress note, what the agent is doing now. Add the next step the user must take, \
+if any. If the reply asks the user anything, always end with that question. \
+Leave out greetings, the name or title the reply addresses the user by, code, \
+file paths, identifiers, URLs, line numbers, lists and markdown. Output only \
+the sentences.";
 
 pub fn summarize(key: &str, text: &str, locale: &str) -> Result<Option<String>, String> {
     let url = format!("{ENDPOINT}/{MODEL}:generateContent");
@@ -55,7 +58,7 @@ fn request(text: &str, locale: &str) -> Value {
     json!({
         "systemInstruction": { "parts": [{ "text": instruction }] },
         "contents": [{ "role": "user", "parts": [{ "text": clip(text) }] }],
-        "generationConfig": { "temperature": 0.2, "maxOutputTokens": 200 },
+        "generationConfig": { "temperature": 0.2, "maxOutputTokens": 120 },
     })
 }
 
@@ -120,6 +123,7 @@ mod tests {
             .as_str()
             .unwrap();
         assert!(instruction.contains("always end with that question"));
+        assert!(instruction.contains("under 30 words"));
         assert!(instruction.contains("tr-TR"));
         assert_eq!(body["contents"][0]["parts"][0]["text"], "Fixed the build.");
         assert!(!request("x", " ").to_string().contains("voice language"));

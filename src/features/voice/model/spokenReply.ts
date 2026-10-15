@@ -76,6 +76,15 @@ export function spokenReply(markdown: string, limit = 900): string {
 }
 
 const SUMMARY_LIMIT = 400;
+/** The lead is a sentence or two; the rest of the reply stays on screen. */
+const LEAD_SENTENCES = 2;
+const LEAD_LIMIT = 240;
+/** Openers that answer the user, so they stay when the address goes. */
+const KEPT_OPENERS = new Set(
+  "yes no ok okay sure done also now so but evet hayır tamam peki ayrıca şimdi ama ancak yani".split(
+    " ",
+  ),
+);
 const BULLET = /^([-*+]|\d+[.)])\s+/;
 const NEXT_STEP =
   /^(\*\*|__)?(next( steps?)?|sonraki( adım(lar)?)?|bir sonraki adım)\b/i;
@@ -132,6 +141,20 @@ const questions = (text: string) =>
     .filter(asks)
     .join(" ");
 
+/** "Boss, done." → "done.": the name a reply opens with is not news. */
+function dropAddress(text: string): string {
+  const match = /^(\p{Lu}\p{L}{1,14}),\s+(?=\S)/u.exec(text);
+  if (!match || KEPT_OPENERS.has(match[1].toLocaleLowerCase("tr"))) return text;
+  return text.slice(match[0].length);
+}
+
+/** At most `count` sentences of `text`. */
+const firstSentences = (text: string, count: number) =>
+  text
+    .split(/(?<=[.!?…])\s+/)
+    .slice(0, count)
+    .join(" ");
+
 /**
  * What voice mode says when no model summarises the reply: the lead
  * paragraph, every question to the user, `Next:` lines, and a closing
@@ -166,8 +189,11 @@ export function replySummary(markdown: string, limit = SUMMARY_LIMIT): string {
   const spokenTail = [...new Set(tail.map((text) => spokenReply(text, limit)))];
   const room = limit - spokenTail.join(" ").length - 1;
   const spokenLead = sentences(
-    spokenReply(lead.text, Infinity),
-    Math.max(room, 120),
+    firstSentences(
+      dropAddress(spokenReply(lead.text, Infinity)),
+      LEAD_SENTENCES,
+    ),
+    Math.max(Math.min(room, LEAD_LIMIT), 120),
   );
   return [spokenLead, ...spokenTail].filter(Boolean).join(" ");
 }
