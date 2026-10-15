@@ -133,9 +133,8 @@ fn to_blob(vector: &[f32]) -> Vec<u8> {
 }
 
 fn from_blob(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(4)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect()
+    let (words, _) = blob.as_chunks::<4>();
+    words.iter().map(|b| f32::from_le_bytes(*b)).collect()
 }
 
 fn dot(a: &[f32], b: &[f32]) -> f32 {
