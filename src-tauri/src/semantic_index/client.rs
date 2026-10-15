@@ -5,7 +5,9 @@
 //! each and 32 000 in total; `batches` packs within those limits.
 
 use std::ops::Range;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use url::Url;
@@ -16,9 +18,39 @@ pub const MAX_TEXT_CHARS: usize = 16_000;
 pub const MAX_REQUEST_CHARS: usize = 32_000;
 /// A full batch of 60-line chunks takes ~9 s on the CPU server.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(120);
-/// A query embeds one short text (~0.4 s); past this it falls back to grep.
-const QUERY_TIMEOUT: Duration = Duration::from_secs(12);
-const ATTEMPTS: u32 = 4;
+const ATTEMPTS: u32 = 6;
+/// A query embeds one short text (~0.4 s). Past this it falls back to grep.
+const QUERY_DEADLINE: Duration = Duration::from_secs(15);
+const QUERY_RETRY: Duration = Duration::from_millis(250);
+/// How long indexing holds back for searches before it sends anyway.
+const MAX_YIELD: Duration = Duration::from_secs(30);
+
+/// The server embeds one request at a time and turns others away with 429.
+/// Indexing requests take turns in one lane, so two projects indexing at once
+/// do not knock each other out, and the lane stays clear while a search
+/// waits, so a search lands between two batches instead of after the pass.
+static INDEX_LANE: Mutex<()> = Mutex::new(());
+static WAITING_QUERIES: AtomicUsize = AtomicUsize::new(0);
+
+struct Waiting;
+impl Waiting {
+    fn new() -> Self {
+        WAITING_QUERIES.fetch_add(1, Ordering::AcqRel);
+        Waiting
+    }
+}
+impl Drop for Waiting {
+    fn drop(&mut self) {
+        WAITING_QUERIES.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn yield_to_queries() {
+    let started = Instant::now();
+    while WAITING_QUERIES.load(Ordering::Acquire) > 0 && started.elapsed() < MAX_YIELD {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Task {
@@ -102,10 +134,11 @@ pub struct Client {
     dims: usize,
     agent: ureq::Agent,
     backoff: Duration,
-    attempts: u32,
+    query: bool,
 }
 
 impl Client {
+    /// For indexing: waits out a busy server and gives way to searches.
     pub fn new(endpoint: &str, key: &str, dims: usize) -> Result<Self, String> {
         Ok(Self {
             url: embeddings_url(endpoint)?,
@@ -113,15 +146,17 @@ impl Client {
             dims,
             agent: ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build(),
             backoff: Duration::from_secs(1),
-            attempts: ATTEMPTS,
+            query: false,
         })
     }
 
-    /// A search waits on one short request; indexing can wait out a busy server.
+    /// For a search: retries a busy server quickly, up to a short deadline,
+    /// while indexing holds back.
     pub fn for_query(endpoint: &str, key: &str, dims: usize) -> Result<Self, String> {
         let mut client = Self::new(endpoint, key, dims)?;
-        client.agent = ureq::AgentBuilder::new().timeout(QUERY_TIMEOUT).build();
-        client.attempts = 2;
+        client.agent = ureq::AgentBuilder::new().timeout(QUERY_DEADLINE).build();
+        client.backoff = QUERY_RETRY;
+        client.query = true;
         Ok(client)
     }
 
@@ -149,8 +184,16 @@ impl Client {
             "dimensions": self.dims,
         })
         .to_string();
+        let started = Instant::now();
+        let _waiting = self.query.then(Waiting::new);
+        let _lane = (!self.query).then(|| INDEX_LANE.lock().unwrap_or_else(|e| e.into_inner()));
         let mut wait = self.backoff;
-        for attempt in 1..=self.attempts {
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            if !self.query {
+                yield_to_queries();
+            }
             let response = self
                 .agent
                 .post(self.url.as_str())
@@ -175,13 +218,19 @@ impl Client {
                 }
                 Err(ureq::Error::Transport(_)) => "Could not reach the embedding service".into(),
             };
-            if attempt == self.attempts {
+            let out_of_time = if self.query {
+                started.elapsed() + wait >= QUERY_DEADLINE
+            } else {
+                attempt >= ATTEMPTS
+            };
+            if out_of_time {
                 return Err(retry);
             }
             std::thread::sleep(wait);
-            wait *= 2;
+            if !self.query {
+                wait *= 2;
+            }
         }
-        unreachable!("the last attempt returns")
     }
 }
 
@@ -387,12 +436,40 @@ pub(crate) mod tests {
         assert!(error.contains("rejected the API key"));
         assert_eq!(server.requests.lock().unwrap().len(), 1);
 
-        let server = mock_server(vec![500, 500, 500, 500], 4);
+        let server = mock_server(vec![500; ATTEMPTS as usize], 4);
         let client = Client::new(&server.url, "k", 4)
             .unwrap()
             .with_backoff(Duration::from_millis(1));
         assert!(client.embed(&["x".into()], Task::Document).is_err());
         assert_eq!(server.requests.lock().unwrap().len(), ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn a_search_keeps_retrying_a_busy_server_until_its_deadline() {
+        // Busy with an indexing batch for a while, then free.
+        let server = mock_server(vec![429; 10], 4);
+        let client = Client::for_query(&server.url, "k", 4)
+            .unwrap()
+            .with_backoff(Duration::from_millis(5));
+        assert!(client.embed(&["x".into()], Task::CodeRetrieval).is_ok());
+        assert_eq!(server.requests.lock().unwrap().len(), 11);
+    }
+
+    #[test]
+    fn indexing_holds_back_while_a_search_waits() {
+        let server = mock_server(vec![], 4);
+        let url = server.url.clone();
+        let waiting = Waiting::new();
+        let indexer = std::thread::spawn(move || {
+            Client::new(&url, "k", 4)
+                .unwrap()
+                .embed(&["x".into()], Task::Document)
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(server.requests.lock().unwrap().is_empty());
+        drop(waiting);
+        assert!(indexer.join().unwrap().is_ok());
+        assert_eq!(server.requests.lock().unwrap().len(), 1);
     }
 
     #[test]
