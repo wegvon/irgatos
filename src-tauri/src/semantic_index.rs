@@ -664,17 +664,11 @@ pub(crate) fn embed_texts(
     }
     let client = client::Client::for_query(&endpoint, &key, DIMS)?;
     let task = if query {
-        client::Task::Query
+        client::Task::SearchQuery
     } else {
         client::Task::Document
     };
-    match client.embed(texts, task) {
-        // A server without a query prompt still ranks with plain documents.
-        Err(error) if query && error.contains("(422)") => {
-            client.embed(texts, client::Task::Document).map(Some)
-        }
-        other => other.map(Some),
-    }
+    client.embed(texts, task).map(Some)
 }
 
 /// Whether the Feed can score posts by meaning right now.
