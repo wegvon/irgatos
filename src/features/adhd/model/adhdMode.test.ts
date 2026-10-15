@@ -29,18 +29,16 @@ describe("ADHD mode settings", () => {
     expect(ADHD_SETTINGS_DEFAULTS).toEqual({
       enabled: false,
       showInStatusBar: true,
-      showFocus: true,
     });
   });
 
   it("persists across reloads and returns a stable snapshot between changes", () => {
-    saveAdhdSettings({ enabled: true, showFocus: false });
+    saveAdhdSettings({ enabled: true, showInStatusBar: false });
     const first = loadAdhdState();
     expect(loadAdhdState()).toBe(first);
     expect(JSON.parse(localStorage.getItem("irgat.adhdMode")!)).toEqual({
       enabled: true,
-      showInStatusBar: true,
-      showFocus: false,
+      showInStatusBar: false,
       chats: {},
     });
     expect(first.enabled).toBe(true);
@@ -86,7 +84,7 @@ describe("ADHD mode settings", () => {
     expect(adhdChatOverride("a")).toBeUndefined();
 
     setAdhdForChat("a", false);
-    saveAdhdSettings({ showFocus: false });
+    saveAdhdSettings({ showInStatusBar: false });
     expect(adhdChatOverride("a")).toBe(false);
     saveAdhdSettings({ enabled: false });
     expect(loadAdhdState().chats).toEqual({});

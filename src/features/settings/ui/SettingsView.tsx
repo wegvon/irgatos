@@ -1302,18 +1302,6 @@ function AdhdPage() {
           />
         </Row>
         <Row
-          id="adhd-focus"
-          label="Next step in status bar"
-          description="Beside the switch, keep the step a working agent is on, or the Next: line its last reply ended with, so it stays on screen instead of in your head."
-        >
-          <Toggle
-            label="Next step in status bar"
-            on={adhd.showFocus}
-            disabled={!adhd.showInStatusBar}
-            onChange={(next) => saveAdhdSettings({ showFocus: next })}
-          />
-        </Row>
-        <Row
           id="adhd-chats"
           label="Per-chat control"
           description={`In any composer, /i-have-adhd toggles the mode for that chat, and /i-have-adhd on or off sets it. While it is on, sending just "stop adhd mode" or "normal mode" turns it off for that chat. Irgatos handles these itself, so they never reach the agent. ${

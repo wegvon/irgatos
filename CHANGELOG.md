@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Voice mode in an Irgat chat no longer turns itself off while a message is sending, so the Irgat's reply is read aloud again.
 
+### Removed
+
+- The next step beside the ADHD switch. The status bar shows only the switch, and **Settings › ADHD mode › Next step in status bar** is gone.
+
 ## [0.5.3] - 2026-10-15
 
 ### Added

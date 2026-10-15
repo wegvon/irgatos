@@ -761,16 +761,12 @@ describe("settings pages", () => {
     expect(control().getAttribute("aria-checked")).toBe("true");
   });
 
-  it("ties the next step to the status bar switch and resets chat exceptions", async () => {
+  it("has no next-step switch and resets chat exceptions", async () => {
     setAdhdForChat("chat-a", true);
     await render("adhd");
-    const toggle = (label: string) =>
-      container.querySelector<HTMLButtonElement>(
-        `[role="switch"][aria-label="${label}"]`,
-      )!;
-    expect(toggle("Next step in status bar").disabled).toBe(false);
-    await act(async () => toggle("Show in status bar").click());
-    expect(toggle("Next step in status bar").disabled).toBe(true);
+    expect(
+      container.querySelector('[aria-label="Next step in status bar"]'),
+    ).toBeNull();
 
     const chats = container.querySelector('[data-setting-id="adhd-chats"]')!;
     expect(chats.textContent).toContain("/i-have-adhd");

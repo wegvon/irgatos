@@ -562,12 +562,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "adhd chip footer indicator toggle",
   },
   {
-    id: "adhd-focus",
-    section: "adhd",
-    label: "Next step in status bar",
-    keywords: "adhd next step task progress working memory",
-  },
-  {
     id: "adhd-chats",
     section: "adhd",
     label: "Per-chat control",
