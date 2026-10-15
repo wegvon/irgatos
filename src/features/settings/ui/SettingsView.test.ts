@@ -161,6 +161,57 @@ describe("settings pages", () => {
     expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
   });
 
+  it("asks for the endpoint and key above the semantic search switch", async () => {
+    let settings = { enabled: false, endpoint: "", hasKey: false };
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "semantic_index_settings") return settings;
+      if (command === "semantic_index_save_settings") {
+        const next = args as { enabled: boolean; endpoint: string; key: string | null };
+        settings = {
+          endpoint: next.endpoint,
+          hasKey: settings.hasKey || !!next.key,
+          enabled: next.enabled,
+        };
+        settings.enabled = settings.enabled && settings.hasKey && !!settings.endpoint;
+        return settings;
+      }
+      if (command === "semantic_index_status") return [];
+      return undefined;
+    });
+    await render("search");
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>(
+        '[role="switch"][aria-label="Semantic search"]',
+      )!;
+    const endpoint = container.querySelector<HTMLInputElement>(
+      '[aria-label="Embedding endpoint"]',
+    )!;
+    const key = container.querySelector<HTMLInputElement>(
+      '[aria-label="Embedding API key"]',
+    )!;
+    // Fields come first, enabled; the switch waits below them.
+    expect(endpoint.disabled).toBe(false);
+    expect(key.disabled).toBe(false);
+    expect(toggle().disabled).toBe(true);
+    expect(
+      endpoint.compareDocumentPosition(toggle()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      key.compareDocumentPosition(toggle()) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.textContent).toContain(
+      "Save the endpoint and API key above to turn this on.",
+    );
+
+    settings = { enabled: false, endpoint: "https://embed.example.com", hasKey: true };
+    await render("general");
+    await render("search");
+    expect(toggle().disabled).toBe(false);
+    await act(async () => toggle().click());
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+  });
+
   it("blurs account emails by default and hides them when settings reopen", async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (command === "provider_account_identity") {

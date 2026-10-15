@@ -4103,21 +4103,6 @@ function SemanticSearchPage({
         title="Embedding service"
         description="An EmbeddingGemma server with an OpenAI-style /v1/embeddings endpoint. The code of each project you index is sent to it, and so is every search query."
       >
-        <Row
-          label="Semantic search"
-          description={
-            ready
-              ? "Agents can call code.search, and indexed projects are kept up to date as they search."
-              : "Save an endpoint and an API key to turn this on."
-          }
-        >
-          <Toggle
-            label="Semantic search"
-            on={enabled}
-            onChange={(on) => void save({ enabled: on })}
-            disabled={busy || !ready}
-          />
-        </Row>
         <Row label="Endpoint" description="https, or http on this machine.">
           <label className={fieldClass}>
             <input
@@ -4179,6 +4164,23 @@ function SemanticSearchPage({
               </SecondaryButton>
             </div>
           )}
+        </Row>
+        <Row
+          label="Semantic search"
+          description={
+            ready
+              ? "Agents can call code.search, and indexed projects are kept up to date as they search."
+              : settings?.endpoint
+                ? "Save the API key above to turn this on."
+                : "Save the endpoint and API key above to turn this on."
+          }
+        >
+          <Toggle
+            label="Semantic search"
+            on={enabled}
+            onChange={(on) => void save({ enabled: on })}
+            disabled={busy || !ready}
+          />
         </Row>
         {error ? (
           <p className="border-b border-content/5 px-4 pb-3 text-[12px] text-red-400/90 last:border-b-0">
