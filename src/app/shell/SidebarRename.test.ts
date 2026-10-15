@@ -402,6 +402,10 @@ describe("Chats in the navigation menu", () => {
         ],
         onSelect: vi.fn(),
         onNew: vi.fn(),
+        onRename: vi.fn(),
+        onPin: vi.fn(),
+        onDelete: vi.fn(),
+        onBoard: vi.fn(),
       },
       ...overrides,
     };
@@ -419,7 +423,10 @@ describe("Chats in the navigation menu", () => {
     const row = Array.from(chats.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("A separate conversation"),
     )!;
-    expect(row.querySelector('[aria-label="Unread"]')).not.toBeNull();
+    expect(row.getAttribute("aria-label")).toBe(
+      "A separate conversation, New reply",
+    );
+    expect(chats.textContent).not.toContain("All chats");
     act(() => row.click());
     expect(props.chats!.onSelect).toHaveBeenCalledWith("chat-1");
     act(() =>
@@ -429,6 +436,77 @@ describe("Chats in the navigation menu", () => {
     expect(
       chats.querySelector("[aria-expanded]")!.getAttribute("aria-expanded"),
     ).toBe("false");
+  });
+
+  it("shows which chats are working or waiting on you", async () => {
+    railProps();
+    props = {
+      ...props,
+      chats: {
+        ...props.chats!,
+        rows: [
+          { ...props.chats!.rows[0], id: "busy", title: "Busy", state: "running" },
+          { ...props.chats!.rows[0], id: "ask", title: "Asks", state: "needs-input" },
+          { ...props.chats!.rows[0], id: "done", title: "Quiet", state: "idle" },
+        ],
+      },
+    };
+    await act(async () => render());
+    const state = (id: string) =>
+      container
+        .querySelector(`section[aria-label="Chats"] [data-free-chat-row="${id}"]`)
+        ?.getAttribute("data-state");
+    expect(state("busy")).toBe("running");
+    expect(state("ask")).toBe("needs-input");
+    expect(
+      container.querySelector('[data-free-chat-row="busy"] .animate-spin'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-free-chat-row="ask"] .bg-amber-500'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-free-chat-row="done"] .rounded-full'),
+    ).toBeNull();
+  });
+
+  it("renames and deletes a chat from its menu", async () => {
+    railProps();
+    await act(async () => render());
+    const chats = container.querySelector<HTMLElement>(
+      'section[aria-label="Chats"]',
+    )!;
+    const openMenu = () =>
+      act(() =>
+        chats
+          .querySelector<HTMLButtonElement>(
+            '[aria-label="More actions for A separate conversation"]',
+          )!
+          .click(),
+      );
+    const pick = (label: string) =>
+      act(() =>
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+          .find((item) => item.textContent?.includes(label))!
+          .click(),
+      );
+
+    openMenu();
+    pick("Rename");
+    const input = chats.querySelector<HTMLInputElement>(
+      'input[aria-label="Chat title"]',
+    )!;
+    expect(input.value).toBe("A separate conversation");
+    act(() => {
+      input.value = "Renamed";
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    expect(props.chats!.onRename).toHaveBeenCalledWith("chat-1", "Renamed");
+
+    openMenu();
+    pick("Delete");
+    expect(props.chats!.onDelete).toHaveBeenCalledWith("chat-1");
   });
 
   it("creates a chat with no project open", async () => {
@@ -450,7 +528,7 @@ describe("Chats in the navigation menu", () => {
     await act(async () => render());
     expect(
       container.querySelector(
-        'section[aria-label="Chats"] [aria-current="page"]',
+        'section[aria-label="Chats"] [aria-current="true"]',
       )?.textContent,
     ).toContain("A separate conversation");
     expect(container.querySelector("[data-artifacts-panel]")).toBeNull();

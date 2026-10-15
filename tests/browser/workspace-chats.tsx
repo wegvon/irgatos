@@ -100,8 +100,12 @@ function Fixture() {
             },
           ]}
           activeId={active}
-          onSelect={(id) => setActive(id ?? free.id)}
+          onSelect={setActive}
           onNew={() => setActive(free.id)}
+          onRename={() => {}}
+          onPin={() => {}}
+          onDelete={() => {}}
+          onBoard={() => {}}
         />
       </aside>
       <main className="flex min-w-0 flex-1 flex-col p-8">

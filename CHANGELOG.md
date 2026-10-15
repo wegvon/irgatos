@@ -14,9 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Voice mode in an Irgat chat no longer turns itself off while a message is sending, so the Irgat's reply is read aloud again.
+- Chats in the sidebar show whether each one is working (spinner), waiting on you (amber dot) or has a new reply, and can be renamed, pinned, added to the board or deleted from right-click or the row's **…** menu.
 
 ### Removed
 
+- **All chats** from the sidebar's Chats section; the chats are listed right there.
 - The next step beside the ADHD switch. The status bar shows only the switch, and **Settings › ADHD mode › Next step in status bar** is gone.
 
 ## [0.5.3] - 2026-10-15

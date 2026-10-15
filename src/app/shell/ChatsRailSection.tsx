@@ -1,24 +1,25 @@
 import { useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  MessageSquare,
-  Plus,
-} from "../../shared/ui/icons";
+import { ChevronDown, ChevronRight, Plus } from "../../shared/ui/icons";
 import type { FreeChatRow } from "../../features/freechat/model/freeChat";
+import {
+  ChatList,
+  type ChatListActions,
+} from "../../features/freechat/ui/ChatList";
 
-export type ChatsRailProps = {
+export type ChatsRailProps = ChatListActions & {
   rows: readonly FreeChatRow[];
   activeId?: string;
-  onSelect(id?: string): void;
+  /** Chats that already have a card on the board. */
+  boardIds?: ReadonlySet<string>;
   onNew(): void;
 };
 
 export function ChatsRailSection({
   rows,
   activeId,
-  onSelect,
+  boardIds,
   onNew,
+  ...actions
 }: ChatsRailProps) {
   const [collapsed, setCollapsed] = useState(false);
   const Chevron = collapsed ? ChevronRight : ChevronDown;
@@ -44,35 +45,13 @@ export function ChatsRailSection({
         </button>
       </div>
       {!collapsed ? (
-        <div className="flex flex-col gap-px px-2">
-          <button
-            type="button"
-            onClick={() => onSelect()}
-            className="flex h-7 items-center gap-2 rounded-md px-2 text-xs text-content/55 hover:bg-content/8"
-          >
-            <MessageSquare className="size-3.5" /> All chats
-          </button>
-          {rows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              onClick={() => onSelect(row.id)}
-              aria-current={activeId === row.id ? "page" : undefined}
-              className={`flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-content/8 ${activeId === row.id ? "bg-selection-strong text-content" : "text-content/65"}`}
-            >
-              <MessageSquare className="size-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{row.title}</span>
-              {row.state === "needs-input" || row.state === "unread" ? (
-                <span
-                  aria-label={
-                    row.state === "needs-input" ? "Needs you" : "Unread"
-                  }
-                  className="size-1.5 rounded-full bg-accent"
-                />
-              ) : null}
-            </button>
-          ))}
-        </div>
+        <ChatList
+          rows={rows}
+          activeId={activeId}
+          boardIds={boardIds}
+          className="flex flex-col gap-px px-2"
+          {...actions}
+        />
       ) : null}
     </section>
   );

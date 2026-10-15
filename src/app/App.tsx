@@ -14637,11 +14637,13 @@ function Workspace({
                 chats={{
                   rows: freeChatList,
                   activeId: chatViewOpen ? freeChatId : undefined,
-                  onSelect: (id) => {
-                    openFreeChat(id);
-                    if (!id) setFreeChatId(undefined);
-                  },
+                  boardIds: kanbanSessions.linkedIds,
+                  onSelect: openFreeChat,
                   onNew: () => void onNewChat(),
+                  onRename: (id, title) => void onRenameFreeChat(id, title),
+                  onPin: (id, pinned) => void onPinFreeChat(id, pinned),
+                  onDelete: (id) => void onDeleteFreeChat(id),
+                  onBoard: (id) => void onFreeChatBoard(id),
                 }}
               fleetNeedsYou={fleetNeedsYouCount}
               onSessionBoard={onSessionBoard}
