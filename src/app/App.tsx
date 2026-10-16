@@ -1022,6 +1022,13 @@ const FleetView = lazySurface(
   },
   { suspense: false },
 );
+const FeedView = lazySurface(
+  async () => {
+    const module = await import("../features/feed/ui/FeedView");
+    return { default: module.FeedView };
+  },
+  { suspense: false },
+);
 const MailView = lazySurface(
   async () => {
     const module = await import("../features/mail/ui/MailView");
@@ -1501,6 +1508,7 @@ function Workspace({
   const [fleetViewOpen, setFleetViewOpenState] = useState(false);
   const [mailViewOpen, setMailViewOpen] = useState(false);
   const [ideasViewOpen, setIdeasViewOpen] = useState(false);
+  const [feedViewOpen, setFeedViewOpen] = useState(false);
   const [chatViewOpen, setChatViewOpen] = useState(
     () => loadFreeChatView().open,
   );
@@ -1514,6 +1522,7 @@ function Workspace({
     setChatViewOpen(false);
     setMailViewOpen(false);
     setIdeasViewOpen(false);
+    setFeedViewOpen(false);
   }, []);
   const [kanbanFocus, setKanbanFocus] = useState<KanbanFocusRequest | null>(
     null,
@@ -1558,6 +1567,7 @@ function Workspace({
     chat: false,
     mail: false,
     ideas: false,
+    feed: false,
   });
   const [updateNotice, setUpdateNotice] = useState(installedUpdate);
   const [whatsNewVersion, setWhatsNewVersion] = useState<string | null>(null);
@@ -1782,6 +1792,7 @@ function Workspace({
       !fleetViewOpen &&
       !mailViewOpen &&
       !ideasViewOpen &&
+      !feedViewOpen &&
       !chatViewOpen &&
       !settingsOpen &&
       !irgatViewId,
@@ -1796,6 +1807,7 @@ function Workspace({
             !fleetViewOpen &&
             !mailViewOpen &&
             !ideasViewOpen &&
+            !feedViewOpen &&
             !chatViewOpen &&
             !settingsOpen
           ? (irgatViewId ?? undefined)
@@ -1809,6 +1821,7 @@ function Workspace({
       !fleetViewOpen &&
       !mailViewOpen &&
       !ideasViewOpen &&
+      !feedViewOpen &&
       !chatViewOpen &&
       !settingsOpen
         ? shownIrgatSessionId
@@ -1833,6 +1846,7 @@ function Workspace({
       setFleetViewOpenState(false);
       setMailViewOpen(false);
       setIdeasViewOpen(false);
+      setFeedViewOpen(false);
       if (id !== undefined) setFreeChatId(id);
       setChatViewOpen(true);
       setComposerFocused(true);
@@ -1852,6 +1866,8 @@ function Workspace({
   mailViewOpenRef.current = mailViewOpen;
   const ideasViewOpenRef = useRef(ideasViewOpen);
   ideasViewOpenRef.current = ideasViewOpen;
+  const feedViewOpenRef = useRef(feedViewOpen);
+  feedViewOpenRef.current = feedViewOpen;
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
@@ -2602,6 +2618,7 @@ function Workspace({
             !fleetViewOpenRef.current &&
             !mailViewOpenRef.current &&
             !ideasViewOpenRef.current &&
+            !feedViewOpenRef.current &&
             !settingsOpenRef.current
           ) {
             setComposerFocused(true);
@@ -2644,6 +2661,7 @@ function Workspace({
     fleetViewOpen,
     mailViewOpen,
     ideasViewOpen,
+    feedViewOpen,
     chatViewOpen,
     freeChatId,
     settingsOpen,
@@ -6144,6 +6162,7 @@ function Workspace({
             fleetViewOpenRef.current ||
             mailViewOpenRef.current ||
             ideasViewOpenRef.current ||
+            feedViewOpenRef.current ||
             chatViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -12998,6 +13017,25 @@ function Workspace({
     setIdeasViewOpen(false);
   }, []);
 
+  const onOpenFeed = useCallback(() => {
+    workspaceNavigation.cancel();
+    startTransition(() => {
+      setFilePickerOpen(false);
+      setSettingsOpen(false);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setKanbanViewOpen(false);
+      setFleetViewOpen(false);
+      setFeedViewOpen(true);
+    });
+  }, []);
+
+  const onLeaveFeed = useCallback(() => {
+    setFeedViewOpen(false);
+  }, []);
+
   const describeMailChat = useCallback(
     (sessionId: string): MailChat | undefined => {
       const open = sessions.find((session) => session.id === sessionId);
@@ -13358,6 +13396,7 @@ function Workspace({
           chat: chatViewOpenRef.current,
           mail: mailViewOpenRef.current,
           ideas: ideasViewOpenRef.current,
+          feed: feedViewOpenRef.current,
         };
       }
       startTransition(() => {
@@ -13426,6 +13465,7 @@ function Workspace({
     setChatViewOpen(!!returnView.chat);
     setMailViewOpen(!!returnView.mail);
     setIdeasViewOpen(!!returnView.ideas);
+    setFeedViewOpen(!!returnView.feed);
     setSettingsOpen(false);
   }, []);
 
@@ -13483,6 +13523,10 @@ function Workspace({
       setIdeasViewOpen(false);
       return;
     }
+    if (feedViewOpen) {
+      setFeedViewOpen(false);
+      return;
+    }
     if (irgatViewIdRef.current) {
       closeIrgatView();
       setComposerFocused(true);
@@ -13502,6 +13546,7 @@ function Workspace({
     fleetViewOpen,
     mailViewOpen,
     ideasViewOpen,
+    feedViewOpen,
     chatViewOpen,
   ]);
 
@@ -13792,6 +13837,7 @@ function Workspace({
             fleetViewOpenRef.current ||
             mailViewOpenRef.current ||
             ideasViewOpenRef.current ||
+            feedViewOpenRef.current ||
             chatViewOpenRef.current ||
             settingsOpenRef.current ||
             filePickerOpenRef.current ||
@@ -13880,6 +13926,7 @@ function Workspace({
         !fleetViewOpenRef.current &&
         !mailViewOpenRef.current &&
         !ideasViewOpenRef.current &&
+        !feedViewOpenRef.current &&
         !chatViewOpenRef.current &&
         !(
           e.target instanceof Element &&
@@ -14751,6 +14798,7 @@ function Workspace({
     fleetViewOpen ||
     mailViewOpen ||
     ideasViewOpen ||
+    feedViewOpen ||
     chatViewOpen;
   const compactProjectRail = collapsedProjectRailMode === "compact";
   const compactRailActive = compactProjectRail && !projectRailOpen;
@@ -14888,6 +14936,7 @@ function Workspace({
                 fleetViewOpen ||
                 mailViewOpen ||
                 ideasViewOpen ||
+                feedViewOpen ||
                 chatViewOpen
               }
               canGoForward={tabVisitNav.canForward}
@@ -14951,6 +15000,8 @@ function Workspace({
               mailActive={mailViewOpen}
               onOpenIdeas={onOpenIdeas}
               ideasActive={ideasViewOpen}
+              onOpenFeed={onOpenFeed}
+              feedActive={feedViewOpen}
               onOpenChat={onOpenChat}
               chatActive={chatViewOpen}
               chatIndicator={freeChatIndicator}
@@ -15007,6 +15058,7 @@ function Workspace({
                   fleetViewOpen ||
                   mailViewOpen ||
                   ideasViewOpen ||
+                  feedViewOpen ||
                   chatViewOpen
                     ? "hidden"
                     : "flex min-h-0 min-w-0 flex-1 flex-col"
@@ -15021,6 +15073,7 @@ function Workspace({
                   fleetViewOpen ||
                   mailViewOpen ||
                   ideasViewOpen ||
+                  feedViewOpen ||
                   chatViewOpen
                 }
                 inert={
@@ -15033,6 +15086,7 @@ function Workspace({
                   fleetViewOpen ||
                   mailViewOpen ||
                   ideasViewOpen ||
+                  feedViewOpen ||
                   chatViewOpen ||
                   undefined
                 }
@@ -15288,6 +15342,7 @@ function Workspace({
                             !fleetViewOpen &&
                             !mailViewOpen &&
                             !ideasViewOpen &&
+                            !feedViewOpen &&
                             !chatViewOpen &&
                             !irgatViewId &&
                             activeLinkedWorkItemPanel?.sessionId ===
@@ -15318,6 +15373,7 @@ function Workspace({
                             !fleetViewOpen &&
                             !mailViewOpen &&
                             !ideasViewOpen &&
+                            !feedViewOpen &&
                             (!chatViewOpen || !!freeChat)
                           }
                           onClose={() => setBrowserOpen(false)}
@@ -15464,6 +15520,14 @@ function Workspace({
                       console.warn("Could not answer the habit", error),
                     )
                   }
+                />
+              ) : null}
+              {feedViewOpen ? (
+                <FeedView
+                  besideRail={projectRailOpen || compactProjectRail}
+                  compactRail={compactRailActive}
+                  onClose={onLeaveFeed}
+                  onToggleSidebar={onToggleSidebar}
                 />
               ) : null}
               {mailViewOpen ? (
@@ -15626,6 +15690,7 @@ function Workspace({
               fleetViewOpen ||
               mailViewOpen ||
               ideasViewOpen ||
+              feedViewOpen ||
               chatViewOpen ||
               settingsOpen ? null : irgatCovers ? (
                 // The Irgat's composer already shows its usage; its terminal
