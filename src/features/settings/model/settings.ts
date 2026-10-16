@@ -210,6 +210,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "ssh remote connect host server environment",
   },
   {
+    id: "browser-access",
+    section: "connections",
+    label: "Browser access",
+    keywords: "web browser ipad phone tailscale remote access token",
+  },
+  {
     id: "mcp-servers",
     section: "mcp",
     label: "MCP servers",

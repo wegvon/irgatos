@@ -1,0 +1,229 @@
+/* Browser access page: phone and tablet layer over the app's theme tokens. */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --accent: var(--user-accent-color, var(--color-accent));
+  --surface: hsl(
+    var(--theme-hue) var(--theme-saturation)
+      calc(var(--background-lightness) + 4%)
+  );
+  --surface-strong: hsl(
+    var(--theme-hue) var(--theme-saturation)
+      calc(var(--background-lightness) + 8%)
+  );
+  --sheet: hsl(
+    var(--theme-hue) var(--theme-saturation)
+      calc(var(--background-lightness) + 5%)
+  );
+  --segment: hsl(
+    var(--theme-hue) var(--theme-saturation)
+      calc(var(--background-lightness) + 16%)
+  );
+  --bar: color-mix(in srgb, var(--color-background-base) 82%, transparent);
+  --warn: #f5b041;
+  --on-warn: rgb(0 0 0 / 0.8);
+  --ok: #34d399;
+  --bad: #fb7185;
+  --tab-height: 56px;
+}
+
+html.theme-light {
+  --surface: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --surface-strong: hsl(var(--theme-hue) var(--theme-saturation) 93%);
+  --sheet: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --segment: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --warn: #b45309;
+  --on-warn: #fff;
+  --ok: #047857;
+  --bad: #be123c;
+}
+
+html.keyboard-open {
+  --safe-bottom: 0px;
+}
+
+html.web-companion,
+html.web-companion body,
+html.web-companion #root {
+  height: var(--app-height, 100dvh);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+html.web-companion button {
+  cursor: pointer;
+}
+
+/* Reading and copying a reply is the point of the page. */
+.web-selectable,
+.web-selectable * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.web-scroll {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.web-bar {
+  background: var(--bar);
+  backdrop-filter: saturate(1.6) blur(20px);
+  -webkit-backdrop-filter: saturate(1.6) blur(20px);
+}
+
+/* iOS zooms into any field under 16px; keep every field at 16px. */
+.web-field {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.web-field::placeholder {
+  color: color-mix(in srgb, var(--color-content) 38%, transparent);
+}
+
+.web-press {
+  transition:
+    transform 120ms var(--motion-ease-out),
+    background-color 120ms var(--motion-ease-out),
+    opacity 120ms var(--motion-ease-out);
+}
+
+.web-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.web-pulse {
+  position: relative;
+}
+
+.web-pulse::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0;
+  animation: web-pulse 1.8s var(--motion-ease-out) infinite;
+}
+
+@keyframes web-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.web-shimmer {
+  background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-content) 45%, transparent) 0%,
+      var(--color-content) 50%,
+      color-mix(in srgb, var(--color-content) 45%, transparent) 100%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: web-shimmer 2.2s linear infinite;
+}
+
+@keyframes web-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.web-push-in {
+  animation: web-push-in 280ms var(--motion-ease-out);
+}
+
+@keyframes web-push-in {
+  from {
+    transform: translateX(28%);
+    opacity: 0;
+  }
+}
+
+.web-fade-in {
+  animation: web-fade-in 200ms var(--motion-ease-out);
+}
+
+@keyframes web-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.web-sheet-up {
+  animation: web-sheet-up 320ms var(--motion-ease-out);
+}
+
+@keyframes web-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+.web-pop-in {
+  animation: web-pop-in 220ms var(--motion-ease-out);
+}
+
+@keyframes web-pop-in {
+  from {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+}
+
+.web-markdown {
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.web-markdown pre,
+.web-markdown code {
+  font-size: 13px;
+}
+
+.web-markdown [data-streamdown="table-wrapper"],
+.web-markdown [data-streamdown="code-block"] {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.web-kanban {
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+
+.web-kanban > * {
+  scroll-snap-align: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-pulse::after,
+  .web-shimmer,
+  .web-push-in,
+  .web-sheet-up,
+  .web-pop-in,
+  .web-fade-in {
+    animation: none;
+  }
+
+  .web-shimmer {
+    color: inherit;
+    background: none;
+  }
+}
