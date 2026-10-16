@@ -58,6 +58,7 @@ import {
   newTab,
   publishBrowserTabs,
   restoreTabs,
+  setBrowserTabControl,
   saveTabs,
   tabLabel,
   type BrowserTab,
@@ -366,6 +367,15 @@ export function BrowserPanel({
     },
     [onClose],
   );
+
+  useEffect(() => {
+    setBrowserTabControl({
+      open: (target) => openTab(target),
+      activate: (id) => selectTab(id),
+      close: (id) => removeTab(id),
+    });
+    return () => setBrowserTabControl(null);
+  }, [openTab, removeTab, selectTab]);
 
   // Restored tabs and tabs opened with an address load once they are shown.
   useEffect(() => {

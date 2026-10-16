@@ -141,3 +141,23 @@ export function publishBrowserTabs(
   snapshot = { tabs, activeId };
   listeners.forEach((listener) => listener());
 }
+
+/** Tab actions for other features (e.g. agents driving Browser). */
+export type BrowserTabControl = {
+  /** Opens `url` in a new, shown tab and returns its id. */
+  open(url: string): string;
+  activate(id: string): void;
+  close(id: string): void;
+};
+
+let control: BrowserTabControl | null = null;
+
+/** The Browser panel registers its tab actions here while mounted. */
+export function setBrowserTabControl(next: BrowserTabControl | null) {
+  control = next;
+}
+
+/** Null until Browser has been opened once in this window. */
+export function browserTabControl(): BrowserTabControl | null {
+  return control;
+}

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { BrowserPanel } from "./BrowserPanel";
 import { runBrowserTabCommand } from "../model/browserTabCommands";
+import { browserTabControl, currentBrowserTabs } from "../model/browserTabs";
 import type {
   PageSelection,
   PickerPoll,
@@ -806,4 +807,26 @@ it("opens links that ask for a new window in a new tab", async () => {
   } finally {
     panel.unmount();
   }
+});
+
+it("lets other features open, switch and close tabs", async () => {
+  const panel = renderPanel();
+  try {
+    await panel.open("a.example");
+    const control = browserTabControl()!;
+    let id = "";
+    act(() => {
+      id = control.open("https://b.example/");
+    });
+    await flush();
+    expect(currentBrowserTabs().activeId).toBe(id);
+    expect(panel.tabs()).toEqual(["a.example", "b.example"]);
+    act(() => control.activate("main"));
+    expect(currentBrowserTabs().activeId).toBe("main");
+    act(() => control.close(id));
+    expect(panel.tabs()).toEqual(["a.example"]);
+  } finally {
+    panel.unmount();
+  }
+  expect(browserTabControl()).toBeNull();
 });
