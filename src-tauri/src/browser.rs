@@ -438,11 +438,7 @@ pub async fn browser_import_chrome_profile(
                 let mut imported = 0;
                 let mut skipped = 0;
                 for cookie in cookies {
-                    let Some(cookie) = webview_cookie(&cookie) else {
-                        skipped += 1;
-                        continue;
-                    };
-                    if view.set_cookie(&cookie).is_ok() {
+                    if import_cookie(view, &cookie) {
                         imported += 1;
                     } else {
                         skipped += 1;
@@ -602,6 +598,88 @@ fn read_chrome_profile(profile_id: &str) -> Result<ChromeProfileContents, String
         bookmarks,
         history,
     })
+}
+
+/// Stores one Chrome cookie in the browser's data store.
+///
+/// Chrome marks cookies that cover subdomains with a leading dot ("`.x.com`").
+/// Wry's `set_cookie` drops that dot, which turns them into host-only cookies:
+/// the site then sets its own `.x.com` copy and pages see two `ct0` values,
+/// so x.com rejects every request. Domain cookies are therefore written
+/// directly, after removing any host-only copy an earlier import left behind.
+#[cfg(target_os = "macos")]
+fn import_cookie(view: &WebView, source: &ChromeCookie) -> bool {
+    let Some(cookie) = webview_cookie(source) else {
+        return false;
+    };
+    if !source.domain.trim().starts_with('.') {
+        return view.set_cookie(&cookie).is_ok();
+    }
+    let _ = view.delete_cookie(&cookie);
+    set_domain_cookie(view, &cookie)
+}
+
+/// Mirrors Wry's `NSHTTPCookie` conversion, but keeps the leading dot.
+#[cfg(target_os = "macos")]
+fn set_domain_cookie(view: &WebView, cookie: &Cookie<'_>) -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{
+        NSDate, NSHTTPCookie, NSHTTPCookieDomain, NSHTTPCookieExpires, NSHTTPCookieName,
+        NSHTTPCookiePath, NSHTTPCookiePropertyKey, NSHTTPCookieSecure, NSHTTPCookieValue,
+        NSMutableDictionary, NSString,
+    };
+    use wry::WebViewExtMacOS;
+
+    let Some(domain) = cookie.domain() else {
+        return false;
+    };
+    let name = NSString::from_str(cookie.name());
+    let value = NSString::from_str(cookie.value());
+    let path = NSString::from_str(cookie.path().unwrap_or("/"));
+    let domain = NSString::from_str(&format!(".{domain}"));
+    let flag = |on: bool| NSString::from_str(if on { "TRUE" } else { "FALSE" });
+    unsafe {
+        let properties: objc2::rc::Retained<
+            NSMutableDictionary<NSHTTPCookiePropertyKey, AnyObject>,
+        > = NSMutableDictionary::from_slices(
+            &[
+                NSHTTPCookieName,
+                NSHTTPCookieValue,
+                NSHTTPCookiePath,
+                NSHTTPCookieDomain,
+            ],
+            &[&*name, &*value, &*path, &*domain],
+        );
+        if let Some(expires) = cookie.expires_datetime() {
+            let expires = NSDate::dateWithTimeIntervalSince1970(expires.unix_timestamp() as f64);
+            properties.insert(NSHTTPCookieExpires, &*expires);
+        }
+        properties.insert(NSHTTPCookieSecure, &*flag(cookie.secure().unwrap_or(false)));
+        properties.insert(
+            &*NSString::from_str("HttpOnly"),
+            &*flag(cookie.http_only().unwrap_or(false)),
+        );
+        let same_site = match cookie.same_site() {
+            Some(SameSite::Lax) => Some("lax"),
+            Some(SameSite::Strict) => Some("strict"),
+            _ => None,
+        };
+        if let Some(same_site) = same_site {
+            properties.insert(
+                &*NSString::from_str("SameSite"),
+                &*NSString::from_str(same_site),
+            );
+        }
+        let Some(cookie) = NSHTTPCookie::cookieWithProperties(&properties) else {
+            return false;
+        };
+        view.webview()
+            .configuration()
+            .websiteDataStore()
+            .httpCookieStore()
+            .setCookie_completionHandler(&cookie, None);
+    }
+    true
 }
 
 #[cfg(target_os = "macos")]

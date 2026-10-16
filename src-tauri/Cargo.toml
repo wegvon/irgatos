@@ -60,11 +60,11 @@ tauri = { version = "2", features = ["tray-icon"] }
 block2 = "0.6.2"
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSAttributedString", "NSBezierPath", "NSBitmapImageRep", "NSImageRep", "NSButton", "NSColor", "NSControl", "NSDockTile", "NSEvent", "NSGraphics", "NSImage", "NSLayoutAnchor", "NSLayoutConstraint", "NSMenu", "NSMenuItem", "NSPanel", "NSPasteboard", "NSPasteboardItem", "NSResponder", "NSUserInterfaceItemIdentification", "NSView", "NSVisualEffectView", "NSWindow", "block2", "objc2-core-foundation"] }
-objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSBundle", "NSData", "NSDictionary", "NSGeometry", "NSError", "NSLocale", "NSString"] }
+objc2-foundation = { version = "0.3", features = ["NSAttributedString", "NSBundle", "NSData", "NSDictionary", "NSDate", "NSGeometry", "NSError", "NSHTTPCookie", "NSLocale", "NSString"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "AVCaptureDevice", "AVMediaFormat", "block2"] }
 objc2-avf-audio = { version = "0.3", default-features = false, features = ["std", "AVAudioBuffer", "AVAudioEngine", "AVAudioFormat", "AVAudioIONode", "AVAudioNode", "AVAudioTime", "AVAudioTypes", "block2"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
-objc2-web-kit = { version = "0.3", features = ["WKContentWorld", "WKFrameInfo", "WKSnapshotConfiguration", "WKWebView", "block2", "objc2-app-kit"] }
+objc2-web-kit = { version = "0.3", features = ["WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKSnapshotConfiguration", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore", "block2", "objc2-app-kit"] }
 objc2-user-notifications = { version = "0.3.2", features = ["UNUserNotificationCenter", "UNNotification", "UNNotificationAction", "UNNotificationCategory", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationSound", "block2"] }
 objc2-speech = { version = "0.3", default-features = false, features = ["std", "SFSpeechRecognizer", "SFSpeechRecognitionRequest", "SFSpeechRecognitionResult", "SFSpeechRecognitionTask", "SFSpeechRecognitionTaskHint", "SFTranscription", "block2", "objc2-avf-audio"] }
 raw-window-handle = "0.6"
