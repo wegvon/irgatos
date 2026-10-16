@@ -125,7 +125,6 @@ import {
   IrgatOverview,
   type IrgatOverviewTab,
 } from "../features/irgats/ui/IrgatOverview";
-import { IrgatSettingsDialog } from "../features/irgats/ui/IrgatSettingsDialog";
 import { IrgatActivityPanel } from "../features/irgats/ui/IrgatActivityPanel";
 import {
   launchedSessionState,
@@ -1377,7 +1376,6 @@ function Workspace({
   const [irgatOverviewTab, setIrgatOverviewTab] =
     useState<IrgatOverviewTab>("all");
   // The Irgat whose settings dialog is open; another Irgat's view closes it.
-  const [irgatSettingsFor, setIrgatSettingsFor] = useState<string | null>(null);
   // A document opened from the chat shows on the overview's Documents tab,
   // the same page the tab opens it on.
   const onOpenIrgatArtifact = useCallback((_sessionId: string, id: string) => {
@@ -5441,7 +5439,9 @@ function Workspace({
   /** A new Irgat opens straight away, ready to be told what it works on. */
   const onCreateIrgat = useCallback(() => {
     const irgatId = createIrgat().id;
-    setIrgatSettingsFor(irgatId);
+    setIrgatActivity(null);
+    setIrgatOverviewTab("settings");
+    setIrgatOverviewOpen(true);
     void onOpenIrgat(irgatId);
   }, [onOpenIrgat]);
 
@@ -14629,6 +14629,21 @@ function Workspace({
           textHarness: irgatViewSession.harness,
           projects: irgatViewIrgat.projects,
         }}
+        settings={{
+          cwd: irgatViewSession.cwd,
+          harness: irgatViewSession.harness,
+          model: irgatViewSession.model,
+          modelSettings: irgatViewSession.modelSettings,
+          runtimeMode: irgatViewSession.runtimeMode,
+          busy: !!irgatViewSession.busy,
+          onModelChange: (harness, model) =>
+            onModelChange(irgatViewSession.id, harness, model),
+          onModelSettingsChange: (settings) =>
+            onModelSettingsChange(irgatViewSession.id, settings),
+          onRuntimeModeChange: (mode) =>
+            onRuntimeModeChange(irgatViewSession.id, mode),
+          onReset: () => onResetIrgat(irgatViewSession.id),
+        }}
         tab={irgatOverviewTab}
         onTabChange={setIrgatOverviewTab}
         onOpenSession={(sessionId) =>
@@ -14671,35 +14686,6 @@ function Workspace({
         onOpenFile={onOpenFile}
         onClose={() => setIrgatOverviewOpen(false)}
         windowControls={irgatCovers && !IS_MAC ? <WindowControls /> : undefined}
-      />
-    ) : null;
-  const irgatSettingsDialog =
-    irgatCovers &&
-    irgatViewIrgat &&
-    irgatViewSession &&
-    irgatSettingsFor === irgatViewIrgat.id ? (
-      <IrgatSettingsDialog
-        key={irgatViewIrgat.id}
-        irgatId={irgatViewIrgat.id}
-        agent={irgatLook(irgatViewIrgat)}
-        status={irgatState(irgatViewSession).status}
-        cwd={irgatViewSession.cwd}
-        harness={irgatViewSession.harness}
-        model={irgatViewSession.model}
-        modelSettings={irgatViewSession.modelSettings}
-        runtimeMode={irgatViewSession.runtimeMode}
-        busy={!!irgatViewSession.busy}
-        onModelChange={(harness, model) =>
-          onModelChange(irgatViewSession.id, harness, model)
-        }
-        onModelSettingsChange={(settings) =>
-          onModelSettingsChange(irgatViewSession.id, settings)
-        }
-        onRuntimeModeChange={(mode) =>
-          onRuntimeModeChange(irgatViewSession.id, mode)
-        }
-        onReset={() => onResetIrgat(irgatViewSession.id)}
-        onClose={() => setIrgatSettingsFor(null)}
       />
     ) : null;
   const irgatRailState = useMemo(() => {
@@ -14954,11 +14940,6 @@ function Workspace({
           : undefined
       }
       irgatOverviewOpen={irgatOverviewShown}
-      onOpenIrgatSettings={
-        irgatCovers && irgatViewIrgat
-          ? () => setIrgatSettingsFor(irgatViewIrgat.id)
-          : undefined
-      }
       hideWindowControls={irgatCovers && irgatSidebarOpen && !!irgatOverviewPanel}
       activeId={irgatViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
@@ -15503,7 +15484,6 @@ function Workspace({
                     </main>
                   </div>
                   {irgatCovers ? irgatOverviewPanel : null}
-                  {irgatSettingsDialog}
                   {irgatCovers ? irgatActivityPanel : null}
                 </div>
               </div>
