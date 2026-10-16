@@ -3,7 +3,7 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebOverview, WebServices } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
-import { useMediaQuery } from "./theme";
+import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
 import { ChatRow } from "./ui/ChatRow";
 import { Chats, allEntries } from "./ui/Chats";
@@ -111,6 +111,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   const connected = !overview.error;
   const needsYou = overview.data?.needsYou.length ?? 0;
   const mac = macTone(services.data?.services, connected);
+
+  const appearance = overview.data?.appearance;
+  const appearanceKey = JSON.stringify(appearance ?? null);
+  useEffect(() => {
+    if (!appearance) return;
+    applyAppearance(appearance);
+    const scheme = window.matchMedia("(prefers-color-scheme: light)");
+    const follow = () => applyAppearance(appearance);
+    scheme.addEventListener("change", follow);
+    return () => scheme.removeEventListener("change", follow);
+    // Only when the Mac's theme actually changes, not on every poll.
+  }, [appearanceKey]);
 
   useEffect(() => {
     document.title = needsYou ? `(${needsYou}) Irgatos` : "Irgatos";
