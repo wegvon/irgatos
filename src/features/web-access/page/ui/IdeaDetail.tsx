@@ -1,0 +1,390 @@
+import { useLayoutEffect, useRef, useState } from "react";
+import {
+  LABEL_STYLES,
+  findCard,
+  withCardMoved,
+  withCardRemoved,
+  withCardReplaced,
+  type IdeaCard,
+  type IdeaTask,
+  type IdeasState,
+} from "../../../ideas/model/ideas";
+import { write } from "../client";
+import { basename, dueLabel } from "../format";
+import { Markdown } from "./Markdown";
+import {
+  Empty,
+  Spinner,
+  plainButton,
+  secondaryButton,
+  useToast,
+} from "./parts";
+import { Check, Idea, Plus, Trash2, X } from "../../../../shared/ui/icons";
+
+/** Not `crypto.randomUUID`: that needs HTTPS, and Tailscale links are plain HTTP. */
+function newTaskId() {
+  return `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** One idea: rename it, move it, write notes, tick off its checklist. */
+export function IdeaDetail({
+  ideas,
+  id,
+  now,
+  mutate,
+  onClose,
+}: {
+  ideas: IdeasState | null;
+  id: string;
+  now: number;
+  mutate: (update: (state: IdeasState) => IdeasState) => void;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const found = ideas ? findCard(ideas, id) : null;
+  if (!ideas)
+    return (
+      <div className="flex justify-center py-16 text-content/40">
+        <Spinner className="size-6" />
+      </div>
+    );
+  if (!found)
+    return (
+      <Empty icon={<Idea className="size-6" />} title="This idea is gone">
+        It was moved to another board or deleted on your Mac.
+      </Empty>
+    );
+
+  const { board, list, card } = found;
+  const save = (
+    patch: Partial<Pick<IdeaCard, "title" | "description" | "tasks">>,
+  ) => {
+    mutate((state) =>
+      withCardReplaced(state, { ...card, ...patch, updatedAt: Date.now() }),
+    );
+    write("ideaUpdate", { id: card.id, ...patch }).catch((error: unknown) =>
+      toast(error instanceof Error ? error.message : String(error), "error"),
+    );
+  };
+  const labels = card.labelIds
+    .map((labelId) => board.labels.find((label) => label.id === labelId))
+    .filter((label) => !!label);
+
+  return (
+    <div className="flex flex-col gap-6 px-5 pb-8">
+      <div className="flex flex-col gap-3">
+        <Title
+          key={card.id}
+          value={card.title}
+          onSave={(title) => save({ title })}
+        />
+        {labels.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {labels.map((label) => (
+              <span
+                key={label.id}
+                className={`rounded-md px-2 py-0.5 text-[13px] font-semibold ${LABEL_STYLES[label.color]}`}
+              >
+                {label.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-content/50">
+          {card.project ? (
+            <span>Project · {basename(card.project)}</span>
+          ) : null}
+          {card.dueAt ? <span>Due · {dueLabel(card.dueAt, now)}</span> : null}
+          <span>
+            Added ·{" "}
+            {new Date(card.createdAt).toLocaleDateString([], {
+              day: "numeric",
+              month: "short",
+            })}
+          </span>
+        </div>
+      </div>
+
+      <div>
+        <Label>List</Label>
+        <div className="flex rounded-[12px] bg-content/[0.07] p-1">
+          {board.lists.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => {
+                if (entry.id === list.id) return;
+                mutate((state) => withCardMoved(state, card.id, entry.id, 0));
+                write("ideaMove", { id: card.id, listId: entry.id, index: 0 })
+                  .then(() => toast(`Moved to ${entry.title}`))
+                  .catch((error: unknown) =>
+                    toast(
+                      error instanceof Error ? error.message : String(error),
+                      "error",
+                    ),
+                  );
+              }}
+              className={`min-h-9 min-w-0 flex-1 truncate rounded-[9px] px-1.5 text-[13.5px] font-semibold transition-colors ${
+                entry.id === list.id
+                  ? "bg-(--segment) text-content shadow-[0_1px_3px_rgb(0_0_0/0.18)]"
+                  : "text-content/55"
+              }`}
+            >
+              {entry.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Notes
+        key={`${card.id}-notes`}
+        value={card.description}
+        onSave={(description) => save({ description })}
+      />
+
+      <Checklist tasks={card.tasks} onChange={(tasks) => save({ tasks })} />
+
+      <button
+        className={`${secondaryButton} mt-2 text-(--bad)`}
+        onClick={() => {
+          if (!window.confirm(`Delete “${card.title}”?`)) return;
+          onClose();
+          mutate((state) => withCardRemoved(state, card.id));
+          write("ideaDelete", { id: card.id })
+            .then(() => toast("Idea deleted"))
+            .catch((error: unknown) =>
+              toast(
+                error instanceof Error ? error.message : String(error),
+                "error",
+              ),
+            );
+        }}
+      >
+        <Trash2 className="size-4" />
+        Delete idea
+      </button>
+    </div>
+  );
+}
+
+function Label({ children }: { children: string }) {
+  return (
+    <div className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-content/45">
+      {children}
+    </div>
+  );
+}
+
+function useAutoHeight(value: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  }, [value]);
+  return ref;
+}
+
+function Title({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const ref = useAutoHeight(text);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={text}
+      aria-label="Title"
+      enterKeyHint="done"
+      onChange={(event) => setText(event.target.value.replace(/\n/g, " "))}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+      onBlur={() => {
+        const title = text.trim();
+        if (!title) setText(value);
+        else if (title !== value) onSave(title);
+      }}
+      className="w-full resize-none bg-transparent text-[24px] font-bold leading-tight tracking-[-0.01em] outline-none"
+    />
+  );
+}
+
+function Notes({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  const ref = useAutoHeight(editing ? text : "");
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <Label>Notes</Label>
+        {editing ? (
+          <div className="-mt-2 flex gap-1">
+            <button
+              className={plainButton}
+              onClick={() => {
+                setText(value);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              className={`${plainButton} font-semibold`}
+              onClick={() => {
+                if (text !== value) onSave(text);
+                setEditing(false);
+              }}
+            >
+              Save
+            </button>
+          </div>
+        ) : value ? (
+          <button
+            className={`${plainButton} -mt-2`}
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </button>
+        ) : null}
+      </div>
+      {editing ? (
+        <textarea
+          ref={ref}
+          autoFocus
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="Write in Markdown"
+          className="web-field min-h-32 w-full resize-none rounded-[16px] bg-(--surface) px-4 py-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)] outline-none"
+        />
+      ) : value ? (
+        <div className="web-selectable rounded-[16px] bg-(--surface) px-4 py-3 shadow-[0_0_0_0.5px_var(--color-stroke)]">
+          <Markdown text={value} />
+        </div>
+      ) : (
+        <button
+          onClick={() => setEditing(true)}
+          className="w-full rounded-[16px] border border-dashed border-content/15 px-4 py-4 text-left text-[15px] text-content/45"
+        >
+          Add notes…
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Checklist({
+  tasks,
+  onChange,
+}: {
+  tasks: IdeaTask[];
+  onChange: (tasks: IdeaTask[]) => void;
+}) {
+  const [text, setText] = useState("");
+  const done = tasks.filter((task) => task.done).length;
+  const add = () => {
+    const step = text.trim();
+    if (!step) return;
+    onChange([...tasks, { id: newTaskId(), text: step, done: false }]);
+    setText("");
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <Label>Checklist</Label>
+        {tasks.length ? (
+          <span className="-mt-2 px-1 text-[13px] tabular-nums text-content/45">
+            {done}/{tasks.length}
+          </span>
+        ) : null}
+      </div>
+      {tasks.length ? (
+        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-content/[0.08]">
+          <div
+            className="h-full rounded-full bg-(--ok) transition-[width] duration-300"
+            style={{ width: `${(done / tasks.length) * 100}%` }}
+          />
+        </div>
+      ) : null}
+      <div className="divide-y divide-stroke overflow-hidden rounded-[16px] bg-(--surface) shadow-[0_0_0_0.5px_var(--color-stroke)]">
+        {tasks.map((task) => (
+          <div
+            key={task.id}
+            className="flex min-h-12 items-center gap-3 pl-3.5 pr-1.5"
+          >
+            <button
+              role="checkbox"
+              aria-checked={task.done}
+              aria-label={task.text}
+              onClick={() =>
+                onChange(
+                  tasks.map((entry) =>
+                    entry.id === task.id
+                      ? { ...entry, done: !entry.done }
+                      : entry,
+                  ),
+                )
+              }
+              className={`flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
+                task.done
+                  ? "border-(--ok) bg-(--ok) text-white"
+                  : "border-content/30"
+              }`}
+            >
+              {task.done ? (
+                <Check className="size-3.5" strokeWidth={2.6} />
+              ) : null}
+            </button>
+            <span
+              className={`min-w-0 flex-1 py-2.5 text-[15px] leading-snug ${task.done ? "text-content/40 line-through" : ""}`}
+            >
+              {task.text}
+            </span>
+            <button
+              aria-label={`Remove ${task.text}`}
+              onClick={() =>
+                onChange(tasks.filter((entry) => entry.id !== task.id))
+              }
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-content/30 active:bg-selection"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ))}
+        <form
+          className="flex min-h-12 items-center gap-3 pl-3.5 pr-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            add();
+          }}
+        >
+          <Plus className="size-5 shrink-0 text-content/35" />
+          <input
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="Add a step"
+            enterKeyHint="done"
+            className="web-field min-w-0 flex-1 bg-transparent py-2.5 outline-none"
+          />
+          {text.trim() ? (
+            <button className={`${plainButton} h-9`}>Add</button>
+          ) : null}
+        </form>
+      </div>
+    </div>
+  );
+}

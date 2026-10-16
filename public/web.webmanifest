@@ -1,0 +1,19 @@
+{
+  "name": "Irgatos",
+  "short_name": "Irgatos",
+  "description": "Follow and answer your Irgatos chats from your phone or tablet.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#161616",
+  "theme_color": "#161616",
+  "icons": [
+    {
+      "src": "/irgat.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

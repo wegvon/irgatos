@@ -817,6 +817,11 @@ import { preloadNavigationWhenIdle } from "./model/preloadNavigation";
 import { requestTranscriptJump } from "../features/sessions/model/transcriptJump";
 import { publishLiveSessions } from "../features/sessions/data/sessionReferenceDirectory";
 import {
+  connectWebAccess,
+  webAccessDefaults,
+  type WebAccessDeps,
+} from "../features/web-access/model/webAccess";
+import {
   connectSessionMessageTransport,
   startSessionMessageGuardTimer,
   syncSessionMessages,
@@ -11746,6 +11751,20 @@ function Workspace({
   );
   const removeSessionRef = useRef(onRemoveHistorySession);
   removeSessionRef.current = onRemoveHistorySession;
+
+  // Browser access: answers the page served to the user's other devices.
+  const webAccessDeps = useRef<WebAccessDeps | null>(null);
+  webAccessDeps.current = {
+    ...webAccessDefaults,
+    sessions: () => sessionsRef.current,
+    submit: (sessionId, text) => onSubmit(sessionId, text, []),
+    approve: onApproval,
+    answer: onQuestionReply,
+    stop: onStop,
+    launch: (launch, sessionId) =>
+      launchQuickSessionRef.current(launch, sessionId),
+  };
+  useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);
 
   useEffect(() => {
     const listening = listen<{
