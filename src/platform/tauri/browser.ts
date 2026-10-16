@@ -97,3 +97,43 @@ export function listenBrowserEvents(
     },
   );
 }
+
+/** A `browser.*` app action the browser panel answers for an agent. */
+export type BrowserAgentRequest = {
+  id: string;
+  action: string;
+  input: Record<string, unknown>;
+};
+
+export function listenBrowserAgentRequests(
+  handler: (request: BrowserAgentRequest) => void,
+): Promise<() => void> {
+  return getCurrentWebviewWindow().listen<BrowserAgentRequest>(
+    "browser-agent-request",
+    (event) => handler(event.payload),
+  );
+}
+
+export function replyBrowserAgent(
+  id: string,
+  outcome: { result: unknown } | { error: string },
+) {
+  return invoke<void>("browser_agent_reply", {
+    id,
+    result: "result" in outcome ? (outcome.result ?? null) : null,
+    error: "error" in outcome ? outcome.error : null,
+  });
+}
+
+/** Which native view agents act on, e.g. the active tab's. */
+export function setBrowserAgentView(id: string) {
+  return invoke<void>("browser_set_agent_view", { id });
+}
+
+/** The start of the active page's readable text. */
+export function browserPageExcerpt(maxChars: number) {
+  return invoke<{ url: string; title: string; text: string; totalChars: number }>(
+    "browser_page_excerpt",
+    { maxChars },
+  );
+}
