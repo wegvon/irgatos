@@ -114,6 +114,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
 
   useEffect(() => {
     document.title = needsYou ? `(${needsYou}) Irgatos` : "Irgatos";
+    const badge = navigator as Navigator & {
+      setAppBadge?: (count: number) => Promise<void>;
+    };
+    void badge.setAppBadge?.(needsYou).catch(() => {});
   }, [needsYou]);
 
   if (signedOut || overview.error instanceof SignedOut)
