@@ -1,5 +1,5 @@
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
-import { looksLikeProject } from "../../projects/model/recents";
+import { isRemoteProjectPath, looksLikeProject } from "../../projects/model/recents";
 import {
   mergeModelSettings,
   modelEffortSetting,
@@ -1256,7 +1256,11 @@ export async function handleAgentApp(
           "request ID must use letters, digits, underscores or hyphens",
         );
       const launch = startLaunch(source, input, host);
-      const notifyIrgatId = completionRecipient(source, input, host, true);
+      // Completion reports follow local sessions only; a session on another
+      // machine is followed from that project's Sessions sidebar.
+      const notifyIrgatId = isRemoteProjectPath(launch.cwd)
+        ? undefined
+        : completionRecipient(source, input, host, true);
       if (input.worktreeCwd !== undefined) {
         const chosen = (await host.worktrees(launch.cwd)).worktrees.find(
           (tree) =>

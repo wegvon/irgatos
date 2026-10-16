@@ -52,7 +52,9 @@ if [ ! -x "$ENTRY" ] || [ "$FORCE_UPGRADE" = 1 ]; then
     mv "$TMP/node.tar.gz" "$NODE_ARCHIVE"
   fi
   mkdir "$TMP/node" "$TMP/unpacked" "$TMP/unpacked/bin"
-  tar -xzf "$NODE_ARCHIVE" -C "$TMP/node" "$NODE_STEM/bin/node" "$NODE_STEM/LICENSE"
+  # Never restore the archive's owner: as root inside a container that uid
+  # may not exist, and tar would fail with "Cannot change ownership".
+  tar --no-same-owner -xzf "$NODE_ARCHIVE" -C "$TMP/node" "$NODE_STEM/bin/node" "$NODE_STEM/LICENSE"
   mv "$TMP/node/$NODE_STEM/bin/node" "$TMP/unpacked/bin/node"
   mv "$TMP/node/$NODE_STEM/LICENSE" "$TMP/unpacked/LICENSE"
   # The host code is the one built into this desktop app, sent over SSH.

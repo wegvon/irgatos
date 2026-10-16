@@ -244,6 +244,21 @@ export async function connectMachine(
   return machine;
 }
 
+export async function renameMachine(
+  machineId: string,
+  name: string,
+): Promise<RemoteMachine> {
+  const machine = await invoke<RemoteMachine>("remote_rename", {
+    machineId,
+    name,
+  });
+  cachedMachines = cachedMachines.map((entry) =>
+    entry.id === machine.id ? machine : entry,
+  );
+  window.dispatchEvent(new Event(CHANGE));
+  return machine;
+}
+
 export async function disconnectMachine(machineId: string): Promise<void> {
   await invoke("remote_disconnect", { machineId });
   cachedMachines = cachedMachines.filter((entry) => entry.id !== machineId);
