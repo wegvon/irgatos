@@ -32,6 +32,8 @@ const PER_CHAT: usize = 2;
 const MAX_USER_CHARS: usize = 1200;
 const MAX_REPLY_CHARS: usize = 1500;
 const PREVIEW_CHARS: usize = 140;
+/// Questions shorter than this get the start of the answer in their preview.
+const SHORT_QUESTION_CHARS: usize = 25;
 
 #[derive(Clone, Debug, PartialEq)]
 struct Turn {
@@ -407,14 +409,21 @@ fn turns(title: &str, blocks: &[Value]) -> Vec<Turn> {
             text.push_str("\n\n");
             text.push_str(&clip(&open.answer, MAX_REPLY_CHARS));
         }
-        let preview_from = if open.asked.trim().is_empty() {
-            &open.answer
+        // A one-word "ok" says nothing about why the turn matched; the
+        // start of the answer does.
+        let asked = open.asked.trim();
+        let preview_from = if asked.chars().count() < SHORT_QUESTION_CHARS {
+            if asked.is_empty() {
+                open.answer.clone()
+            } else {
+                format!("{asked} · {}", open.answer)
+            }
         } else {
-            &open.asked
+            open.asked.clone()
         };
         out.push(Turn {
             block_id: open.block_id,
-            preview: one_line(preview_from, PREVIEW_CHARS),
+            preview: one_line(&preview_from, PREVIEW_CHARS),
             text,
         });
     }
@@ -534,11 +543,17 @@ mod tests {
             json!({"id": "u2", "role": "user", "text": "draft", "draft": true}),
             json!({"id": "u3", "role": "user", "text": "ok"}),
             json!({"id": "u4", "role": "user", "text": "Add a dark theme to the settings page"}),
+            json!({"id": "u5", "role": "user", "text": "Tamamdır"}),
+            json!({"id": "a5", "role": "assistant", "text": "RTX 3090 is the best value for local models."}),
         ];
         let turns = turns("Mail bugs", &blocks);
         let ids: Vec<&str> = turns.iter().map(|t| t.block_id.as_str()).collect();
         // "ok" with no answer is too short to mean anything.
-        assert_eq!(ids, ["u1", "u4"]);
+        assert_eq!(ids, ["u1", "u4", "u5"]);
+        assert_eq!(
+            turns[2].preview,
+            "Tamamdır · RTX 3090 is the best value for local models."
+        );
         assert_eq!(
             turns[0].text,
             "Mail bugs\n\nWhy does the mail list crash?\n\nAn HTML entity was cut in half."
