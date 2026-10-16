@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { BrowserPanel } from "./BrowserPanel";
+import { runBrowserTabCommand } from "../model/browserTabCommands";
 import type {
   PageSelection,
   PickerPoll,
@@ -14,10 +15,19 @@ import {
 } from "../../sessions/model/sendToChat";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+const listeners: Array<(event: { payload: unknown }) => void> = [];
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({
-    listen: vi.fn(() => Promise.resolve(() => undefined)),
+    listen: vi.fn(
+      (_: string, handler: (event: { payload: unknown }) => void) => {
+        listeners.push(handler);
+        return Promise.resolve(() => undefined);
+      },
+    ),
   }),
+}));
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ setFocus: vi.fn(() => Promise.resolve()) }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 vi.mock("../../sessions/model/attachments", () => ({
@@ -553,7 +563,9 @@ it("explains when macOS blocks Chrome profile discovery", async () => {
     expect(
       vi
         .mocked(invoke)
-        .mock.calls.filter(([command]) => command === "browser_chrome_profiles"),
+        .mock.calls.filter(
+          ([command]) => command === "browser_chrome_profiles",
+        ),
     ).toHaveLength(2);
   } finally {
     act(() => root.unmount());
@@ -628,5 +640,170 @@ it("explains persistent sessions and the passkey fallback before browsing", () =
   } finally {
     act(() => root.unmount());
     container.remove();
+  }
+});
+
+function renderPanel(onClose = vi.fn()) {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  act(() =>
+    root.render(createElement(BrowserPanel, { visible: true, onClose })),
+  );
+  return {
+    container,
+    onClose,
+    tabs: () =>
+      [...container.querySelectorAll<HTMLElement>('[role="tab"]')].map(
+        (tab) => tab.textContent,
+      ),
+    async open(address: string) {
+      const input = container.querySelector<HTMLInputElement>(
+        'input[aria-label="Address"]',
+      )!;
+      act(() => setInput(input, address));
+      act(() =>
+        container
+          .querySelector("form")!
+          .dispatchEvent(
+            new Event("submit", { bubbles: true, cancelable: true }),
+          ),
+      );
+      await flush();
+    },
+    click(selector: string) {
+      act(() =>
+        container
+          .querySelector<HTMLElement>(selector)!
+          .dispatchEvent(new MouseEvent("click", { bubbles: true })),
+      );
+    },
+    unmount() {
+      act(() => root.unmount());
+      container.remove();
+    },
+  };
+}
+
+function idsOf(command: string) {
+  return vi
+    .mocked(invoke)
+    .mock.calls.filter(([name]) => name === command)
+    .map(([, args]) => (args as { id: string }).id);
+}
+
+it("opens pages in separate tabs that keep their views", async () => {
+  const panel = renderPanel();
+  try {
+    await panel.open("a.example");
+    panel.click('button[aria-label="New Tab"]');
+    await flush();
+    expect(panel.tabs()).toEqual(["a.example", "New Tab"]);
+    // The first tab's page is hidden, not closed.
+    expect(invoke).toHaveBeenCalledWith("browser_set_bounds", {
+      id: "main",
+      bounds: null,
+    });
+    expect(idsOf("browser_close")).toEqual([]);
+
+    await panel.open("b.example");
+    const second = idsOf("browser_open").at(-1)!;
+    expect(second).not.toBe("main");
+    expect(panel.tabs()).toEqual(["a.example", "b.example"]);
+
+    vi.mocked(invoke).mockClear();
+    panel.click('[role="tab"]');
+    await flush();
+    expect(invoke).toHaveBeenCalledWith("browser_set_bounds", {
+      id: second,
+      bounds: null,
+    });
+    expect(invoke).toHaveBeenCalledWith("browser_set_bounds", {
+      id: "main",
+      bounds: expect.objectContaining({ width: 560 }),
+    });
+    expect(
+      panel.container.querySelector<HTMLInputElement>(
+        'input[aria-label="Address"]',
+      )!.value,
+    ).toBe("https://a.example");
+    expect(idsOf("browser_open")).toEqual([]);
+  } finally {
+    panel.unmount();
+  }
+});
+
+it("closes a tab's view, and Browser with its last tab", async () => {
+  const panel = renderPanel();
+  try {
+    await panel.open("a.example");
+    panel.click('button[aria-label="New Tab"]');
+    await panel.open("b.example");
+    const second = idsOf("browser_open").at(-1)!;
+
+    panel.click('button[aria-label="Close b.example"]');
+    await flush();
+    expect(idsOf("browser_close")).toEqual([second]);
+    expect(panel.tabs()).toEqual(["a.example"]);
+    expect(panel.onClose).not.toHaveBeenCalled();
+
+    panel.click('button[aria-label="Close a.example"]');
+    await flush();
+    expect(idsOf("browser_close")).toEqual([second, "main"]);
+    expect(panel.tabs()).toEqual(["New Tab"]);
+    expect(panel.onClose).toHaveBeenCalledOnce();
+  } finally {
+    panel.unmount();
+  }
+});
+
+it("takes tab shortcuts only while Browser has focus", async () => {
+  const panel = renderPanel();
+  try {
+    await panel.open("a.example");
+    document.body.focus();
+    expect(runBrowserTabCommand("new")).toBe(false);
+
+    panel.container
+      .querySelector<HTMLInputElement>('input[aria-label="Address"]')!
+      .focus();
+    act(() => {
+      expect(runBrowserTabCommand("new")).toBe(true);
+    });
+    expect(panel.tabs()).toEqual(["a.example", "New Tab"]);
+    act(() => {
+      expect(runBrowserTabCommand("prev")).toBe(true);
+    });
+    expect(
+      panel.container.querySelector('[aria-selected="true"]')!.textContent,
+    ).toBe("a.example");
+    act(() => {
+      expect(runBrowserTabCommand("close")).toBe(true);
+    });
+    expect(panel.tabs()).toEqual(["New Tab"]);
+    expect(runBrowserTabCommand("split-right")).toBe(false);
+  } finally {
+    panel.unmount();
+  }
+});
+
+it("opens links that ask for a new window in a new tab", async () => {
+  const panel = renderPanel();
+  try {
+    await panel.open("a.example");
+    const emit = listeners.at(-1)!;
+    act(() =>
+      emit({
+        payload: { id: "main", kind: "popup", url: "https://b.example/" },
+      }),
+    );
+    await flush();
+    expect(panel.tabs()).toEqual(["a.example", "b.example"]);
+    expect(invoke).toHaveBeenCalledWith(
+      "browser_open",
+      expect.objectContaining({ url: "https://b.example/" }),
+    );
+  } finally {
+    panel.unmount();
   }
 });

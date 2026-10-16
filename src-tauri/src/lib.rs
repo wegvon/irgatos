@@ -463,6 +463,7 @@ pub fn run() {
             browser::browser_set_bounds,
             browser::browser_action,
             browser::browser_close,
+            browser::browser_favicon,
             fs::git_branches,
             fs::git_checkout,
             fs::git_create_branch,
