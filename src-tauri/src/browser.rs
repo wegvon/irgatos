@@ -219,6 +219,8 @@ fn configure<'a>(
         .with_url(url.as_str())
         .with_bounds(rect)
         .with_focused(false)
+        // Right-click > Inspect Element, to debug pages that misbehave here.
+        .with_devtools(true)
         .with_navigation_handler(move |value| {
             let allowed = allowed_navigation(&value, nav.2.as_ref());
             if !allowed {
