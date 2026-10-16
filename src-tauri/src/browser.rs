@@ -260,8 +260,34 @@ fn build_view(
     use wry::WebViewBuilderExtDarwin;
     configure(WebViewBuilder::new(), window, id, url, rect, app_origin)
         .with_data_store_identifier(DATA_STORE_ID)
+        .with_user_agent(&safari_user_agent(installed_safari_version().as_deref()))
         .build_as_child(window)
         .map_err(|e| e.to_string())
+}
+
+/// WKWebView's default user agent stops at "(KHTML, like Gecko)". Sites such as
+/// x.com treat that as an unsupported embedded browser and fail their API
+/// calls, so the browser presents itself as the Safari the system ships.
+#[cfg(any(target_os = "macos", test))]
+fn safari_user_agent(version: Option<&str>) -> String {
+    let version = version
+        .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit() || c == '.'))
+        .unwrap_or("18.0");
+    format!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+         (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn installed_safari_version() -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))?;
+    let value =
+        bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
+    value
+        .downcast_ref::<NSString>()
+        .map(|value| value.to_string())
 }
 
 /// Linux supports child views on X11 only; Wayland sessions get an error.
@@ -734,6 +760,18 @@ fn chromium_timestamp_to_unix(value: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presents_as_safari() {
+        assert_eq!(
+            safari_user_agent(Some("26.1")),
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+             (KHTML, like Gecko) Version/26.1 Safari/605.1.15"
+        );
+        for bad in [None, Some(""), Some("26.1; evil")] {
+            assert!(safari_user_agent(bad).ends_with("Version/18.0 Safari/605.1.15"));
+        }
+    }
 
     #[test]
     fn opens_only_web_addresses_outside_the_app() {
