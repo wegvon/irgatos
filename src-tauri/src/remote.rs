@@ -404,7 +404,7 @@ fn start_ssh_job(
                     let output = remote_ssh::run_script(
                         &target,
                         platform,
-                        remote_ssh::upgrade_script(platform, target.remote_port),
+                        remote_ssh::upgrade_script(platform, target.remote_port)?,
                         &job,
                         &askpass,
                     )?;
@@ -427,7 +427,7 @@ fn start_ssh_job(
                 let output = remote_ssh::run_script(
                     &target,
                     platform,
-                    remote_ssh::bootstrap_script(platform),
+                    remote_ssh::bootstrap_script(platform)?,
                     &job,
                     &askpass,
                 )?;

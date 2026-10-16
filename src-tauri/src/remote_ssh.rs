@@ -1,6 +1,8 @@
 use crate::ssh_askpass::Askpass;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -388,40 +390,89 @@ fn powershell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-pub fn bootstrap_script(platform: HostPlatform) -> String {
+/// The host code built into this app (`npm run host:build`, see build.rs).
+/// Empty when the app was compiled without it.
+const HOST_BUNDLE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/irgat-host.mjs"));
+const PROVIDER_GUARD: &[u8] = include_bytes!("../../host/provider-guard.mjs");
+const HOST_RUNTIMES: &str = include_str!("../../host/runtimes.json");
+
+pub fn bootstrap_script(platform: HostPlatform) -> Result<String, String> {
     let template = match platform {
         HostPlatform::Unix => include_str!("remote_bootstrap.sh"),
         HostPlatform::Windows => include_str!("remote_bootstrap.ps1"),
     };
-    bootstrap_script_from_template(platform, template)
+    bootstrap_script_from_template(platform, template, HOST_BUNDLE)
 }
 
-fn bootstrap_script_from_template(platform: HostPlatform, template: &str) -> String {
+/// Base64 in short lines, so the payload is safe inside a shell here-document.
+fn base64_lines(bytes: &[u8]) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    encoded
+        .as_bytes()
+        .chunks(76)
+        .map(|line| std::str::from_utf8(line).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn bootstrap_script_from_template(
+    platform: HostPlatform,
+    template: &str,
+    bundle: &[u8],
+) -> Result<String, String> {
     let version = env!("CARGO_PKG_VERSION");
-    let url = format!("https://github.com/wegvon/irgatos/releases/download/v{version}");
     match platform {
         // include_str! preserves checkout line endings, including Windows CRLF.
-        HostPlatform::Unix => template
-            .replace("\r\n", "\n")
-            .replace("@@VERSION@@", &shell_quote(version))
-            .replace("@@RELEASE@@", &shell_quote(&url)),
-        HostPlatform::Windows => template
-            .replace("@@VERSION@@", &powershell_quote(version))
-            .replace("@@RELEASE@@", &powershell_quote(&url))
-            .replace("@@ACL@@", include_str!("../../host/windows-acl.ps1")),
+        // Unix hosts get the host code from this app over SSH and Node from
+        // nodejs.org, so setup does not depend on a published GitHub release.
+        HostPlatform::Unix => {
+            if bundle.is_empty() {
+                return Err("This Irgatos build does not include the host. Rebuild the app with `npm run host:build` first.".into());
+            }
+            let runtimes: Value = serde_json::from_str(HOST_RUNTIMES)
+                .map_err(|_| "Invalid host runtime list in this build")?;
+            let node_version = runtimes["nodeVersion"]
+                .as_str()
+                .ok_or("Invalid host runtime list in this build")?;
+            let mut node_cases = String::new();
+            for target in ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"] {
+                let hash = runtimes["sha256"][target]
+                    .as_str()
+                    .filter(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+                    .ok_or("Invalid host runtime list in this build")?;
+                node_cases.push_str(&format!("    {target}) NODE_SHA256={hash} ;;\n"));
+            }
+            node_cases.push_str("    *) echo 'Unsupported host platform.' >&2; exit 1 ;;");
+            let host_hash = format!("{:x}", Sha256::digest(bundle));
+            Ok(template
+                .replace("\r\n", "\n")
+                .replace("@@VERSION@@", &shell_quote(version))
+                .replace("@@NODE_VERSION@@", &shell_quote(node_version))
+                .replace("@@HOST_SHA256@@", &shell_quote(&host_hash))
+                .replace("@@NODE_SHA256@@", &node_cases)
+                .replace("@@PROVIDER_GUARD@@", &base64_lines(PROVIDER_GUARD))
+                .replace("@@HOST_BUNDLE@@", &base64_lines(bundle)))
+        }
+        HostPlatform::Windows => {
+            let url = format!("https://github.com/wegvon/irgatos/releases/download/v{version}");
+            Ok(template
+                .replace("@@VERSION@@", &powershell_quote(version))
+                .replace("@@RELEASE@@", &powershell_quote(&url))
+                .replace("@@ACL@@", include_str!("../../host/windows-acl.ps1")))
+        }
     }
 }
 
-pub fn upgrade_script(platform: HostPlatform, port: u16) -> String {
-    let script = bootstrap_script(platform);
-    match platform {
+pub fn upgrade_script(platform: HostPlatform, port: u16) -> Result<String, String> {
+    let script = bootstrap_script(platform)?;
+    Ok(match platform {
         HostPlatform::Unix => {
             format!("IRGAT_HOST_FORCE_UPGRADE=1\nIRGAT_HOST_PORT={port}\n{script}")
         }
         HostPlatform::Windows => format!(
             "$env:IRGAT_HOST_FORCE_UPGRADE = '1'\n$env:IRGAT_HOST_PORT = '{port}'\n{script}"
         ),
-    }
+    })
 }
 
 pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
@@ -789,27 +840,44 @@ mod tests {
     fn unix_bootstrap_accepts_windows_checkout_line_endings() {
         let lf_template = include_str!("remote_bootstrap.sh").replace("\r\n", "\n");
         let crlf_template = lf_template.replace('\n', "\r\n");
-        let script = bootstrap_script_from_template(HostPlatform::Unix, &crlf_template);
+        let script =
+            bootstrap_script_from_template(HostPlatform::Unix, &crlf_template, b"host").unwrap();
         assert!(script.starts_with("set -eu\n"));
         assert!(!script.contains('\r'));
         assert_eq!(
             script,
-            bootstrap_script_from_template(HostPlatform::Unix, &lf_template)
+            bootstrap_script_from_template(HostPlatform::Unix, &lf_template, b"host").unwrap()
         );
     }
     #[test]
-    fn bootstrap_is_versioned_and_only_explicit_upgrade_restarts_the_host() {
-        let script = bootstrap_script(HostPlatform::Unix);
-        assert!(!script.contains('\r'));
+    fn unix_bootstrap_carries_the_host_and_never_uses_github_releases() {
+        let template = include_str!("remote_bootstrap.sh");
+        let bundle = vec![b'x'; 10_000];
+        let script = bootstrap_script_from_template(HostPlatform::Unix, template, &bundle).unwrap();
         assert!(!script.contains("@@"));
+        assert!(!script.contains("github.com"));
+        assert!(script.contains("https://nodejs.org/dist/v$NODE_VERSION/"));
+        assert!(script.contains("linux-x64) NODE_SHA256=6e1db87e"));
+        assert!(script.contains(&base64_lines(&bundle)));
+        assert!(base64_lines(&bundle).lines().all(|line| line.len() <= 76));
+        assert!(script.contains(&format!("HOST_SHA256='{:x}'", Sha256::digest(&bundle))));
         assert!(script.contains("--proto '=https'"));
         assert!(script.contains("checksum mismatch"));
+        assert!(bootstrap_script_from_template(HostPlatform::Unix, template, b"").is_err());
+    }
+    #[test]
+    fn bootstrap_is_versioned_and_only_explicit_upgrade_restarts_the_host() {
+        let script = bootstrap_script_from_template(
+            HostPlatform::Unix,
+            include_str!("remote_bootstrap.sh"),
+            b"host",
+        )
+        .unwrap();
+        assert!(!script.contains('\r'));
         assert!(script.contains("\"$FORCE_UPGRADE\" = 1"));
         assert!(script.contains("service uninstall"));
-        assert!(upgrade_script(HostPlatform::Unix, 3774).starts_with("IRGAT_HOST_FORCE_UPGRADE=1"));
-        assert!(!upgrade_script(HostPlatform::Unix, 3774).contains('\r'));
-        assert!(upgrade_script(HostPlatform::Windows, 3774)
-            .starts_with("$env:IRGAT_HOST_FORCE_UPGRADE = '1'"));
+        let windows = upgrade_script(HostPlatform::Windows, 3774).unwrap();
+        assert!(windows.starts_with("$env:IRGAT_HOST_FORCE_UPGRADE = '1'"));
     }
     #[test]
     fn remote_platform_probe_handles_cmd_powershell_and_unix() {
@@ -827,7 +895,7 @@ mod tests {
         );
         assert!(parse_platform("unrecognized shell").is_err());
         assert!(powershell_reader().len() < 4096);
-        let script = bootstrap_script(HostPlatform::Windows);
+        let script = bootstrap_script(HostPlatform::Windows).unwrap();
         assert!(!script.contains("@@"));
         assert!(script.contains("checksum mismatch"));
         assert!(script.contains("Protect-IrgatDirectory"));
