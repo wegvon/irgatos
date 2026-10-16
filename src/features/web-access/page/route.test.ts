@@ -10,6 +10,7 @@ describe("browser page routes", () => {
       filter: "running",
     });
     expect(parseRoute("#/chat/a%2Fb")).toEqual({ name: "chat", id: "a/b" });
+    expect(parseRoute("#/irgats")).toEqual({ name: "irgats" });
     expect(parseRoute("#/ideas")).toEqual({ name: "ideas" });
     expect(parseRoute("#/idea/c1")).toEqual({ name: "idea", id: "c1" });
     expect(parseRoute("#/new")).toEqual({ name: "new" });

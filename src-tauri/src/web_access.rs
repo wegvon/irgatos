@@ -40,13 +40,17 @@ const PUBLIC_FILES: [&str; 2] = ["/web.webmanifest", "/irgat.png"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 5] = ["overview", "session", "projects", "ideas", "services"];
-const WRITE_ACTIONS: [&str; 9] = [
+const READ_ACTIONS: [&str; 6] = [
+    "overview", "session", "projects", "ideas", "services", "irgats",
+];
+const WRITE_ACTIONS: [&str; 11] = [
     "send",
     "approval",
     "answer",
     "stop",
     "newChat",
+    "irgatOpen",
+    "irgatNewChat",
     "ideaAdd",
     "ideaUpdate",
     "ideaMove",

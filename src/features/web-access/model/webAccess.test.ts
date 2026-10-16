@@ -98,6 +98,14 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
     answer: vi.fn(),
     stop: vi.fn(),
     launch: vi.fn(async () => {}),
+    irgatHost: {
+      home: async () => "/Users/me",
+      load: vi.fn(async () => null),
+      create: (cwd) => newSession("claude", cwd),
+      add: vi.fn(),
+    },
+    irgatsEnabled: () => false,
+    saveSession: vi.fn(async () => null),
     projects: () => ["/Users/me/code/shop", "/Users/me/code/irgatos"],
     freeChatDir: async () => "/Users/me/.irgatos/scratch",
     choice: (cwd) =>

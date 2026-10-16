@@ -5,6 +5,7 @@
  */
 import type { FleetEntry, FleetRequest } from "../../fleet/model/fleet";
 import type { IdeasState } from "../../ideas/model/ideas";
+import type { IrgatStatus } from "../../irgats/model/irgat";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
 import type { BlockRole, HarnessId } from "../../sessions/model/session";
 
@@ -48,6 +49,8 @@ export type WebSession = {
   harness: HarnessId;
   model: string;
   irgat?: string;
+  /** The Irgat's mascot, for its own chats. */
+  mascot?: WebMascot;
   cwd: string;
   projectLabel: string;
   branch?: string;
@@ -82,3 +85,31 @@ export type WebProjects = {
 export type WebIdeas = IdeasState;
 
 export type WebServices = { services: (ServiceStatus & { label: string })[] };
+
+export type WebMascot = { name: string; color: string };
+
+/** One of an Irgat's extra chats; the Irgat itself opens its main one. */
+export type WebIrgatChat = {
+  sessionId: string;
+  title: string;
+  /** Unknown until the chat is loaded on the Mac. */
+  status: IrgatStatus;
+};
+
+export type WebIrgat = {
+  id: string;
+  name: string;
+  mascot: WebMascot;
+  /** The projects it works on, by their sidebar names. */
+  projects: string[];
+  /** Its most pressing chat: waiting on you, then working, then the main one. */
+  status: IrgatStatus;
+  activity?: string;
+  chats: WebIrgatChat[];
+};
+
+export type WebIrgats = {
+  /** Irgats can be turned off in the Mac's settings. */
+  enabled: boolean;
+  irgats: WebIrgat[];
+};

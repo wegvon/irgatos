@@ -137,8 +137,9 @@ export function shouldPersistSession(session: Session): boolean {
     !isRemoteProjectPath(session.cwd) &&
     session.cwd !== "~" &&
     (session.blocks.some((block) => block.role === "user") ||
-      (isIrgatSession(session.id) &&
-        (session.blocks.length > 0 || !!session.irgatTranscript)))
+      // The Irgat lists its chats by id, so a blank one must survive a
+      // restart or its row opens nothing.
+      isIrgatSession(session.id))
   );
 }
 

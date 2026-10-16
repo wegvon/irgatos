@@ -11,6 +11,7 @@ export type Route =
   /** `filter` keeps the list to one Fleet bucket. */
   | { name: "chats"; filter?: FleetBucket }
   | { name: "chat"; id: string }
+  | { name: "irgats" }
   | { name: "ideas" }
   | { name: "idea"; id: string }
   | { name: "new" }
@@ -18,7 +19,7 @@ export type Route =
 
 export type Screen = Extract<
   Route,
-  { name: "today" | "chats" | "chat" | "ideas" }
+  { name: "today" | "chats" | "chat" | "irgats" | "ideas" }
 >;
 export type Sheet = Exclude<Route, Screen>;
 
@@ -32,6 +33,7 @@ export function parseRoute(hash: string): Route {
         : { name };
     case "chat":
       return value ? { name, id: value } : { name: "chats" };
+    case "irgats":
     case "ideas":
       return { name };
     case "idea":
