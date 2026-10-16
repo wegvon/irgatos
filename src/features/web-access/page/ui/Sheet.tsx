@@ -55,7 +55,7 @@ export function Sheet({
   return (
     <div className="fixed inset-0 z-50">
       <div
-        className="web-fade-in absolute inset-0 bg-black/45"
+        className="web-fade-in absolute inset-0 bg-black/50"
         style={drag ? { opacity: Math.max(0.2, 1 - drag / 400) } : undefined}
         onClick={onClose}
       />
@@ -68,24 +68,24 @@ export function Sheet({
             ? { transform: `translateY(${drag}px)` }
             : { transition: "transform 200ms var(--motion-ease-out)" }
         }
-        className={`flex flex-col overflow-hidden bg-(--sheet) shadow-2xl shadow-black/40 ${
+        className={`flex flex-col overflow-hidden bg-(--sheet) shadow-[inset_0_0_0_1px_var(--card-edge),0_30px_80px_-20px_rgb(0_0_0/0.5)] ${
           wide
-            ? "web-pop-in absolute left-1/2 top-1/2 max-h-[min(86%,920px)] w-[min(620px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 rounded-[26px] ring-[0.5px] ring-stroke"
-            : "web-sheet-up absolute inset-x-0 bottom-0 max-h-[calc(var(--app-height,100dvh)-var(--safe-top)-8px)] rounded-t-[26px]"
+            ? "web-pop-in absolute left-1/2 top-1/2 max-h-[min(86%,920px)] w-[min(620px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 rounded-[32px]"
+            : "web-sheet-up absolute inset-x-0 bottom-0 max-h-[calc(var(--app-height,100dvh)-var(--safe-top)-8px)] rounded-t-[32px]"
         }`}
       >
         <div {...grab} className="shrink-0 touch-none">
           {wide ? null : (
-            <div className="mx-auto mt-2 h-[5px] w-10 rounded-full bg-content/20" />
+            <div className="mx-auto mt-2 h-[5px] w-10 rounded-full bg-(--ink-3)/50" />
           )}
-          <div className="flex h-14 items-center gap-2 px-5">
-            <h2 className="min-w-0 flex-1 truncate text-[19px] font-bold tracking-[-0.01em]">
+          <div className="flex h-16 items-center gap-2 px-5">
+            <h2 className="min-w-0 flex-1 truncate text-[20px] font-semibold tracking-[-0.02em] text-(--ink)">
               {title}
             </h2>
             <button
               aria-label="Close"
               onClick={onClose}
-              className="web-press flex size-8 shrink-0 items-center justify-center rounded-full bg-content/[0.08] text-content/60"
+              className="glass web-press flex size-9 shrink-0 items-center justify-center rounded-full text-(--ink-2)"
             >
               <X className="size-4" strokeWidth={2.2} />
             </button>

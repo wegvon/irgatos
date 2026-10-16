@@ -1,44 +1,60 @@
-/* Browser access page: phone and tablet layer over the app's theme tokens. */
+/*
+ * Browser access page: the phone and iPad layout over the desktop app's own
+ * theme tokens. Colors are the desktop's: content at a few opacities for
+ * surfaces and text, the accent, and amber/rose/emerald for status.
+ */
 
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-  --accent: var(--user-accent-color, var(--color-accent));
-  --surface: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 4%)
-  );
-  --surface-strong: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 8%)
+  --tab-height: 64px;
+}
+
+html.web-companion {
+  --ink: var(--color-content);
+  --ink-2: color-mix(in srgb, var(--color-content) 60%, transparent);
+  --ink-3: color-mix(in srgb, var(--color-content) 40%, transparent);
+  --accent: var(--color-accent);
+  --hairline: var(--color-stroke);
+  --card: color-mix(in srgb, var(--color-content) 3%, transparent);
+  --card-edge: color-mix(in srgb, var(--color-content) 10%, transparent);
+  --raised: color-mix(
+    in srgb,
+    var(--color-content) 6%,
+    var(--color-background-base)
   );
   --sheet: hsl(
     var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 5%)
+      calc(var(--background-lightness) + 4%)
   );
-  --segment: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 16%)
-  );
-  --bar: color-mix(in srgb, var(--color-background-base) 82%, transparent);
-  --warn: #f5b041;
-  --on-warn: rgb(0 0 0 / 0.8);
-  --ok: #34d399;
-  --bad: #fb7185;
-  --tab-height: 56px;
+
+  /* Status colors, as the desktop's Fleet and sidebar use them. */
+  --tone-amber: oklch(82.8% 0.189 84.429);
+  --tone-rose: oklch(71.2% 0.194 13.428);
+  --tone-emerald: oklch(76.5% 0.177 163.223);
+  --tone-accent: var(--color-accent);
+  --tone-muted: color-mix(in srgb, var(--color-content) 55%, transparent);
+
+  --ok: var(--tone-emerald);
+  --warn: var(--tone-amber);
+  --bad: var(--tone-rose);
+  background: var(--color-background-base);
 }
 
-html.theme-light {
-  --surface: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --surface-strong: hsl(var(--theme-hue) var(--theme-saturation) 93%);
+/* The same hues one step darker, so they still read on a light page. */
+html.web-companion.theme-light {
   --sheet: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --segment: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --warn: #b45309;
-  --on-warn: #fff;
-  --ok: #047857;
-  --bad: #be123c;
+  --raised: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --tone-amber: oklch(66.6% 0.179 58.318);
+  --tone-rose: oklch(58.6% 0.253 17.585);
+  --tone-emerald: oklch(59.6% 0.145 163.225);
+}
+
+/* A full-screen layer over the tabs: the chat, a new chat. */
+.web-page {
+  background: var(--color-background-base);
 }
 
 html.keyboard-open {
@@ -49,11 +65,17 @@ html.web-companion,
 html.web-companion body,
 html.web-companion #root {
   height: var(--app-height, 100dvh);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
+}
+
+html.web-companion body,
+html.web-companion #root {
+  background: transparent;
 }
 
 html.web-companion button {
@@ -71,12 +93,82 @@ html.web-companion button {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 
-.web-bar {
-  background: var(--bar);
-  backdrop-filter: saturate(1.6) blur(20px);
-  -webkit-backdrop-filter: saturate(1.6) blur(20px);
+.web-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Surfaces --------------------------------------------------------- */
+
+/* In the components layer, so a utility on the same element still wins. */
+@layer components {
+  /* A card, like the desktop's Fleet cards: a faint fill and a hairline. */
+  .glass {
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--card-edge);
+  }
+
+  /* Chrome over moving content: tab bar, composer, sidebar. */
+  .glass-float {
+    background: color-mix(in srgb, var(--raised) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(20px);
+    -webkit-backdrop-filter: saturate(1.4) blur(20px);
+    box-shadow:
+      inset 0 0 0 1px var(--card-edge),
+      0 8px 24px -8px rgb(0 0 0 / 0.35);
+  }
+
+  .glass-bar {
+    background: color-mix(
+      in srgb,
+      var(--color-background-base) 82%,
+      transparent
+    );
+    backdrop-filter: saturate(1.4) blur(20px);
+    -webkit-backdrop-filter: saturate(1.4) blur(20px);
+  }
+
+  /* A card that waits on you: the desktop's amber edge. */
+  .attention {
+    background: color-mix(in srgb, var(--tone-amber) 5%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--tone-amber) 32%, transparent);
+  }
+
+  .tone-text {
+    color: var(--tint);
+  }
+
+  /* A status chip: the tone at 12% behind its own color, as on Kanban cards. */
+  .tone-soft {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    color: var(--tint);
+  }
+
+  .tone-dot {
+    background: var(--tint);
+  }
+}
+
+/* Progress: a thin bar filled up to --value (0-1). */
+.ticks {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
+}
+
+.ticks::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--value, 0) * 100%);
+  border-radius: inherit;
+  background: var(--tint, var(--accent));
+  transition: width 400ms var(--motion-ease-out);
 }
 
 /* iOS zooms into any field under 16px; keep every field at 16px. */
@@ -86,14 +178,15 @@ html.web-companion button {
 }
 
 .web-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 38%, transparent);
+  color: var(--ink-3);
 }
 
 .web-press {
   transition:
-    transform 120ms var(--motion-ease-out),
-    background-color 120ms var(--motion-ease-out),
-    opacity 120ms var(--motion-ease-out);
+    transform 140ms var(--motion-ease-out),
+    background-color 140ms var(--motion-ease-out),
+    box-shadow 140ms var(--motion-ease-out),
+    opacity 140ms var(--motion-ease-out);
 }
 
 .web-press:active:not(:disabled) {
@@ -117,10 +210,10 @@ html.web-companion button {
 @keyframes web-pulse {
   0% {
     transform: scale(0.6);
-    opacity: 0.55;
+    opacity: 0.5;
   }
   100% {
-    transform: scale(1.9);
+    transform: scale(2);
     opacity: 0;
   }
 }
@@ -128,15 +221,15 @@ html.web-companion button {
 .web-shimmer {
   background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-content) 45%, transparent) 0%,
-      var(--color-content) 50%,
-      color-mix(in srgb, var(--color-content) 45%, transparent) 100%
+      var(--ink-3) 0%,
+      var(--ink) 50%,
+      var(--ink-3) 100%
     )
     0 0 / 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: web-shimmer 2.2s linear infinite;
+  animation: web-shimmer 2.4s linear infinite;
 }
 
 @keyframes web-shimmer {
@@ -146,18 +239,18 @@ html.web-companion button {
 }
 
 .web-push-in {
-  animation: web-push-in 280ms var(--motion-ease-out);
+  animation: web-push-in 300ms var(--motion-ease-out);
 }
 
 @keyframes web-push-in {
   from {
-    transform: translateX(28%);
+    transform: translateX(24%);
     opacity: 0;
   }
 }
 
 .web-fade-in {
-  animation: web-fade-in 200ms var(--motion-ease-out);
+  animation: web-fade-in 220ms var(--motion-ease-out);
 }
 
 @keyframes web-fade-in {
@@ -167,7 +260,7 @@ html.web-companion button {
 }
 
 .web-sheet-up {
-  animation: web-sheet-up 320ms var(--motion-ease-out);
+  animation: web-sheet-up 340ms var(--motion-ease-out);
 }
 
 @keyframes web-sheet-up {
@@ -177,19 +270,41 @@ html.web-companion button {
 }
 
 .web-pop-in {
-  animation: web-pop-in 220ms var(--motion-ease-out);
+  animation: web-pop-in 240ms var(--motion-ease-out);
 }
 
 @keyframes web-pop-in {
   from {
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(10px) scale(0.98);
     opacity: 0;
   }
+}
+
+/* Cards come in one after another on first paint. */
+.web-rise > * {
+  animation: web-pop-in 380ms var(--motion-ease-out) both;
+}
+
+.web-rise > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.web-rise > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.web-rise > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.web-rise > *:nth-child(n + 5) {
+  animation-delay: 160ms;
 }
 
 .web-markdown {
   font-size: 16px;
   line-height: 1.6;
+  color: var(--ink);
 }
 
 .web-markdown pre,
@@ -206,6 +321,11 @@ html.web-companion button {
 .web-kanban {
   scroll-snap-type: x proximity;
   overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.web-kanban::-webkit-scrollbar {
+  display: none;
 }
 
 .web-kanban > * {
@@ -218,7 +338,8 @@ html.web-companion button {
   .web-push-in,
   .web-sheet-up,
   .web-pop-in,
-  .web-fade-in {
+  .web-fade-in,
+  .web-rise > * {
     animation: none;
   }
 

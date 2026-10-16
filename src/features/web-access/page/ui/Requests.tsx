@@ -38,11 +38,13 @@ function Approval({
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[15px] leading-snug">
-        <span className="text-content/55">Wants to </span>
-        <span className="font-medium">{lowerFirst(request.label)}</span>
+        <span className="text-(--ink-2)">Wants to </span>
+        <span className="font-semibold text-(--ink)">
+          {lowerFirst(request.label)}
+        </span>
       </div>
       {request.detail ? (
-        <pre className="web-selectable max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl bg-content/[0.06] px-3 py-2.5 font-mono text-[13px] leading-relaxed text-content/85">
+        <pre className="web-selectable max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[16px] bg-content/6 px-3.5 py-3 font-mono text-[13px] leading-relaxed text-(--ink) shadow-[inset_0_0_0_1px_var(--hairline)]">
           {request.detail}
         </pre>
       ) : null}
@@ -119,7 +121,7 @@ function QuestionForm({
     <div className="flex flex-col gap-4">
       {questions.map((question) => (
         <fieldset key={question.id} className="flex flex-col gap-2">
-          <legend className="mb-2 text-[16px] font-medium leading-snug">
+          <legend className="mb-2 text-[16px] font-semibold leading-snug text-(--ink)">
             {question.prompt}
           </legend>
           {question.options.map((option) => {
@@ -131,25 +133,25 @@ function QuestionForm({
                 role={question.multiSelect ? "checkbox" : "radio"}
                 aria-checked={on}
                 onClick={() => toggle(question, option.id)}
-                className={`web-press flex min-h-12 items-start gap-3 rounded-[14px] px-3.5 py-3 text-left ${
+                className={`web-press flex min-h-12 items-start gap-3 rounded-[18px] px-3.5 py-3 text-left ${
                   on
-                    ? "bg-(--accent)/15 shadow-[inset_0_0_0_1.5px_var(--accent)]"
-                    : "bg-content/[0.05]"
+                    ? "bg-(--accent)/12 shadow-[inset_0_0_0_1.5px_var(--accent)]"
+                    : "bg-content/6 shadow-[inset_0_0_0_1px_var(--hairline)]"
                 }`}
               >
                 <span
                   className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-[1.5px] ${
                     question.multiSelect ? "rounded-md" : "rounded-full"
-                  } ${on ? "border-(--accent) bg-(--accent) text-white" : "border-content/30"}`}
+                  } ${on ? "border-(--accent) bg-(--accent) text-white" : "border-(--ink-3)"}`}
                 >
                   {on ? <Check className="size-3.5" strokeWidth={2.5} /> : null}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-[15px] font-medium">
+                  <span className="block text-[15px] font-medium text-(--ink)">
                     {option.label}
                   </span>
                   {option.description ? (
-                    <span className="mt-0.5 block text-[13px] leading-snug text-content/55">
+                    <span className="mt-0.5 block text-[13px] leading-snug text-(--ink-2)">
                       {option.description}
                     </span>
                   ) : null}
@@ -159,7 +161,7 @@ function QuestionForm({
           })}
           {question.allowCustom ? (
             <input
-              className="web-field h-12 rounded-[14px] bg-content/[0.05] px-3.5 outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
+              className="web-field h-12 rounded-full bg-content/6 px-4 shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
               placeholder="Or write your own answer"
               value={custom[question.id] ?? ""}
               onChange={(event) =>

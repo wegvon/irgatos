@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import {
-  LABEL_STYLES,
   findCard,
   withCardMoved,
   withCardRemoved,
@@ -14,12 +13,14 @@ import { basename, dueLabel } from "../format";
 import { Markdown } from "./Markdown";
 import {
   Empty,
+  LabelChip,
   Spinner,
+  Ticks,
   plainButton,
   secondaryButton,
   useToast,
 } from "./parts";
-import { Check, Idea, Plus, Trash2, X } from "../../../../shared/ui/icons";
+import { Check, Plus, Trash2, X } from "../../../../shared/ui/icons";
 
 /** Not `crypto.randomUUID`: that needs HTTPS, and Tailscale links are plain HTTP. */
 function newTaskId() {
@@ -44,13 +45,13 @@ export function IdeaDetail({
   const found = ideas ? findCard(ideas, id) : null;
   if (!ideas)
     return (
-      <div className="flex justify-center py-16 text-content/40">
+      <div className="flex justify-center py-16 text-(--ink-3)">
         <Spinner className="size-6" />
       </div>
     );
   if (!found)
     return (
-      <Empty icon={<Idea className="size-6" />} title="This idea is gone">
+      <Empty title="This idea is gone">
         It was moved to another board or deleted on your Mac.
       </Empty>
     );
@@ -81,16 +82,13 @@ export function IdeaDetail({
         {labels.length ? (
           <div className="flex flex-wrap gap-1.5">
             {labels.map((label) => (
-              <span
-                key={label.id}
-                className={`rounded-md px-2 py-0.5 text-[13px] font-semibold ${LABEL_STYLES[label.color]}`}
-              >
+              <LabelChip key={label.id} color={label.color}>
                 {label.name}
-              </span>
+              </LabelChip>
             ))}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-content/50">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px] font-medium text-(--ink-2)">
           {card.project ? (
             <span>Project · {basename(card.project)}</span>
           ) : null}
@@ -107,7 +105,7 @@ export function IdeaDetail({
 
       <div>
         <Label>List</Label>
-        <div className="flex rounded-[12px] bg-content/[0.07] p-1">
+        <div className="flex rounded-full bg-content/6 p-1 shadow-[inset_0_0_0_1px_var(--hairline)]">
           {board.lists.map((entry) => (
             <button
               key={entry.id}
@@ -123,10 +121,10 @@ export function IdeaDetail({
                     ),
                   );
               }}
-              className={`min-h-9 min-w-0 flex-1 truncate rounded-[9px] px-1.5 text-[13.5px] font-semibold transition-colors ${
+              className={`min-h-9 min-w-0 flex-1 truncate rounded-full px-1.5 text-[13.5px] font-semibold transition-colors ${
                 entry.id === list.id
-                  ? "bg-(--segment) text-content shadow-[0_1px_3px_rgb(0_0_0/0.18)]"
-                  : "text-content/55"
+                  ? "bg-selection text-(--ink)"
+                  : "text-(--ink-2)"
               }`}
             >
               {entry.title}
@@ -144,7 +142,7 @@ export function IdeaDetail({
       <Checklist tasks={card.tasks} onChange={(tasks) => save({ tasks })} />
 
       <button
-        className={`${secondaryButton} mt-2 text-(--bad)`}
+        className={`${secondaryButton} mt-2 text-(--bad)!`}
         onClick={() => {
           if (!window.confirm(`Delete “${card.title}”?`)) return;
           onClose();
@@ -168,7 +166,7 @@ export function IdeaDetail({
 
 function Label({ children }: { children: string }) {
   return (
-    <div className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-content/45">
+    <div className="mb-2 px-1 text-[13px] font-semibold text-(--ink-2)">
       {children}
     </div>
   );
@@ -213,7 +211,7 @@ function Title({
         if (!title) setText(value);
         else if (title !== value) onSave(title);
       }}
-      className="w-full resize-none bg-transparent text-[24px] font-bold leading-tight tracking-[-0.01em] outline-none"
+      className="w-full resize-none bg-transparent text-[26px] font-semibold leading-tight tracking-[-0.02em] text-(--ink) outline-none"
     />
   );
 }
@@ -269,16 +267,16 @@ function Notes({
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Write in Markdown"
-          className="web-field min-h-32 w-full resize-none rounded-[16px] bg-(--surface) px-4 py-3 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)] outline-none"
+          className="web-field min-h-32 w-full resize-none rounded-[22px] bg-content/6 px-4 py-3 shadow-[inset_0_0_0_1.5px_var(--accent)] outline-none"
         />
       ) : value ? (
-        <div className="web-selectable rounded-[16px] bg-(--surface) px-4 py-3 shadow-[0_0_0_0.5px_var(--color-stroke)]">
+        <div className="glass web-selectable rounded-[22px] px-4 py-3">
           <Markdown text={value} />
         </div>
       ) : (
         <button
           onClick={() => setEditing(true)}
-          className="w-full rounded-[16px] border border-dashed border-content/15 px-4 py-4 text-left text-[15px] text-content/45"
+          className="w-full rounded-[22px] border-[1.5px] border-dashed border-(--card-edge) bg-content/6 px-4 py-4 text-left text-[15px] font-medium text-(--ink-3)"
         >
           Add notes…
         </button>
@@ -307,20 +305,15 @@ function Checklist({
       <div className="flex items-center justify-between">
         <Label>Checklist</Label>
         {tasks.length ? (
-          <span className="-mt-2 px-1 text-[13px] tabular-nums text-content/45">
+          <span className="-mt-2 px-1 text-[13px] font-semibold tabular-nums text-(--ink-2)">
             {done}/{tasks.length}
           </span>
         ) : null}
       </div>
       {tasks.length ? (
-        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-content/[0.08]">
-          <div
-            className="h-full rounded-full bg-(--ok) transition-[width] duration-300"
-            style={{ width: `${(done / tasks.length) * 100}%` }}
-          />
-        </div>
+        <Ticks value={done / tasks.length} className="mb-3" />
       ) : null}
-      <div className="divide-y divide-stroke overflow-hidden rounded-[16px] bg-(--surface) shadow-[0_0_0_0.5px_var(--color-stroke)]">
+      <div className="glass divide-y divide-(--hairline) overflow-hidden rounded-[22px]">
         {tasks.map((task) => (
           <div
             key={task.id}
@@ -341,8 +334,8 @@ function Checklist({
               }
               className={`flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
                 task.done
-                  ? "border-(--ok) bg-(--ok) text-white"
-                  : "border-content/30"
+                  ? "border-(--accent) bg-(--accent) text-white"
+                  : "border-(--ink-3)"
               }`}
             >
               {task.done ? (
@@ -350,7 +343,7 @@ function Checklist({
               ) : null}
             </button>
             <span
-              className={`min-w-0 flex-1 py-2.5 text-[15px] leading-snug ${task.done ? "text-content/40 line-through" : ""}`}
+              className={`min-w-0 flex-1 py-2.5 text-[15px] leading-snug ${task.done ? "text-(--ink-3) line-through" : "text-(--ink)"}`}
             >
               {task.text}
             </span>
@@ -359,7 +352,7 @@ function Checklist({
               onClick={() =>
                 onChange(tasks.filter((entry) => entry.id !== task.id))
               }
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-content/30 active:bg-selection"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--ink-3) active:bg-content/8"
             >
               <X className="size-4" />
             </button>
@@ -372,7 +365,7 @@ function Checklist({
             add();
           }}
         >
-          <Plus className="size-5 shrink-0 text-content/35" />
+          <Plus className="size-5 shrink-0 text-(--accent)" />
           <input
             value={text}
             onChange={(event) => setText(event.target.value)}

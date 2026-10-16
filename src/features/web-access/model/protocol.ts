@@ -23,6 +23,8 @@ export type WebOverview = {
   interrupted: FleetEntry[];
   idle: FleetEntry[];
   appearance: WebAppearance;
+  /** The Mac user's first name, for the greeting; empty when unknown. */
+  owner: string;
   /** The Mac's clock, so ages read right on a device whose clock is off. */
   at: number;
 };

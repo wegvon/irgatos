@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { applyAccentColor } from "../../settings/model/appearance";
 import type { WebAppearance } from "../model/protocol";
 
 const STORED = "irgatos.web.appearance";
@@ -17,10 +18,7 @@ export function applyAppearance(appearance: WebAppearance) {
     "--theme-dark-lightness",
     `${appearance.darkLightness}%`,
   );
-  root.classList.toggle("has-user-accent", appearance.accent != null);
-  if (appearance.accent)
-    root.style.setProperty("--user-accent-color", appearance.accent);
-  else root.style.removeProperty("--user-accent-color");
+  applyAccentColor(appearance.accent);
   const background = getComputedStyle(root)
     .getPropertyValue("--color-background-base")
     .trim();
