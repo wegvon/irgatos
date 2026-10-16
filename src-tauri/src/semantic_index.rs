@@ -705,8 +705,18 @@ pub(crate) fn corpus_items(app: &AppHandle, corpus: &str, scope: &str) -> Result
     Ok(store.items(corpus, scope)?.len())
 }
 
-/// Code found by meaning alone below this is noise.
-const CODE_MEANING_FLOOR: f32 = 0.3;
+/// Code found by meaning alone below this is noise. Measured on repguard
+/// with EmbeddingGemma at 768 dims: unrelated queries top out at 0.66-0.70,
+/// related ones reach 0.80.
+const CODE_MEANING_FLOOR: f32 = 0.73;
+/// Meaning hits further than this below the best one are dropped: the tail
+/// of a related query blends into unrelated material.
+const MEANING_BAND: f32 = 0.06;
+
+/// The lowest cosine a meaning-only hit may have, given the best one.
+pub(crate) fn meaning_cutoff(best: f32, floor: f32) -> f32 {
+    floor.max(best - MEANING_BAND)
+}
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -796,8 +806,12 @@ fn code_meaning(
 ) -> Vec<CodeMeaningHit> {
     let mut files = std::collections::HashSet::new();
     let mut hits = Vec::new();
-    for (index, score) in query::vector_ranking(chunks, vector, limit * 6) {
-        if score < CODE_MEANING_FLOOR || hits.len() >= limit {
+    let ranked = query::vector_ranking(chunks, vector, limit * 6);
+    let cutoff = ranked.first().map_or(f32::MAX, |(_, best)| {
+        meaning_cutoff(*best, CODE_MEANING_FLOOR)
+    });
+    for (index, score) in ranked {
+        if score < cutoff || hits.len() >= limit {
             break;
         }
         let chunk = &chunks[index];
@@ -848,7 +862,7 @@ mod code_meaning_tests {
         let chunks = vec![
             chunk("app/src/mail.rs", 1, vec![1.0, 0.0]),
             chunk("app/src/mail.rs", 50, vec![0.9, 0.1]),
-            chunk("app/src/feed.rs", 1, vec![0.5, 0.5]),
+            chunk("app/src/feed.rs", 1, vec![0.97, 0.24]),
             chunk("other/x.rs", 1, vec![1.0, 0.0]),
             chunk("app/src/noise.rs", 1, vec![0.1, 0.9]),
         ];
@@ -860,6 +874,8 @@ mod code_meaning_tests {
         assert_eq!(got, [("src/mail.rs", 1), ("src/feed.rs", 1)]);
         assert_eq!(hits[0].preview, "fn parse_mail()");
         assert_eq!(code_meaning(&chunks, &[1.0, 0.0], "app/", &dir, 1).len(), 1);
+        // Nothing clears the floor for an unrelated query.
+        assert!(code_meaning(&chunks, &[0.6, -0.8], "app/", &dir, 5).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

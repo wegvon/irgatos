@@ -24,7 +24,9 @@ pub(crate) const SCOPE: &str = "all";
 const MAX_TURNS: usize = 6000;
 const REFRESH_AFTER: Duration = Duration::from_secs(3 * 60);
 /// A meaning-only match below this is noise: every turn is somewhat close.
-const MEANING_FLOOR: f32 = 0.35;
+/// Measured on real chats: unrelated queries top out at 0.65-0.68, related
+/// ones reach 0.76-0.77.
+const MEANING_FLOOR: f32 = 0.71;
 /// Turns shown per chat, so one long chat does not fill the list.
 const PER_CHAT: usize = 2;
 const MAX_USER_CHARS: usize = 1200;
@@ -183,8 +185,11 @@ fn pick(
         .filter(|c| !c.is_empty() && *c != "~");
     let mut per_chat: HashMap<&str, usize> = HashMap::new();
     let mut hits = Vec::new();
+    let cutoff = ranked.first().map_or(f32::MAX, |(_, best)| {
+        crate::semantic_index::meaning_cutoff(*best, MEANING_FLOOR)
+    });
     for (id, score) in ranked {
-        if *score < MEANING_FLOOR || hits.len() >= limit {
+        if *score < cutoff || hits.len() >= limit {
             break;
         }
         let Some((session_id, block_id)) = split_id(id) else {
@@ -582,12 +587,13 @@ mod tests {
             .chats
             .insert("b".into(), chat(2, "/q", vec![turn("1")]));
         let ranked = vec![
-            (doc_id("a", "1"), 0.8),
-            (doc_id("a", "2"), 0.7),
-            (doc_id("a", "3"), 0.6),
-            (doc_id("b", "1"), 0.5),
-            (doc_id("gone", "1"), 0.45),
-            (doc_id("b", "1"), 0.2),
+            (doc_id("a", "1"), 0.80),
+            (doc_id("a", "2"), 0.78),
+            (doc_id("a", "3"), 0.77),
+            (doc_id("b", "1"), 0.76),
+            (doc_id("gone", "1"), 0.75),
+            // Under the best hit's band.
+            (doc_id("b", "1"), 0.73),
         ];
         let all = pick(&cache, &ranked, None, 10);
         let got: Vec<(&str, &str)> = all
@@ -599,6 +605,9 @@ mod tests {
         assert_eq!(scoped.len(), 2);
         assert!(scoped.iter().all(|h| h.session_id == "a"));
         assert_eq!(pick(&cache, &ranked, None, 1).len(), 1);
+        // An unrelated query's best match still sits under the floor.
+        let unrelated = vec![(doc_id("a", "1"), 0.68), (doc_id("b", "1"), 0.66)];
+        assert!(pick(&cache, &unrelated, None, 10).is_empty());
     }
 
     #[test]
