@@ -60,6 +60,8 @@ export type WebSession = {
   /** Older messages left on the Mac. */
   omitted: number;
   blocks: WebBlock[];
+  /** An Irgat's own chat goes with the Irgat, so only the Mac deletes it. */
+  deletable: boolean;
 };
 
 export type WebHarnessChoice = {

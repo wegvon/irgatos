@@ -11772,6 +11772,8 @@ function Workspace({
         setSessions(sessionsRef.current);
       },
     },
+    rename: onRenameHistorySession,
+    remove: (sessionId) => onRemoveHistorySession(sessionId, "delete", true),
   };
   useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);
 
@@ -14773,7 +14775,10 @@ function Workspace({
                 }),
               ),
             chatTitles: new Map(
-              sessions.map((session) => [session.id, session.title]),
+              sessions.map((session) => [
+                session.id,
+                sessionDisplayTitle(session.title, session.harness),
+              ]),
             ),
             chatStates: new Map(
               sessions.map((session) => [
