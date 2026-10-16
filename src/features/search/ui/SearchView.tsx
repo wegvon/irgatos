@@ -687,7 +687,7 @@ function ResultList({
             </span>
             <span className="min-w-0 flex-1 truncate">{row.title}</span>
             {hit.kind === "chatMeaning" || hit.kind === "codeMeaning" ? (
-              <MeaningBadge />
+              <MeaningBadge score={hit.score} />
             ) : null}
             {row.meta ? (
               <span className="min-w-0 max-w-[45%] truncate font-mono text-[11px] text-content/40">
@@ -772,11 +772,11 @@ function rowCopy(
   };
 }
 
-function MeaningBadge() {
+function MeaningBadge({ score }: { score: number }) {
   return (
     <span
       className="flex shrink-0 items-center gap-0.5 rounded bg-accent/10 px-1 py-px text-[10px] text-accent"
-      title="Found by meaning, not by the words you typed"
+      title={`Found by meaning, not by the words you typed (similarity ${score.toFixed(2)})`}
     >
       <Sparkles className="size-2.5" strokeWidth={2} />
       meaning
