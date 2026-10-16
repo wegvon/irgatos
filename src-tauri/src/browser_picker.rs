@@ -278,9 +278,9 @@ fn parse_reply(raw: &str) -> Result<PageReply, String> {
 
 /// RGBA pixels, 4 bytes each, rows top to bottom.
 #[derive(Debug, PartialEq)]
-struct Rgba {
-    width: u32,
-    height: u32,
+pub(crate) struct Rgba {
+    pub(crate) width: u32,
+    pub(crate) height: u32,
     pixels: Vec<u8>,
 }
 
@@ -316,7 +316,7 @@ fn decode_png(bytes: &[u8]) -> Result<Rgba, String> {
     })
 }
 
-fn encode_png(image: &Rgba) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_png(image: &Rgba) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut out, image.width, image.height);
@@ -362,7 +362,7 @@ fn crop(image: &Rgba, rect: CaptureRect) -> Result<Rgba, String> {
 }
 
 /// Box-filter down by a whole factor until the longest side fits `max_edge`.
-fn shrink(image: Rgba, max_edge: u32) -> Rgba {
+pub(crate) fn shrink(image: Rgba, max_edge: u32) -> Rgba {
     let factor = image.width.max(image.height).div_ceil(max_edge);
     if factor <= 1 {
         return image;
@@ -549,7 +549,7 @@ pub async fn browser_capture(
 }
 
 #[cfg(target_os = "macos")]
-mod platform {
+pub(crate) mod platform {
     use std::cell::Cell;
 
     use block2::RcBlock;
@@ -638,7 +638,7 @@ mod platform {
 }
 
 #[cfg(target_os = "linux")]
-mod platform {
+pub(crate) mod platform {
     use javascriptcore::ValueExt;
     use webkit2gtk::{
         gio::Cancellable, SnapshotOptions, SnapshotRegion, UserContentInjectedFrames,
@@ -761,7 +761,7 @@ mod platform {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-mod platform {
+pub(crate) mod platform {
     use wry::WebView;
 
     use super::Rgba;

@@ -1,6 +1,26 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
 import { appWindowTokens, hasAppWindowUserTurn } from "../features/sessions/model/appWindows";
 import { runBrowserTabCommand } from "../features/browser/model/browserTabCommands";
+import {
+  browserPageContext,
+  browserToolsContext,
+  claimBrowserPage,
+  claimBrowserToolsHint,
+  handleBrowserAgentRequest,
+  noteBrowserShown,
+  PAGE_EXCERPT_CHARS,
+} from "../features/browser/model/browserAgent";
+import {
+  currentBrowserTabs,
+  subscribeBrowserTabs,
+} from "../features/browser/model/browserTabs";
+import {
+  browserAction,
+  browserPageExcerpt,
+  listenBrowserAgentRequests,
+  replyBrowserAgent,
+  setBrowserAgentView,
+} from "../platform/tauri/browser";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
 import {
   resumeIrgatUsageLimit,
@@ -1492,6 +1512,50 @@ function Workspace({
     window.addEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
     return () => window.removeEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
   }, []);
+  // Agents' browser.* actions that the Browser panel owns arrive here; page
+  // work runs natively on the active tab, which Rust learns from the tabs.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const host = {
+      show: () => {
+        setBrowserMounted(true);
+        setBrowserOpen(true);
+      },
+      openUrl: (url: string) =>
+        window.dispatchEvent(
+          new CustomEvent<string>(OPEN_BROWSER_URL_EVENT, { detail: url }),
+        ),
+      navigate: (tabId: string, url: string) =>
+        browserAction(tabId, { navigate: url }),
+    };
+    void listenBrowserAgentRequests((request) => {
+      void handleBrowserAgentRequest(request.action, request.input, host).then(
+        (result) => replyBrowserAgent(request.id, { result }),
+        (reason: unknown) =>
+          replyBrowserAgent(request.id, {
+            error: reason instanceof Error ? reason.message : String(reason),
+          }),
+      );
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    let agentView = "";
+    const syncView = () => {
+      const { activeId } = currentBrowserTabs();
+      if (!activeId || activeId === agentView) return;
+      agentView = activeId;
+      void setBrowserAgentView(activeId).catch(() => undefined);
+    };
+    syncView();
+    const stopTabs = subscribeBrowserTabs(syncView);
+    return () => {
+      disposed = true;
+      unlisten?.();
+      stopTabs();
+    };
+  }, []);
   const [linkedWorkItemPanels, setLinkedWorkItemPanels] = useState<
     ReadonlyMap<string, LinkedWorkItemPanelState>
   >(() => new Map());
@@ -2207,6 +2271,20 @@ function Workspace({
   const freeChat = freeChatId
     ? sessions.find((session) => session.id === freeChatId)
     : undefined;
+  const browserShown =
+    browserOpen &&
+    !searchViewOpen &&
+    !settingsOpen &&
+    !inboxViewOpen &&
+    !notesViewOpen &&
+    !automationsViewOpen &&
+    !kanbanViewOpen &&
+    !fleetViewOpen &&
+    !mailViewOpen &&
+    !ideasViewOpen &&
+    !feedViewOpen &&
+    (!chatViewOpen || !!freeChat);
+  noteBrowserShown(browserShown);
   // An open chat or a covering Irgat shows its own folder's terminal dock, so
   // the terminal opens where its status bar is instead of leaving the view.
   const currentViewDock = viewDock({
@@ -8762,6 +8840,23 @@ function Workspace({
           ) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(codeSearchContext(cli));
+          }
+          // Any chat can see and use the Browser; it hears how once, and
+          // hears about the page beside it whenever that page changes.
+          if (!rawCommand && !orchestrator.forSession(sessionId)) {
+            if (claimBrowserToolsHint(sessionId)) {
+              const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
+              appContext.push(browserToolsContext(cli));
+            }
+            const browserPage = claimBrowserPage(sessionId);
+            if (browserPage) {
+              // A slow page only costs the excerpt, never the message.
+              const excerpt = await Promise.race([
+                browserPageExcerpt(PAGE_EXCERPT_CHARS).catch(() => null),
+                new Promise<null>((resolve) => setTimeout(resolve, 1500, null)),
+              ]);
+              appContext.push(browserPageContext(browserPage, excerpt));
+            }
           }
           // A chat started from the Mail page hears about its thread once.
           const mailLink =
@@ -15398,20 +15493,7 @@ function Workspace({
                           // its pages while it moves between them.
                           createPortal(
                         <BrowserPanel
-                          visible={
-                            browserOpen &&
-                            !searchViewOpen &&
-                            !settingsOpen &&
-                            !inboxViewOpen &&
-                            !notesViewOpen &&
-                            !automationsViewOpen &&
-                            !kanbanViewOpen &&
-                            !fleetViewOpen &&
-                            !mailViewOpen &&
-                            !ideasViewOpen &&
-                            !feedViewOpen &&
-                            (!chatViewOpen || !!freeChat)
-                          }
+                          visible={browserShown}
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
                         />,
