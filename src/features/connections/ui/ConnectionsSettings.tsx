@@ -1,10 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { Internet, Loader, Plus, Trash2 } from "../../../shared/ui/icons";
+import {
+  Internet,
+  Loader,
+  Pencil,
+  Plus,
+  Trash2,
+} from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
   refreshRemoteMachines,
+  renameMachine,
   remoteRequest,
   useRemoteMachines,
 } from "../model/connections";
@@ -38,6 +45,8 @@ export function ConnectionsSettings() {
   const [updatingMachine, setUpdatingMachine] = useState<string>();
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
+  const [renaming, setRenaming] = useState<string>();
+  const [newName, setNewName] = useState("");
   const [url, setUrl] = useState("http://127.0.0.1:3774");
   const [token, setToken] = useState("");
   const alive = useRef(true);
@@ -269,9 +278,55 @@ export function ConnectionsSettings() {
               <div className="flex items-center gap-3 px-4 py-4">
                 <Internet className="size-5 shrink-0 text-content/45" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium">
-                    {machine.name}
-                  </div>
+                  {renaming === machine.id ? (
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!newName.trim()) return;
+                        setError("");
+                        void renameMachine(machine.id, newName)
+                          .then(() => setRenaming(undefined))
+                          .catch((reason) => setError(String(reason)));
+                      }}
+                    >
+                      <input
+                        autoFocus
+                        aria-label={`Name for ${machine.name}`}
+                        className={`${input} py-1`}
+                        value={newName}
+                        maxLength={100}
+                        onChange={(event) => setNewName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setRenaming(undefined);
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        className={button}
+                        disabled={!newName.trim()}
+                      >
+                        Save
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-1">
+                      <span className="truncate text-[13px] font-medium">
+                        {machine.name}
+                      </span>
+                      <button
+                        className="shrink-0 rounded p-1 text-content/40 hover:bg-selection hover:text-content"
+                        aria-label={`Rename ${machine.name}`}
+                        title="Rename"
+                        onClick={() => {
+                          setNewName(machine.name);
+                          setRenaming(machine.id);
+                        }}
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
                   <div className="mt-1 truncate text-[12px] text-content/45">
                     {machine.ssh
                       ? `SSH · ${machine.ssh.target}${machine.ssh.port ? ` · port ${machine.ssh.port}` : ""}`

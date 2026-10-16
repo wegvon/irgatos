@@ -41,6 +41,29 @@ pub fn validate_target(target: &str, port: Option<u16>) -> Result<String, String
     Ok(target.into())
 }
 
+/// A readable default name for a machine added by its SSH address: the host
+/// part without the user, or the workspace of a Coder SSH alias
+/// (`coder-vscode.<deployment>--<owner>--<workspace>.<agent>`, `coder.<workspace>`).
+pub fn default_machine_name(target: &str) -> String {
+    let host = target.rsplit('@').next().unwrap_or(target);
+    let host = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(host);
+    let name = if let Some(rest) = host.strip_prefix("coder-vscode.") {
+        rest.rsplit("--")
+            .next()
+            .map(|workspace| workspace.split('.').next().unwrap_or(workspace))
+            .unwrap_or(rest)
+    } else if let Some(rest) = host.strip_prefix("coder.") {
+        rest.split('.').next().unwrap_or(rest)
+    } else {
+        host
+    };
+    let name = if name.is_empty() { target } else { name };
+    name.chars().take(100).collect()
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prompt {
@@ -948,6 +971,17 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "日本語 🖥");
+    }
+    #[test]
+    fn default_machine_names_come_from_the_ssh_address() {
+        assert_eq!(
+            default_machine_name("coder-vscode.192.168.1.180--zarr--gulce-shared.main"),
+            "gulce-shared"
+        );
+        assert_eq!(default_machine_name("coder.dev-box"), "dev-box");
+        assert_eq!(default_machine_name("me@mac-mini"), "mac-mini");
+        assert_eq!(default_machine_name("me@[::1]"), "::1");
+        assert_eq!(default_machine_name("build-server"), "build-server");
     }
     #[test]
     fn device_names_are_bounded_single_lines() {

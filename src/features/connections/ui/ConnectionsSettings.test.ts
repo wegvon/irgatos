@@ -28,13 +28,20 @@ beforeEach(() => {
   machines = [];
   state = { id: "setup", message: "Installing host…", done: false };
   vi.mocked(invoke).mockReset();
-  vi.mocked(invoke).mockImplementation(async (command) => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_machines") return [...machines];
     if (command === "remote_ssh_begin" || command === "remote_ssh_reconnect")
       return "setup";
     if (command === "remote_ssh_poll") return { ...state };
     if (command === "remote_request")
       return { environmentId: "env", providers: ["codex"] };
+    if (command === "remote_rename") {
+      const { machineId, name } = args as { machineId: string; name: string };
+      machines = machines.map((entry) =>
+        entry.id === machineId ? { ...entry, name } : entry,
+      );
+      return machines.find((entry) => entry.id === machineId);
+    }
     if (command === "remote_disconnect") {
       machines = [];
       return;
@@ -274,4 +281,25 @@ it("does not spellcheck or autocorrect the machine name", async () => {
   expect(name.getAttribute("autocorrect")).toBe("off");
   expect(name.getAttribute("autocapitalize")).toBe("off");
   expect(container.textContent).toContain("loginctl enable-linger");
+});
+
+it("renames a machine in place", async () => {
+  machines = [{ ...machine, name: "14501193b82f" }];
+  await render();
+  await act(async () =>
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Rename 14501193b82f"]')!
+      .click(),
+  );
+  await fill('input[aria-label="Name for 14501193b82f"]', "Gulce");
+  await act(async () => button("Save").click());
+  expect(invoke).toHaveBeenCalledWith("remote_rename", {
+    machineId: "machine",
+    name: "Gulce",
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(container.textContent).toContain("Gulce");
+  expect(container.textContent).not.toContain("14501193b82f");
 });

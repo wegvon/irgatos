@@ -316,6 +316,7 @@ pub fn run() {
             remote::remote_machines,
             remote::remote_connect,
             remote::remote_disconnect,
+            remote::remote_rename,
             remote::remote_request,
             remote::remote_ssh_begin,
             remote::remote_ssh_reconnect,
