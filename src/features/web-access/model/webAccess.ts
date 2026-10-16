@@ -23,7 +23,21 @@ import {
   type IdeasState,
   type IdeaTask,
 } from "../../ideas/model/ideas";
-import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
+import {
+  findIrgat,
+  irgatForSession,
+  irgatLook,
+  irgatSessionIds,
+  irgatState,
+  listIrgats,
+  updateIrgat,
+  type Irgat,
+  type IrgatState,
+} from "../../irgats/model/irgat";
+import {
+  createIrgatChildSession,
+  ensureIrgatSession,
+} from "../../irgats/model/irgatWorkspace";
 import { loadRecents } from "../../projects/model/recents";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import {
@@ -32,6 +46,8 @@ import {
   serviceLabel,
   type ServiceStatus,
 } from "../../service-status/model/serviceStatus";
+import { upsertSession } from "../../sessions/data/sessionStore";
+import { loadIrgatsEnabled } from "../../settings/model/settings";
 import {
   loadAccentColor,
   loadThemeDarkLightness,
@@ -67,6 +83,8 @@ import type {
   WebAppearance,
   WebBlock,
   WebHarnessChoice,
+  WebIrgat,
+  WebIrgats,
   WebOverview,
   WebProjects,
   WebServices,
@@ -94,6 +112,11 @@ export type WebAccessDeps = {
   stop: (sessionId: string) => void;
   /** Starts a new chat the way the floating composer does. */
   launch: (launch: QuickLaunch, sessionId: string) => Promise<void>;
+  /** Loads an Irgat's chats into this window without showing them on the Mac. */
+  irgatHost: IrgatHost;
+  irgatsEnabled: () => boolean;
+  /** Stores a new chat before it is shown, as the desktop's own does. */
+  saveSession: (session: Session) => Promise<unknown>;
   /** Recent project folders, newest first. */
   projects: () => readonly string[];
   freeChatDir: () => Promise<string>;
@@ -118,6 +141,8 @@ export type WebAccessDeps = {
   newId: () => string;
 };
 
+type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
+
 let owner: Promise<string> | undefined;
 
 /** "/Users/turel" → "Turel": the home folder is named after the account. */
@@ -133,7 +158,7 @@ export function ownerName(home: string): string {
 /** The parts that read the app's own settings and stores, not live React state. */
 export const webAccessDefaults: Omit<
   WebAccessDeps,
-  "sessions" | "submit" | "approve" | "answer" | "stop" | "launch"
+  "sessions" | "submit" | "approve" | "answer" | "stop" | "launch" | "irgatHost"
 > = {
   projects: () => loadRecents().map((project) => project.path),
   freeChatDir: resolveFreeChatDir,
@@ -163,6 +188,8 @@ export const webAccessDefaults: Omit<
     remove: deleteCard,
   },
   services: () => checkServices(serviceIds(loadVoiceSettings())),
+  irgatsEnabled: loadIrgatsEnabled,
+  saveSession: upsertSession,
   newId: () => crypto.randomUUID(),
 };
 
@@ -200,11 +227,65 @@ function irgatName(sessionId: string): string | undefined {
   return irgat ? irgatLook(irgat).name : undefined;
 }
 
-function findSession(deps: WebAccessDeps, input: Input): Session {
+/**
+ * A chat open in this window. An Irgat's chats load on demand, as the Mac
+ * itself only loads them when they are opened there.
+ */
+async function findSession(
+  deps: WebAccessDeps,
+  input: Input,
+): Promise<Session> {
   const id = text(input, "sessionId" in input ? "sessionId" : "id", 200);
   const session = deps.sessions().find((entry) => entry.id === id);
-  if (!session) throw new Error("This chat is not open in Irgatos.");
-  return session;
+  if (session) return session;
+  if (deps.irgatsEnabled() && irgatForSession(id)) {
+    const loaded = await deps.irgatHost.load(id);
+    if (loaded) return loaded;
+  }
+  throw new Error("This chat is not open in Irgatos.");
+}
+
+function requestedIrgat(deps: WebAccessDeps, input: Input): Irgat {
+  if (!deps.irgatsEnabled())
+    throw new Error("Irgats are turned off on your Mac.");
+  const irgat = findIrgat(text(input, "irgatId", 200));
+  if (!irgat) throw new Error("That Irgat no longer exists.");
+  return irgat;
+}
+
+const IDLE: IrgatState = { status: "idle" };
+
+/**
+ * The Irgat as the desktop rail shows it: its look, and the state of the
+ * chat that matters most. Chats not loaded on the Mac read as idle.
+ */
+function webIrgat(irgat: Irgat, open: ReadonlyMap<string, Session>): WebIrgat {
+  const look = irgatLook(irgat);
+  const states = irgatSessionIds(irgat).flatMap((id) => {
+    const session = open.get(id);
+    return session ? [irgatState(session)] : [];
+  });
+  const state =
+    states.find((entry) => entry.status === "needs-you") ??
+    states.find((entry) => entry.status === "working") ??
+    states[0] ??
+    IDLE;
+  return {
+    id: irgat.id,
+    name: look.name,
+    mascot: { name: look.mascot, color: look.color },
+    projects: look.projects.map((project) => project.name),
+    status: state.status,
+    ...(state.activity ? { activity: state.activity } : {}),
+    chats: (irgat.childSessionIds ?? []).map((sessionId, index) => {
+      const session = open.get(sessionId);
+      return {
+        sessionId,
+        title: session?.title || `Chat ${index + 1}`,
+        status: session ? irgatState(session).status : "idle",
+      };
+    }),
+  };
 }
 
 function clip(value: string, max = TEXT_MAX): string {
@@ -360,15 +441,22 @@ export async function handleWebAccess(
       return overview;
     }
     case "session": {
-      const session = findSession(deps, input);
+      const session = await findSession(deps, input);
       const cwd = sessionWorkCwd(session);
+      const irgat = irgatForSession(session.id);
+      const look = irgat ? irgatLook(irgat) : undefined;
       const blocks = session.blocks.filter(shownBlock);
       const view: WebSession = {
         id: session.id,
         title: sessionDisplayTitle(session.title, session.harness),
         harness: session.harness,
         model: deps.modelName(session.harness, session.model),
-        ...(irgatName(session.id) ? { irgat: irgatName(session.id) } : {}),
+        ...(look
+          ? {
+              irgat: look.name,
+              mascot: { name: look.mascot, color: look.color },
+            }
+          : {}),
         cwd: session.cwd,
         projectLabel: placeLabel(session),
         ...(session.branch && !isFreeChatCwd(session.cwd)
@@ -385,7 +473,7 @@ export async function handleWebAccess(
       return view;
     }
     case "send": {
-      const session = findSession(deps, input);
+      const session = await findSession(deps, input);
       const message = text(input, "text").trim();
       if (!message) throw new Error("Write a message first.");
       if (!deps.submit(session.id, message))
@@ -393,7 +481,7 @@ export async function handleWebAccess(
       return { sent: true };
     }
     case "approval": {
-      const session = findSession(deps, input);
+      const session = await findSession(deps, input);
       const id = requestId(input);
       const decision = input.decision;
       if (decision !== "allow" && decision !== "deny")
@@ -406,7 +494,7 @@ export async function handleWebAccess(
       return { decided: decision };
     }
     case "answer": {
-      const session = findSession(deps, input);
+      const session = await findSession(deps, input);
       const prompt = session.pendingQuestion;
       if (!prompt || prompt.requestId !== requestId(input))
         throw new Error("This question was already answered.");
@@ -420,7 +508,7 @@ export async function handleWebAccess(
       return { answered: reply.kind };
     }
     case "stop": {
-      const session = findSession(deps, input);
+      const session = await findSession(deps, input);
       if (session.busy) deps.stop(session.id);
       return { stopped: !!session.busy };
     }
@@ -489,6 +577,53 @@ export async function handleWebAccess(
         sessionId,
       );
       return { sessionId };
+    }
+    case "irgats": {
+      const enabled = deps.irgatsEnabled();
+      const open = new Map(deps.sessions().map((entry) => [entry.id, entry]));
+      const result: WebIrgats = {
+        enabled,
+        irgats: enabled
+          ? listIrgats().map((irgat) => webIrgat(irgat, open))
+          : [],
+      };
+      return result;
+    }
+    case "irgatOpen": {
+      const irgat = requestedIrgat(deps, input);
+      const chat = typeof input.sessionId === "string" ? input.sessionId : "";
+      if (chat && !irgatSessionIds(irgat).includes(chat))
+        throw new Error("That chat no longer belongs to this Irgat.");
+      // The main chat goes through the Irgat, which starts it again if lost.
+      const session =
+        chat && chat !== irgat.sessionId
+          ? await deps.irgatHost.load(chat)
+          : await ensureIrgatSession(irgat.id, deps.irgatHost);
+      if (!session) throw new Error("Irgatos could not open this chat.");
+      return { sessionId: session.id };
+    }
+    case "irgatNewChat": {
+      const irgat = requestedIrgat(deps, input);
+      const parent = await ensureIrgatSession(irgat.id, deps.irgatHost);
+      if (!parent) throw new Error("Irgatos could not open this Irgat.");
+      const child = createIrgatChildSession(
+        irgat.id,
+        parent,
+        (id) => deps.sessions().find((entry) => entry.id === id)?.title,
+      );
+      try {
+        await deps.saveSession(child);
+      } catch (error) {
+        updateIrgat(irgat.id, (current) => ({
+          ...current,
+          childSessionIds: current.childSessionIds?.filter(
+            (id) => id !== child.id,
+          ),
+        }));
+        throw error;
+      }
+      deps.irgatHost.add(child);
+      return { sessionId: child.id };
     }
     case "ideas":
       return deps.ideas.load();

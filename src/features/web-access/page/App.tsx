@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { IdeasState } from "../../ideas/model/ideas";
-import type { WebOverview, WebServices } from "../model/protocol";
+import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
@@ -9,6 +9,7 @@ import { ChatRow } from "./ui/ChatRow";
 import { Chats, allEntries } from "./ui/Chats";
 import { IdeaDetail } from "./ui/IdeaDetail";
 import { Ideas } from "./ui/Ideas";
+import { Irgats } from "./ui/Irgats";
 import { Login } from "./ui/Login";
 import { NewChat } from "./ui/NewChat";
 import {
@@ -31,6 +32,7 @@ import {
   type Tone,
 } from "./ui/parts";
 import {
+  Bot,
   Idea,
   MessageSquare,
   Monitor,
@@ -113,6 +115,11 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     () => read<IdeasState>("ideas"),
     () => (ideasOpen ? 10_000 : 30_000),
   );
+  const irgats = usePoll(
+    live ? "irgats" : null,
+    () => read<WebIrgats>("irgats"),
+    () => (screen.name === "irgats" ? 3000 : 15_000),
+  );
   const now = useNow(overview.data?.at);
   const connected = !overview.error;
   const needsYou = overview.data?.needsYou.length ?? 0;
@@ -156,7 +163,15 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   ) : (
     <>
       <Brand />
-      {bell}
+      <span className="flex items-center gap-2">
+        <RoundButton
+          label="Your Mac"
+          onClick={() => openSheet({ name: "services" })}
+        >
+          <MacIcon tone={mac} small />
+        </RoundButton>
+        {bell}
+      </span>
     </>
   );
 
@@ -213,6 +228,8 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
             header={header}
             wide={wide}
           />
+        ) : name === "irgats" ? (
+          <Irgats irgats={irgats.data} header={header} wide={wide} />
         ) : (
           <Chats
             overview={overview.data}
@@ -287,6 +304,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Chats"
                   on={screen.name === "chats"}
                   onClick={() => navigate({ name: "chats" })}
+                />
+                <NavItem
+                  icon={<Bot className="size-5" />}
+                  label="Irgats"
+                  on={screen.name === "irgats"}
+                  onClick={() => navigate({ name: "irgats" })}
                 />
                 <NavItem
                   icon={<Idea className="size-5" />}
@@ -371,6 +394,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 <MessageSquare className="size-[22px]" />
               </RailItem>
               <RailItem
+                label="Irgats"
+                on={screen.name === "irgats"}
+                onClick={() => navigate({ name: "irgats" })}
+              >
+                <Bot className="size-[22px]" />
+              </RailItem>
+              <RailItem
                 label="Ideas"
                 on={screen.name === "ideas"}
                 onClick={() => navigate({ name: "ideas" })}
@@ -443,18 +473,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               <Plus className="size-6" strokeWidth={2.2} />
             </button>
             <TabButton
+              label="Irgats"
+              on={tab === "irgats"}
+              onClick={() => navigate({ name: "irgats" })}
+            >
+              <Bot className="size-[22px]" />
+            </TabButton>
+            <TabButton
               label="Ideas"
               on={tab === "ideas"}
               onClick={() => navigate({ name: "ideas" })}
             >
               <Idea className="size-[22px]" />
-            </TabButton>
-            <TabButton
-              label="Your Mac"
-              on={false}
-              onClick={() => openSheet({ name: "services" })}
-            >
-              <MacIcon tone={mac} />
             </TabButton>
           </div>
         </nav>
@@ -494,12 +524,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
 }
 
 /** The Mac's icon with a dot in its worst service color. */
-function MacIcon({ tone }: { tone: Tone }) {
+function MacIcon({ tone, small = false }: { tone: Tone; small?: boolean }) {
   return (
     <span className="relative">
-      <Monitor className="size-[22px]" />
+      <Monitor className={small ? "size-5" : "size-[22px]"} />
       <span
-        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-(--color-background-base)`}
+        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 rounded-full ring-2 ring-(--color-background-base) ${small ? "size-2" : "size-2.5"}`}
       />
     </span>
   );

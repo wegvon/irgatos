@@ -325,7 +325,9 @@ function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
                     <ChevronRight className="size-5 shrink-0 text-(--ink-3)" />
                   </button>
                   <div className="grid grid-cols-3 gap-2">
-                    <Meta label="Project">{place(entry)}</Meta>
+                    <Meta label={entry.irgat ? "Irgat" : "Project"}>
+                      {place(entry)}
+                    </Meta>
                     <Meta label="Type">
                       <Pill tone="amber">
                         {request.kind === "approval" ? "Approval" : "Question"}

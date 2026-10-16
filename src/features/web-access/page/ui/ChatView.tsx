@@ -10,6 +10,7 @@ import type { WebBlock, WebSession } from "../../model/protocol";
 import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { Markdown } from "./Markdown";
+import { Mascot } from "./Irgats";
 import { RequestBody } from "./Requests";
 import {
   Empty,
@@ -169,8 +170,15 @@ function ChatHeader({
           </RoundButton>
         )}
         <div className={`min-w-0 flex-1 ${wide ? "" : "text-center"}`}>
-          <div className="truncate text-[16px] font-semibold leading-tight tracking-[-0.01em] text-(--ink)">
-            {session?.title ?? ""}
+          <div
+            className={`flex min-w-0 items-center gap-1.5 ${wide ? "" : "justify-center"}`}
+          >
+            {session?.mascot ? (
+              <Mascot mascot={session.mascot} className="size-[18px]" />
+            ) : null}
+            <span className="truncate text-[16px] font-semibold leading-tight tracking-[-0.01em] text-(--ink)">
+              {session?.title ?? ""}
+            </span>
           </div>
           {session ? (
             <div
@@ -292,8 +300,19 @@ function Transcript({
           ) : null}
           {items.length === 0 && !pending.length ? (
             <div className="flex flex-col items-center gap-4 py-16 text-[15px] font-medium text-(--ink-2)">
-              <BrandMark className="size-14 rounded-2xl" />
-              Starting…
+              {session.mascot && !session.busy ? (
+                <>
+                  <span className="flex size-16 items-center justify-center rounded-2xl bg-content/6">
+                    <Mascot mascot={session.mascot} className="size-10" />
+                  </span>
+                  Tell {session.irgat} what to do.
+                </>
+              ) : (
+                <>
+                  <BrandMark className="size-14 rounded-2xl" />
+                  Starting…
+                </>
+              )}
             </div>
           ) : null}
           {items.map((item) =>
@@ -585,7 +604,11 @@ function Composer({
           rows={1}
           value={text}
           enterKeyHint={wide ? "send" : "enter"}
-          placeholder={`Ask anything about ${session.projectLabel}…`}
+          placeholder={
+            session.irgat
+              ? `Message ${session.irgat}…`
+              : `Ask anything about ${session.projectLabel}…`
+          }
           className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {

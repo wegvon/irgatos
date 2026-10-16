@@ -11763,6 +11763,15 @@ function Workspace({
     stop: onStop,
     launch: (launch, sessionId) =>
       launchQuickSessionRef.current(launch, sessionId),
+    irgatHost: {
+      home: homeDir,
+      load: ensureOpenSession,
+      create: (path) => newDefaultSession(path),
+      add: (created) => {
+        sessionsRef.current = [...sessionsRef.current, created];
+        setSessions(sessionsRef.current);
+      },
+    },
   };
   useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);
 
