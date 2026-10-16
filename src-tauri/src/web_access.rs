@@ -33,11 +33,25 @@ const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_IN_FLIGHT: usize = 16;
 const REPLY_TIMEOUT: Duration = Duration::from_secs(20);
 const RECV_POLL: Duration = Duration::from_millis(250);
-const INDEX_HTML: &str = include_str!("web_access/index.html");
+/// The page is the app's own `web.html` build, served from its bundled assets.
+const PAGE: &str = "web.html";
+/// Files the page loads besides its hashed `/assets/…` bundles.
+const PUBLIC_FILES: [&str; 2] = ["/web.webmanifest", "/irgat.png"];
+const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 2] = ["overview", "session"];
-const WRITE_ACTIONS: [&str; 4] = ["send", "approval", "answer", "stop"];
+const READ_ACTIONS: [&str; 5] = ["overview", "session", "projects", "ideas", "services"];
+const WRITE_ACTIONS: [&str; 9] = [
+    "send",
+    "approval",
+    "answer",
+    "stop",
+    "newChat",
+    "ideaAdd",
+    "ideaUpdate",
+    "ideaMove",
+    "ideaDelete",
+];
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,6 +196,8 @@ fn query_object(url: &str) -> Value {
 #[derive(Debug, PartialEq)]
 enum Route {
     Page,
+    /// A bundled file the page needs: public, like the page itself.
+    Static(String),
     /// `/?token=…` with the right token: set the cookie and drop the token from the URL.
     Login,
     Api {
@@ -189,6 +205,20 @@ enum Route {
         write: bool,
     },
     Reject(u16, &'static str),
+}
+
+/// Hashed Vite bundles and the few public files; nothing else of the app.
+fn static_path(path: &str) -> bool {
+    if PUBLIC_FILES.contains(&path) {
+        return true;
+    }
+    path.strip_prefix("/assets/").is_some_and(|name| {
+        !name.is_empty()
+            && !name.starts_with('.')
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    })
 }
 
 fn route(
@@ -205,14 +235,14 @@ fn route(
     let path = url.split('?').next().unwrap_or_default();
     let get = method.eq_ignore_ascii_case("GET");
     if path == "/" && get {
-        if let Some(given) = query_param(url, "token") {
-            return if same_token(&given, token) {
-                Route::Login
-            } else {
-                Route::Reject(401, "That access token is not valid.")
-            };
+        // A wrong token still gets the page, which then asks for it again.
+        if query_param(url, "token").is_some_and(|given| same_token(&given, token)) {
+            return Route::Login;
         }
         return Route::Page;
+    }
+    if get && static_path(path) {
+        return Route::Static(path.to_string());
     }
     let Some(action) = path.strip_prefix("/api/") else {
         return Route::Reject(404, "Not found");
@@ -246,14 +276,35 @@ fn route(
 }
 
 fn respond(request: tiny_http::Request, status: u16, content_type: &str, body: String) {
-    let mut response = tiny_http::Response::from_string(body).with_status_code(status);
+    respond_bytes(request, status, content_type, body.into_bytes(), &[]);
+}
+
+fn respond_bytes(
+    request: tiny_http::Request,
+    status: u16,
+    content_type: &str,
+    body: Vec<u8>,
+    extra: &[(&str, &str)],
+) {
+    let mut response = tiny_http::Response::from_data(body).with_status_code(status);
+    let cache = extra
+        .iter()
+        .find(|(name, _)| *name == "Cache-Control")
+        .map_or("no-store", |(_, value)| *value);
     for (name, value) in [
         ("Content-Type", content_type),
-        ("Cache-Control", "no-store"),
+        ("Cache-Control", cache),
         ("X-Content-Type-Options", "nosniff"),
         ("X-Frame-Options", "DENY"),
         ("Referrer-Policy", "no-referrer"),
-    ] {
+    ]
+    .into_iter()
+    .chain(
+        extra
+            .iter()
+            .copied()
+            .filter(|(name, _)| *name != "Cache-Control"),
+    ) {
         if let Ok(header) = tiny_http::Header::from_bytes(name.as_bytes(), value.as_bytes()) {
             response = response.with_header(header);
         }
@@ -326,6 +377,46 @@ fn relay(app: &AppHandle, inner: &Arc<Mutex<Inner>>, action: String, input: Valu
     reply
 }
 
+/// Keys of the bundled frontend, so a missing file is a 404 rather than the
+/// resolver's fallback to the app's own `index.html`.
+fn bundled(app: &AppHandle, path: &str) -> bool {
+    static KEYS: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    let keys = KEYS.get_or_init(|| {
+        app.asset_resolver()
+            .iter()
+            .map(|(key, _)| format!("/{}", key.trim_start_matches('/')))
+            .collect()
+    });
+    keys.contains(path)
+}
+
+fn serve_asset(request: tiny_http::Request, app: &AppHandle, path: &str) {
+    let asset = bundled(app, path)
+        .then(|| app.asset_resolver().get(path.to_string()))
+        .flatten();
+    let Some(asset) = asset else {
+        return respond_json(request, 404, json!({"ok": false, "error": "Not found"}));
+    };
+    let page = path.ends_with(".html");
+    let mime = if page {
+        "text/html; charset=utf-8".to_string()
+    } else if path.ends_with(".webmanifest") {
+        "application/manifest+json".to_string()
+    } else {
+        asset.mime_type.clone()
+    };
+    let headers: &[(&str, &str)] = if page {
+        &[("Content-Security-Policy", PAGE_CSP)]
+    } else if path.starts_with("/assets/") {
+        // Vite names bundles by content hash, so a cached copy never goes stale.
+        &[("Cache-Control", "public, max-age=31536000, immutable")]
+    } else {
+        &[("Cache-Control", "public, max-age=3600")]
+    };
+    respond_bytes(request, 200, &mime, asset.bytes, headers);
+}
+
 fn serve(mut request: tiny_http::Request, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
     let token = match inner.lock() {
         Ok(state) => state.token.clone(),
@@ -342,7 +433,8 @@ fn serve(mut request: tiny_http::Request, app: &AppHandle, inner: &Arc<Mutex<Inn
         header(&request, WRITE_HEADER).is_some(),
     );
     match route {
-        Route::Page => respond(request, 200, "text/html; charset=utf-8", INDEX_HTML.into()),
+        Route::Page => serve_asset(request, app, &format!("/{PAGE}")),
+        Route::Static(path) => serve_asset(request, app, &path),
         Route::Login => login(request, &token),
         Route::Reject(status, error) => {
             respond_json(request, status, json!({"ok": false, "error": error}))
@@ -649,10 +741,10 @@ mod tests {
             route("GET", &format!("/?token={TOKEN}"), peer, TOKEN, None, false),
             Route::Login
         );
-        assert!(matches!(
+        assert_eq!(
             route("GET", "/?token=nope", peer, TOKEN, None, false),
-            Route::Reject(401, _)
-        ));
+            Route::Page
+        );
     }
 
     #[test]
@@ -680,6 +772,45 @@ mod tests {
         assert!(matches!(
             route("POST", "/api/delete", peer, TOKEN, Some(TOKEN), true),
             Route::Reject(404, _)
+        ));
+    }
+
+    #[test]
+    fn serves_only_bundles_and_public_files_without_the_token() {
+        let peer = ip("100.80.1.2");
+        assert_eq!(
+            route("GET", "/assets/web-Ab12_x.js", peer, TOKEN, None, false),
+            Route::Static("/assets/web-Ab12_x.js".into())
+        );
+        assert_eq!(
+            route("GET", "/web.webmanifest", peer, TOKEN, None, false),
+            Route::Static("/web.webmanifest".into())
+        );
+        for path in [
+            "/assets/../index.html",
+            "/assets/.env",
+            "/assets/",
+            "/index.html",
+            "/assets/a/b.js",
+        ] {
+            assert!(
+                matches!(
+                    route("GET", path, peer, TOKEN, None, false),
+                    Route::Reject(404, _)
+                ),
+                "{path}"
+            );
+        }
+        assert!(matches!(
+            route(
+                "GET",
+                "/assets/web.js",
+                ip("192.168.1.2"),
+                TOKEN,
+                None,
+                false
+            ),
+            Route::Reject(403, _)
         ));
     }
 

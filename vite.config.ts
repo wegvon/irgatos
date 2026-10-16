@@ -19,6 +19,8 @@ export default defineConfig(async ({ mode }) => {
           main: "index.html",
           quickComposer: "quick-composer.html",
           irgatChat: "irgat-chat.html",
+          // Browser access: the page phones and tablets open over Tailscale.
+          web: "web.html",
         },
       },
     },
