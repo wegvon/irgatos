@@ -55,6 +55,7 @@ mod remote;
 mod remote_ssh;
 mod search;
 mod self_update;
+mod semantic_index;
 mod session_snapshots;
 mod session_store;
 mod skills;
@@ -502,6 +503,13 @@ pub fn run() {
             skills::list_skills,
             search::search_project,
             search::cancel_project_search,
+            semantic_index::semantic_index_settings,
+            semantic_index::semantic_index_save_settings,
+            semantic_index::semantic_index_status,
+            semantic_index::semantic_index_build,
+            semantic_index::semantic_index_cancel,
+            semantic_index::semantic_index_remove,
+            semantic_index::semantic_index_available,
             cursor_store::cursor_tool_calls,
             cursor_store::cursor_subagent_runs,
             harness::harness_resolve_cursor,

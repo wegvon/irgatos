@@ -179,6 +179,30 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
     Ok(grant)
 }
 
+/// Read-only actions the app answers itself, without the webview executor.
+/// They need a live turn but not the /operator opt-in: they only read the
+/// checkout the agent is already working in.
+const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
+
+/// The folder a read-only app action is scoped to: the caller's active turn.
+fn read_only_scope(host: &Inner, token: &str) -> Result<String, String> {
+    let grant = host
+        .app_grants
+        .values()
+        .find(|grant| grant.token == token)
+        .ok_or("Connection revoked or unauthorized")?;
+    if host.grants.contains_key(&grant.session) || host.workers.contains_key(&grant.session) {
+        return Err("Connection revoked or unauthorized".into());
+    }
+    host.active
+        .get(&grant.session)
+        .filter(|turn| turn.window == grant.window)
+        .map(|turn| turn.cwd.clone())
+        .ok_or_else(|| {
+            "code.search works only while an agent turn is running in Irgatos.".to_string()
+        })
+}
+
 pub fn init(app: &AppHandle) -> Result<(), String> {
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
     let endpoint = listener
@@ -233,6 +257,14 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             || request.request_id.len() > 128
         {
             return Err("Invalid input or request ID".into());
+        }
+        if request.namespace == "app" && READ_ONLY_APP_ACTIONS.contains(&request.action.as_str()) {
+            let cwd = {
+                let host = inner.lock().map_err(|_| "Control service unavailable")?;
+                read_only_scope(&host, &request.token)?
+            };
+            let result = crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?;
+            return Ok(json!({"ok": true, "result": result}));
         }
         let id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = mpsc::channel();
@@ -652,6 +684,30 @@ mod tests {
         assert!(request_grant(&inner, "app", "app-token").is_err());
         inner.active.remove("ordinary");
         assert!(request_grant(&inner, "app", "app-token").is_err());
+    }
+    #[test]
+    fn read_only_search_needs_a_live_turn_but_not_the_operator_opt_in() {
+        let mut inner = Inner::default();
+        assert!(inner.prepare_app_grant("ordinary", "main", "/repo"));
+        let token = inner.app_grants["ordinary"].token.clone();
+        assert!(read_only_scope(&inner, &token).is_err());
+        inner.active.insert(
+            "ordinary".into(),
+            ActiveTurn {
+                window: "main".into(),
+                cwd: "/repo/sub".into(),
+                app_allowed: false,
+            },
+        );
+        assert_eq!(read_only_scope(&inner, &token).unwrap(), "/repo/sub");
+        assert!(read_only_scope(&inner, "forged").is_err());
+        // A turn in another window does not lend its scope.
+        inner.active.get_mut("ordinary").unwrap().window = "other".into();
+        assert!(read_only_scope(&inner, &token).is_err());
+        inner.active.get_mut("ordinary").unwrap().window = "main".into();
+        // Orchestration sessions never answer to an app token.
+        inner.workers.insert("ordinary".into(), "lead".into());
+        assert!(read_only_scope(&inner, &token).is_err());
     }
     #[test]
     fn app_token_survives_normal_turns_but_only_works_when_opted_in() {

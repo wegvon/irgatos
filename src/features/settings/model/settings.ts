@@ -223,6 +223,19 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "lightpanda headless browser cdp playwright puppeteer scraping research install mcp",
   },
   {
+    id: "semantic-search-service",
+    section: "providers",
+    label: "Semantic search",
+    keywords:
+      "semantic code search embedding embeddinggemma endpoint url api key vector agents turn on off",
+  },
+  {
+    id: "semantic-search-projects",
+    section: "providers",
+    label: "Semantic search indexes",
+    keywords: "semantic index rebuild progress status project code embedding",
+  },
+  {
     id: "irgats-enabled",
     section: "irgats",
     label: "Show irgats",
