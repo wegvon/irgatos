@@ -6,6 +6,7 @@ import {
   updateIrgat,
   type Irgat,
 } from "../../irgats/model/irgat";
+import { shouldPersistSession } from "../../sessions/data/sessionStore";
 import { newSession, type Session } from "../../sessions/model/session";
 import type { WebIrgats, WebSession } from "./protocol";
 import {
@@ -42,7 +43,7 @@ function mac(open: Session[], saved: Session[] = []) {
       add: vi.fn((session: Session) => void sessions.push(session)),
     },
     irgatsEnabled: () => true,
-    saveSession: vi.fn(async () => null),
+    saveSession: vi.fn(async (session: Session) => ({ id: session.id })),
   };
   return { deps, sessions };
 }
@@ -176,6 +177,8 @@ describe("Irgats on the web page", () => {
       expect.objectContaining({ id: sessionId, title: "Chat 1" }),
     );
     expect(sessions.map((entry) => entry.id)).toEqual(["main", sessionId]);
+    // Still blank, yet the Mac stores it, so the row opens after a restart.
+    expect(shouldPersistSession(sessions[1])).toBe(true);
 
     deps.saveSession = vi.fn(async () => {
       throw new Error("Disk full");
@@ -183,6 +186,10 @@ describe("Irgats on the web page", () => {
     await expect(
       handleWebAccess(deps, "irgatNewChat", { irgatId: crab.id }),
     ).rejects.toThrow("Disk full");
+    deps.saveSession = vi.fn(async () => null);
+    await expect(
+      handleWebAccess(deps, "irgatNewChat", { irgatId: crab.id }),
+    ).rejects.toThrow("Irgatos could not save the new chat.");
     expect(findIrgat(crab.id)?.childSessionIds).toEqual([sessionId]);
     expect(sessions).toHaveLength(2);
   });

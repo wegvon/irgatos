@@ -612,7 +612,9 @@ export async function handleWebAccess(
         (id) => deps.sessions().find((entry) => entry.id === id)?.title,
       );
       try {
-        await deps.saveSession(child);
+        // A row with nothing stored behind it could not be opened later.
+        if (!(await deps.saveSession(child)))
+          throw new Error("Irgatos could not save the new chat.");
       } catch (error) {
         updateIrgat(irgat.id, (current) => ({
           ...current,
