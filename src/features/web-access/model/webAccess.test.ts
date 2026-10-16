@@ -106,6 +106,8 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
     },
     irgatsEnabled: () => false,
     saveSession: vi.fn(async () => null),
+    rename: vi.fn(async () => {}),
+    remove: vi.fn(async () => true),
     projects: () => ["/Users/me/code/shop", "/Users/me/code/irgatos"],
     freeChatDir: async () => "/Users/me/.irgatos/scratch",
     choice: (cwd) =>
@@ -267,6 +269,40 @@ describe("handleWebAccess", () => {
       stopped: false,
     });
     expect(d.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("renames a chat with the name trimmed", async () => {
+    const d = deps([chat("a")]);
+    expect(
+      await handleWebAccess(d, "renameChat", {
+        sessionId: "a",
+        title: "  Login fix  ",
+      }),
+    ).toEqual({ renamed: true });
+    expect(d.rename).toHaveBeenCalledWith("a", "Login fix");
+    await expect(
+      handleWebAccess(d, "renameChat", { sessionId: "a", title: "  " }),
+    ).rejects.toThrow("Give the chat a name.");
+    await expect(
+      handleWebAccess(d, "renameChat", { sessionId: "zzz", title: "x" }),
+    ).rejects.toThrow("not open");
+    expect(d.rename).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes a chat, and says so when the Mac keeps it", async () => {
+    const d = deps([chat("a")]);
+    const view = (await handleWebAccess(d, "session", {
+      id: "a",
+    })) as WebSession;
+    expect(view.deletable).toBe(true);
+    expect(await handleWebAccess(d, "deleteChat", { sessionId: "a" })).toEqual({
+      deleted: true,
+    });
+    expect(d.remove).toHaveBeenCalledWith("a");
+    d.remove = vi.fn(async () => false);
+    await expect(
+      handleWebAccess(d, "deleteChat", { sessionId: "a" }),
+    ).rejects.toThrow("could not delete");
   });
 
   it("lists free chat first, then recent projects with their defaults", async () => {

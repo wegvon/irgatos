@@ -10,6 +10,7 @@ import type { WebBlock, WebSession } from "../../model/protocol";
 import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { Markdown } from "./Markdown";
+import { ChatOptions } from "./ChatOptions";
 import { Mascot } from "./Irgats";
 import { RequestBody } from "./Requests";
 import {
@@ -33,6 +34,7 @@ import {
   MessageSquare,
   Pencil,
   LoaderCircle,
+  MoreHorizontal,
   Search,
   Shield,
   Square,
@@ -60,10 +62,12 @@ export function ChatView({
       !session || session.busy || session.requests.length ? 1500 : 4000,
   );
   const [pending, setPending] = useState<string[]>([]);
+  const [options, setOptions] = useState(false);
 
   useEffect(() => {
     opened.current = Date.now();
     setPending([]);
+    setOptions(false);
   }, [id]);
 
   // A sent message stays as a ghost bubble until the Mac's copy arrives.
@@ -114,7 +118,23 @@ export function ChatView({
 
   return (
     <div className="flex h-full flex-col">
-      <ChatHeader wide={wide} onBack={onBack} session={data} />
+      <ChatHeader
+        wide={wide}
+        onBack={onBack}
+        session={data}
+        onOptions={() => setOptions(true)}
+      />
+      {options ? (
+        <ChatOptions
+          session={data}
+          wide={wide}
+          onClose={() => setOptions(false)}
+          onDeleted={() => {
+            setOptions(false);
+            onBack();
+          }}
+        />
+      ) : null}
       <Transcript session={data} pending={pending} wide={wide} />
       <div className="pb-[max(var(--safe-bottom),12px)]">
         <div
@@ -154,10 +174,13 @@ function ChatHeader({
   wide,
   onBack,
   session,
+  onOptions,
 }: {
   wide: boolean;
   onBack: () => void;
   session?: WebSession;
+  /** Rename or delete; tapping the title opens the same. */
+  onOptions?: () => void;
 }) {
   return (
     <header className="glass-bar relative z-10 shrink-0 pt-(--safe-top) shadow-[0_1px_0_var(--hairline)]">
@@ -169,8 +192,14 @@ function ChatHeader({
             <ChevronLeft className="size-5" strokeWidth={2.2} />
           </RoundButton>
         )}
-        <div className={`min-w-0 flex-1 ${wide ? "" : "text-center"}`}>
-          <div
+        <button
+          type="button"
+          disabled={!onOptions}
+          onClick={onOptions}
+          aria-label={session ? `${session.title}, chat options` : undefined}
+          className={`min-w-0 flex-1 ${wide ? "text-left" : "text-center"}`}
+        >
+          <span
             className={`flex min-w-0 items-center gap-1.5 ${wide ? "" : "justify-center"}`}
           >
             {session?.mascot ? (
@@ -179,9 +208,9 @@ function ChatHeader({
             <span className="truncate text-[16px] font-semibold leading-tight tracking-[-0.01em] text-(--ink)">
               {session?.title ?? ""}
             </span>
-          </div>
+          </span>
           {session ? (
-            <div
+            <span
               className={`mt-0.5 flex items-center gap-1 text-[12px] text-(--ink-2) ${wide ? "" : "justify-center"}`}
             >
               <Harness harness={session.harness} className="size-3" />
@@ -190,10 +219,16 @@ function ChatHeader({
                   .filter(Boolean)
                   .join(" · ")}
               </span>
-            </div>
+            </span>
           ) : null}
-        </div>
-        {wide ? null : <div className="size-10 shrink-0" />}
+        </button>
+        {onOptions ? (
+          <RoundButton label="Chat options" onClick={onOptions}>
+            <MoreHorizontal className="size-5" strokeWidth={2.2} />
+          </RoundButton>
+        ) : wide ? null : (
+          <div className="size-10 shrink-0" />
+        )}
       </div>
     </header>
   );

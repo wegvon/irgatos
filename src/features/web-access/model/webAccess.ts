@@ -36,6 +36,7 @@ import {
 } from "../../irgats/model/irgat";
 import {
   createIrgatChildSession,
+  deleteIrgatChildSession,
   ensureIrgatSession,
 } from "../../irgats/model/irgatWorkspace";
 import { loadRecents } from "../../projects/model/recents";
@@ -117,6 +118,10 @@ export type WebAccessDeps = {
   irgatsEnabled: () => boolean;
   /** Stores a new chat before it is shown, as the desktop's own does. */
   saveSession: (session: Session) => Promise<unknown>;
+  /** Renames a chat the way the sidebar does. */
+  rename: (sessionId: string, title: string) => Promise<void>;
+  /** Deletes a chat without the Mac's confirmation: the page asked. */
+  remove: (sessionId: string) => Promise<boolean>;
   /** Recent project folders, newest first. */
   projects: () => readonly string[];
   freeChatDir: () => Promise<string>;
@@ -158,7 +163,15 @@ export function ownerName(home: string): string {
 /** The parts that read the app's own settings and stores, not live React state. */
 export const webAccessDefaults: Omit<
   WebAccessDeps,
-  "sessions" | "submit" | "approve" | "answer" | "stop" | "launch" | "irgatHost"
+  | "sessions"
+  | "submit"
+  | "approve"
+  | "answer"
+  | "stop"
+  | "launch"
+  | "irgatHost"
+  | "rename"
+  | "remove"
 > = {
   projects: () => loadRecents().map((project) => project.path),
   freeChatDir: resolveFreeChatDir,
@@ -281,7 +294,9 @@ function webIrgat(irgat: Irgat, open: ReadonlyMap<string, Session>): WebIrgat {
       const session = open.get(sessionId);
       return {
         sessionId,
-        title: session?.title || `Chat ${index + 1}`,
+        title: session
+          ? sessionDisplayTitle(session.title, session.harness)
+          : `Chat ${index + 1}`,
         status: session ? irgatState(session).status : "idle",
       };
     }),
@@ -469,8 +484,33 @@ export async function handleWebAccess(
         blocks: blocks
           .slice(-WEB_TRANSCRIPT_LIMIT)
           .map((block) => webBlock(block, cwd)),
+        deletable: irgat?.sessionId !== session.id,
       };
       return view;
+    }
+    case "renameChat": {
+      const session = await findSession(deps, input);
+      const title = text(input, "title", 200).trim();
+      if (!title) throw new Error("Give the chat a name.");
+      await deps.rename(session.id, title);
+      return { renamed: true };
+    }
+    case "deleteChat": {
+      const session = await findSession(deps, input);
+      const irgat = irgatForSession(session.id);
+      if (irgat?.sessionId === session.id)
+        throw new Error(
+          "This is the Irgat's own chat. Delete the Irgat on your Mac.",
+        );
+      // An Irgat's chat leaves its list only once storage lets it go.
+      const removed = irgat
+        ? await deleteIrgatChildSession(irgat.id, session.id, () =>
+            deps.remove(session.id),
+          )
+        : await deps.remove(session.id);
+      if (!removed)
+        throw new Error("Irgatos could not delete this chat right now.");
+      return { deleted: true };
     }
     case "send": {
       const session = await findSession(deps, input);

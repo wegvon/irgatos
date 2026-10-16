@@ -43,11 +43,13 @@ const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 
 const READ_ACTIONS: [&str; 6] = [
     "overview", "session", "projects", "ideas", "services", "irgats",
 ];
-const WRITE_ACTIONS: [&str; 11] = [
+const WRITE_ACTIONS: [&str; 13] = [
     "send",
     "approval",
     "answer",
     "stop",
+    "renameChat",
+    "deleteChat",
     "newChat",
     "irgatOpen",
     "irgatNewChat",

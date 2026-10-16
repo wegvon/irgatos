@@ -44,6 +44,12 @@ function mac(open: Session[], saved: Session[] = []) {
     },
     irgatsEnabled: () => true,
     saveSession: vi.fn(async (session: Session) => ({ id: session.id })),
+    rename: vi.fn(async () => {}),
+    remove: vi.fn(async (id: string) => {
+      const index = sessions.findIndex((entry) => entry.id === id);
+      if (index >= 0) sessions.splice(index, 1);
+      return true;
+    }),
   };
   return { deps, sessions };
 }
@@ -192,5 +198,42 @@ describe("Irgats on the web page", () => {
     ).rejects.toThrow("Irgatos could not save the new chat.");
     expect(findIrgat(crab.id)?.childSessionIds).toEqual([sessionId]);
     expect(sessions).toHaveLength(2);
+  });
+  it("deletes an Irgat's other chats but leaves its own to the Mac", async () => {
+    const crab = irgat({
+      sessionId: "main",
+      childSessionIds: ["plan", "notes"],
+    });
+    const { deps, sessions } = mac([
+      stored("main"),
+      stored("plan", { title: "claude · Plan the launch" }),
+      stored("notes"),
+    ]);
+
+    const listed = (await handleWebAccess(deps, "irgats", {})) as WebIrgats;
+    expect(listed.irgats[0]?.chats[0]?.title).toBe("Plan the launch");
+
+    const main = (await handleWebAccess(deps, "session", {
+      id: "main",
+    })) as WebSession;
+    expect(main.deletable).toBe(false);
+    await expect(
+      handleWebAccess(deps, "deleteChat", { sessionId: "main" }),
+    ).rejects.toThrow("Delete the Irgat on your Mac.");
+
+    expect(
+      await handleWebAccess(deps, "deleteChat", { sessionId: "plan" }),
+    ).toEqual({ deleted: true });
+    expect(deps.remove).toHaveBeenCalledWith("plan");
+    expect(deps.remove).toHaveBeenCalledTimes(1);
+    expect(findIrgat(crab.id)?.childSessionIds).toEqual(["notes"]);
+    expect(sessions.map((entry) => entry.id)).toEqual(["main", "notes"]);
+
+    // Storage refused: the chat stays listed under its Irgat.
+    deps.remove = vi.fn(async () => false);
+    await expect(
+      handleWebAccess(deps, "deleteChat", { sessionId: "notes" }),
+    ).rejects.toThrow("could not delete");
+    expect(findIrgat(crab.id)?.childSessionIds).toEqual(["notes"]);
   });
 });
