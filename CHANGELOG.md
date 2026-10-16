@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Semantic code search for agents.** Point **Settings › Providers › Semantic search** at an EmbeddingGemma server, save its key and index a project. Indexing runs in the background and only re-embeds changed files. Agents then run `app code.search` to find code by meaning and by name: results from the index are merged with `git grep` on the query's identifiers. It is read-only, works in any agent turn without `/operator`, and falls back to grep alone while a project is unindexed or still indexing.
 
+- **Search by meaning.** With Semantic search set up, the Search page also finds chat messages and the open project's code by what they mean, not only by the words you type. Those results carry a **meaning** tag and come after the word matches. Chat history is indexed in the background, newest first (up to the latest 6,000 messages), and only changed chats are read again; while it runs the page says how far it has got. Word search works as before when Semantic search is off.
+
 - **Mail.** A new Mail page in the sidebar shows Gmail through your [Executor](https://executor.sh): paste its URL and an API key on the page, and Irgatos never holds a Google credential. Every Gmail account connected in Executor shows up: one newest-first list across all of them, or one account at a time. Read threads, archive them, and write or edit replies. **Start chat** opens an agent chat about a thread in the project you pick; that chat's agent can run `app mail.read` and `app mail.draft` to read the thread and save a reply as its Gmail draft, but it cannot send. A reply goes out only when you press **Send** and confirm.
 
 ### Changed
