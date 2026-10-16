@@ -86,8 +86,12 @@ describe("FreeChatView", () => {
         row("c", { state: "unread" }),
       ],
     });
-    const rows = [...container.querySelectorAll<HTMLElement>("[data-free-chat-row]")];
-    expect(rows.map((item) => [item.dataset.freeChatRow, item.dataset.state])).toEqual([
+    const rows = [
+      ...container.querySelectorAll<HTMLElement>("[data-free-chat-row]"),
+    ];
+    expect(
+      rows.map((item) => [item.dataset.freeChatRow, item.dataset.state]),
+    ).toEqual([
       ["a", "needs-input"],
       ["b", "running"],
       ["c", "unread"],
@@ -107,7 +111,9 @@ describe("FreeChatView", () => {
     });
     expect(container.querySelector("[data-pane]")).not.toBeNull();
     expect(container.querySelector("[data-footer]")).not.toBeNull();
-    expect(container.querySelector('[aria-current="true"]')?.textContent).toBe("Chat a");
+    expect(container.querySelector('[aria-current="true"]')?.textContent).toBe(
+      "Chat a",
+    );
     expect(container.textContent).not.toContain("Pick a chat");
   });
 
@@ -124,9 +130,9 @@ describe("FreeChatView", () => {
     render({ rows: [row("a", { blank: true })], activeId: "a" });
     expect(button("Add to Board")).toBeNull();
     act(() => button("More actions for Chat a")!.click());
-    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (element) => element.textContent?.includes("Add to Board"),
-    )!;
+    const item = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ].find((element) => element.textContent?.includes("Add to Board"))!;
     expect(item.disabled).toBe(true);
     render({ boardIds: new Set(["a"]) });
     expect(button("Show on Board")).not.toBeNull();
@@ -136,9 +142,9 @@ describe("FreeChatView", () => {
     render({ rows: [row("a")] });
     const pick = (label: string) => {
       act(() => button("More actions for Chat a")!.click());
-      const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-        (element) => element.textContent?.trim() === label,
-      )!;
+      const item = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+      ].find((element) => element.textContent?.trim() === label)!;
       act(() => item.click());
     };
     pick("Pin");
@@ -146,19 +152,33 @@ describe("FreeChatView", () => {
     pick("Delete");
     expect(props.onDelete).toHaveBeenCalledWith("a");
     pick("Rename");
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Chat title"]')!;
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Chat title"]',
+    )!;
     input.value = "Monads";
     act(() => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
     });
     expect(props.onRename).toHaveBeenCalledWith("a", "Monads");
   });
 
   it("filters chats by title", () => {
-    render({ rows: [row("a", { title: "Tax question" }), row("b", { title: "Recipe" })] });
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter chats"]')!;
+    render({
+      rows: [
+        row("a", { title: "Tax question" }),
+        row("b", { title: "Recipe" }),
+      ],
+    });
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter chats"]',
+    )!;
     act(() => {
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
       setter.call(input, "tax");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
@@ -178,5 +198,35 @@ describe("FreeChatView", () => {
     )!;
     act(() => retry.click());
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+  it("puts the chat's terminal dock between the pane and the status bar", () => {
+    render({
+      rows: [row("a")],
+      activeId: "a",
+      pane: createElement("div", { "data-slot": "pane" }),
+      dock: createElement("div", { "data-slot": "dock" }),
+      footer: createElement("div", { "data-slot": "footer" }),
+    });
+    expect(
+      [...container.querySelectorAll<HTMLElement>("[data-slot]")].map(
+        (item) => item.dataset.slot,
+      ),
+    ).toEqual(["pane", "dock", "footer"]);
+  });
+  it("puts the browser beside the pane and dock, above the status bar", () => {
+    render({
+      rows: [row("a")],
+      activeId: "a",
+      pane: createElement("div", { "data-slot": "pane" }),
+      dock: createElement("div", { "data-slot": "dock" }),
+      aside: createElement("div", { "data-slot": "aside" }),
+      footer: createElement("div", { "data-slot": "footer" }),
+    });
+    const slot = (name: string) =>
+      container.querySelector<HTMLElement>(`[data-slot="${name}"]`)!;
+    const besidePane = slot("aside").parentElement!;
+    expect(besidePane.contains(slot("pane"))).toBe(true);
+    expect(besidePane.contains(slot("dock"))).toBe(true);
+    expect(besidePane.contains(slot("footer"))).toBe(false);
   });
 });

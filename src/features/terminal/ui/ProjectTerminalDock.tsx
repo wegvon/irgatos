@@ -42,7 +42,8 @@ type Props = {
   focused: boolean;
   onFocus: () => void;
   onHide: () => void;
-  onSideChange: (side: DockSide) => void;
+  /** Left out where the dock cannot move, e.g. under a chat. */
+  onSideChange?: (side: DockSide) => void;
   onSizePaint: (size: number) => void;
   onSizeCommit: (size: number) => void;
   onAddTerminal: () => void;
@@ -227,6 +228,7 @@ export function ProjectTerminalDock({
             >
               <Plus className="size-3.5" strokeWidth={1.75} />
             </IconButton>
+            {onSideChange ? (
             <div ref={sideButton}>
             <IconButton
               label="Move Terminal"
@@ -239,6 +241,7 @@ export function ProjectTerminalDock({
               <SideIcon className="size-3.5" strokeWidth={1.75} />
             </IconButton>
             </div>
+            ) : null}
             <IconButton
               label={`Hide Terminal (${MOD}J)`}
               onClick={onHide}
@@ -282,7 +285,7 @@ export function ProjectTerminalDock({
           }))}
           onPick={(id) => {
             if (id === "top" || id === "bottom" || id === "left" || id === "right") {
-              onSideChange(id);
+              onSideChange?.(id);
             }
             setMenu(null);
           }}

@@ -39,6 +39,7 @@ mod link_preview;
 mod macos;
 #[cfg(target_os = "macos")]
 mod macos_background;
+mod mail;
 mod mcp;
 mod menu;
 mod notes;
@@ -510,6 +511,17 @@ pub fn run() {
             semantic_index::semantic_index_cancel,
             semantic_index::semantic_index_remove,
             semantic_index::semantic_index_available,
+            mail::mail_settings,
+            mail::mail_accounts,
+            mail::mail_save_settings,
+            mail::mail_list,
+            mail::mail_thread,
+            mail::mail_save_draft,
+            mail::mail_send_draft,
+            mail::mail_modify,
+            mail::mail_link_session,
+            mail::mail_session_link,
+            mail::mail_thread_sessions,
             cursor_store::cursor_tool_calls,
             cursor_store::cursor_subagent_runs,
             harness::harness_resolve_cursor,

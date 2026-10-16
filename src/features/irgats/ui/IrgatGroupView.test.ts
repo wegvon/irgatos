@@ -380,6 +380,15 @@ describe("sending", () => {
     expect(adhdEnabledFor(irgatGroupViewKey(group.id))).toBe(true);
   });
 
+  it("shows the ADHD switch for the room in its composer", async () => {
+    const { group } = setup();
+    await render(group.id, fakeRunner());
+    const chip = q('[aria-label="ADHD mode"]');
+    expect(chip).not.toBeNull();
+    await act(async () => (chip as HTMLButtonElement).click());
+    expect(adhdEnabledFor(irgatGroupViewKey(group.id))).toBe(true);
+  });
+
   it("sends a restored draft that @mentions a member", async () => {
     const { group, idOf } = setup();
     setComposerDraft(irgatGroupViewKey(group.id), "@Security check this");

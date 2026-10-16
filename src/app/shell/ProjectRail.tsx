@@ -6,6 +6,7 @@ import {
   FolderPlus,
   Internet,
   Inbox,
+  Mail,
   Kanban,
   MoreHorizontal,
   Pin,
@@ -129,6 +130,8 @@ type Props = {
   fleetPanel?: ReactNode;
   kanbanActive?: boolean;
   fleetActive?: boolean;
+  onOpenMail?: () => void;
+  mailActive?: boolean;
   /** Shows the project's Artifacts panel; absent outside a project. */
   onOpenArtifacts?: () => void;
   artifactsActive?: boolean;
@@ -178,6 +181,8 @@ export function ProjectRail({
   fleetPanel,
   kanbanActive = false,
   fleetActive = false,
+  onOpenMail,
+  mailActive = false,
   onOpenArtifacts,
   artifactsActive = false,
   artifactCount = 0,
@@ -369,6 +374,7 @@ export function ProjectRail({
     automationsActive ||
     kanbanActive ||
     fleetActive ||
+    mailActive ||
     chatActive ||
     !!irgats?.activeId;
   const pinnedIds = sections.pinned.map((item) => item.path);
@@ -431,6 +437,15 @@ export function ProjectRail({
               dot={inboxUnseen}
               ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
             />
+            {onOpenMail ? (
+              <RailAction
+                label="Mail"
+                icon={Mail}
+                onClick={onOpenMail}
+                active={mailActive}
+                ariaLabel="Mail"
+              />
+            ) : null}
             {notesEnabled ? (
               <RailAction
                 label="Notes"
