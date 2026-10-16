@@ -11,22 +11,11 @@ import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
 
 // Official Node release checksums, pinned so release builds are reproducible.
-// https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
-const nodeVersion = "24.21.0";
-const runtimes = {
-  "darwin-arm64":
-    "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
-  "darwin-x64":
-    "1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097",
-  "linux-arm64":
-    "724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5",
-  "linux-x64":
-    "6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff",
-  "win32-x64":
-    "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541",
-  "win32-arm64":
-    "8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921",
-};
+// https://nodejs.org/dist/v24.21.0/SHASUMS256.txt. The desktop's SSH setup
+// reads the same file, so both install paths use the same runtime.
+const { nodeVersion, sha256: runtimes } = JSON.parse(
+  await readFile(new URL("./runtimes.json", import.meta.url), "utf8"),
+);
 const psQuote = (value) => `'${value.replaceAll("'", "''")}'`;
 const ps = (script) =>
   execFileSync(

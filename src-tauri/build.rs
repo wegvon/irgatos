@@ -15,6 +15,7 @@ fn main() {
         .expect("tauri.conf.json must define a non-empty productName");
     println!("cargo:rustc-env=TAURI_PRODUCT_NAME={product_name}");
     stamp_git_build();
+    embed_host_bundle();
     // GNU ld exports every symbol from the Tauri cdylib and blows past the
     // 65535 PE ordinal limit. Hide them; the desktop exe links the rlib.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
@@ -23,6 +24,20 @@ fn main() {
         println!("cargo::rustc-link-arg-cdylib=-Wl,--exclude-libs=ALL,--exclude-all-symbols");
     }
     tauri_build::build()
+}
+
+/// Copies the bundled host (`npm run host:build`) next to the build output so
+/// SSH setup can send it to a remote machine. Release builds require it; debug
+/// builds and `cargo test` without it get an empty file and a clear error.
+fn embed_host_bundle() {
+    let source = std::path::Path::new("../build/host/irgat-host.mjs");
+    println!("cargo:rerun-if-changed={}", source.display());
+    let bundle = std::fs::read(source).unwrap_or_default();
+    if bundle.is_empty() && std::env::var("PROFILE").as_deref() == Ok("release") {
+        panic!("build/host/irgat-host.mjs is missing; run `npm run host:build` first");
+    }
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    std::fs::write(out.join("irgat-host.mjs"), bundle).expect("write host bundle");
 }
 
 /// Bakes the commit and branch into the binary so "Check for Updates" can
