@@ -55,6 +55,9 @@ fn yield_to_queries() {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Task {
     Document,
+    /// A natural-language search over documents. The server only knows the
+    /// model card's prompt names, so this is `SearchQuery`, not `Query`.
+    SearchQuery,
     CodeRetrieval,
 }
 
@@ -62,6 +65,7 @@ impl Task {
     fn as_str(self) -> &'static str {
         match self {
             Task::Document => "Document",
+            Task::SearchQuery => "SearchQuery",
             Task::CodeRetrieval => "CodeRetrieval",
         }
     }
@@ -481,6 +485,13 @@ pub(crate) mod tests {
         assert_eq!(requests[0]["body"]["model"], MODEL);
         assert_eq!(requests[0]["body"]["input"].as_array().unwrap().len(), 16);
         assert_eq!(requests[0]["auth"], "Bearer secret");
+    }
+
+    #[test]
+    fn task_names_match_the_model_card_prompts() {
+        assert_eq!(Task::Document.as_str(), "Document");
+        assert_eq!(Task::SearchQuery.as_str(), "SearchQuery");
+        assert_eq!(Task::CodeRetrieval.as_str(), "CodeRetrieval");
     }
 
     #[test]
