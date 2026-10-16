@@ -55,6 +55,9 @@ export function Today({
   const changed = overview
     ? overview.review.reduce((sum, entry) => sum + entry.editedPaths.length, 0)
     : 0;
+  const artifacts = overview
+    ? overview.review.reduce((sum, entry) => sum + entry.artifacts, 0)
+    : 0;
   const cards = ideas?.boards.flatMap((board) =>
     board.lists.flatMap((list) => list.cards),
   );
@@ -131,7 +134,13 @@ export function Today({
               label="To review"
               value={overview.review.length}
               caption={
-                changed ? `${plural(changed, "file")} changed` : "Nothing new"
+                changed
+                  ? `${plural(changed, "file")} changed`
+                  : artifacts
+                    ? plural(artifacts, "artifact")
+                    : overview.review.length
+                      ? "Finished"
+                      : "Nothing new"
               }
               onClick={() => navigate({ name: "chats", filter: "review" })}
             />
