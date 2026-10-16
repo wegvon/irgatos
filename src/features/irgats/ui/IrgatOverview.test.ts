@@ -9,6 +9,25 @@ vi.mock("../model/irgatHabits", async (original) => ({
   loadHabits: async () => [],
 }));
 
+vi.mock("../model/irgatFiles", async (original) => ({
+  ...(await original<object>()),
+  loadIrgatFiles: async () => ({
+    id: "irgat-1",
+    dir: "/data/irgat-1",
+    soul: "# Soul",
+    soulHash: "soul",
+    memory: "",
+    memoryHash: "memory",
+    memoryPath: "/data/irgat-1/MEMORY.md",
+    topics: [],
+  }),
+}));
+
+vi.mock("../../sessions/ui/ModelPicker", () => ({
+  ModelPicker: () => null,
+  ModelSettingRows: () => null,
+}));
+
 vi.mock("./IrgatChangesView", () => ({
   IrgatChangesView: () => createElement("p", { "data-changes-view": "" }),
 }));
@@ -112,6 +131,7 @@ it("names only the open tab, with its count, and switches tabs", async () => {
     "closed",
     "closed",
     "closed",
+    "closed",
   ]);
   expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
     "All",
@@ -120,6 +140,7 @@ it("names only the open tab, with its count, and switches tabs", async () => {
     "Habits",
     "Changes",
     "Artifacts",
+    "Settings",
   ]);
   expect(tabs()[1].textContent).toBe("Sessions2");
   expect(tabs()[1].getAttribute("aria-selected")).toBe("true");
@@ -251,4 +272,33 @@ it("opens one New habit page however fast + is clicked", async () => {
   });
   await act(async () => add.click());
   expect(container.querySelectorAll("[data-new-habit]")).toHaveLength(1);
+});
+
+it("keeps its settings on their own tab, with soul and memory opening over it", async () => {
+  await render("settings", vi.fn(), {
+    settings: {
+      cwd: "/home",
+      harness: "codex",
+      model: "codex:gpt-5.4",
+      modelSettings: {},
+      runtimeMode: "auto",
+      onModelChange: vi.fn(),
+      onModelSettingsChange: vi.fn(),
+      onRuntimeModeChange: vi.fn(),
+    },
+  });
+  const panel = container.querySelector('[data-irgat-overview="settings"]')!;
+  expect(panel.querySelector('input[aria-label="Name"]')).not.toBeNull();
+  expect(panel.textContent).toContain("Permissions");
+  const link = (label: string) =>
+    [...panel.querySelectorAll<HTMLButtonElement>("button")].find((entry) =>
+      entry.textContent?.startsWith(label),
+    )!;
+  await act(async () => link("Memory").click());
+  expect(container.querySelector("[data-irgat-memory]")).not.toBeNull();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Back"]')!.click(),
+  );
+  await act(async () => link("Soul").click());
+  expect(container.querySelector("[data-irgat-soul]")).not.toBeNull();
 });

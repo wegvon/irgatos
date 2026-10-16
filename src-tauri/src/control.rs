@@ -183,12 +183,13 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
 /// They need a live turn but not the /operator opt-in: they only read the
 /// checkout the agent is already working in. `mail.*` actions are answered
 /// the same way, scoped to the thread the chat was started for, and so are
-/// `feed.*`, which only read the user's interests and add posts to the Feed.
+/// `feed.*`, which only read the user's interests and add posts to the Feed,
+/// and `browser.*`, which work in the browser of the turn's own window.
 const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
 
 /// The session and folder an app action answered by the app itself is scoped
 /// to: the caller's active turn.
-fn turn_scope(host: &Inner, token: &str, action: &str) -> Result<(String, String), String> {
+fn turn_scope(host: &Inner, token: &str, action: &str) -> Result<(String, String, String), String> {
     let grant = host
         .app_grants
         .values()
@@ -200,7 +201,7 @@ fn turn_scope(host: &Inner, token: &str, action: &str) -> Result<(String, String
     host.active
         .get(&grant.session)
         .filter(|turn| turn.window == grant.window)
-        .map(|turn| (grant.session.clone(), turn.cwd.clone()))
+        .map(|turn| (grant.session.clone(), turn.cwd.clone(), turn.window.clone()))
         .ok_or_else(|| format!("{action} works only while an agent turn is running in Irgatos."))
 }
 
@@ -263,14 +264,17 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
         if request.namespace == "app"
             && (READ_ONLY_APP_ACTIONS.contains(&action)
                 || crate::mail::AGENT_ACTIONS.contains(&action)
-                || crate::feed::AGENT_ACTIONS.contains(&action))
+                || crate::feed::AGENT_ACTIONS.contains(&action)
+                || crate::browser_agent::AGENT_ACTIONS.contains(&action))
         {
-            let (session, cwd) = {
+            let (session, cwd, window) = {
                 let host = inner.lock().map_err(|_| "Control service unavailable")?;
                 turn_scope(&host, &request.token, action)?
             };
             let result = if action == "code.search" {
                 crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?
+            } else if action.starts_with("browser.") {
+                crate::browser_agent::agent_action(app, &window, action, &request.input)?
             } else if action.starts_with("feed.") {
                 crate::feed::agent_action(app, &session, action, &request.input)?
             } else {
@@ -713,7 +717,11 @@ mod tests {
         );
         assert_eq!(
             turn_scope(&inner, &token, "code.search").unwrap(),
-            ("ordinary".to_string(), "/repo/sub".to_string())
+            (
+                "ordinary".to_string(),
+                "/repo/sub".to_string(),
+                "main".to_string()
+            )
         );
         assert!(turn_scope(&inner, "forged", "mail.read").is_err());
         // A turn in another window does not lend its scope.

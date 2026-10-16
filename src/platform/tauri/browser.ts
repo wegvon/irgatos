@@ -16,7 +16,7 @@ export type BrowserEventKind =
 export type BrowserEvent = { id: string; kind: BrowserEventKind; url: string };
 
 export type BrowserAction =
-  "back" | "forward" | "reload" | { navigate: string };
+  "back" | "forward" | "reload" | "focus" | { navigate: string };
 
 export type ChromeProfile = { id: string; name: string };
 
@@ -85,15 +85,59 @@ export function closeBrowser(id: string) {
   return invoke<void>("browser_close", { id });
 }
 
-/** Events from this window's browser views only. */
+/** The page's icon as a `data:` URL, or null when it has none. */
+export function browserFavicon(id: string) {
+  return invoke<string | null>("browser_favicon", { id });
+}
+
+/** Events from this window's browser views only; `id` says which tab. */
 export function listenBrowserEvents(
-  id: string,
   handler: (event: BrowserEvent) => void,
 ): Promise<() => void> {
   return getCurrentWebviewWindow().listen<BrowserEvent>(
     "inline-browser",
-    (event) => {
-      if (event.payload.id === id) handler(event.payload);
-    },
+    (event) => handler(event.payload),
   );
+}
+
+/** A `browser.*` app action the browser panel answers for an agent. */
+export type BrowserAgentRequest = {
+  id: string;
+  action: string;
+  input: Record<string, unknown>;
+};
+
+export function listenBrowserAgentRequests(
+  handler: (request: BrowserAgentRequest) => void,
+): Promise<() => void> {
+  return getCurrentWebviewWindow().listen<BrowserAgentRequest>(
+    "browser-agent-request",
+    (event) => handler(event.payload),
+  );
+}
+
+export function replyBrowserAgent(
+  id: string,
+  outcome: { result: unknown } | { error: string },
+) {
+  return invoke<void>("browser_agent_reply", {
+    id,
+    result: "result" in outcome ? (outcome.result ?? null) : null,
+    error: "error" in outcome ? outcome.error : null,
+  });
+}
+
+/** Which native view agents act on, e.g. the active tab's. */
+export function setBrowserAgentView(id: string) {
+  return invoke<void>("browser_set_agent_view", { id });
+}
+
+/** The start of the active page's readable text. */
+export function browserPageExcerpt(maxChars: number) {
+  return invoke<{
+    url: string;
+    title: string;
+    text: string;
+    totalChars: number;
+  }>("browser_page_excerpt", { maxChars });
 }

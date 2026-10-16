@@ -102,7 +102,6 @@ type Props = {
   /** Shows or hides the Irgat's overview panel beside its chat. */
   onToggleIrgatOverview?: () => void;
   irgatOverviewOpen?: boolean;
-  onOpenIrgatSettings?: () => void;
   /** The full-height Irgat panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -627,7 +626,6 @@ function TitleBarComponent({
   irgat,
   onToggleIrgatOverview,
   irgatOverviewOpen = false,
-  onOpenIrgatSettings,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -897,7 +895,7 @@ function TitleBarComponent({
   const trailingControls =
     reviewBadge ||
     showTrailingActions ||
-    (irgat && (onToggleIrgatOverview || onOpenIrgatSettings)) ||
+    (irgat && onToggleIrgatOverview) ||
     (!IS_MAC && !hideWindowControls) ? (
       <div className="flex h-full shrink-0 items-stretch">
         {reviewBadge ? (
@@ -905,7 +903,7 @@ function TitleBarComponent({
             {reviewBadge}
           </div>
         ) : null}
-        {irgat && (onToggleIrgatOverview || onOpenIrgatSettings) ? (
+        {irgat && onToggleIrgatOverview ? (
           <div className="flex items-center gap-1 px-3">
             {onToggleIrgatOverview ? (
               <button
@@ -923,14 +921,6 @@ function TitleBarComponent({
                 <DashboardSquare className="size-3.5" strokeWidth={1.75} />
                 Overview
               </button>
-            ) : null}
-            {onOpenIrgatSettings ? (
-              <IconButton
-                label={`${irgat.look.name} settings`}
-                onClick={onOpenIrgatSettings}
-              >
-                <Settings className="size-3.5" strokeWidth={1.75} />
-              </IconButton>
             ) : null}
           </div>
         ) : null}

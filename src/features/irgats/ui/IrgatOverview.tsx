@@ -11,6 +11,7 @@ import {
   PanelRightToggle,
   Plus,
   Search,
+  Settings,
 } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import type { ArtifactCard } from "../../artifacts/artifacts";
@@ -24,6 +25,8 @@ import {
 } from "../model/overviewSections";
 import { HabitPage } from "./HabitPage";
 import { NewHabitPage } from "./NewHabitPage";
+import { MemoryPage, SoulPage, useIrgatFiles } from "./IrgatFilePages";
+import { IrgatSettings, type IrgatSettingsControls } from "./IrgatSettings";
 import {
   confirmHabitRemoval,
   habitActions,
@@ -58,7 +61,13 @@ import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { IrgatChangesView, type IrgatChangesRequest } from "./IrgatChangesView";
 
 export type IrgatOverviewTab =
-  "all" | "sessions" | "habits" | "documents" | "artifacts" | "changes";
+  | "all"
+  | "sessions"
+  | "habits"
+  | "documents"
+  | "artifacts"
+  | "changes"
+  | "settings";
 
 const TABS: { id: IrgatOverviewTab; label: string; icon: typeof Clock }[] = [
   { id: "all", label: "All", icon: DashboardSquare },
@@ -67,6 +76,7 @@ const TABS: { id: IrgatOverviewTab; label: string; icon: typeof Clock }[] = [
   { id: "habits", label: "Habits", icon: Clock },
   { id: "changes", label: "Changes", icon: FileDiff },
   { id: "artifacts", label: "Artifacts", icon: Artifacts },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 /** The conversation's recorded changes, reviewed and committed on their tab. */
@@ -81,11 +91,15 @@ export type IrgatOverviewChanges = {
   projects: readonly string[];
 };
 
-type Route = { kind: "new-habit" } | { kind: "habit"; id: string };
+type Route =
+  | { kind: "new-habit" }
+  | { kind: "habit"; id: string }
+  | { kind: "soul" }
+  | { kind: "memory" };
 
 function sameRoute(a: Route | undefined, b: Route): boolean {
   if (!a || a.kind !== b.kind) return false;
-  return a.kind === "new-habit" || (b.kind === "habit" && a.id === b.id);
+  return b.kind !== "habit" || (a.kind === "habit" && a.id === b.id);
 }
 
 type Props = {
@@ -102,6 +116,8 @@ type Props = {
   /** Documents it has written, oldest first. */
   documents: readonly ArtifactCard[];
   changes?: IrgatOverviewChanges;
+  /** Its model, permissions and conversation, for the Settings tab. */
+  settings?: IrgatSettingsControls;
   tab: IrgatOverviewTab;
   onTabChange: (tab: IrgatOverviewTab) => void;
   onOpenSession: (sessionId: string) => void | Promise<void>;
@@ -129,7 +145,7 @@ type Props = {
 /**
  * The Irgat's work at a glance: the sessions it started, its habits and the
  * documents it wrote, together on All or each on its own tab. Who it is and
- * how it works live in its settings.
+ * how it works live on its Settings tab, with its soul and memory under it.
  */
 export function IrgatOverview({
   open,
@@ -142,6 +158,7 @@ export function IrgatOverview({
   history,
   documents,
   changes,
+  settings,
   tab,
   onTabChange,
   onOpenSession,
@@ -164,6 +181,7 @@ export function IrgatOverview({
   const habitsLoad = useHabitsLoad(irgatId, state.status);
   const habits = habitsLoad.habits;
   const actions = habitActions(irgatId);
+  const files = useIrgatFiles(irgatId, state.status);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<SessionSidebarFilters>(
@@ -204,6 +222,22 @@ export function IrgatOverview({
   const back = () => setRoutes((current) => current.slice(0, -1));
 
   const pages: StackPage[] = routes.flatMap((route, depth): StackPage[] => {
+    if (route.kind === "soul")
+      return [
+        {
+          key: "soul",
+          node: (
+            <SoulPage irgatId={irgatId} agent={agent} files={files} onBack={back} />
+          ),
+        },
+      ];
+    if (route.kind === "memory")
+      return [
+        {
+          key: "memory",
+          node: <MemoryPage irgatId={irgatId} files={files} onBack={back} />,
+        },
+      ];
     if (route.kind === "new-habit")
       return [
         {
@@ -309,6 +343,7 @@ export function IrgatOverview({
     documents: documents.length,
     artifacts: artifacts.artifacts.length,
     changes: changes?.totals?.files,
+    settings: undefined,
   };
 
   return (
@@ -376,6 +411,23 @@ export function IrgatOverview({
             />
           </div>
         ) : null}
+        {tab === "settings" && settings ? (
+          <div
+            role="tabpanel"
+            aria-label="Settings"
+            className="flex min-h-0 flex-1 flex-col"
+            data-irgat-overview="settings"
+          >
+            <IrgatSettings
+              key={irgatId}
+              irgatId={irgatId}
+              agent={agent}
+              files={files}
+              onOpenPage={(page) => push({ kind: page })}
+              {...settings}
+            />
+          </div>
+        ) : null}
         {tab === "artifacts" ? (
           <div
             role="tabpanel"
@@ -398,10 +450,12 @@ export function IrgatOverview({
           ref={lock}
           role="tabpanel"
           aria-label={TABS.find((entry) => entry.id === tab)?.label}
-          hidden={tab === "changes" || tab === "artifacts"}
+          hidden={tab === "changes" || tab === "artifacts" || tab === "settings"}
           className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 py-2"
           data-irgat-overview={
-            tab === "changes" || tab === "artifacts" ? undefined : tab
+            tab === "changes" || tab === "artifacts" || tab === "settings"
+              ? undefined
+              : tab
           }
         >
           {tab === "all" ? (

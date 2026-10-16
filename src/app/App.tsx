@@ -1,5 +1,26 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
 import { appWindowTokens, hasAppWindowUserTurn } from "../features/sessions/model/appWindows";
+import { runBrowserTabCommand } from "../features/browser/model/browserTabCommands";
+import {
+  browserPageContext,
+  browserToolsContext,
+  claimBrowserPage,
+  claimBrowserToolsHint,
+  handleBrowserAgentRequest,
+  noteBrowserShown,
+  PAGE_EXCERPT_CHARS,
+} from "../features/browser/model/browserAgent";
+import {
+  currentBrowserTabs,
+  subscribeBrowserTabs,
+} from "../features/browser/model/browserTabs";
+import {
+  browserAction,
+  browserPageExcerpt,
+  listenBrowserAgentRequests,
+  replyBrowserAgent,
+  setBrowserAgentView,
+} from "../platform/tauri/browser";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
 import {
   resumeIrgatUsageLimit,
@@ -105,7 +126,6 @@ import {
   IrgatOverview,
   type IrgatOverviewTab,
 } from "../features/irgats/ui/IrgatOverview";
-import { IrgatSettingsDialog } from "../features/irgats/ui/IrgatSettingsDialog";
 import { IrgatActivityPanel } from "../features/irgats/ui/IrgatActivityPanel";
 import {
   launchedSessionState,
@@ -1357,7 +1377,6 @@ function Workspace({
   const [irgatOverviewTab, setIrgatOverviewTab] =
     useState<IrgatOverviewTab>("all");
   // The Irgat whose settings dialog is open; another Irgat's view closes it.
-  const [irgatSettingsFor, setIrgatSettingsFor] = useState<string | null>(null);
   // A document opened from the chat shows on the overview's Documents tab,
   // the same page the tab opens it on.
   const onOpenIrgatArtifact = useCallback((_sessionId: string, id: string) => {
@@ -1491,6 +1510,50 @@ function Workspace({
     };
     window.addEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
     return () => window.removeEventListener(OPEN_BROWSER_URL_EVENT, onOpenUrl);
+  }, []);
+  // Agents' browser.* actions that the Browser panel owns arrive here; page
+  // work runs natively on the active tab, which Rust learns from the tabs.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const host = {
+      show: () => {
+        setBrowserMounted(true);
+        setBrowserOpen(true);
+      },
+      openUrl: (url: string) =>
+        window.dispatchEvent(
+          new CustomEvent<string>(OPEN_BROWSER_URL_EVENT, { detail: url }),
+        ),
+      navigate: (tabId: string, url: string) =>
+        browserAction(tabId, { navigate: url }),
+    };
+    void listenBrowserAgentRequests((request) => {
+      void handleBrowserAgentRequest(request.action, request.input, host).then(
+        (result) => replyBrowserAgent(request.id, { result }),
+        (reason: unknown) =>
+          replyBrowserAgent(request.id, {
+            error: reason instanceof Error ? reason.message : String(reason),
+          }),
+      );
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    });
+    let agentView = "";
+    const syncView = () => {
+      const { activeId } = currentBrowserTabs();
+      if (!activeId || activeId === agentView) return;
+      agentView = activeId;
+      void setBrowserAgentView(activeId).catch(() => undefined);
+    };
+    syncView();
+    const stopTabs = subscribeBrowserTabs(syncView);
+    return () => {
+      disposed = true;
+      unlisten?.();
+      stopTabs();
+    };
   }, []);
   const [linkedWorkItemPanels, setLinkedWorkItemPanels] = useState<
     ReadonlyMap<string, LinkedWorkItemPanelState>
@@ -2207,6 +2270,20 @@ function Workspace({
   const freeChat = freeChatId
     ? sessions.find((session) => session.id === freeChatId)
     : undefined;
+  const browserShown =
+    browserOpen &&
+    !searchViewOpen &&
+    !settingsOpen &&
+    !inboxViewOpen &&
+    !notesViewOpen &&
+    !automationsViewOpen &&
+    !kanbanViewOpen &&
+    !fleetViewOpen &&
+    !mailViewOpen &&
+    !ideasViewOpen &&
+    !feedViewOpen &&
+    (!chatViewOpen || !!freeChat);
+  noteBrowserShown(browserShown);
   // An open chat or a covering Irgat shows its own folder's terminal dock, so
   // the terminal opens where its status bar is instead of leaving the view.
   const currentViewDock = viewDock({
@@ -5363,7 +5440,9 @@ function Workspace({
   /** A new Irgat opens straight away, ready to be told what it works on. */
   const onCreateIrgat = useCallback(() => {
     const irgatId = createIrgat().id;
-    setIrgatSettingsFor(irgatId);
+    setIrgatActivity(null);
+    setIrgatOverviewTab("settings");
+    setIrgatOverviewOpen(true);
     void onOpenIrgat(irgatId);
   }, [onOpenIrgat]);
 
@@ -8762,6 +8841,23 @@ function Workspace({
           ) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(codeSearchContext(cli));
+          }
+          // Any chat can see and use the Browser; it hears how once, and
+          // hears about the page beside it whenever that page changes.
+          if (!rawCommand && !orchestrator.forSession(sessionId)) {
+            if (claimBrowserToolsHint(sessionId)) {
+              const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
+              appContext.push(browserToolsContext(cli));
+            }
+            const browserPage = claimBrowserPage(sessionId);
+            if (browserPage) {
+              // A slow page only costs the excerpt, never the message.
+              const excerpt = await Promise.race([
+                browserPageExcerpt(PAGE_EXCERPT_CHARS).catch(() => null),
+                new Promise<null>((resolve) => setTimeout(resolve, 1500, null)),
+              ]);
+              appContext.push(browserPageContext(browserPage, excerpt));
+            }
           }
           // A chat started from the Mail page hears about its thread once.
           const mailLink =
@@ -13792,6 +13888,8 @@ function Workspace({
     if (name === debounce.current.name && now - debounce.current.at < 80)
       return;
     debounce.current = { name, at: now };
+    // Tab shortcuts act on Browser tabs while Browser has focus.
+    if (runBrowserTabCommand(name)) return;
     fn();
   }, []);
 
@@ -14538,6 +14636,21 @@ function Workspace({
           textHarness: irgatViewSession.harness,
           projects: irgatViewIrgat.projects,
         }}
+        settings={{
+          cwd: irgatViewSession.cwd,
+          harness: irgatViewSession.harness,
+          model: irgatViewSession.model,
+          modelSettings: irgatViewSession.modelSettings,
+          runtimeMode: irgatViewSession.runtimeMode,
+          busy: !!irgatViewSession.busy,
+          onModelChange: (harness, model) =>
+            onModelChange(irgatViewSession.id, harness, model),
+          onModelSettingsChange: (settings) =>
+            onModelSettingsChange(irgatViewSession.id, settings),
+          onRuntimeModeChange: (mode) =>
+            onRuntimeModeChange(irgatViewSession.id, mode),
+          onReset: () => onResetIrgat(irgatViewSession.id),
+        }}
         tab={irgatOverviewTab}
         onTabChange={setIrgatOverviewTab}
         onOpenSession={(sessionId) =>
@@ -14580,35 +14693,6 @@ function Workspace({
         onOpenFile={onOpenFile}
         onClose={() => setIrgatOverviewOpen(false)}
         windowControls={irgatCovers && !IS_MAC ? <WindowControls /> : undefined}
-      />
-    ) : null;
-  const irgatSettingsDialog =
-    irgatCovers &&
-    irgatViewIrgat &&
-    irgatViewSession &&
-    irgatSettingsFor === irgatViewIrgat.id ? (
-      <IrgatSettingsDialog
-        key={irgatViewIrgat.id}
-        irgatId={irgatViewIrgat.id}
-        agent={irgatLook(irgatViewIrgat)}
-        status={irgatState(irgatViewSession).status}
-        cwd={irgatViewSession.cwd}
-        harness={irgatViewSession.harness}
-        model={irgatViewSession.model}
-        modelSettings={irgatViewSession.modelSettings}
-        runtimeMode={irgatViewSession.runtimeMode}
-        busy={!!irgatViewSession.busy}
-        onModelChange={(harness, model) =>
-          onModelChange(irgatViewSession.id, harness, model)
-        }
-        onModelSettingsChange={(settings) =>
-          onModelSettingsChange(irgatViewSession.id, settings)
-        }
-        onRuntimeModeChange={(mode) =>
-          onRuntimeModeChange(irgatViewSession.id, mode)
-        }
-        onReset={() => onResetIrgat(irgatViewSession.id)}
-        onClose={() => setIrgatSettingsFor(null)}
       />
     ) : null;
   const irgatRailState = useMemo(() => {
@@ -14863,11 +14947,6 @@ function Workspace({
           : undefined
       }
       irgatOverviewOpen={irgatOverviewShown}
-      onOpenIrgatSettings={
-        irgatCovers && irgatViewIrgat
-          ? () => setIrgatSettingsFor(irgatViewIrgat.id)
-          : undefined
-      }
       hideWindowControls={irgatCovers && irgatSidebarOpen && !!irgatOverviewPanel}
       activeId={irgatViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
@@ -15402,20 +15481,7 @@ function Workspace({
                           // its pages while it moves between them.
                           createPortal(
                         <BrowserPanel
-                          visible={
-                            browserOpen &&
-                            !searchViewOpen &&
-                            !settingsOpen &&
-                            !inboxViewOpen &&
-                            !notesViewOpen &&
-                            !automationsViewOpen &&
-                            !kanbanViewOpen &&
-                            !fleetViewOpen &&
-                            !mailViewOpen &&
-                            !ideasViewOpen &&
-                            !feedViewOpen &&
-                            (!chatViewOpen || !!freeChat)
-                          }
+                          visible={browserShown}
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
                         />,
@@ -15425,7 +15491,6 @@ function Workspace({
                     </main>
                   </div>
                   {irgatCovers ? irgatOverviewPanel : null}
-                  {irgatSettingsDialog}
                   {irgatCovers ? irgatActivityPanel : null}
                 </div>
               </div>

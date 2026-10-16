@@ -5,6 +5,7 @@ mod artifacts;
 mod automations;
 mod azure_devops;
 mod browser;
+mod browser_agent;
 mod browser_picker;
 mod chat_background;
 mod chat_semantic;
@@ -464,6 +465,10 @@ pub fn run() {
             browser::browser_set_bounds,
             browser::browser_action,
             browser::browser_close,
+            browser::browser_favicon,
+            browser_agent::browser_set_agent_view,
+            browser_agent::browser_agent_reply,
+            browser_agent::browser_page_excerpt,
             fs::git_branches,
             fs::git_checkout,
             fs::git_create_branch,
@@ -796,6 +801,7 @@ pub fn run() {
         } => {
             window::forget_quit_window(handle, &label);
             browser::window_closed(&label);
+            browser_agent::window_closed(&label);
             let other_window = window::workspace_windows(handle)
                 .iter()
                 .any(|window| window.label() != label);
