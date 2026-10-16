@@ -41,6 +41,17 @@ const SUGGESTIONS: { text: string; icon: ReactNode }[] = [
 ];
 
 /**
+ * The unsent chat. It lives outside the component because rotating the phone
+ * past the iPad width swaps the full-screen page for a sheet, which mounts a
+ * fresh NewChat. Cleared once the chat starts.
+ */
+const draft: { text: string; cwd: string; harness: HarnessId | null } = {
+  text: "",
+  cwd: "",
+  harness: null,
+};
+
+/**
  * Start a chat on the Mac, laid out like an assistant: say what to do (or
  * tap a suggestion), pick where it works and which agent, send.
  */
@@ -53,9 +64,9 @@ export function NewChat({
 }) {
   const [projects, setProjects] = useState<WebProjects | null>(null);
   const [error, setError] = useState("");
-  const [text, setText] = useState("");
-  const [cwd, setCwd] = useState("");
-  const [harness, setHarness] = useState<HarnessId | null>(null);
+  const [text, setText] = useState(draft.text);
+  const [cwd, setCwd] = useState(draft.cwd);
+  const [harness, setHarness] = useState(draft.harness);
   const { busy, run } = useAction();
   const field = useRef<HTMLTextAreaElement>(null);
 
@@ -66,6 +77,10 @@ export function NewChat({
         setError(reason instanceof Error ? reason.message : String(reason)),
       );
   }, []);
+
+  useEffect(() => {
+    Object.assign(draft, { text, cwd, harness });
+  }, [text, cwd, harness]);
 
   useLayoutEffect(() => {
     const element = field.current;
@@ -92,7 +107,9 @@ export function NewChat({
         ...(chosen ? { harness: chosen } : {}),
       }),
     );
-    if (result) leaveSheetFor({ name: "chat", id: result.sessionId });
+    if (!result) return;
+    Object.assign(draft, { text: "", cwd: "", harness: null });
+    leaveSheetFor({ name: "chat", id: result.sessionId });
   };
 
   return (
