@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { FLEET_BUCKETS, type FleetBucket } from "../../fleet/model/fleet";
 
 /**
  * Hash routes, so the Mac only ever serves one page and a reload or a Home
@@ -7,7 +8,8 @@ import { useCallback, useEffect, useState } from "react";
  */
 export type Route =
   | { name: "today" }
-  | { name: "chats" }
+  /** `filter` keeps the list to one Fleet bucket. */
+  | { name: "chats"; filter?: FleetBucket }
   | { name: "chat"; id: string }
   | { name: "ideas" }
   | { name: "idea"; id: string }
@@ -25,7 +27,9 @@ export function parseRoute(hash: string): Route {
   const value = decodeURIComponent(id);
   switch (name) {
     case "chats":
-      return { name };
+      return (FLEET_BUCKETS as readonly string[]).includes(value)
+        ? { name, filter: value as FleetBucket }
+        : { name };
     case "chat":
       return value ? { name, id: value } : { name: "chats" };
     case "ideas":
@@ -41,9 +45,9 @@ export function parseRoute(hash: string): Route {
 }
 
 export function href(route: Route): string {
-  return "id" in route
-    ? `#/${route.name}/${encodeURIComponent(route.id)}`
-    : `#/${route.name}`;
+  if ("id" in route) return `#/${route.name}/${encodeURIComponent(route.id)}`;
+  if (route.name === "chats" && route.filter) return `#/chats/${route.filter}`;
+  return `#/${route.name}`;
 }
 
 export function isSheet(route: Route): route is Sheet {

@@ -10,6 +10,7 @@ import type { WebOverview, WebProjects, WebSession } from "./protocol";
 import {
   WEB_TRANSCRIPT_LIMIT,
   handleWebAccess,
+  ownerName,
   resetWebAccessCacheForTest,
   type WebAccessDeps,
 } from "./webAccess";
@@ -105,13 +106,7 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
         : { harness: "claude", model: "opus" },
     harnesses: () => ["claude", "codex"],
     modelName: (_harness, model) => model.toUpperCase(),
-    appearance: () => ({
-      preference: "dark",
-      hue: 240,
-      saturation: 0,
-      darkLightness: 9,
-      accent: null,
-    }),
+    owner: async () => "Turel",
     ideas: {
       load: vi.fn(async () => ideas),
       create: vi.fn(async () => {}),
@@ -148,7 +143,7 @@ describe("handleWebAccess", () => {
     expect(overview.needsYou.map((entry) => entry.sessionId)).toEqual(["a"]);
     expect(overview.running.map((entry) => entry.sessionId)).toEqual(["b"]);
     expect(overview.idle).toEqual([]);
-    expect(overview.appearance.preference).toBe("dark");
+    expect(overview.owner).toBe("Turel");
   });
 
   it("returns the newest messages without internal turns or reasoning", async () => {
@@ -371,5 +366,14 @@ describe("handleWebAccess", () => {
     await expect(handleWebAccess(deps([]), "delete", {})).rejects.toThrow(
       "Unknown action",
     );
+  });
+});
+
+describe("ownerName", () => {
+  it("greets the account the home folder is named after", () => {
+    expect(ownerName("/Users/turel")).toBe("Turel");
+    expect(ownerName("/Users/turel/")).toBe("Turel");
+    expect(ownerName("C:\\Users\\ada")).toBe("Ada");
+    expect(ownerName("")).toBe("");
   });
 });

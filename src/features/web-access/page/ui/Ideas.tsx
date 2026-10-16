@@ -6,7 +6,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  LABEL_STYLES,
   withCardMoved,
   type IdeaBoard,
   type IdeaCard,
@@ -15,16 +14,31 @@ import {
 import { write } from "../client";
 import { basename, dueLabel } from "../format";
 import { openSheet } from "../route";
-import { Empty, Spinner, useAction } from "./parts";
 import {
-  ArrowUp,
-  Calendar,
-  CheckList,
-  Folder,
-  Idea,
-} from "../../../../shared/ui/icons";
+  Empty,
+  Pill,
+  Spinner,
+  TONE,
+  Ticks,
+  useAction,
+  type Tone,
+} from "./parts";
+import { Calendar, Folder, Idea, Plus } from "../../../../shared/ui/icons";
 
 const BOARD_KEY = "irgatos.web.board";
+
+/** Each list keeps one color, in board order: Inbox blue, Exploring violet… */
+const LIST_TONES: Tone[] = [
+  "blue",
+  "purple",
+  "orange",
+  "gray",
+  "green",
+  "pink",
+  "teal",
+];
+const listTone = (index: number): Tone =>
+  LIST_TONES[index % LIST_TONES.length]!;
 
 function storedBoard(): string | null {
   try {
@@ -84,15 +98,21 @@ export function Ideas({
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`shrink-0 ${wide ? "px-8 pt-[calc(var(--safe-top)+20px)]" : "px-4 pt-[calc(var(--safe-top)+10px)]"}`}
+        className={`flex shrink-0 flex-col gap-4 ${wide ? "px-8 pt-[calc(var(--safe-top)+22px)]" : "px-4 pt-[calc(var(--safe-top)+10px)]"}`}
       >
-        <div className="flex h-9 items-center justify-end gap-3">
+        <div className="flex h-10 items-center justify-between gap-3">
+          {header}
+        </div>
+        <div className="flex items-end justify-between gap-3">
+          <h1 className="min-w-0 truncate text-[32px] font-semibold leading-tight tracking-[-0.025em] text-(--ink)">
+            {board && ideas && ideas.boards.length > 1 ? board.title : "Ideas"}
+          </h1>
           {ideas && ideas.boards.length > 1 ? (
             <select
               aria-label="Board"
               value={board?.id}
               onChange={(event) => setBoardId(event.target.value)}
-              className="web-field mr-auto h-8 max-w-[50%] rounded-full bg-(--surface) px-3 text-[14px] font-medium shadow-[0_0_0_0.5px_var(--color-stroke)] outline-none"
+              className="glass web-field mb-1 h-9 max-w-[45%] shrink-0 rounded-full px-3 text-[14px] font-semibold text-(--ink) outline-none"
             >
               {ideas.boards.map((entry) => (
                 <option key={entry.id} value={entry.id}>
@@ -101,11 +121,7 @@ export function Ideas({
               ))}
             </select>
           ) : null}
-          {header}
         </div>
-        <h1 className="mt-0.5 text-[34px] font-bold leading-tight tracking-[-0.02em]">
-          {board && ideas && ideas.boards.length > 1 ? board.title : "Ideas"}
-        </h1>
         {targetList ? (
           <Capture
             key={targetList.id}
@@ -116,19 +132,23 @@ export function Ideas({
           />
         ) : null}
         {!wide && lists.length ? (
-          <div className="-mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4 pb-1">
+          <div className="glass -mx-1 flex gap-1 overflow-x-auto rounded-full p-1.5 [scrollbar-width:none]">
             {lists.map((list, index) => (
               <button
                 key={list.id}
                 onClick={() => showPage(index)}
-                className={`web-press inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-semibold ${
+                aria-pressed={index === page}
+                className={`web-press inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold ${
                   index === page
-                    ? "bg-content text-(--color-background-base)"
-                    : "bg-(--surface) text-content/65 shadow-[0_0_0_0.5px_var(--color-stroke)]"
+                    ? "bg-white text-(--ink) shadow-[0_4px_14px_-6px_rgb(64_44_150/0.35)]"
+                    : "text-(--ink-2)"
                 }`}
               >
+                <span
+                  className={`${TONE[listTone(index)]} tone-dot size-2 rounded-full`}
+                />
                 {list.title}
-                <span className="tabular-nums opacity-55">
+                <span className="font-medium tabular-nums text-(--ink-3)">
                   {list.cards.length}
                 </span>
               </button>
@@ -138,13 +158,11 @@ export function Ideas({
       </header>
 
       {!ideas ? (
-        <div className="flex flex-1 justify-center py-20 text-content/40">
+        <div className="flex flex-1 justify-center py-20 text-(--ink-3)">
           <Spinner className="size-6" />
         </div>
       ) : !board ? (
-        <Empty icon={<Idea className="size-6" />} title="No boards yet">
-          Make a board in Ideas on your Mac.
-        </Empty>
+        <Empty title="No boards yet">Make a board in Ideas on your Mac.</Empty>
       ) : (
         <div
           ref={pages}
@@ -157,12 +175,13 @@ export function Ideas({
                 }
           }
           className={`web-kanban flex min-h-0 flex-1 overflow-x-auto ${
-            wide ? "gap-4 px-8 pb-8 pt-5" : "snap-x snap-mandatory"
+            wide ? "gap-4 px-8 pb-8 pt-5" : "snap-x snap-mandatory pt-1"
           }`}
         >
-          {board.lists.map((list) => (
+          {board.lists.map((list, index) => (
             <Column
               key={list.id}
+              tone={listTone(index)}
               board={board}
               listId={list.id}
               title={list.title}
@@ -205,13 +224,13 @@ function Capture({
   };
   return (
     <form
-      className="mt-3 flex h-12 items-center gap-2 rounded-[16px] bg-(--surface) pl-4 pr-1.5 shadow-[0_0_0_0.5px_var(--color-stroke)] focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)]"
+      className="glass flex h-[52px] items-center gap-2 rounded-full pl-4 pr-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-card)]"
       onSubmit={(event) => {
         event.preventDefault();
         void add();
       }}
     >
-      <Idea className="size-[18px] shrink-0 text-content/40" />
+      <Idea className="size-[18px] shrink-0 text-(--accent)" />
       <input
         className="web-field min-w-0 flex-1 bg-transparent outline-none"
         placeholder={`Capture an idea for ${listTitle}  #tag`}
@@ -224,7 +243,7 @@ function Capture({
           aria-label="List"
           value={listId}
           onChange={(event) => onTarget(event.target.value)}
-          className="h-9 shrink-0 rounded-[10px] bg-content/[0.06] px-2 text-[14px] font-medium text-content/70 outline-none"
+          className="h-9 shrink-0 rounded-full bg-white/80 px-3 text-[14px] font-semibold text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)] outline-none"
         >
           {lists.map((list) => (
             <option key={list.id} value={list.id}>
@@ -236,13 +255,9 @@ function Capture({
       <button
         aria-label="Add idea"
         disabled={!text.trim() || busy !== null}
-        className="web-press flex size-9 shrink-0 items-center justify-center rounded-full bg-(--accent) text-white disabled:bg-content/15 disabled:text-content/40"
+        className="accent-fill web-press flex size-10 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
       >
-        {busy ? (
-          <Spinner />
-        ) : (
-          <ArrowUp className="size-[18px]" strokeWidth={2.4} />
-        )}
+        {busy ? <Spinner /> : <Plus className="size-5" strokeWidth={2.4} />}
       </button>
     </form>
   );
@@ -250,6 +265,7 @@ function Capture({
 
 function Column({
   board,
+  tone,
   listId,
   title,
   cards,
@@ -258,6 +274,7 @@ function Column({
   onDrop,
 }: {
   board: IdeaBoard;
+  tone: Tone;
   listId: string;
   title: string;
   cards: IdeaCard[];
@@ -285,7 +302,7 @@ function Column({
     <section
       className={`flex min-h-0 shrink-0 flex-col ${
         wide
-          ? `w-[300px] rounded-[22px] bg-content/[0.035] ${over ? "shadow-[inset_0_0_0_1.5px_var(--accent)]" : ""}`
+          ? `w-[310px] rounded-[28px] bg-white/35 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.7)] ${over ? "shadow-[inset_0_0_0_2px_var(--accent)]" : ""}`
           : "w-full snap-start"
       }`}
       onDragOver={
@@ -300,9 +317,12 @@ function Column({
       onDrop={wide ? drop : undefined}
     >
       {wide ? (
-        <div className="flex items-center justify-between px-4 pb-2 pt-3.5">
-          <h2 className="text-[15px] font-semibold">{title}</h2>
-          <span className="text-[13px] tabular-nums text-content/40">
+        <div className="flex items-center gap-2 px-4 pb-2.5 pt-4">
+          <span className={`${TONE[tone]} tone-dot size-2.5 rounded-full`} />
+          <h2 className="flex-1 text-[16px] font-semibold text-(--ink)">
+            {title}
+          </h2>
+          <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-white/85 px-1.5 text-[12px] font-semibold tabular-nums text-(--ink-2)">
             {cards.length}
           </span>
         </div>
@@ -311,12 +331,13 @@ function Column({
         className={`web-scroll flex min-h-0 flex-1 flex-col gap-2.5 ${
           wide
             ? "px-2.5 pb-3"
-            : "px-4 pb-[calc(var(--tab-height)+var(--safe-bottom)+24px)] pt-3"
+            : "px-4 pb-[calc(var(--tab-height)+var(--safe-bottom)+40px)] pt-3"
         }`}
       >
         {cards.map((card) => (
           <CardView
             key={card.id}
+            tone={tone}
             card={card}
             board={board}
             now={now}
@@ -324,7 +345,7 @@ function Column({
           />
         ))}
         {cards.length === 0 ? (
-          <div className="rounded-[16px] border border-dashed border-content/15 px-4 py-8 text-center text-[14px] text-content/40">
+          <div className="rounded-[22px] border-[1.5px] border-dashed border-white/90 bg-white/30 px-4 py-9 text-center text-[14px] font-medium text-(--ink-3)">
             {wide ? "Drop ideas here" : `Nothing in ${title} yet`}
           </div>
         ) : null}
@@ -344,11 +365,13 @@ function preview(markdown: string) {
 function CardView({
   card,
   board,
+  tone,
   now,
   draggable,
 }: {
   card: IdeaCard;
   board: IdeaBoard;
+  tone: Tone;
   now: number;
   draggable: boolean;
 }) {
@@ -358,6 +381,8 @@ function CardView({
   const done = card.tasks.filter((task) => task.done).length;
   const description = preview(card.description);
   const startOfToday = new Date(now).setHours(0, 0, 0, 0);
+  // A labelled idea takes its first label's color, like a priority.
+  const tint: Tone = labels[0]?.color ?? tone;
   return (
     <button
       data-idea={card.id}
@@ -367,36 +392,44 @@ function CardView({
         event.dataTransfer.effectAllowed = "move";
       }}
       onClick={() => openSheet({ name: "idea", id: card.id })}
-      className="web-press flex w-full flex-col gap-2 rounded-[16px] bg-(--surface) p-3.5 text-left shadow-[0_0_0_0.5px_var(--color-stroke),0_1px_2px_rgb(0_0_0/0.06)]"
+      className={`${TONE[tint]} tinted web-press flex w-full flex-col gap-2 rounded-[24px] p-4 text-left`}
     >
       {labels.length ? (
-        <span className="flex flex-wrap gap-1">
+        <span className="flex flex-wrap gap-1.5">
           {labels.map((label) => (
-            <span
-              key={label.id}
-              className={`rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold ${LABEL_STYLES[label.color]}`}
-            >
+            <Pill key={label.id} tone={label.color}>
               {label.name}
-            </span>
+            </Pill>
           ))}
         </span>
       ) : null}
-      <span className="text-[16px] font-medium leading-snug">{card.title}</span>
+      <span className="text-[16px] font-semibold leading-snug tracking-[-0.01em] text-(--ink)">
+        {card.title}
+      </span>
       {description ? (
-        <span className="line-clamp-2 text-[14px] leading-snug text-content/50">
+        <span className="-mt-1 line-clamp-2 text-[13.5px] leading-snug text-(--ink-2)">
           {description}
         </span>
       ) : null}
-      {card.tasks.length || card.dueAt || card.project ? (
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] text-content/50">
-          {card.tasks.length ? (
-            <span
-              className={`inline-flex items-center gap-1 ${done === card.tasks.length ? "text-(--ok)" : ""}`}
-            >
-              <CheckList className="size-3.5" />
-              {done}/{card.tasks.length}
+      {card.tasks.length ? (
+        <span className="mt-1 flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-(--ink-2)">
+            Progress
+          </span>
+          <span className="flex items-center gap-2.5">
+            <Ticks
+              value={done / card.tasks.length}
+              tone={tint}
+              className="flex-1"
+            />
+            <span className="shrink-0 rounded-full bg-white/85 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-(--ink-2)">
+              {Math.round((done / card.tasks.length) * 100)}%
             </span>
-          ) : null}
+          </span>
+        </span>
+      ) : null}
+      {card.dueAt || card.project ? (
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px] font-medium text-(--ink-2)">
           {card.dueAt ? (
             <span
               className={`inline-flex items-center gap-1 ${card.dueAt < startOfToday ? "text-(--bad)" : ""}`}

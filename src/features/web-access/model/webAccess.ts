@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { ApprovalDecision } from "../../../integrations/harness";
+import { homeDir } from "../../../platform/tauri/fs";
 import { projectName } from "../../../shared/lib/paths";
 import {
   buildFleet,
@@ -32,13 +33,6 @@ import {
   type ServiceStatus,
 } from "../../service-status/model/serviceStatus";
 import {
-  loadAccentColor,
-  loadThemeDarkLightness,
-  loadThemeHue,
-  loadThemePreference,
-  loadThemeSaturation,
-} from "../../settings/model/appearance";
-import {
   hasProbedHarnessAvailability,
   isHarnessAvailable,
 } from "../../../integrations/harness/core/availabilityState";
@@ -63,7 +57,6 @@ import {
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
 import type {
-  WebAppearance,
   WebBlock,
   WebHarnessChoice,
   WebOverview,
@@ -99,7 +92,8 @@ export type WebAccessDeps = {
   choice: (cwd?: string) => { harness: HarnessId; model: string };
   harnesses: () => HarnessId[];
   modelName: (harness: HarnessId, model: string) => string;
-  appearance: () => WebAppearance;
+  /** The Mac user's first name, for the page's greeting. */
+  owner: () => Promise<string>;
   ideas: {
     load: () => Promise<IdeasState>;
     create: (
@@ -114,6 +108,18 @@ export type WebAccessDeps = {
   services: () => Promise<ServiceStatus[]>;
   newId: () => string;
 };
+
+let owner: Promise<string> | undefined;
+
+/** "/Users/turel" → "Turel": the home folder is named after the account. */
+export function ownerName(home: string): string {
+  const name =
+    home
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() ?? "";
+  return name ? name[0]!.toUpperCase() + name.slice(1) : "";
+}
 
 /** The parts that read the app's own settings and stores, not live React state. */
 export const webAccessDefaults: Omit<
@@ -132,13 +138,7 @@ export const webAccessDefaults: Omit<
       ),
     ),
   modelName: (harness, model) => resolveModel(harness, model).name,
-  appearance: () => ({
-    preference: loadThemePreference(),
-    hue: loadThemeHue(),
-    saturation: loadThemeSaturation(),
-    darkLightness: loadThemeDarkLightness(),
-    accent: loadAccentColor(),
-  }),
+  owner: () => (owner ??= homeDir().then(ownerName, () => "")),
   ideas: {
     load: loadIdeas,
     create: createCard,
@@ -337,7 +337,7 @@ export async function handleWebAccess(
         review: fleet.review,
         interrupted: fleet.interrupted,
         idle: fleet.idle,
-        appearance: deps.appearance(),
+        owner: await deps.owner(),
         at: Date.now(),
       };
       return overview;

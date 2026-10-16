@@ -1,44 +1,73 @@
-/* Browser access page: phone and tablet layer over the app's theme tokens. */
+/*
+ * Browser access page: a light, pastel work space for the phone and iPad.
+ * Soft gradient sky, frosted white cards, one violet accent, and tinted
+ * status colors that also tint whole cards.
+ */
 
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
-  --accent: var(--user-accent-color, var(--color-accent));
-  --surface: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 4%)
-  );
-  --surface-strong: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 8%)
-  );
-  --sheet: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 5%)
-  );
-  --segment: hsl(
-    var(--theme-hue) var(--theme-saturation)
-      calc(var(--background-lightness) + 16%)
-  );
-  --bar: color-mix(in srgb, var(--color-background-base) 82%, transparent);
-  --warn: #f5b041;
-  --on-warn: rgb(0 0 0 / 0.8);
-  --ok: #34d399;
-  --bad: #fb7185;
-  --tab-height: 56px;
+  --tab-height: 64px;
 }
 
-html.theme-light {
-  --surface: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --surface-strong: hsl(var(--theme-hue) var(--theme-saturation) 93%);
-  --sheet: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --segment: hsl(var(--theme-hue) var(--theme-saturation) 100%);
-  --warn: #b45309;
-  --on-warn: #fff;
-  --ok: #047857;
-  --bad: #be123c;
+html.web-companion {
+  /* The app's own tokens, so shared pieces (markdown, harness logos) match. */
+  --color-background-base: #f4f1fb;
+  --color-content: #1c1a2b;
+  --color-accent: #7357ff;
+  --link-color: #5b3ff0;
+  color-scheme: light;
+
+  --ink: #1c1a2b;
+  --ink-2: #6c6884;
+  --ink-3: #a3a0b8;
+  --accent: #7357ff;
+  --accent-strong: #5a3df0;
+  --accent-soft: #eeeaff;
+  --accent-gradient: linear-gradient(
+    135deg,
+    #a78bff 0%,
+    #7357ff 55%,
+    #5a3df0 100%
+  );
+
+  --glass: rgb(255 255 255 / 0.68);
+  --glass-strong: rgb(255 255 255 / 0.86);
+  --glass-edge: rgb(255 255 255 / 0.95);
+  --hairline: rgb(28 26 43 / 0.07);
+  --shadow-card:
+    0 1px 2px rgb(52 36 120 / 0.04), 0 12px 32px -14px rgb(64 44 150 / 0.18);
+  --shadow-float:
+    0 2px 6px rgb(52 36 120 / 0.06), 0 18px 44px -12px rgb(64 44 150 / 0.28);
+
+  --tone-orange: #e8730f;
+  --tone-purple: #7357ff;
+  --tone-green: #12a067;
+  --tone-red: #e5484d;
+  --tone-blue: #2f7cf6;
+  --tone-pink: #db4b97;
+  --tone-teal: #0f9fa3;
+  --tone-yellow: #c79200;
+  --tone-gray: #8a87a0;
+
+  --ok: var(--tone-green);
+  --warn: var(--tone-orange);
+  --bad: var(--tone-red);
+
+  /* The sky every screen sits on; overlays repeat it so they stay opaque. */
+  --page-sky:
+    radial-gradient(70% 42% at 0% 0%, #e2d8ff 0%, rgb(226 216 255 / 0) 72%),
+    radial-gradient(60% 38% at 100% 6%, #d6e7ff 0%, rgb(214 231 255 / 0) 72%),
+    radial-gradient(75% 46% at 100% 100%, #fcdcee 0%, rgb(252 220 238 / 0) 72%),
+    radial-gradient(70% 40% at 0% 88%, #eadfff 0%, rgb(234 223 255 / 0) 72%);
+  background: var(--page-sky), var(--color-background-base);
+}
+
+/* A full-screen layer over the tabs: the chat, a new chat. */
+.web-page {
+  background: var(--page-sky), var(--color-background-base);
 }
 
 html.keyboard-open {
@@ -49,11 +78,19 @@ html.web-companion,
 html.web-companion body,
 html.web-companion #root {
   height: var(--app-height, 100dvh);
-  font-family: var(--font-sans);
+  color: var(--ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    system-ui, "Inter", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
+}
+
+html.web-companion body,
+html.web-companion #root {
+  background: transparent;
 }
 
 html.web-companion button {
@@ -71,12 +108,136 @@ html.web-companion button {
   overflow-y: auto;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 
-.web-bar {
-  background: var(--bar);
-  backdrop-filter: saturate(1.6) blur(20px);
-  -webkit-backdrop-filter: saturate(1.6) blur(20px);
+.web-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Surfaces --------------------------------------------------------- */
+
+/* In the components layer, so a utility on the same element still wins. */
+@layer components {
+  /* A frosted card. Cards sit on a calm gradient, so no blur is needed. */
+  .glass {
+    background: var(--glass);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-edge),
+      var(--shadow-card);
+  }
+
+  /* Floating chrome over moving content: tab bar, headers, sheets. */
+  .glass-float {
+    background: rgb(255 255 255 / 0.84);
+    backdrop-filter: saturate(1.8) blur(22px);
+    -webkit-backdrop-filter: saturate(1.8) blur(22px);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.85),
+      var(--shadow-float);
+  }
+
+  .glass-bar {
+    background: rgb(246 243 253 / 0.72);
+    backdrop-filter: saturate(1.8) blur(22px);
+    -webkit-backdrop-filter: saturate(1.8) blur(22px);
+  }
+
+  /*
+   * A pastel card in one tone: set --tint (a --tone-* color) on the element.
+   * Mint for done, lavender for running, peach for waiting, like sticky notes.
+   */
+  .tinted {
+    background: color-mix(in srgb, var(--tint) 13%, rgb(255 255 255 / 0.66));
+    box-shadow:
+      inset 0 0 0 1px
+        color-mix(in srgb, var(--tint) 10%, rgb(255 255 255 / 0.9)),
+      var(--shadow-card);
+  }
+
+  .tone-text {
+    color: var(--tint);
+  }
+
+  .tone-soft {
+    background: color-mix(in srgb, var(--tint) 14%, white);
+    color: color-mix(in srgb, var(--tint) 88%, black);
+  }
+
+  .tone-dot {
+    background: var(--tint);
+  }
+
+  .accent-fill {
+    background: var(--accent-gradient);
+    color: white;
+    box-shadow: 0 8px 18px -8px rgb(90 61 240 / 0.7);
+  }
+
+  .accent-text {
+    background: var(--accent-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* The brand mark: a violet sparkle floating in a white bubble. */
+  .sparkle-bubble {
+    background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f6f2ff 100%);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.9),
+      0 10px 30px -8px rgb(115 87 255 / 0.45),
+      0 0 0 8px rgb(255 255 255 / 0.35);
+  }
+}
+
+/*
+ * Progress as a row of thin ticks, filled up to --value (0-1). The empty part
+ * keeps the ticks so the bar reads as a scale.
+ */
+.ticks {
+  --tick: var(--tint, var(--accent));
+  position: relative;
+  height: 16px;
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--tick) 22%, transparent) 0 2px,
+    transparent 2px 5px
+  );
+}
+
+.ticks::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--value, 0) * 100%);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--tick) 0 2px,
+    transparent 2px 5px
+  );
+  transition: width 400ms var(--motion-ease-out);
+}
+
+/* Working, with no end known: a lit stretch sweeps along the ticks. */
+.ticks-live::after {
+  width: 34%;
+  animation: web-ticks 1.8s ease-in-out infinite;
+}
+
+@keyframes web-ticks {
+  0% {
+    transform: translateX(-10%);
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(205%);
+    opacity: 0.4;
+  }
 }
 
 /* iOS zooms into any field under 16px; keep every field at 16px. */
@@ -86,14 +247,15 @@ html.web-companion button {
 }
 
 .web-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 38%, transparent);
+  color: var(--ink-3);
 }
 
 .web-press {
   transition:
-    transform 120ms var(--motion-ease-out),
-    background-color 120ms var(--motion-ease-out),
-    opacity 120ms var(--motion-ease-out);
+    transform 140ms var(--motion-ease-out),
+    background-color 140ms var(--motion-ease-out),
+    box-shadow 140ms var(--motion-ease-out),
+    opacity 140ms var(--motion-ease-out);
 }
 
 .web-press:active:not(:disabled) {
@@ -117,10 +279,10 @@ html.web-companion button {
 @keyframes web-pulse {
   0% {
     transform: scale(0.6);
-    opacity: 0.55;
+    opacity: 0.5;
   }
   100% {
-    transform: scale(1.9);
+    transform: scale(2);
     opacity: 0;
   }
 }
@@ -128,15 +290,15 @@ html.web-companion button {
 .web-shimmer {
   background: linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-content) 45%, transparent) 0%,
-      var(--color-content) 50%,
-      color-mix(in srgb, var(--color-content) 45%, transparent) 100%
+      var(--ink-2) 0%,
+      var(--accent) 50%,
+      var(--ink-2) 100%
     )
     0 0 / 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: web-shimmer 2.2s linear infinite;
+  animation: web-shimmer 2.4s linear infinite;
 }
 
 @keyframes web-shimmer {
@@ -146,18 +308,18 @@ html.web-companion button {
 }
 
 .web-push-in {
-  animation: web-push-in 280ms var(--motion-ease-out);
+  animation: web-push-in 300ms var(--motion-ease-out);
 }
 
 @keyframes web-push-in {
   from {
-    transform: translateX(28%);
+    transform: translateX(24%);
     opacity: 0;
   }
 }
 
 .web-fade-in {
-  animation: web-fade-in 200ms var(--motion-ease-out);
+  animation: web-fade-in 220ms var(--motion-ease-out);
 }
 
 @keyframes web-fade-in {
@@ -167,7 +329,7 @@ html.web-companion button {
 }
 
 .web-sheet-up {
-  animation: web-sheet-up 320ms var(--motion-ease-out);
+  animation: web-sheet-up 340ms var(--motion-ease-out);
 }
 
 @keyframes web-sheet-up {
@@ -177,19 +339,41 @@ html.web-companion button {
 }
 
 .web-pop-in {
-  animation: web-pop-in 220ms var(--motion-ease-out);
+  animation: web-pop-in 240ms var(--motion-ease-out);
 }
 
 @keyframes web-pop-in {
   from {
-    transform: translateY(12px) scale(0.98);
+    transform: translateY(10px) scale(0.98);
     opacity: 0;
   }
+}
+
+/* Cards come in one after another on first paint. */
+.web-rise > * {
+  animation: web-pop-in 380ms var(--motion-ease-out) both;
+}
+
+.web-rise > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.web-rise > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+
+.web-rise > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+
+.web-rise > *:nth-child(n + 5) {
+  animation-delay: 160ms;
 }
 
 .web-markdown {
   font-size: 16px;
   line-height: 1.6;
+  color: var(--ink);
 }
 
 .web-markdown pre,
@@ -206,6 +390,11 @@ html.web-companion button {
 .web-kanban {
   scroll-snap-type: x proximity;
   overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.web-kanban::-webkit-scrollbar {
+  display: none;
 }
 
 .web-kanban > * {
@@ -218,7 +407,9 @@ html.web-companion button {
   .web-push-in,
   .web-sheet-up,
   .web-pop-in,
-  .web-fade-in {
+  .web-fade-in,
+  .web-rise > *,
+  .ticks-live::after {
     animation: none;
   }
 

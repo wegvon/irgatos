@@ -1,13 +1,67 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { HarnessId } from "../../../sessions/model/session";
 import type { WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
 import { leaveSheetFor } from "../route";
-import { Harness, Spinner, primaryButton, useAction } from "./parts";
-import { Folder, MessageSquare } from "../../../../shared/ui/icons";
+import {
+  Harness,
+  SparkleBubble,
+  Spinner,
+  TONE,
+  useAction,
+  type Tone,
+} from "./parts";
+import {
+  ChevronDown,
+  FileDiff,
+  Folder,
+  GitPullRequest,
+  Idea,
+  MessageSquare,
+  Send,
+  Terminal,
+} from "../../../../shared/ui/icons";
 
-/** Start a chat on the Mac: what to do, where, and with which agent. */
-export function NewChat() {
+const SUGGESTIONS: { text: string; tone: Tone; icon: ReactNode }[] = [
+  {
+    text: "Review the open pull requests",
+    tone: "blue",
+    icon: <GitPullRequest className="size-3.5" />,
+  },
+  {
+    text: "Run the tests and fix what fails",
+    tone: "orange",
+    icon: <Terminal className="size-3.5" />,
+  },
+  {
+    text: "Summarize what changed today",
+    tone: "green",
+    icon: <FileDiff className="size-3.5" />,
+  },
+  {
+    text: "Plan the next feature with me",
+    tone: "pink",
+    icon: <Idea className="size-3.5" />,
+  },
+];
+
+/**
+ * Start a chat on the Mac, laid out like an assistant: say what to do (or
+ * tap a suggestion), pick where it works and which agent, send.
+ */
+export function NewChat({
+  owner,
+  header,
+}: {
+  owner?: string;
+  header?: ReactNode;
+}) {
   const [projects, setProjects] = useState<WebProjects | null>(null);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
@@ -24,16 +78,24 @@ export function NewChat() {
       );
   }, []);
 
-  useEffect(() => {
-    // After the sheet's slide-in, so iOS raises the keyboard reliably.
-    const timer = window.setTimeout(() => field.current?.focus(), 350);
-    return () => window.clearTimeout(timer);
-  }, []);
+  useLayoutEffect(() => {
+    const element = field.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+  }, [text]);
 
   const project = projects?.projects.find((entry) => entry.path === cwd);
   const chosen = harness ?? project?.choice.harness ?? null;
+  const choice = projects?.harnesses.find((entry) => entry.harness === chosen);
+  const model =
+    project && project.choice.harness === chosen
+      ? project.choice.modelName
+      : choice?.modelName;
+  const ready = !!text.trim() && !!projects && busy === null;
 
   const start = async () => {
+    if (!ready) return;
     const result = await run("start", () =>
       write<{ sessionId: string }>("newChat", {
         cwd,
@@ -45,111 +107,159 @@ export function NewChat() {
   };
 
   return (
-    <div className="flex flex-col gap-6 px-5 pb-6">
-      <textarea
-        ref={field}
-        rows={5}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder="What should it do?"
-        className="web-field min-h-36 w-full resize-none rounded-[18px] bg-(--surface) px-4 py-3.5 shadow-[0_0_0_0.5px_var(--color-stroke)] outline-none focus:shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)]"
-      />
-
-      <Picker title="Where">
-        {projects
-          ? projects.projects.map((entry) => (
-              <Chip
-                key={entry.path || "chat"}
-                on={entry.path === cwd}
+    <div className="flex h-full flex-col">
+      {header}
+      <div className="web-scroll flex min-h-0 flex-1 flex-col items-center px-6">
+        <div className="my-auto flex w-full max-w-[420px] flex-col items-center py-8 text-center">
+          <SparkleBubble size="size-[72px]" glyph="size-9" />
+          <h2 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-(--ink)">
+            Hey{owner ? ` ${owner}` : ""}, I'm{" "}
+            <span className="accent-text">Irgatos</span>
+          </h2>
+          <p className="mt-2 max-w-[30ch] text-[15px] leading-snug text-(--ink-2)">
+            Start an agent on your Mac. Say what to do, pick where it works.
+          </p>
+          <div className="mt-6 flex flex-col items-center gap-2.5">
+            {SUGGESTIONS.map((suggestion) => (
+              <button
+                key={suggestion.text}
                 onClick={() => {
-                  setCwd(entry.path);
+                  setText(suggestion.text);
+                  field.current?.focus();
+                }}
+                className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
+              >
+                <span
+                  className={`${TONE[suggestion.tone]} tone-soft flex size-6 items-center justify-center rounded-full`}
+                >
+                  {suggestion.icon}
+                </span>
+                {suggestion.text}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="shrink-0 px-3 pb-[max(var(--safe-bottom),12px)]">
+        <div className="mx-auto w-full max-w-[640px]">
+          <div className="mb-2 flex gap-2 px-1">
+            <Picker
+              icon={
+                cwd ? (
+                  <Folder className="size-4 text-(--accent)" />
+                ) : (
+                  <MessageSquare className="size-4 text-(--accent)" />
+                )
+              }
+              value={project?.label ?? (projects ? "Chat" : "…")}
+            >
+              <select
+                aria-label="Where"
+                value={cwd}
+                disabled={!projects}
+                onChange={(event) => {
+                  setCwd(event.target.value);
                   setHarness(null);
                 }}
+                className="absolute inset-0 size-full cursor-pointer opacity-0"
               >
-                {entry.path ? (
-                  <Folder className="size-4 shrink-0" />
-                ) : (
-                  <MessageSquare className="size-4 shrink-0" />
-                )}
-                <span className="truncate">{entry.label}</span>
-              </Chip>
-            ))
-          : null}
-        {!projects && !error ? <Spinner className="m-2 size-5" /> : null}
-      </Picker>
-
-      {projects?.harnesses.length ? (
-        <Picker title="Agent">
-          {projects.harnesses.map((choice) => {
-            const model =
-              project && project.choice.harness === choice.harness
-                ? project.choice.modelName
-                : choice.modelName;
-            return (
-              <Chip
-                key={choice.harness}
-                on={choice.harness === chosen}
-                onClick={() => setHarness(choice.harness)}
+                {projects?.projects.map((entry) => (
+                  <option key={entry.path || "chat"} value={entry.path}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </Picker>
+            {projects?.harnesses.length ? (
+              <Picker
+                icon={
+                  chosen ? (
+                    <Harness harness={chosen} className="size-4" />
+                  ) : null
+                }
+                value={model || choice?.title || ""}
               >
-                <Harness harness={choice.harness} className="size-4" />
-                <span className="flex min-w-0 flex-col items-start leading-tight">
-                  <span className="truncate">{choice.title}</span>
-                  <span className="truncate text-[12px] font-normal opacity-60">
-                    {model}
-                  </span>
-                </span>
-              </Chip>
-            );
-          })}
-        </Picker>
-      ) : null}
-
-      {error ? <div className="text-[14px] text-(--bad)">{error}</div> : null}
-
-      <button
-        className={`${primaryButton} h-12 w-full text-[16px]`}
-        disabled={!text.trim() || !projects || busy !== null}
-        onClick={() => void start()}
-      >
-        {busy ? <Spinner /> : null}
-        Start chat
-      </button>
-    </div>
-  );
-}
-
-function Picker({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="mb-2 px-1 text-[13px] font-semibold uppercase tracking-[0.06em] text-content/45">
-        {title}
+                <select
+                  aria-label="Agent"
+                  value={chosen ?? ""}
+                  onChange={(event) =>
+                    setHarness(event.target.value as HarnessId)
+                  }
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                >
+                  {projects.harnesses.map((entry) => (
+                    <option key={entry.harness} value={entry.harness}>
+                      {entry.title} · {entry.modelName}
+                    </option>
+                  ))}
+                </select>
+              </Picker>
+            ) : null}
+          </div>
+          {error ? (
+            <div className="mb-2 px-2 text-[14px] font-medium text-(--bad)">
+              {error}
+            </div>
+          ) : null}
+          <div className="glass-float flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-float)]">
+            <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
+              <textarea
+                ref={field}
+                rows={1}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.nativeEvent.isComposing &&
+                    (event.metaKey || event.ctrlKey)
+                  ) {
+                    event.preventDefault();
+                    void start();
+                  }
+                }}
+                placeholder="What should the agent do?"
+                className="web-field block max-h-40 w-full resize-none bg-transparent outline-none"
+              />
+            </div>
+            <button
+              aria-label="Start chat"
+              disabled={!ready}
+              onClick={() => void start()}
+              className="accent-fill web-press flex size-11 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
+            >
+              {busy ? (
+                <Spinner className="size-5" />
+              ) : (
+                <Send className="size-5" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }
 
-function Chip({
-  on,
-  onClick,
+/** A pill that opens the system picker: iOS shows its own wheel for it. */
+function Picker({
+  icon,
+  value,
   children,
 }: {
-  on: boolean;
-  onClick: () => void;
+  icon: ReactNode;
+  value: string;
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={`web-press inline-flex min-h-10 max-w-full items-center gap-2 rounded-[12px] px-3 py-1.5 text-[15px] font-medium ${
-        on
-          ? "bg-(--accent) text-white"
-          : "bg-(--surface) text-content/80 shadow-[0_0_0_0.5px_var(--color-stroke)]"
-      }`}
-    >
+    <span className="glass relative inline-flex h-10 min-w-0 items-center gap-2 rounded-full pl-3 pr-2.5 text-[14px]">
+      <span className="shrink-0">{icon}</span>
+      <span className="min-w-0 truncate font-semibold text-(--ink)">
+        {value}
+      </span>
+      <ChevronDown className="size-3.5 shrink-0 text-(--ink-3)" />
       {children}
-    </button>
+    </span>
   );
 }

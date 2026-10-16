@@ -1,48 +1,4 @@
 import { useEffect, useState } from "react";
-import type { WebAppearance } from "../model/protocol";
-
-const STORED = "irgatos.web.appearance";
-
-/** The Mac's theme, so the phone looks like the same app. "System" follows the phone. */
-export function applyAppearance(appearance: WebAppearance) {
-  const root = document.documentElement;
-  const light =
-    appearance.preference === "light" ||
-    (appearance.preference === "system" &&
-      window.matchMedia("(prefers-color-scheme: light)").matches);
-  root.classList.toggle("theme-light", light);
-  root.style.setProperty("--theme-hue", String(appearance.hue));
-  root.style.setProperty("--theme-saturation", `${appearance.saturation}%`);
-  root.style.setProperty(
-    "--theme-dark-lightness",
-    `${appearance.darkLightness}%`,
-  );
-  root.classList.toggle("has-user-accent", appearance.accent != null);
-  if (appearance.accent)
-    root.style.setProperty("--user-accent-color", appearance.accent);
-  else root.style.removeProperty("--user-accent-color");
-  const background = getComputedStyle(root)
-    .getPropertyValue("--color-background-base")
-    .trim();
-  document
-    .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", background || (light ? "#f7f7f7" : "#161616"));
-  try {
-    localStorage.setItem(STORED, JSON.stringify(appearance));
-  } catch {
-    // private mode
-  }
-}
-
-/** Last theme seen, so a cold start does not flash the default. */
-export function restoreAppearance() {
-  try {
-    const stored = localStorage.getItem(STORED);
-    if (stored) applyAppearance(JSON.parse(stored) as WebAppearance);
-  } catch {
-    // ignore
-  }
-}
 
 /**
  * iOS lays the keyboard over the page instead of resizing it. Size the app to

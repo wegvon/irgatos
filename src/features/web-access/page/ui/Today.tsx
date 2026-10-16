@@ -1,199 +1,232 @@
 import { useState, type ReactNode } from "react";
 import type { FleetEntry } from "../../../fleet/model/fleet";
+import type { IdeasState } from "../../../ideas/model/ideas";
 import type { WebOverview } from "../../model/protocol";
-import { ago, greeting, today } from "../format";
+import { ago, greeting, plural, today } from "../format";
 import { navigate, openSheet } from "../route";
-import { ChatRow, place } from "./ChatRow";
+import { ChatCard, ChatRow, place } from "./ChatRow";
 import { RequestBody } from "./Requests";
 import {
   Empty,
-  Group,
   Harness,
+  IconBadge,
+  Pill,
   SectionTitle,
   Spinner,
+  TONE,
+  plainButton,
   primaryButton,
+  type Tone,
 } from "./parts";
 import {
+  ArrowUpRight,
   CheckCircle,
   ChevronDown,
-  ChevronRight,
   CircleAlert,
+  Idea,
   Plus,
-  Sparkles,
   Zap,
 } from "../../../../shared/ui/icons";
 
-/** Home: what blocks on you first, then what is moving, then what finished. */
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+/** Home: a greeting, four numbers, what waits on you, then what is moving. */
 export function Today({
   overview,
+  ideas,
   now,
   header,
   wide,
 }: {
   overview: WebOverview | null;
+  ideas: IdeasState | null;
   now: number;
   header: ReactNode;
   wide: boolean;
 }) {
   const [showIdle, setShowIdle] = useState(false);
+  const owner = overview?.owner;
+  const moving = overview
+    ? [...overview.interrupted, ...overview.review, ...overview.running]
+    : [];
   const total = overview
-    ? overview.needsYou.length +
-      overview.running.length +
-      overview.review.length +
-      overview.interrupted.length +
-      overview.idle.length
+    ? moving.length + overview.needsYou.length + overview.idle.length
     : 0;
+  const changed = overview
+    ? overview.review.reduce((sum, entry) => sum + entry.editedPaths.length, 0)
+    : 0;
+  const cards = ideas?.boards.flatMap((board) =>
+    board.lists.flatMap((list) => list.cards),
+  );
+  const fresh =
+    cards?.filter((card) => now - card.createdAt < WEEK).length ?? 0;
 
   return (
     <div
-      className={`mx-auto flex w-full flex-col gap-7 px-4 ${wide ? "max-w-[1100px] px-8 pt-[calc(var(--safe-top)+20px)] pb-12" : "pb-8"}`}
+      className={`mx-auto flex w-full flex-col gap-6 ${wide ? "max-w-[1120px] px-8 pb-12 pt-[calc(var(--safe-top)+22px)]" : "px-4 pb-8 pt-[calc(var(--safe-top)+10px)]"}`}
     >
-      <header className={wide ? "" : "pt-[calc(var(--safe-top)+10px)]"}>
-        <div className="flex h-9 items-center justify-between gap-3">
-          <span className="text-[13px] font-semibold uppercase tracking-[0.06em] text-content/45">
-            {today(now)}
-          </span>
+      <header className="flex flex-col gap-5">
+        <div className="flex h-10 items-center justify-between gap-3">
           {header}
         </div>
-        <h1 className="mt-0.5 text-[34px] font-bold leading-tight tracking-[-0.02em]">
-          {greeting(now)}
-        </h1>
+        <div>
+          <h1
+            className={`font-semibold leading-[1.12] tracking-[-0.025em] text-(--ink) ${wide ? "text-[38px]" : "text-[33px]"}`}
+          >
+            {greeting(now)}
+            {owner ? (
+              <>
+                ,
+                <br />
+                {owner} 👋
+              </>
+            ) : null}
+          </h1>
+          <p className="mt-2 text-[15px] font-medium text-(--ink-2)">
+            {today(now)}
+          </p>
+        </div>
       </header>
 
       {!overview ? (
-        <div className="flex justify-center py-20 text-content/40">
+        <div className="flex justify-center py-20 text-(--ink-3)">
           <Spinner className="size-6" />
         </div>
-      ) : total === 0 ? (
-        <Empty icon={<Sparkles className="size-6" />} title="All quiet">
-          No chats are open on your Mac. Start one and follow it from here.
-          <div className="mt-5">
-            <button
-              className={primaryButton}
-              onClick={() => openSheet({ name: "new" })}
-            >
-              <Plus className="size-4" />
-              New chat
-            </button>
-          </div>
-        </Empty>
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div
+            className={`web-rise grid gap-3 ${wide ? "grid-cols-4" : "grid-cols-2"}`}
+          >
             <Stat
-              target="needs-you"
-              count={overview.needsYou.length}
-              label="Need you"
-              tone="text-(--warn)"
+              tone="orange"
               icon={<CircleAlert className="size-[18px]" />}
+              label="Needs you"
+              value={overview.needsYou.length}
+              caption={
+                overview.needsYou.length
+                  ? "Waiting for your answer"
+                  : "Nothing waiting"
+              }
+              onClick={() => navigate({ name: "chats", filter: "needsYou" })}
             />
             <Stat
-              target="running"
-              count={overview.running.length}
-              label="Running"
-              tone="text-(--accent)"
+              tone="purple"
               icon={<Zap className="size-[18px]" />}
+              label="Running"
+              value={overview.running.length}
+              caption={
+                overview.running.length
+                  ? "Agents at work now"
+                  : "All agents idle"
+              }
+              onClick={() => navigate({ name: "chats", filter: "running" })}
             />
             <Stat
-              target="review"
-              count={overview.review.length}
-              label="To review"
-              tone="text-(--ok)"
+              tone="green"
               icon={<CheckCircle className="size-[18px]" />}
+              label="To review"
+              value={overview.review.length}
+              caption={
+                changed ? `${plural(changed, "file")} changed` : "Nothing new"
+              }
+              onClick={() => navigate({ name: "chats", filter: "review" })}
+            />
+            <Stat
+              tone="blue"
+              icon={<Idea className="size-[18px]" />}
+              label="Ideas"
+              value={cards?.length ?? null}
+              caption={
+                fresh ? (
+                  <span className="text-(--tone-green)">
+                    +{fresh} this week
+                  </span>
+                ) : (
+                  "On your boards"
+                )
+              }
+              onClick={() => navigate({ name: "ideas" })}
             />
           </div>
 
-          <div className={`grid gap-7 ${wide ? "@container" : ""}`}>
-            <div
-              className={
-                wide
-                  ? "grid items-start gap-7 @[680px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]"
-                  : "contents"
-              }
-            >
-              <section id="needs-you" className="scroll-mt-4">
-                <SectionTitle count={overview.needsYou.length}>
-                  Needs you
-                </SectionTitle>
-                {overview.needsYou.length ? (
-                  <div className="flex flex-col gap-3">
-                    {overview.needsYou.flatMap((entry) =>
-                      entry.requests.map((request) => (
-                        <RequestCard
-                          key={`${entry.sessionId}:${request.requestId}`}
-                          entry={entry}
-                          now={now}
-                        >
-                          <RequestBody
-                            sessionId={entry.sessionId}
-                            request={request}
-                          />
-                        </RequestCard>
-                      )),
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-3 rounded-[18px] bg-(--surface) px-4 py-4 text-[15px] text-content/55 shadow-[0_0_0_0.5px_var(--color-stroke)]">
-                    <CheckCircle className="size-5 text-(--ok)" />
-                    Nothing is waiting on you.
-                  </div>
-                )}
-              </section>
-
-              <div className="flex flex-col gap-7">
-                <Bucket
-                  id="running"
-                  title="Running"
-                  entries={overview.running}
-                  now={now}
-                />
-                <Bucket
-                  id="review"
-                  title="Ready to review"
-                  entries={overview.review}
-                  now={now}
-                  showFiles
-                />
-                <Bucket
-                  id="interrupted"
-                  title="Interrupted"
-                  entries={overview.interrupted}
-                  now={now}
-                />
-                {overview.idle.length ? (
-                  <section>
-                    <SectionTitle
-                      count={overview.idle.length}
-                      action={
-                        <button
-                          className="inline-flex items-center gap-1 text-[14px] font-medium text-(--accent)"
-                          onClick={() => setShowIdle((value) => !value)}
-                        >
-                          {showIdle ? "Hide" : "Show"}
-                          <ChevronDown
-                            className={`size-4 transition-transform ${showIdle ? "rotate-180" : ""}`}
-                          />
-                        </button>
-                      }
-                    >
-                      Idle
-                    </SectionTitle>
-                    {showIdle ? (
-                      <Group>
-                        {overview.idle.map((entry) => (
-                          <ChatRow
+          {total === 0 ? (
+            <div className="glass rounded-[28px]">
+              <Empty title="All quiet">
+                No chats are open on your Mac. Start one and follow it from
+                here.
+                <div className="mt-5">
+                  <button
+                    className={primaryButton}
+                    onClick={() => openSheet({ name: "new" })}
+                  >
+                    <Plus className="size-4" strokeWidth={2.4} />
+                    New chat
+                  </button>
+                </div>
+              </Empty>
+            </div>
+          ) : (
+            <div className={wide ? "@container" : ""}>
+              <div
+                className={
+                  wide
+                    ? "grid items-start gap-6 @[700px]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]"
+                    : "flex flex-col gap-6"
+                }
+              >
+                <NeedsYou entries={overview.needsYou} now={now} />
+                <div className="flex flex-col gap-6">
+                  {moving.length ? (
+                    <section>
+                      <SectionTitle count={moving.length}>
+                        In progress
+                      </SectionTitle>
+                      <div className="flex flex-col gap-3">
+                        {moving.map((entry) => (
+                          <ChatCard
                             key={entry.sessionId}
                             entry={entry}
                             now={now}
                           />
                         ))}
-                      </Group>
-                    ) : null}
-                  </section>
-                ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+                  {overview.idle.length ? (
+                    <section>
+                      <button
+                        className="glass web-press flex h-14 w-full items-center gap-3 rounded-[20px] px-4 text-left"
+                        aria-expanded={showIdle}
+                        onClick={() => setShowIdle((value) => !value)}
+                      >
+                        <span className="size-2 rounded-full bg-(--tone-gray)" />
+                        <span className="flex-1 text-[15px] font-semibold text-(--ink)">
+                          Idle
+                          <span className="ml-2 font-medium text-(--ink-3)">
+                            {overview.idle.length}
+                          </span>
+                        </span>
+                        <ChevronDown
+                          className={`size-4 text-(--ink-3) transition-transform ${showIdle ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                      {showIdle ? (
+                        <div className="glass web-pop-in mt-2 flex flex-col gap-0.5 rounded-[22px] p-1.5">
+                          {overview.idle.map((entry) => (
+                            <ChatRow
+                              key={entry.sessionId}
+                              entry={entry}
+                              now={now}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>
@@ -201,108 +234,136 @@ export function Today({
 }
 
 function Stat({
-  target,
-  count,
-  label,
   tone,
   icon,
+  label,
+  value,
+  caption,
+  onClick,
 }: {
-  target: string;
-  count: number;
-  label: string;
-  tone: string;
+  tone: Tone;
   icon: ReactNode;
+  label: string;
+  value: number | null;
+  caption: ReactNode;
+  onClick: () => void;
 }) {
   return (
     <button
-      className="web-press flex flex-col items-start gap-2 rounded-[18px] bg-(--surface) p-3.5 text-left shadow-[0_0_0_0.5px_var(--color-stroke)] disabled:opacity-100"
-      disabled={count === 0}
-      onClick={() =>
-        document
-          .getElementById(target)
-          ?.scrollIntoView({ behavior: "smooth", block: "start" })
-      }
+      onClick={onClick}
+      className="glass web-press flex min-h-[132px] flex-col items-start rounded-[24px] p-4 text-left"
     >
-      <span className={count ? tone : "text-content/25"}>{icon}</span>
-      <span>
-        <span
-          className={`block text-[28px] font-bold leading-none tabular-nums ${count ? "" : "text-content/30"}`}
-        >
-          {count}
-        </span>
-        <span className="mt-1 block text-[13px] font-medium text-content/55">
+      <span className="flex w-full items-center gap-2.5">
+        <IconBadge tone={tone} size="size-8">
+          {icon}
+        </IconBadge>
+        <span className="min-w-0 truncate text-[14px] font-medium text-(--ink)">
           {label}
         </span>
+      </span>
+      <span
+        className={`mt-auto pt-4 text-[32px] font-semibold leading-none tracking-[-0.02em] tabular-nums ${value ? "text-(--ink)" : "text-(--ink-3)"}`}
+      >
+        {value === null ? "–" : String(value).padStart(2, "0")}
+      </span>
+      <span className="mt-1.5 truncate text-[12px] font-medium text-(--ink-2)">
+        {caption}
       </span>
     </button>
   );
 }
 
-function RequestCard({
-  entry,
-  now,
-  children,
-}: {
-  entry: FleetEntry;
-  now: number;
-  children: ReactNode;
-}) {
+/** Every open approval and question, answerable right on its card. */
+function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
   return (
-    <article className="rounded-[20px] bg-(--surface) p-4 shadow-[0_0_0_1px_color-mix(in_srgb,var(--warn)_28%,transparent)]">
-      <button
-        className="flex w-full items-center gap-2 text-left"
-        onClick={() => navigate({ name: "chat", id: entry.sessionId })}
-      >
-        <Harness harness={entry.harness} />
-        <span className="min-w-0 truncate text-[13px] font-medium text-content/55">
-          {place(entry)}
-          {entry.branch ? (
-            <span className="font-normal text-content/40">
-              {" "}
-              · {entry.branch}
-            </span>
-          ) : null}
-        </span>
-        <span className="ml-auto shrink-0 text-[12px] tabular-nums text-content/40">
-          {ago(entry.at, now)}
-        </span>
-        <ChevronRight className="size-4 shrink-0 text-content/30" />
-      </button>
-      <div className="mb-3 mt-1.5 text-[17px] font-semibold leading-snug">
-        {entry.title}
+    <section id="needs-you" className="scroll-mt-4">
+      <div className="glass rounded-[28px] p-4">
+        <SectionTitle
+          count={entries.length || undefined}
+          action={
+            entries.length > 1 ? (
+              <button
+                className={`${plainButton} -my-2 -mr-2 h-9 text-[14px]`}
+                onClick={() => navigate({ name: "chats", filter: "needsYou" })}
+              >
+                See all
+              </button>
+            ) : null
+          }
+        >
+          Needs you
+        </SectionTitle>
+        {entries.length ? (
+          <div className="flex flex-col divide-y divide-(--hairline)">
+            {entries.flatMap((entry) =>
+              entry.requests.map((request) => (
+                <article
+                  key={`${entry.sessionId}:${request.requestId}`}
+                  className="flex flex-col gap-3.5 py-4 first:pt-1 last:pb-1"
+                >
+                  <button
+                    className="flex w-full items-center gap-3 text-left"
+                    onClick={() =>
+                      navigate({ name: "chat", id: entry.sessionId })
+                    }
+                  >
+                    <span
+                      className={`${TONE.orange} tone-soft flex size-11 shrink-0 items-center justify-center rounded-[14px]`}
+                    >
+                      <Harness harness={entry.harness} className="size-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-[-0.01em] text-(--ink)">
+                        {entry.title}
+                      </span>
+                    </span>
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/85 text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
+                      <ArrowUpRight className="size-4" strokeWidth={2.2} />
+                    </span>
+                  </button>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Meta label="Project">{place(entry)}</Meta>
+                    <Meta label="Type">
+                      {request.kind === "approval" ? (
+                        <Pill tone="orange">Approval</Pill>
+                      ) : (
+                        <Pill tone="purple">Question</Pill>
+                      )}
+                    </Meta>
+                    <Meta label="Waiting">{ago(entry.at, now) || "now"}</Meta>
+                  </div>
+                  <RequestBody sessionId={entry.sessionId} request={request} />
+                </article>
+              )),
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 rounded-[20px] bg-white/60 px-4 py-4">
+            <IconBadge tone="green">
+              <CheckCircle className="size-[18px]" />
+            </IconBadge>
+            <div className="min-w-0">
+              <div className="text-[15px] font-semibold text-(--ink)">
+                You're all caught up
+              </div>
+              <div className="text-[13px] text-(--ink-2)">
+                Nothing is waiting on you.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      {children}
-    </article>
+    </section>
   );
 }
 
-function Bucket({
-  id,
-  title,
-  entries,
-  now,
-  showFiles = false,
-}: {
-  id: string;
-  title: string;
-  entries: FleetEntry[];
-  now: number;
-  showFiles?: boolean;
-}) {
-  if (!entries.length) return null;
+function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-4">
-      <SectionTitle count={entries.length}>{title}</SectionTitle>
-      <Group>
-        {entries.map((entry) => (
-          <ChatRow
-            key={entry.sessionId}
-            entry={entry}
-            now={now}
-            showFiles={showFiles}
-          />
-        ))}
-      </Group>
-    </section>
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="text-[11.5px] font-medium text-(--ink-3)">{label}</span>
+      <span className="min-w-0 truncate text-[14px] font-semibold text-(--ink)">
+        {children}
+      </span>
+    </div>
   );
 }

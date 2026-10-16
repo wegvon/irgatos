@@ -8,21 +8,14 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
 import type { BlockRole, HarnessId } from "../../sessions/model/session";
 
-export type WebAppearance = {
-  preference: "system" | "dark" | "light";
-  hue: number;
-  saturation: number;
-  darkLightness: number;
-  accent: string | null;
-};
-
 export type WebOverview = {
   needsYou: FleetEntry[];
   running: FleetEntry[];
   review: FleetEntry[];
   interrupted: FleetEntry[];
   idle: FleetEntry[];
-  appearance: WebAppearance;
+  /** The Mac user's first name, for the greeting; empty when unknown. */
+  owner: string;
   /** The Mac's clock, so ages read right on a device whose clock is off. */
   at: number;
 };
