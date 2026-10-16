@@ -219,6 +219,8 @@ fn configure<'a>(
         .with_url(url.as_str())
         .with_bounds(rect)
         .with_focused(false)
+        // Right-click > Inspect Element, to debug pages that misbehave here.
+        .with_devtools(true)
         .with_navigation_handler(move |value| {
             let allowed = allowed_navigation(&value, nav.2.as_ref());
             if !allowed {
@@ -260,8 +262,34 @@ fn build_view(
     use wry::WebViewBuilderExtDarwin;
     configure(WebViewBuilder::new(), window, id, url, rect, app_origin)
         .with_data_store_identifier(DATA_STORE_ID)
+        .with_user_agent(safari_user_agent(installed_safari_version().as_deref()))
         .build_as_child(window)
         .map_err(|e| e.to_string())
+}
+
+/// WKWebView's default user agent stops at "(KHTML, like Gecko)". Sites such as
+/// x.com treat that as an unsupported embedded browser and fail their API
+/// calls, so the browser presents itself as the Safari the system ships.
+#[cfg(any(target_os = "macos", test))]
+fn safari_user_agent(version: Option<&str>) -> String {
+    let version = version
+        .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit() || c == '.'))
+        .unwrap_or("18.0");
+    format!(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+         (KHTML, like Gecko) Version/{version} Safari/605.1.15"
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn installed_safari_version() -> Option<String> {
+    use objc2_foundation::{NSBundle, NSString};
+    let bundle = NSBundle::bundleWithPath(&NSString::from_str("/Applications/Safari.app"))?;
+    let value =
+        bundle.objectForInfoDictionaryKey(&NSString::from_str("CFBundleShortVersionString"))?;
+    value
+        .downcast_ref::<NSString>()
+        .map(|value| value.to_string())
 }
 
 /// Linux supports child views on X11 only; Wayland sessions get an error.
@@ -412,11 +440,7 @@ pub async fn browser_import_chrome_profile(
                 let mut imported = 0;
                 let mut skipped = 0;
                 for cookie in cookies {
-                    let Some(cookie) = webview_cookie(&cookie) else {
-                        skipped += 1;
-                        continue;
-                    };
-                    if view.set_cookie(&cookie).is_ok() {
+                    if import_cookie(view, &cookie) {
                         imported += 1;
                     } else {
                         skipped += 1;
@@ -578,6 +602,88 @@ fn read_chrome_profile(profile_id: &str) -> Result<ChromeProfileContents, String
     })
 }
 
+/// Stores one Chrome cookie in the browser's data store.
+///
+/// Chrome marks cookies that cover subdomains with a leading dot ("`.x.com`").
+/// Wry's `set_cookie` drops that dot, which turns them into host-only cookies:
+/// the site then sets its own `.x.com` copy and pages see two `ct0` values,
+/// so x.com rejects every request. Domain cookies are therefore written
+/// directly, after removing any host-only copy an earlier import left behind.
+#[cfg(target_os = "macos")]
+fn import_cookie(view: &WebView, source: &ChromeCookie) -> bool {
+    let Some(cookie) = webview_cookie(source) else {
+        return false;
+    };
+    if !source.domain.trim().starts_with('.') {
+        return view.set_cookie(&cookie).is_ok();
+    }
+    let _ = view.delete_cookie(&cookie);
+    set_domain_cookie(view, &cookie)
+}
+
+/// Mirrors Wry's `NSHTTPCookie` conversion, but keeps the leading dot.
+#[cfg(target_os = "macos")]
+fn set_domain_cookie(view: &WebView, cookie: &Cookie<'_>) -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{
+        NSDate, NSHTTPCookie, NSHTTPCookieDomain, NSHTTPCookieExpires, NSHTTPCookieName,
+        NSHTTPCookiePath, NSHTTPCookiePropertyKey, NSHTTPCookieSecure, NSHTTPCookieValue,
+        NSMutableDictionary, NSString,
+    };
+    use wry::WebViewExtMacOS;
+
+    let Some(domain) = cookie.domain() else {
+        return false;
+    };
+    let name = NSString::from_str(cookie.name());
+    let value = NSString::from_str(cookie.value());
+    let path = NSString::from_str(cookie.path().unwrap_or("/"));
+    let domain = NSString::from_str(&format!(".{domain}"));
+    let flag = |on: bool| NSString::from_str(if on { "TRUE" } else { "FALSE" });
+    unsafe {
+        let properties: objc2::rc::Retained<
+            NSMutableDictionary<NSHTTPCookiePropertyKey, AnyObject>,
+        > = NSMutableDictionary::from_slices(
+            &[
+                NSHTTPCookieName,
+                NSHTTPCookieValue,
+                NSHTTPCookiePath,
+                NSHTTPCookieDomain,
+            ],
+            &[&*name, &*value, &*path, &*domain],
+        );
+        if let Some(expires) = cookie.expires_datetime() {
+            let expires = NSDate::dateWithTimeIntervalSince1970(expires.unix_timestamp() as f64);
+            properties.insert(NSHTTPCookieExpires, &*expires);
+        }
+        properties.insert(NSHTTPCookieSecure, &*flag(cookie.secure().unwrap_or(false)));
+        properties.insert(
+            &*NSString::from_str("HttpOnly"),
+            &*flag(cookie.http_only().unwrap_or(false)),
+        );
+        let same_site = match cookie.same_site() {
+            Some(SameSite::Lax) => Some("lax"),
+            Some(SameSite::Strict) => Some("strict"),
+            _ => None,
+        };
+        if let Some(same_site) = same_site {
+            properties.insert(
+                &*NSString::from_str("SameSite"),
+                &*NSString::from_str(same_site),
+            );
+        }
+        let Some(cookie) = NSHTTPCookie::cookieWithProperties(&properties) else {
+            return false;
+        };
+        view.webview()
+            .configuration()
+            .websiteDataStore()
+            .httpCookieStore()
+            .setCookie_completionHandler(&cookie, None);
+    }
+    true
+}
+
 #[cfg(target_os = "macos")]
 fn webview_cookie(source: &ChromeCookie) -> Option<Cookie<'static>> {
     let name = source.name.trim();
@@ -734,6 +840,18 @@ fn chromium_timestamp_to_unix(value: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presents_as_safari() {
+        assert_eq!(
+            safari_user_agent(Some("26.1")),
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 \
+             (KHTML, like Gecko) Version/26.1 Safari/605.1.15"
+        );
+        for bad in [None, Some(""), Some("26.1; evil")] {
+            assert!(safari_user_agent(bad).ends_with("Version/18.0 Safari/605.1.15"));
+        }
+    }
 
     #[test]
     fn opens_only_web_addresses_outside_the_app() {
