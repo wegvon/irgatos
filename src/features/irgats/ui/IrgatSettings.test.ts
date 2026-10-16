@@ -7,31 +7,17 @@ import {
   RUNTIME_MODES,
   type RuntimeMode,
 } from "../../sessions/model/session";
-import { IrgatSettingsDialog } from "./IrgatSettingsDialog";
+import { IrgatSettings } from "./IrgatSettings";
 
 vi.mock("../../sessions/ui/ModelPicker", () => ({
   ModelPicker: () => null,
   ModelSettingRows: () => null,
 }));
 
-vi.mock("../model/irgatFiles", async (original) => ({
-  ...(await original<object>()),
-  loadIrgatFiles: async () => ({
-    id: "irgat-1",
-    dir: "/data/irgat-1",
-    soul: "# Soul",
-    soulHash: "soul",
-    memory: "",
-    memoryHash: "memory",
-    memoryPath: "/data/irgat-1/MEMORY.md",
-    topics: [],
-  }),
-}));
-
 let container: HTMLDivElement;
 let root: Root;
 const onRuntimeModeChange = vi.fn();
-const onClose = vi.fn();
+const onOpenPage = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,10 +53,20 @@ async function render(
 ) {
   await act(async () =>
     root.render(
-      createElement(IrgatSettingsDialog, {
+      createElement(IrgatSettings, {
         irgatId: "irgat-1",
         agent: { name: "Broski", mascot: "cat", color: "#9c9", projects: [] },
-        status: busy ? "working" : "idle",
+        files: {
+          id: "irgat-1",
+          dir: "/data/irgat-1",
+          soul: "# Soul",
+          soulHash: "soul",
+          memory: "",
+          memoryHash: "memory",
+          memoryPath: "/data/irgat-1/MEMORY.md",
+          topics: [],
+        },
+        onOpenPage,
         cwd: "/home",
         harness: "codex",
         model: "codex:gpt-5.4",
@@ -81,7 +77,6 @@ async function render(
         onModelSettingsChange: vi.fn(),
         onRuntimeModeChange,
         onReset,
-        onClose,
       }),
     ),
   );
@@ -111,20 +106,20 @@ function escape() {
   );
 }
 
-it("opens on General and moves between its sections", async () => {
+it("shows who it is and how it works, with its soul and memory a click away", async () => {
   await render();
-  const nav = dialog().querySelector('nav[aria-label="Settings sections"]')!;
-  expect([...nav.querySelectorAll("button")].map((b) => b.textContent)).toEqual(
-    ["General", "Soul", "Memory"],
-  );
-  expect(button("General", nav).getAttribute("aria-current")).toBe("page");
-  expect(dialog().querySelector("input[aria-label=\"Name\"]")).not.toBeNull();
+  expect(dialog().querySelector('input[aria-label="Name"]')).not.toBeNull();
   expect(dialog().textContent).toContain("Permissions");
-  await act(async () => button("Memory", nav).click());
-  expect(button("Memory", nav).getAttribute("aria-current")).toBe("page");
-  expect(dialog().querySelector("[data-irgat-memory]")).not.toBeNull();
-  await act(async () => button("Soul", nav).click());
-  expect(dialog().querySelector("[data-irgat-soul]")).not.toBeNull();
+  expect(dialog().textContent).toContain("Projects");
+  expect(dialog().textContent).toContain("Nothing remembered yet.");
+  const link = (label: string) =>
+    [...dialog().querySelectorAll<HTMLButtonElement>("button")].find((entry) =>
+      entry.textContent?.startsWith(label),
+    )!;
+  act(() => link("Soul").click());
+  expect(onOpenPage).toHaveBeenLastCalledWith("soul");
+  act(() => link("Memory").click());
+  expect(onOpenPage).toHaveBeenLastCalledWith("memory");
 });
 
 it("keeps the mascots and colors in a popover opened from its icon", async () => {
@@ -137,12 +132,8 @@ it("keeps the mascots and colors in a popover opened from its icon", async () =>
   const popover = document.querySelector('[aria-label="Mascot and color"]')!;
   expect(popover.querySelector('[aria-label="Mascot"]')).not.toBeNull();
   expect(popover.querySelector('[aria-label="Color"]')).not.toBeNull();
-  // Escape closes the popover first, then the dialog.
   escape();
   expect(document.querySelector('[aria-label="Mascot and color"]')).toBeNull();
-  expect(onClose).not.toHaveBeenCalled();
-  escape();
-  expect(onClose).toHaveBeenCalledOnce();
 });
 
 function confirmButton(label: string) {

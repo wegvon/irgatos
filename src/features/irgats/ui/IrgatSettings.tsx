@@ -3,14 +3,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type ReactNode,
 } from "react";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { Settings, Sparkles, StickyNote } from "../../../shared/ui/icons";
+import { ChevronRight, Sparkles, StickyNote } from "../../../shared/ui/icons";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { ModelPicker, ModelSettingRows } from "../../sessions/ui/ModelPicker";
@@ -23,30 +21,18 @@ import {
   subscribeIrgats,
   updateIrgat,
   type IrgatLook,
-  type IrgatState,
 } from "../model/irgat";
+import type { IrgatFiles } from "../model/irgatFiles";
+import { memoryLines } from "../model/irgatMemory";
 import { ConfirmReset } from "./ConfirmReset";
-import { MemoryPage, SoulPage, useIrgatFiles } from "./IrgatFilePages";
 import { IrgatProjects } from "./IrgatProjects";
 import { ColorPicker, MascotPicker, SwitchRow } from "./irgatPanelParts";
 
-export type IrgatSettingsSection = "general" | "soul" | "memory";
+/** The pages its settings open over themselves in the overview. */
+export type IrgatSettingsPage = "soul" | "memory";
 
-const SECTIONS: {
-  id: IrgatSettingsSection;
-  label: string;
-  icon: typeof Settings;
-}[] = [
-  { id: "general", label: "General", icon: Settings },
-  { id: "soul", label: "Soul", icon: Sparkles },
-  { id: "memory", label: "Memory", icon: StickyNote },
-];
-
-type Props = {
-  irgatId: string;
-  agent: IrgatLook;
-  /** Its soul and memory reload when a turn ends. */
-  status: IrgatState["status"];
+/** How the Irgat's conversation runs, which its settings read and change. */
+export type IrgatSettingsControls = {
   /** Its conversation's folder, which the model picker reads settings from. */
   cwd: string;
   harness: HarnessId;
@@ -54,85 +40,29 @@ type Props = {
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
   busy?: boolean;
-  initialSection?: IrgatSettingsSection;
   onModelChange: (harness: HarnessId, model: string) => void;
   onModelSettingsChange: (settings: Record<string, string>) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onReset?: () => Promise<void>;
-  onClose: () => void;
+};
+
+type Props = IrgatSettingsControls & {
+  irgatId: string;
+  agent: IrgatLook;
+  /** Its soul and memory, to show what each page holds. */
+  files: IrgatFiles | undefined;
+  onOpenPage: (page: IrgatSettingsPage) => void;
 };
 
 /**
- * Who the Irgat is and how it works, in a dialog of its own: its name, face,
- * model and projects under General, then its soul and memory.
+ * Who the Irgat is and how it works, on the overview's Settings tab: its
+ * name, face, model and projects, with its soul and memory a click away.
  */
-export function IrgatSettingsDialog({
+export function IrgatSettings({
   irgatId,
   agent,
-  status,
-  initialSection = "general",
-  onClose,
-  ...general
-}: Props) {
-  const [section, setSection] = useState(initialSection);
-  const files = useIrgatFiles(irgatId, status);
-  return (
-    <Modal
-      title={`${agent.name} settings`}
-      size="lg"
-      minimalHeader
-      fitViewport
-      onClose={onClose}
-      // Centre the close button in the section header's 40px row.
-      className="h-[min(680px,calc(100dvh-32px))] [&>.modal-panel>header]:top-1.5"
-    >
-      <div
-        className="flex h-full min-h-0 font-sans"
-        // Section headers leave room for the dialog's close button.
-        style={{ "--irgat-window-controls-width": "2rem" } as CSSProperties}
-        data-irgat-settings
-      >
-        <nav
-          aria-label="Settings sections"
-          className="flex w-48 shrink-0 flex-col gap-px border-r border-stroke p-2"
-        >
-          <p className="px-2.5 pb-2 pt-1.5 text-[11px] text-content/45">
-            Settings
-          </p>
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={section === id ? "page" : undefined}
-              onClick={() => setSection(id)}
-              className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] ${
-                section === id
-                  ? "bg-content/8 text-content"
-                  : "text-content/65 hover:bg-content/5 hover:text-content"
-              }`}
-            >
-              <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {section === "general" ? (
-            <GeneralSection irgatId={irgatId} agent={agent} {...general} />
-          ) : section === "soul" ? (
-            <SoulPage irgatId={irgatId} agent={agent} files={files} />
-          ) : (
-            <MemoryPage irgatId={irgatId} files={files} />
-          )}
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function GeneralSection({
-  irgatId,
-  agent,
+  files,
+  onOpenPage,
   cwd,
   harness,
   model,
@@ -143,7 +73,7 @@ function GeneralSection({
   onModelSettingsChange,
   onRuntimeModeChange,
   onReset,
-}: Omit<Props, "status" | "initialSection" | "onClose">) {
+}: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
   const shown = useSyncExternalStore(
     subscribeIrgats,
@@ -156,11 +86,10 @@ function GeneralSection({
   return (
     <div
       ref={lock}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-none px-8 pb-8 pt-6"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-none px-4 pb-6 pt-2"
+      data-irgat-settings
     >
-      <h3 className="text-[14px] font-medium text-content">General</h3>
-
-      <div className="flex flex-col items-center pb-6 pt-4">
+      <div className="flex flex-col items-center pb-2 pt-4">
         <LookButton irgatId={irgatId} agent={agent} />
         <NameField key={irgatId} irgatId={irgatId} fallback={agent.mascot} />
       </div>
@@ -205,6 +134,25 @@ function GeneralSection({
             variant="plain"
           />
         </SettingRow>
+      </SettingGroup>
+
+      <GroupHeading
+        title="Soul and memory"
+        description="What it always keeps in mind, and what it has learned."
+      />
+      <SettingGroup>
+        <PageLink
+          icon={Sparkles}
+          label="Soul"
+          description="Who it is and how it works."
+          onClick={() => onOpenPage("soul")}
+        />
+        <PageLink
+          icon={StickyNote}
+          label="Memory"
+          description={memorySummary(files)}
+          onClick={() => onOpenPage("memory")}
+        />
       </SettingGroup>
 
       <GroupHeading
@@ -277,6 +225,47 @@ function GeneralSection({
   );
 }
 
+/** How many facts it remembers, under the Memory row. */
+function memorySummary(files: IrgatFiles | undefined): string {
+  if (!files) return "Loading…";
+  const count = memoryLines(files.memory).length;
+  return count === 0
+    ? "Nothing remembered yet."
+    : count === 1
+      ? "1 thing remembered."
+      : `${count} things remembered.`;
+}
+
+/** A row that opens one of its pages over the settings. */
+function PageLink({
+  icon: Icon,
+  label,
+  description,
+  onClick,
+}: {
+  icon: typeof Sparkles;
+  label: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-h-12 items-center gap-3 px-3 py-2 text-left first:rounded-t-xl last:rounded-b-xl hover:bg-content/5"
+    >
+      <Icon className="size-3.5 shrink-0 text-content/60" strokeWidth={1.75} />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[13px] leading-5 text-content/90">{label}</span>
+        <span className="truncate text-[12px] leading-5 text-content/40">
+          {description}
+        </span>
+      </span>
+      <ChevronRight className="size-3.5 shrink-0 text-content/40" strokeWidth={1.75} />
+    </button>
+  );
+}
+
 /** A titled group of settings, with what it covers under the title. */
 function GroupHeading({
   title,
@@ -306,7 +295,7 @@ function SettingGroup({ children }: { children: ReactNode }) {
 
 /**
  * A setting's name and what it does on the left, its control on the right.
- * Controls get a column of their own, wide enough that a value is never cut.
+ * In a narrow panel the control drops under its name rather than cutting it.
  */
 function SettingRow({
   label,
@@ -318,8 +307,8 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-12 items-center gap-4 px-3 py-2">
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2">
+      <div className="flex min-w-0 flex-1 basis-36 flex-col">
         <span className="text-[13px] leading-5 text-content/90">{label}</span>
         {description ? (
           <span className="text-[12px] leading-5 text-content/40">
@@ -327,7 +316,7 @@ function SettingRow({
           </span>
         ) : null}
       </div>
-      <div className="flex w-56 shrink-0 items-center justify-end pr-1.5 text-[12px] text-content/85">
+      <div className="ml-auto flex max-w-full shrink-0 items-center justify-end pr-1.5 text-[12px] text-content/85">
         {children}
       </div>
     </div>
@@ -396,7 +385,7 @@ function NameField({ irgatId, fallback }: { irgatId: string; fallback: string })
   const saved = () => findIrgat(irgatId)?.name ?? "";
   const [draft, setDraft] = useState(saved);
   const editing = useRef(false);
-  // A reset clears the name while this dialog is open.
+  // A reset clears the name while its settings are open.
   useEffect(
     () =>
       subscribeIrgats(() => {
