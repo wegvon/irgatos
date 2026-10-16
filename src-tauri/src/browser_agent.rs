@@ -34,8 +34,7 @@ const SETTLE: Duration = Duration::from_millis(800);
 const MAX_REPLY_BYTES: usize = 512 * 1024;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const SCREENSHOT_EDGE: u32 = 1600;
-const NO_PAGE: &str =
-    "The Browser has no page open. Open one with browser.open {\"url\":\"...\"}.";
+const NO_PAGE: &str = "The Browser has no page open. Open one with browser.open {\"url\":\"...\"}.";
 
 pub const AGENT_ACTIONS: [&str; 13] = [
     "browser.state",
@@ -109,7 +108,10 @@ pub fn browser_agent_reply(id: String, result: Option<Value>, error: Option<Stri
 
 /// A short read of the active page for the app's own context hint.
 #[tauri::command]
-pub async fn browser_page_excerpt(window: WebviewWindow, max_chars: usize) -> Result<Value, String> {
+pub async fn browser_page_excerpt(
+    window: WebviewWindow,
+    max_chars: usize,
+) -> Result<Value, String> {
     let max = max_chars.clamp(200, 6000);
     run_page(
         window,
@@ -366,7 +368,9 @@ async fn screenshot(window: WebviewWindow) -> Result<Value, String> {
 
 /// Screenshots are for the turn that took them; drop ones older than an hour.
 fn prune(dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     let cutoff = SystemTime::now() - Duration::from_secs(3600);
     for entry in entries.flatten() {
         let old = entry

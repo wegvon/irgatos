@@ -35,6 +35,8 @@
     if (el.labels && el.labels.length) return clean(el.labels[0].innerText);
     if (el.tagName === "INPUT" && /^(submit|button|reset)$/i.test(el.type))
       return clean(el.value);
+    if (el.tagName === "SELECT" || el.tagName === "INPUT" || el.tagName === "TEXTAREA")
+      return clean(el.name || "");
     const alt = el.querySelector && el.querySelector("img[alt]");
     return clean(el.innerText || (alt && alt.alt) || "");
   }
@@ -44,6 +46,7 @@
     const role = el.getAttribute("role");
     let kind = role || tag;
     if (tag === "a") kind = "link";
+    if (el.isContentEditable && !role) kind = "textbox";
     if (tag === "input") kind = `input[${(el.type || "text").toLowerCase()}]`;
     const parts = [`[${index}] ${kind}`];
     const name = clip(label(el), 80);

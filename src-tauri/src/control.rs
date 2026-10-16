@@ -189,11 +189,7 @@ const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
 
 /// The session and folder an app action answered by the app itself is scoped
 /// to: the caller's active turn.
-fn turn_scope(
-    host: &Inner,
-    token: &str,
-    action: &str,
-) -> Result<(String, String, String), String> {
+fn turn_scope(host: &Inner, token: &str, action: &str) -> Result<(String, String, String), String> {
     let grant = host
         .app_grants
         .values()

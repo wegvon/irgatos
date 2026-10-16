@@ -134,8 +134,10 @@ export function setBrowserAgentView(id: string) {
 
 /** The start of the active page's readable text. */
 export function browserPageExcerpt(maxChars: number) {
-  return invoke<{ url: string; title: string; text: string; totalChars: number }>(
-    "browser_page_excerpt",
-    { maxChars },
-  );
+  return invoke<{
+    url: string;
+    title: string;
+    text: string;
+    totalChars: number;
+  }>("browser_page_excerpt", { maxChars });
 }
