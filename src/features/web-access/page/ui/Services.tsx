@@ -38,7 +38,11 @@ export function macTone(
   return "emerald";
 }
 
-function summary(services: Service[] | undefined, connected: boolean) {
+/** The worst state in words: "All good", "1 offline", "Mac offline". */
+export function macSummary(
+  services: Service[] | undefined,
+  connected: boolean,
+) {
   if (!connected) return "Mac offline";
   if (!services) return "Services";
   const offline = services.filter((service) => service.state === "offline");
@@ -64,7 +68,7 @@ export function ServicesChip({
       <span
         className={`${TONE[macTone(services, connected)]} tone-dot size-2 rounded-full`}
       />
-      {summary(services, connected)}
+      {macSummary(services, connected)}
     </button>
   );
 }

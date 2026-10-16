@@ -11,7 +11,12 @@ import { IdeaDetail } from "./ui/IdeaDetail";
 import { Ideas } from "./ui/Ideas";
 import { Login } from "./ui/Login";
 import { NewChat } from "./ui/NewChat";
-import { ServicesChip, ServicesSheet, macTone } from "./ui/Services";
+import {
+  ServicesChip,
+  ServicesSheet,
+  macSummary,
+  macTone,
+} from "./ui/Services";
 import { Sheet } from "./ui/Sheet";
 import { SwipeBack } from "./ui/SwipeBack";
 import { Today } from "./ui/Today";
@@ -37,7 +42,8 @@ import {
 } from "../../../shared/ui/icons";
 import { FLEET_BUCKET_LABEL, FLEET_BUCKETS } from "../../fleet/model/fleet";
 
-type Tab = Exclude<Screen["name"], "chat">;
+/** The last screen under an open chat, filter included, to go back to. */
+type Tab = Exclude<Screen, { name: "chat" }>;
 
 const SIDEBAR_KEY = "irgatos.web.sidebar";
 
@@ -69,9 +75,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   const [signedOut, setSignedOut] = useState(false);
   const wide = useMediaQuery("(min-width: 768px)");
   const { screen, sheet, closeSheet } = useRoute();
-  const [tab, setTab] = useState<Tab>(() =>
-    screen.name === "chat" ? "today" : screen.name,
+  const [last, setLast] = useState<Tab>(() =>
+    screen.name === "chat" ? { name: "today" } : screen,
   );
+  const tab = last.name;
   const [sidebar, setSidebar] = useState(storedSidebar);
   const toggleSidebar = () =>
     setSidebar((open) => {
@@ -85,7 +92,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
 
   useEffect(() => onSignedOut(() => setSignedOut(true)), []);
   useEffect(() => {
-    if (screen.name !== "chat") setTab(screen.name);
+    if (screen.name !== "chat") setLast(screen);
   }, [screen]);
 
   const live = !signedOut;
@@ -185,7 +192,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       </Sheet>
     ) : null;
 
-  const tabView = (name: Tab) =>
+  const tabView = (name: Tab["name"]) =>
     name === "ideas" ? (
       <Ideas
         ideas={ideas.data}
@@ -209,7 +216,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
         ) : (
           <Chats
             overview={overview.data}
-            filter={screen.name === "chats" ? screen.filter : undefined}
+            filter={last.name === "chats" ? last.filter : undefined}
             now={now}
             header={header}
             wide={wide}
@@ -326,6 +333,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   </div>
                 ) : null}
               </div>
+              <div className="shrink-0 border-t border-(--hairline) p-2">
+                <button
+                  onClick={() => openSheet({ name: "services" })}
+                  className="web-press flex h-11 w-full items-center gap-3 rounded-[12px] px-3.5 text-[15px] font-medium text-(--ink-2) active:bg-content/8"
+                >
+                  <MacIcon tone={mac} />
+                  Your Mac
+                  <span className="ml-auto truncate text-[13px] text-(--ink-3)">
+                    {macSummary(services.data?.services, connected)}
+                  </span>
+                </button>
+              </div>
             </aside>
           ) : (
             <aside className="flex w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-(--hairline) bg-content/[0.03] pb-[calc(var(--safe-bottom)+12px)] pt-[calc(var(--safe-top)+12px)]">
@@ -380,7 +399,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 key={screen.id}
                 id={screen.id}
                 wide
-                onBack={() => navigate({ name: tab })}
+                onBack={() => navigate(last)}
               />
             ) : (
               tabView(screen.name)
@@ -441,12 +460,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
         </nav>
       </div>
       {chatOpen ? (
-        <SwipeBack onBack={() => navigate({ name: tab })}>
+        <SwipeBack onBack={() => navigate(last)}>
           <ChatView
             key={screen.id}
             id={screen.id}
             wide={false}
-            onBack={() => navigate({ name: tab })}
+            onBack={() => navigate(last)}
           />
         </SwipeBack>
       ) : null}
