@@ -29,6 +29,15 @@ mod summary;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod transcription;
 
+/// The fixed voice services, for the service status chip.
+pub(crate) fn speech_endpoint(provider: &str) -> Option<&'static str> {
+    serde_json::from_value::<speech::SpeechProvider>(serde_json::json!(provider))
+        .ok()
+        .map(speech::SpeechProvider::endpoint)
+}
+
+pub(crate) const TRANSCRIPTION_ENDPOINT: &str = qwen::ENDPOINT;
+
 static SPEAKER: speech::Speaker = speech::Speaker::new();
 
 /// Every capture event goes out on one channel; the payload names its capture.

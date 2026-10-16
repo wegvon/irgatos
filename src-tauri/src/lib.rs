@@ -59,6 +59,7 @@ mod remote_ssh;
 mod search;
 mod self_update;
 mod semantic_index;
+mod service_status;
 mod session_snapshots;
 mod session_store;
 mod skills;
@@ -522,6 +523,7 @@ pub fn run() {
             feed::feed_mark_all_read,
             feed::feed_set_threshold,
             feed::feed_save_collector,
+            service_status::service_status_check,
             mail::mail_settings,
             mail::mail_accounts,
             mail::mail_save_settings,
