@@ -90,7 +90,7 @@ impl SessionStore {
     }
 }
 
-const DB_FILE: &str = "irgat.db";
+pub(crate) const DB_FILE: &str = "irgat.db";
 
 pub fn init(app: &AppHandle) -> Result<(), String> {
     init_with(
