@@ -464,6 +464,7 @@ pub fn run() {
             browser::browser_set_bounds,
             browser::browser_action,
             browser::browser_close,
+            browser::browser_favicon,
             browser_agent::browser_set_agent_view,
             browser_agent::browser_agent_reply,
             browser_agent::browser_page_excerpt,

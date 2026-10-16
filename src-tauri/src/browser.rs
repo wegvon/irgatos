@@ -97,6 +97,8 @@ pub enum BrowserAction {
     Back,
     Forward,
     Reload,
+    /// Gives the page keyboard focus, e.g. after switching tabs from it.
+    Focus,
 }
 
 /// A Chrome profile the user may explicitly import from.
@@ -540,6 +542,7 @@ pub async fn browser_action(
                 BrowserAction::Back => view.evaluate_script("history.back()"),
                 BrowserAction::Forward => view.evaluate_script("history.forward()"),
                 BrowserAction::Reload => view.reload(),
+                BrowserAction::Focus => view.focus(),
             };
             result.map_err(|e| e.to_string())
         })
@@ -554,6 +557,98 @@ pub async fn browser_close(window: WebviewWindow, id: String) -> Result<(), Stri
         Ok(())
     })
     .await
+}
+
+/// Finds the page's declared icon, falling back to the site's `/favicon.ico`.
+const FAVICON_SCRIPT: &str = r#"(() => {
+  const links = [...document.querySelectorAll('link[rel~="icon" i], link[rel="shortcut icon" i]')];
+  const link = links.find((l) => l.href && !/mask/i.test(l.rel)) || null;
+  return new URL(link ? link.getAttribute("href") : "/favicon.ico", document.baseURI).href;
+})()"#;
+const FAVICON_MAX_BYTES: u64 = 256 * 1024;
+const FAVICON_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(4);
+
+/// The page's icon as a `data:` URL for its tab, or `None` when it has none.
+/// The app's CSP keeps page origins out of `img-src`, so the icon is fetched
+/// here (without the browser's cookies) and handed over inline.
+#[tauri::command]
+pub async fn browser_favicon(window: WebviewWindow, id: String) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let app_origin = window.config().build.dev_url.clone();
+    on_main(window, move |window| {
+        VIEWS.with(|views| {
+            let views = views.borrow();
+            let view = views
+                .get(&(window.label().to_string(), id))
+                .ok_or("The browser is closed")?;
+            view.evaluate_script_with_callback(FAVICON_SCRIPT, move |raw| {
+                let _ = tx.send(raw);
+            })
+            .map_err(|e| e.to_string())
+        })
+    })
+    .await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw = rx.recv_timeout(FAVICON_TIMEOUT).ok()?;
+        let href = serde_json::from_str::<String>(&raw).unwrap_or(raw);
+        let declared = allowed_url(&href, app_origin.as_ref()).ok()?;
+        fetch_icon(&declared).or_else(|| {
+            let fallback = declared.join("/favicon.ico").ok()?;
+            (fallback != declared)
+                .then(|| fetch_icon(&fallback))
+                .flatten()
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn fetch_icon(url: &Url) -> Option<String> {
+    use base64::Engine;
+    use std::io::Read;
+    let response = ureq::AgentBuilder::new()
+        .timeout(FAVICON_TIMEOUT)
+        .build()
+        .get(url.as_str())
+        .call()
+        .ok()?;
+    let mime = icon_mime(response.content_type(), url.path())?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take(FAVICON_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.is_empty() || bytes.len() as u64 > FAVICON_MAX_BYTES {
+        return None;
+    }
+    let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:{mime};base64,{data}"))
+}
+
+/// Only images go back to the app, whatever the server claims to send.
+fn icon_mime(content_type: &str, path: &str) -> Option<&'static str> {
+    let mime = match content_type.trim().to_ascii_lowercase().as_str() {
+        "image/png" => "image/png",
+        "image/x-icon" | "image/vnd.microsoft.icon" | "image/ico" => "image/x-icon",
+        "image/svg+xml" => "image/svg+xml",
+        "image/gif" => "image/gif",
+        "image/jpeg" | "image/jpg" => "image/jpeg",
+        "image/webp" => "image/webp",
+        // Some servers send icons as octet-stream or text/plain.
+        "" | "application/octet-stream" | "text/plain" => {
+            let path = path.to_ascii_lowercase();
+            if path.ends_with(".ico") {
+                "image/x-icon"
+            } else if path.ends_with(".png") {
+                "image/png"
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    Some(mime)
 }
 
 /// Drop a closed window's views. Runs on the main thread from the event loop.
@@ -840,6 +935,18 @@ fn chromium_timestamp_to_unix(value: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn favicons_must_be_images() {
+        assert_eq!(icon_mime("image/png", "/x"), Some("image/png"));
+        assert_eq!(icon_mime("Image/SVG+XML", "/i"), Some("image/svg+xml"));
+        assert_eq!(
+            icon_mime("application/octet-stream", "/favicon.ico"),
+            Some("image/x-icon")
+        );
+        assert_eq!(icon_mime("text/html", "/favicon.ico"), None);
+        assert_eq!(icon_mime("text/plain", "/icon"), None);
+    }
 
     #[test]
     fn presents_as_safari() {
