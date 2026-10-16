@@ -260,7 +260,7 @@ fn build_view(
     use wry::WebViewBuilderExtDarwin;
     configure(WebViewBuilder::new(), window, id, url, rect, app_origin)
         .with_data_store_identifier(DATA_STORE_ID)
-        .with_user_agent(&safari_user_agent(installed_safari_version().as_deref()))
+        .with_user_agent(safari_user_agent(installed_safari_version().as_deref()))
         .build_as_child(window)
         .map_err(|e| e.to_string())
 }
