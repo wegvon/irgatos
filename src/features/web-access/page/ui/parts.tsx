@@ -3,37 +3,34 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useId,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
 import type { FleetBucket } from "../../../fleet/model/fleet";
+import { LABEL_STYLES, type LabelColor } from "../../../ideas/model/ideas";
 import type { HarnessId } from "../../../sessions/model/session";
 import { HarnessIcon } from "../../../sessions/ui/HarnessIcon";
-import { LoaderCircle } from "../../../../shared/ui/icons";
+import { Check, CircleAlert, LoaderCircle } from "../../../../shared/ui/icons";
 
-/** The page's few colors. Each sets `--tint` for `.tinted`, `.tone-*` and ticks. */
+/** The desktop's status colors. Each sets `--tint` for `.tone-*` and bars. */
 export const TONE = {
-  orange: "[--tint:var(--tone-orange)]",
-  purple: "[--tint:var(--tone-purple)]",
-  green: "[--tint:var(--tone-green)]",
-  red: "[--tint:var(--tone-red)]",
-  blue: "[--tint:var(--tone-blue)]",
-  pink: "[--tint:var(--tone-pink)]",
-  teal: "[--tint:var(--tone-teal)]",
-  yellow: "[--tint:var(--tone-yellow)]",
-  gray: "[--tint:var(--tone-gray)]",
+  amber: "[--tint:var(--tone-amber)]",
+  rose: "[--tint:var(--tone-rose)]",
+  emerald: "[--tint:var(--tone-emerald)]",
+  accent: "[--tint:var(--tone-accent)]",
+  muted: "[--tint:var(--tone-muted)]",
 } as const;
 export type Tone = keyof typeof TONE;
 
+/** As in the desktop's Fleet view. */
 export const BUCKET_TONE: Record<FleetBucket, Tone> = {
-  needsYou: "orange",
-  interrupted: "red",
-  review: "green",
-  running: "purple",
-  idle: "gray",
+  needsYou: "amber",
+  interrupted: "rose",
+  review: "accent",
+  running: "muted",
+  idle: "muted",
 };
 
 export const BUCKET_PILL: Record<FleetBucket, string> = {
@@ -44,7 +41,7 @@ export const BUCKET_PILL: Record<FleetBucket, string> = {
   idle: "Idle",
 };
 
-/** A small rounded label with a colored dot: "● High", "● Running". */
+/** A status chip: "● Needs you", or a spinner while it runs. */
 export function Pill({
   tone,
   children,
@@ -60,15 +57,34 @@ export function Pill({
     <span
       className={`${TONE[tone]} tone-soft inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold ${className}`}
     >
-      <span
-        className={`tone-dot size-1.5 rounded-full ${live ? "web-pulse text-(--tint)" : ""}`}
-      />
+      {live ? (
+        <LoaderCircle className="size-3 animate-spin" strokeWidth={2.2} />
+      ) : (
+        <span className="tone-dot size-1.5 rounded-full" />
+      )}
       {children}
     </span>
   );
 }
 
-/** A tinted circle holding an icon, as on the stat cards. */
+/** An idea label in the desktop board's own colors. */
+export function LabelChip({
+  color,
+  children,
+}: {
+  color: LabelColor;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={`inline-flex h-6 shrink-0 items-center rounded-md px-2 text-[12px] font-medium ${LABEL_STYLES[color]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** A quiet square holding an icon; the icon carries the tone. */
 export function IconBadge({
   tone,
   children,
@@ -80,7 +96,7 @@ export function IconBadge({
 }) {
   return (
     <span
-      className={`${TONE[tone]} tone-soft flex shrink-0 items-center justify-center rounded-full ${size}`}
+      className={`${TONE[tone]} tone-text flex shrink-0 items-center justify-center rounded-xl bg-content/6 ${size}`}
     >
       {children}
     </span>
@@ -94,112 +110,107 @@ export function StatusDot({
   bucket: FleetBucket;
   className?: string;
 }) {
+  if (bucket === "running")
+    return (
+      <LoaderCircle
+        aria-hidden
+        className={`size-3 shrink-0 animate-spin text-(--ink-3) ${className}`}
+      />
+    );
   return (
     <span
       aria-hidden
-      className={`${TONE[BUCKET_TONE[bucket]]} relative inline-flex size-2.5 shrink-0 text-(--tint) ${className}`}
-    >
-      <span
-        className={`size-2.5 rounded-full bg-current ${bucket === "running" || bucket === "needsYou" ? "web-pulse" : ""}`}
-      />
-    </span>
+      className={`${TONE[BUCKET_TONE[bucket]]} tone-dot inline-flex size-2 shrink-0 rounded-full ${className}`}
+    />
   );
 }
 
-/** Progress as a row of ticks; `value` is 0-1, or null while it is unknown. */
+/** A thin progress bar; `value` is 0-1. */
 export function Ticks({
   value,
-  tone = "purple",
+  tone = "accent",
   className = "",
 }: {
-  value: number | null;
+  value: number;
   tone?: Tone;
   className?: string;
 }) {
   return (
     <span
       aria-hidden
-      className={`${TONE[tone]} ticks block ${value === null ? "ticks-live" : ""} ${className}`}
-      style={
-        value === null
-          ? undefined
-          : ({ "--value": Math.max(0, Math.min(1, value)) } as CSSProperties)
-      }
+      className={`${TONE[tone]} ticks block ${className}`}
+      style={{ "--value": Math.max(0, Math.min(1, value)) } as CSSProperties}
     />
   );
 }
 
-/** The four-point sparkle that stands for Irgatos and its agents. */
-export function SparkleGlyph({ className = "size-6" }: { className?: string }) {
-  // Each glyph owns its gradient: a shared id breaks once the first copy unmounts.
-  const id = `sparkle${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
+/** The Irgatos mark, as on the desktop's splash screen. */
+export function BrandMark({ className = "size-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#b49bff" />
-          <stop offset="0.55" stopColor="#7357ff" />
-          <stop offset="1" stopColor="#5a3df0" />
-        </linearGradient>
-      </defs>
-      <path
-        fill={`url(#${id})`}
-        d="M12 1.8c.5 0 .9.33 1.03.8l.95 3.5a6.2 6.2 0 0 0 4.38 4.37l3.5.95a1.07 1.07 0 0 1 0 2.06l-3.5.95a6.2 6.2 0 0 0-4.38 4.37l-.95 3.5a1.07 1.07 0 0 1-2.06 0l-.95-3.5a6.2 6.2 0 0 0-4.38-4.37l-3.5-.95a1.07 1.07 0 0 1 0-2.06l3.5-.95A6.2 6.2 0 0 0 10.02 6.1l.95-3.5c.13-.47.53-.8 1.03-.8Z"
-      />
-    </svg>
+    <img
+      src="/irgat.png"
+      alt=""
+      aria-hidden
+      draggable={false}
+      className={`shrink-0 select-none ${className}`}
+    />
   );
 }
 
-/** The sparkle in its white bubble, for empty states and the assistant. */
-export function SparkleBubble({
-  size = "size-16",
-  glyph = "size-8",
-}: {
-  size?: string;
-  glyph?: string;
-}) {
-  return (
-    <span
-      className={`sparkle-bubble flex shrink-0 items-center justify-center rounded-full ${size}`}
-    >
-      <SparkleGlyph className={glyph} />
-    </span>
-  );
-}
-
-/** "✦ Irgatos" in the top left of every screen. */
+/** The mark and name in the top left of every screen. */
 export function Brand() {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[18px] font-semibold tracking-[-0.01em] text-(--ink)">
-      <SparkleGlyph className="size-[22px]" />
+    <span className="inline-flex items-center gap-2 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
+      <BrandMark className="size-6 rounded-md" />
       Irgatos
     </span>
   );
 }
 
-/** A white round button for the header: back, bell, close. */
+/** A round header button: back, close. */
 export function RoundButton({
   label,
   onClick,
   children,
-  dot = false,
   className = "",
 }: {
   label: string;
   onClick: () => void;
   children: ReactNode;
-  dot?: boolean;
   className?: string;
 }) {
   return (
     <button
       aria-label={label}
       onClick={onClick}
-      className={`glass web-press relative flex size-10 shrink-0 items-center justify-center rounded-full text-(--ink) ${className}`}
+      className={`web-press relative flex size-10 shrink-0 items-center justify-center rounded-full bg-content/8 text-(--ink) ${className}`}
     >
       {children}
-      {dot ? (
-        <span className="absolute right-[9px] top-[9px] size-2 rounded-full bg-(--tone-red) ring-2 ring-white" />
+    </button>
+  );
+}
+
+/** The desktop's amber count of chats waiting on you; tap to see them. */
+export function NeedsYouButton({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={count ? `${count} waiting on you` : "Nothing waiting"}
+      onClick={onClick}
+      className="web-press flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-content/8 px-3 text-[14px] font-semibold text-(--ink)"
+    >
+      <CircleAlert
+        className={`size-[18px] ${count ? "text-(--tone-amber)" : "text-(--ink-3)"}`}
+      />
+      {count ? (
+        <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[12px] font-semibold tabular-nums text-black">
+          {count}
+        </span>
       ) : null}
     </button>
   );
@@ -239,7 +250,7 @@ export function SectionTitle({
       <h2 className="flex items-center gap-2 text-[17px] font-semibold tracking-[-0.01em] text-(--ink)">
         {children}
         {count != null ? (
-          <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-white/80 px-1.5 text-[12px] font-semibold tabular-nums text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
+          <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-content/8 px-1.5 text-[12px] font-semibold tabular-nums text-(--ink-2)">
             {count}
           </span>
         ) : null}
@@ -266,10 +277,11 @@ export function Group({
   );
 }
 
+/** The desktop's solid primary action: white on dark, ink on light, or the accent. */
 export const primaryButton =
-  "accent-fill web-press inline-flex h-12 items-center justify-center gap-2 rounded-full px-6 text-[15px] font-semibold disabled:opacity-40 disabled:shadow-none";
+  "primary-action web-press inline-flex h-12 items-center justify-center gap-2 rounded-full px-6 text-[15px] font-semibold";
 export const secondaryButton =
-  "glass web-press inline-flex h-12 items-center justify-center gap-2 rounded-full px-6 text-[15px] font-semibold text-(--ink) disabled:opacity-40";
+  "web-press inline-flex h-12 items-center justify-center gap-2 rounded-full bg-content/8 px-6 text-[15px] font-semibold text-(--ink) disabled:opacity-40";
 export const plainButton =
   "web-press inline-flex h-10 items-center justify-center gap-1.5 rounded-full px-3.5 text-[15px] font-semibold text-(--accent) disabled:opacity-40";
 
@@ -288,7 +300,9 @@ export function Empty({
 }) {
   return (
     <div className="flex flex-col items-center px-8 py-14 text-center">
-      <div className="mb-5">{icon ?? <SparkleBubble />}</div>
+      <div className="mb-5">
+        {icon ?? <BrandMark className="size-14 rounded-2xl opacity-80" />}
+      </div>
       <div className="text-[19px] font-semibold tracking-[-0.01em]">
         {title}
       </div>
@@ -331,12 +345,12 @@ export function ToastHost({ children }: { children: ReactNode }) {
             role="status"
             className={`web-pop-in flex max-w-md items-center gap-2 rounded-full px-4 py-2.5 text-[14px] font-semibold ${
               toast.tone === "error"
-                ? "bg-(--tone-red) text-white shadow-lg shadow-red-900/20"
+                ? "bg-rose-500 text-white shadow-lg shadow-black/20"
                 : "glass-float text-(--ink)"
             }`}
           >
             {toast.tone === "error" ? null : (
-              <SparkleGlyph className="size-4 shrink-0" />
+              <Check className="size-4 shrink-0 text-(--tone-emerald)" />
             )}
             {toast.text}
           </div>

@@ -8,9 +8,8 @@ import {
   Pill,
   StatusDot,
   TONE,
-  Ticks,
 } from "./parts";
-import { ArrowUpRight } from "../../../../shared/ui/icons";
+import { ChevronRight } from "../../../../shared/ui/icons";
 
 export function place(entry: FleetEntry): string {
   return entry.irgat ?? (entry.chat ? "Chat" : entry.projectLabel);
@@ -44,8 +43,8 @@ const open = (entry: FleetEntry) =>
   navigate({ name: "chat", id: entry.sessionId });
 
 /**
- * One chat as a pastel card in its status color: lavender while it runs,
- * peach while it waits on you, mint once it is ready to review.
+ * One chat as a card, like the desktop's Fleet cards: neutral, with an amber
+ * edge while it waits on you and the status in a small chip.
  */
 export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
   const tone = BUCKET_TONE[entry.bucket];
@@ -54,7 +53,7 @@ export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
   return (
     <button
       onClick={() => open(entry)}
-      className={`${TONE[tone]} ${idle ? "glass" : "tinted"} web-press flex w-full flex-col gap-2.5 rounded-[24px] p-4 text-left`}
+      className={`${TONE[tone]} ${entry.bucket === "needsYou" ? "attention" : "glass"} web-press flex w-full flex-col gap-2.5 rounded-[22px] p-4 text-left`}
     >
       <span className="flex w-full items-center gap-2">
         <Pill tone={tone} live={entry.bucket === "running"}>
@@ -66,9 +65,7 @@ export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
         <span className="ml-auto shrink-0 text-[12px] font-medium tabular-nums text-(--ink-3)">
           {ago(entry.at, now)}
         </span>
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white/80 text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
-          <ArrowUpRight className="size-3.5" strokeWidth={2.2} />
-        </span>
+        <ChevronRight className="size-4 shrink-0 text-(--ink-3)" />
       </span>
       <span className="min-w-0">
         <span className="line-clamp-2 text-[16px] font-semibold leading-snug tracking-[-0.01em] text-(--ink)">
@@ -86,17 +83,10 @@ export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
         </span>
       </span>
       {idle ? null : (
-        <span className="flex flex-col gap-1.5">
-          <span
-            className={`min-w-0 truncate text-[12.5px] font-medium ${entry.bucket === "running" ? "web-shimmer" : "tone-text"}`}
-          >
-            {subtitle(entry)}
-          </span>
-          {entry.bucket === "running" ? (
-            <Ticks value={null} tone={tone} />
-          ) : entry.bucket === "review" ? (
-            <Ticks value={1} tone={tone} />
-          ) : null}
+        <span
+          className={`min-w-0 truncate text-[13px] font-medium ${entry.bucket === "running" ? "web-shimmer" : "tone-text"}`}
+        >
+          {subtitle(entry)}
         </span>
       )}
       {files.length ? (
@@ -104,7 +94,7 @@ export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
           {files.map((path) => (
             <span
               key={path}
-              className="max-w-[12rem] truncate rounded-full bg-white/75 px-2.5 py-1 font-mono text-[11.5px] text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]"
+              className="max-w-[12rem] truncate rounded-md bg-content/8 px-2 py-0.5 font-mono text-[11.5px] text-(--ink-2)"
             >
               {basename(path)}
             </span>
@@ -135,9 +125,7 @@ export function ChatRow({
       onClick={() => open(entry)}
       aria-current={selected ? "page" : undefined}
       className={`web-press flex w-full items-center gap-3 rounded-[16px] px-3 py-2.5 text-left ${
-        selected
-          ? "bg-white/90 shadow-[inset_0_0_0_1px_white,0_6px_18px_-10px_rgb(64_44_150/0.35)]"
-          : "active:bg-white/50"
+        selected ? "bg-selection" : "active:bg-content/8"
       }`}
     >
       <StatusDot bucket={entry.bucket} />

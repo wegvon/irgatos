@@ -59,7 +59,7 @@ export function Chats({
         <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.025em] text-(--ink)">
           Chats
         </h1>
-        <label className="glass flex h-12 items-center gap-2.5 rounded-full px-4 text-(--ink-3) focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-card)]">
+        <label className="glass flex h-12 items-center gap-2.5 rounded-full px-4 text-(--ink-3) focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
           <Search className="size-[18px] shrink-0" />
           <input
             className="web-field min-w-0 flex-1 bg-transparent text-(--ink) outline-none"
@@ -71,7 +71,7 @@ export function Chats({
           {query ? (
             <button
               aria-label="Clear search"
-              className="flex size-6 items-center justify-center rounded-full bg-(--ink-3) text-white"
+              className="flex size-6 items-center justify-center rounded-full bg-(--ink-3) text-(--color-background-base)"
               onClick={() => setQuery("")}
             >
               <X className="size-3.5" strokeWidth={2.5} />
@@ -141,9 +141,7 @@ function Segment({
       onClick={onClick}
       aria-pressed={on}
       className={`web-press inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold ${
-        on
-          ? "bg-white text-(--ink) shadow-[0_4px_14px_-6px_rgb(64_44_150/0.35)]"
-          : "text-(--ink-2)"
+        on ? "bg-selection text-(--ink)" : "text-(--ink-2)"
       }`}
     >
       {children}

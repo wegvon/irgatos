@@ -9,44 +9,33 @@ import type { HarnessId } from "../../../sessions/model/session";
 import type { WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
 import { leaveSheetFor } from "../route";
+import { Harness, BrandMark, Spinner, useAction } from "./parts";
 import {
-  Harness,
-  SparkleBubble,
-  Spinner,
-  TONE,
-  useAction,
-  type Tone,
-} from "./parts";
-import {
+  ArrowUp,
   ChevronDown,
   FileDiff,
   Folder,
   GitPullRequest,
   Idea,
   MessageSquare,
-  Send,
   Terminal,
 } from "../../../../shared/ui/icons";
 
-const SUGGESTIONS: { text: string; tone: Tone; icon: ReactNode }[] = [
+const SUGGESTIONS: { text: string; icon: ReactNode }[] = [
   {
     text: "Review the open pull requests",
-    tone: "blue",
     icon: <GitPullRequest className="size-3.5" />,
   },
   {
     text: "Run the tests and fix what fails",
-    tone: "orange",
     icon: <Terminal className="size-3.5" />,
   },
   {
     text: "Summarize what changed today",
-    tone: "green",
     icon: <FileDiff className="size-3.5" />,
   },
   {
     text: "Plan the next feature with me",
-    tone: "pink",
     icon: <Idea className="size-3.5" />,
   },
 ];
@@ -111,10 +100,9 @@ export function NewChat({
       {header}
       <div className="web-scroll flex min-h-0 flex-1 flex-col items-center px-6">
         <div className="my-auto flex w-full max-w-[420px] flex-col items-center py-8 text-center">
-          <SparkleBubble size="size-[72px]" glyph="size-9" />
+          <BrandMark className="size-16 rounded-2xl" />
           <h2 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-(--ink)">
-            Hey{owner ? ` ${owner}` : ""}, I'm{" "}
-            <span className="accent-text">Irgatos</span>
+            Hey{owner ? ` ${owner}` : ""}, I'm Irgatos
           </h2>
           <p className="mt-2 max-w-[30ch] text-[15px] leading-snug text-(--ink-2)">
             Start an agent on your Mac. Say what to do, pick where it works.
@@ -129,9 +117,7 @@ export function NewChat({
                 }}
                 className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
               >
-                <span
-                  className={`${TONE[suggestion.tone]} tone-soft flex size-6 items-center justify-center rounded-full`}
-                >
+                <span className="flex size-6 items-center justify-center text-(--ink-2)">
                   {suggestion.icon}
                 </span>
                 {suggestion.text}
@@ -147,9 +133,9 @@ export function NewChat({
             <Picker
               icon={
                 cwd ? (
-                  <Folder className="size-4 text-(--accent)" />
+                  <Folder className="size-4 text-(--ink-2)" />
                 ) : (
-                  <MessageSquare className="size-4 text-(--accent)" />
+                  <MessageSquare className="size-4 text-(--ink-2)" />
                 )
               }
               value={project?.label ?? (projects ? "Chat" : "…")}
@@ -202,7 +188,7 @@ export function NewChat({
               {error}
             </div>
           ) : null}
-          <div className="glass-float flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-float)]">
+          <div className="glass-float flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
             <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
               <textarea
                 ref={field}
@@ -227,12 +213,12 @@ export function NewChat({
               aria-label="Start chat"
               disabled={!ready}
               onClick={() => void start()}
-              className="accent-fill web-press flex size-11 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
+              className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
             >
               {busy ? (
                 <Spinner className="size-5" />
               ) : (
-                <Send className="size-5" />
+                <ArrowUp className="size-5" strokeWidth={2.25} />
               )}
             </button>
           </div>

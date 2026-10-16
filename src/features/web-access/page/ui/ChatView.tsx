@@ -16,14 +16,14 @@ import {
   Harness,
   Pill,
   RoundButton,
-  SparkleBubble,
-  SparkleGlyph,
+  BrandMark,
   Spinner,
   primaryButton,
   useAction,
 } from "./parts";
 import {
   ArrowDownCircle,
+  ArrowUp,
   ChevronDown,
   ChevronLeft,
   CircleX,
@@ -31,8 +31,8 @@ import {
   Globe,
   MessageSquare,
   Pencil,
+  LoaderCircle,
   Search,
-  Send,
   Shield,
   Square,
   Terminal,
@@ -102,7 +102,7 @@ export function ChatView({
             </Empty>
           ) : (
             <div className="flex flex-col items-center gap-4 text-[15px] font-medium text-(--ink-2)">
-              <SparkleBubble />
+              <BrandMark className="size-14 rounded-2xl" />
               {error ? "Starting the chat…" : <Spinner className="size-5" />}
             </div>
           )}
@@ -124,12 +124,10 @@ export function ChatView({
               {data.requests.map((request) => (
                 <div
                   key={request.requestId}
-                  className="glass web-pop-in rounded-[26px] bg-white/85 p-4 shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--warn)_45%,white),var(--shadow-card)]"
+                  className="attention web-pop-in rounded-[24px] bg-(--raised) p-4"
                 >
                   <div className="mb-2.5 flex">
-                    <Pill
-                      tone={request.kind === "approval" ? "orange" : "purple"}
-                    >
+                    <Pill tone="amber">
                       {request.kind === "approval"
                         ? "Needs your OK"
                         : "Question"}
@@ -288,13 +286,13 @@ function Transcript({
           className={`mx-auto flex w-full flex-col gap-4 py-5 ${wide ? "max-w-[820px] px-6" : "px-4"}`}
         >
           {session.omitted ? (
-            <div className="self-center rounded-full bg-white/60 px-3.5 py-1.5 text-[12.5px] font-medium text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
+            <div className="self-center rounded-full bg-content/6 px-3.5 py-1.5 text-[12.5px] font-medium text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
               {session.omitted} earlier messages stay on your Mac
             </div>
           ) : null}
           {items.length === 0 && !pending.length ? (
             <div className="flex flex-col items-center gap-4 py-16 text-[15px] font-medium text-(--ink-2)">
-              <SparkleBubble />
+              <BrandMark className="size-14 rounded-2xl" />
               Starting…
             </div>
           ) : null}
@@ -314,7 +312,7 @@ function Transcript({
           ))}
           {showActivity ? (
             <div className="flex items-center gap-2.5 px-1 text-[14px]">
-              <SparkleGlyph className="size-5 shrink-0 animate-pulse" />
+              <LoaderCircle className="size-4 shrink-0 animate-spin text-(--ink-3)" />
               <span className="web-shimmer min-w-0 truncate font-medium">
                 {session.activity ?? "Thinking…"}
               </span>
@@ -351,7 +349,7 @@ function UserBubble({
     <div
       className={`flex flex-col items-end gap-1.5 ${sending ? "opacity-60" : ""}`}
     >
-      <div className="accent-fill max-w-[85%] whitespace-pre-wrap break-words rounded-[22px] rounded-br-[8px] px-4 py-2.5 text-[16px] leading-snug">
+      <div className="user-message-bubble max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-content/10 px-4 py-2.5 text-[16px] leading-snug text-(--ink)">
         {text}
       </div>
       {files?.length ? (
@@ -359,7 +357,7 @@ function UserBubble({
           {files.map((name) => (
             <span
               key={name}
-              className="inline-flex max-w-[14rem] items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[12px] text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]"
+              className="inline-flex max-w-[14rem] items-center gap-1 rounded-full bg-content/6 px-2.5 py-1 text-[12px] text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]"
             >
               <File className="size-3 shrink-0" />
               <span className="truncate">{name}</span>
@@ -381,11 +379,11 @@ function BlockView({ block }: { block: WebBlock }) {
     case "assistant":
       return (
         <div className="flex min-w-0 flex-col items-start gap-1.5">
-          <div className="glass min-w-0 max-w-full rounded-[22px] rounded-tl-[8px] px-4 py-3">
+          <div className="min-w-0 max-w-full px-1">
             <Markdown text={block.text} streaming={block.streaming} />
           </div>
           {block.durationMs && block.at ? (
-            <div className="px-2 text-[11.5px] font-medium text-(--ink-3)">
+            <div className="px-1 text-[11.5px] font-medium text-(--ink-3)">
               {duration(block.durationMs)} · {clock(block.at)}
             </div>
           ) : null}
@@ -396,7 +394,9 @@ function BlockView({ block }: { block: WebBlock }) {
       return (
         <div className="glass rounded-[22px] px-4 py-3">
           <div className="mb-1.5 flex">
-            <Pill tone="blue">{block.role === "plan" ? "Plan" : "Tasks"}</Pill>
+            <Pill tone="accent">
+              {block.role === "plan" ? "Plan" : "Tasks"}
+            </Pill>
           </div>
           <Markdown text={block.text} />
         </div>
@@ -404,7 +404,7 @@ function BlockView({ block }: { block: WebBlock }) {
     case "tool":
     case "approval":
       return (
-        <div className="flex items-center gap-2.5 rounded-[18px] bg-[color-mix(in_srgb,var(--warn)_12%,white)] px-3.5 py-3 text-[14px]">
+        <div className="flex items-center gap-2.5 rounded-[18px] bg-[color-mix(in_srgb,var(--warn)_10%,transparent)] px-3.5 py-3 text-[14px]">
           <Shield className="size-4 shrink-0 text-(--warn)" />
           <span className="min-w-0 flex-1 truncate text-(--ink)">
             {block.tool?.label ?? "Permission"}
@@ -416,7 +416,7 @@ function BlockView({ block }: { block: WebBlock }) {
       );
     case "image":
       return (
-        <div className="self-end rounded-full bg-white/70 px-3.5 py-2 text-[13px] text-(--ink-2)">
+        <div className="self-end rounded-full bg-content/6 px-3.5 py-2 text-[13px] text-(--ink-2)">
           Image (open on your Mac)
         </div>
       );
@@ -465,7 +465,7 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
     (block) => block.tool?.status === "failed",
   ).length;
   return (
-    <div className="overflow-hidden rounded-[18px] bg-white/55 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.8)]">
+    <div className="overflow-hidden rounded-[18px] bg-content/6 shadow-[inset_0_0_0_1px_var(--card-edge)]">
       <button
         className="flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left"
         onClick={() => setOpen((value) => !value)}
@@ -483,7 +483,7 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
           </span>
         ) : null}
         {blocks.length > 1 ? (
-          <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-(--ink-2)">
+          <span className="shrink-0 rounded-full bg-content/6 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-(--ink-2)">
             {blocks.length} steps
           </span>
         ) : null}
@@ -518,7 +518,7 @@ function ToolRow({ block }: { block: WebBlock }) {
         </span>
       </button>
       {open && detail ? (
-        <pre className="mx-3 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-[12px] bg-white/80 px-3 py-2 font-mono text-[12px] leading-relaxed text-(--ink)">
+        <pre className="mx-3 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-[12px] bg-content/6 px-3 py-2 font-mono text-[12px] leading-relaxed text-(--ink)">
           {detail}
         </pre>
       ) : null}
@@ -578,7 +578,7 @@ function Composer({
 
   const empty = !text.trim();
   return (
-    <div className="glass-float mt-2 flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-float)]">
+    <div className="glass-float mt-2 flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
       <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
         <textarea
           ref={field}
@@ -605,7 +605,7 @@ function Composer({
           aria-label="Stop"
           onClick={() => void stop()}
           disabled={busy !== null}
-          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-white disabled:opacity-50"
+          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-(--color-background-base) disabled:opacity-50"
         >
           {busy === "stop" ? (
             <Spinner />
@@ -618,9 +618,9 @@ function Composer({
           aria-label="Send"
           onClick={() => void send()}
           disabled={empty || busy !== null}
-          className="accent-fill web-press flex size-11 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
+          className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
         >
-          <Send className="size-5" />
+          <ArrowUp className="size-5" strokeWidth={2.25} />
         </button>
       )}
     </div>

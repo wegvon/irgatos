@@ -44,7 +44,7 @@ function Approval({
         </span>
       </div>
       {request.detail ? (
-        <pre className="web-selectable max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[16px] bg-white/80 px-3.5 py-3 font-mono text-[13px] leading-relaxed text-(--ink) shadow-[inset_0_0_0_1px_var(--hairline)]">
+        <pre className="web-selectable max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[16px] bg-content/6 px-3.5 py-3 font-mono text-[13px] leading-relaxed text-(--ink) shadow-[inset_0_0_0_1px_var(--hairline)]">
           {request.detail}
         </pre>
       ) : null}
@@ -135,8 +135,8 @@ function QuestionForm({
                 onClick={() => toggle(question, option.id)}
                 className={`web-press flex min-h-12 items-start gap-3 rounded-[18px] px-3.5 py-3 text-left ${
                   on
-                    ? "bg-(--accent-soft) shadow-[inset_0_0_0_1.5px_var(--accent)]"
-                    : "bg-white/75 shadow-[inset_0_0_0_1px_var(--hairline)]"
+                    ? "bg-(--accent)/12 shadow-[inset_0_0_0_1.5px_var(--accent)]"
+                    : "bg-content/6 shadow-[inset_0_0_0_1px_var(--hairline)]"
                 }`}
               >
                 <span
@@ -161,7 +161,7 @@ function QuestionForm({
           })}
           {question.allowCustom ? (
             <input
-              className="web-field h-12 rounded-full bg-white/75 px-4 shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
+              className="web-field h-12 rounded-full bg-content/6 px-4 shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
               placeholder="Or write your own answer"
               value={custom[question.id] ?? ""}
               onChange={(event) =>

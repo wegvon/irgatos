@@ -13,19 +13,19 @@ import {
   Pill,
   SectionTitle,
   Spinner,
-  TONE,
   plainButton,
   primaryButton,
   type Tone,
 } from "./parts";
 import {
-  ArrowUpRight,
-  CheckCircle,
+  Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
+  FileDiff,
   Idea,
+  LoaderCircle,
   Plus,
-  Zap,
 } from "../../../../shared/ui/icons";
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -78,7 +78,7 @@ export function Today({
               <>
                 ,
                 <br />
-                {owner} 👋
+                {owner}
               </>
             ) : null}
           </h1>
@@ -98,7 +98,7 @@ export function Today({
             className={`web-rise grid gap-3 ${wide ? "grid-cols-4" : "grid-cols-2"}`}
           >
             <Stat
-              tone="orange"
+              tone="amber"
               icon={<CircleAlert className="size-[18px]" />}
               label="Needs you"
               value={overview.needsYou.length}
@@ -110,8 +110,12 @@ export function Today({
               onClick={() => navigate({ name: "chats", filter: "needsYou" })}
             />
             <Stat
-              tone="purple"
-              icon={<Zap className="size-[18px]" />}
+              tone="muted"
+              icon={
+                <LoaderCircle
+                  className={`size-[18px] ${overview.running.length ? "animate-spin" : ""}`}
+                />
+              }
               label="Running"
               value={overview.running.length}
               caption={
@@ -122,8 +126,8 @@ export function Today({
               onClick={() => navigate({ name: "chats", filter: "running" })}
             />
             <Stat
-              tone="green"
-              icon={<CheckCircle className="size-[18px]" />}
+              tone="accent"
+              icon={<FileDiff className="size-[18px]" />}
               label="To review"
               value={overview.review.length}
               caption={
@@ -132,19 +136,11 @@ export function Today({
               onClick={() => navigate({ name: "chats", filter: "review" })}
             />
             <Stat
-              tone="blue"
+              tone="muted"
               icon={<Idea className="size-[18px]" />}
               label="Ideas"
               value={cards?.length ?? null}
-              caption={
-                fresh ? (
-                  <span className="text-(--tone-green)">
-                    +{fresh} this week
-                  </span>
-                ) : (
-                  "On your boards"
-                )
-              }
+              caption={fresh ? `+${fresh} this week` : "On your boards"}
               onClick={() => navigate({ name: "ideas" })}
             />
           </div>
@@ -199,7 +195,7 @@ export function Today({
                         aria-expanded={showIdle}
                         onClick={() => setShowIdle((value) => !value)}
                       >
-                        <span className="size-2 rounded-full bg-(--tone-gray)" />
+                        <span className="size-2 rounded-full bg-(--tone-muted)" />
                         <span className="flex-1 text-[15px] font-semibold text-(--ink)">
                           Idle
                           <span className="ml-2 font-medium text-(--ink-3)">
@@ -277,7 +273,9 @@ function Stat({
 function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
   return (
     <section id="needs-you" className="scroll-mt-4">
-      <div className="glass rounded-[28px] p-4">
+      <div
+        className={`${entries.length ? "attention" : "glass"} rounded-[28px] p-4`}
+      >
         <SectionTitle
           count={entries.length || undefined}
           action={
@@ -307,9 +305,7 @@ function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
                       navigate({ name: "chat", id: entry.sessionId })
                     }
                   >
-                    <span
-                      className={`${TONE.orange} tone-soft flex size-11 shrink-0 items-center justify-center rounded-[14px]`}
-                    >
+                    <span className="flex size-11 shrink-0 items-center justify-center rounded-[14px] bg-content/6">
                       <Harness harness={entry.harness} className="size-5" />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -317,18 +313,14 @@ function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
                         {entry.title}
                       </span>
                     </span>
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/85 text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
-                      <ArrowUpRight className="size-4" strokeWidth={2.2} />
-                    </span>
+                    <ChevronRight className="size-5 shrink-0 text-(--ink-3)" />
                   </button>
                   <div className="grid grid-cols-3 gap-2">
                     <Meta label="Project">{place(entry)}</Meta>
                     <Meta label="Type">
-                      {request.kind === "approval" ? (
-                        <Pill tone="orange">Approval</Pill>
-                      ) : (
-                        <Pill tone="purple">Question</Pill>
-                      )}
+                      <Pill tone="amber">
+                        {request.kind === "approval" ? "Approval" : "Question"}
+                      </Pill>
                     </Meta>
                     <Meta label="Waiting">{ago(entry.at, now) || "now"}</Meta>
                   </div>
@@ -338,9 +330,9 @@ function NeedsYou({ entries, now }: { entries: FleetEntry[]; now: number }) {
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3 rounded-[20px] bg-white/60 px-4 py-4">
-            <IconBadge tone="green">
-              <CheckCircle className="size-[18px]" />
+          <div className="flex items-center gap-3 rounded-[20px] bg-content/4 px-4 py-4">
+            <IconBadge tone="emerald">
+              <Check className="size-[18px]" />
             </IconBadge>
             <div className="min-w-0">
               <div className="text-[15px] font-semibold text-(--ink)">
