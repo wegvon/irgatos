@@ -1,3 +1,4 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
@@ -11,12 +12,15 @@ import {
   Globe,
   LoaderCircle,
   MessageSquarePlus,
+  Plus,
   RefreshCw,
   X,
 } from "../../../shared/ui/icons";
 import {
   boundsOf,
   browserAction,
+  browserFavicon,
+  closeBrowser,
   importChromeProfile,
   listChromeProfiles,
   listenBrowserEvents,
@@ -44,6 +48,22 @@ import {
 import { requestSendToChat } from "../../sessions/model/sendToChat";
 import { displayAddress, resolveAddress } from "../model/browserAddress";
 import {
+  browserHasFocus,
+  setBrowserTabCommandHandler,
+  type BrowserTabCommand,
+} from "../model/browserTabCommands";
+import {
+  closeTab,
+  cycleTab,
+  newTab,
+  publishBrowserTabs,
+  restoreTabs,
+  setBrowserTabControl,
+  saveTabs,
+  tabLabel,
+  type BrowserTab,
+} from "../model/browserTabs";
+import {
   captureRect,
   screenshotFile,
   selectionName,
@@ -52,7 +72,6 @@ import {
   selectionSummary,
 } from "../model/pageSelection";
 
-const BROWSER_ID = "main";
 const MIN_WIDTH = 360;
 const DEFAULT_WIDTH = 560;
 const IMPORT_STORAGE_KEY = "irgat-browser-chrome-library";
@@ -141,9 +160,33 @@ function saveImportedLibrary(library: ImportedLibrary) {
   }
 }
 
+/** A tab's icon: the page's own, a spinner while loading, else a globe. */
+function TabIcon({ tab }: { tab: BrowserTab }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  if (tab.loading)
+    return (
+      <LoaderCircle
+        className="size-3 shrink-0 animate-spin text-content/45"
+        strokeWidth={1.75}
+      />
+    );
+  if (tab.icon && broken !== tab.icon)
+    return (
+      <img
+        src={tab.icon}
+        alt=""
+        className="size-3.5 shrink-0 rounded-[2px] object-contain"
+        onError={() => setBroken(tab.icon)}
+      />
+    );
+  return (
+    <Globe className="size-3 shrink-0 text-content/40" strokeWidth={1.75} />
+  );
+}
+
 /**
- * A side panel with a native browser view and its address bar. The view keeps
- * its page while the panel is hidden, and has its own cookie store.
+ * A side panel with native browser views in tabs, and an address bar. Each tab
+ * is its own view and keeps its page while hidden; all share one cookie store.
  */
 export function BrowserPanel({
   visible,
@@ -155,13 +198,16 @@ export function BrowserPanel({
   /** A page to load, e.g. a worktree's dev server; a new token reloads it. */
   openRequest?: { url: string; token: number };
 }) {
-  const [address, setAddress] = useState("");
-  const [url, setUrl] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [initial] = useState(restoreTabs);
+  const [tabs, setTabs] = useState<BrowserTab[]>(initial.tabs);
+  const [activeId, setActiveId] = useState(initial.activeId);
+  const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
+  const { url, title, loading, started } = active;
+  const [address, setAddress] = useState(() =>
+    active.url ? displayAddress(active.url) : "",
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [started, setStarted] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [profiles, setProfiles] = useState<ChromeProfile[]>([]);
   const [selectedProfile, setSelectedProfile] = useState("");
@@ -178,6 +224,20 @@ export function BrowserPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const editing = useRef(false);
   const shown = useRef<BrowserBounds | null>(null);
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const activeIdRef = useRef(active.id);
+  activeIdRef.current = active.id;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  /** Tabs whose page is being opened, so it is opened once. */
+  const opening = useRef(new Set<string>());
+  /** A tab whose page should take keyboard focus once it is shown. */
+  const focusPage = useRef<string | null>(null);
+  /** Page icons by origin; null when the site has none. */
+  const icons = useRef(new Map<string, string | null>());
+  /** The tab selection mode runs in. */
+  const pickingId = useRef(active.id);
   const resize = useDragResize({
     min: MIN_WIDTH,
     max: () =>
@@ -205,33 +265,130 @@ export function BrowserPanel({
     [resize.setPaneRef],
   );
 
+  const updateTab = useCallback(
+    (id: string, patch: Partial<BrowserTab>) =>
+      setTabs((current) =>
+        current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)),
+      ),
+    [],
+  );
+
+  /** Loads `target` in the active tab, opening its view on first use. */
   const navigate = useCallback(
     async (target: string) => {
+      const id = activeIdRef.current;
+      const tab = tabsRef.current.find((entry) => entry.id === id);
+      if (!tab) return;
       const slot = slotRef.current;
       const bounds = slot ? boundsOf(slot) : null;
       setError(null);
       setNotice(null);
-      setUrl(target);
+      updateTab(id, { url: target });
       setAddress(displayAddress(target));
       try {
-        if (!started) {
-          if (!bounds) return;
-          await openBrowser(BROWSER_ID, target, bounds);
-          shown.current = bounds;
-          setStarted(true);
+        if (!tab.started) {
+          if (!bounds || opening.current.has(id)) return;
+          opening.current.add(id);
+          try {
+            await openBrowser(id, target, bounds);
+          } finally {
+            opening.current.delete(id);
+          }
+          if (activeIdRef.current === id) shown.current = bounds;
+          else void setBrowserBounds(id, null).catch(() => undefined);
+          updateTab(id, { started: true });
         } else {
-          await browserAction(BROWSER_ID, { navigate: target });
+          await browserAction(id, { navigate: target });
         }
       } catch (reason) {
-        setLoading(false);
+        updateTab(id, { loading: false });
         setError(message(reason));
       }
     },
-    [started],
+    [updateTab],
   );
 
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
+
+  const selectTab = useCallback((id: string, focus = false) => {
+    if (id === activeIdRef.current) return;
+    const tab = tabsRef.current.find((entry) => entry.id === id);
+    if (!tab) return;
+    editing.current = false;
+    setError(null);
+    setNotice(null);
+    setAddress(tab.url ? displayAddress(tab.url) : "");
+    focusPage.current = focus && tab.started ? id : null;
+    activeIdRef.current = id;
+    setActiveId(id);
+  }, []);
+
+  /** Opens a tab after the active one; with a URL it loads once shown. */
+  const openTab = useCallback((target: string | null = null) => {
+    const tab = newTab(target);
+    setTabs((current) => {
+      const index = current.findIndex(
+        (entry) => entry.id === activeIdRef.current,
+      );
+      const next = [...current];
+      next.splice(index < 0 ? next.length : index + 1, 0, tab);
+      return next;
+    });
+    editing.current = false;
+    setError(null);
+    setNotice(null);
+    setAddress(target ? displayAddress(target) : "");
+    activeIdRef.current = tab.id;
+    setActiveId(tab.id);
+    return tab.id;
+  }, []);
+
+  const removeTab = useCallback(
+    (id: string) => {
+      const result = closeTab(tabsRef.current, activeIdRef.current, id);
+      if (result.tabs === tabsRef.current) return;
+      if (pickingId.current === id) void stopPicker(id).catch(() => undefined);
+      opening.current.delete(id);
+      void closeBrowser(id).catch(() => undefined);
+      const lastClosed = !tabsRef.current.some((tab) => tab.id !== id);
+      tabsRef.current = result.tabs;
+      setTabs(result.tabs);
+      if (result.activeId !== activeIdRef.current) {
+        const next = result.tabs.find((tab) => tab.id === result.activeId);
+        setAddress(next?.url ? displayAddress(next.url) : "");
+        setError(null);
+        setNotice(null);
+        activeIdRef.current = result.activeId;
+        setActiveId(result.activeId);
+      }
+      // Closing the last tab closes Browser, as closing a window's last tab does.
+      if (lastClosed) onClose();
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    setBrowserTabControl({
+      open: (target) => openTab(target),
+      activate: (id) => selectTab(id),
+      close: (id) => removeTab(id),
+    });
+    return () => setBrowserTabControl(null);
+  }, [openTab, removeTab, selectTab]);
+
+  // Restored tabs and tabs opened with an address load once they are shown.
+  useEffect(() => {
+    if (!visible || importOpen || started || !url) return;
+    if (opening.current.has(active.id)) return;
+    const frame = requestAnimationFrame(() => void navigateRef.current(url));
+    return () => cancelAnimationFrame(frame);
+  }, [active.id, importOpen, started, url, visible]);
+
+  useEffect(() => {
+    saveTabs(tabs, activeId);
+    publishBrowserTabs(tabs, activeId);
+  }, [activeId, tabs]);
 
   const handledRequest = useRef<number | null>(null);
   useEffect(() => {
@@ -240,29 +397,59 @@ export function BrowserPanel({
     // Wait a frame so a panel that just appeared has its slot laid out.
     const frame = requestAnimationFrame(() => {
       handledRequest.current = openRequest.token;
-      void navigateRef.current(openRequest.url);
+      const current = tabsRef.current.find(
+        (tab) => tab.id === activeIdRef.current,
+      );
+      // An empty tab takes the page; otherwise it gets a tab of its own.
+      if (current && !current.url && !current.started)
+        void navigateRef.current(openRequest.url);
+      else openTab(openRequest.url);
     });
     return () => cancelAnimationFrame(frame);
-  }, [openRequest, visible]);
+  }, [openRequest, openTab, visible]);
 
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listenBrowserEvents(BROWSER_ID, (event) => {
+    const loadIcon = (id: string, pageUrl: string) => {
+      let origin: string;
+      try {
+        origin = new URL(pageUrl).origin;
+      } catch {
+        return;
+      }
+      if (origin === "null") return;
+      if (icons.current.has(origin)) {
+        updateTab(id, { icon: icons.current.get(origin) ?? null });
+        return;
+      }
+      void browserFavicon(id)
+        .then((icon) => {
+          icons.current.set(origin, icon);
+          updateTab(id, { icon });
+        })
+        .catch(() => undefined);
+    };
+    void listenBrowserEvents((event) => {
+      const id = event.id;
+      if (!tabsRef.current.some((tab) => tab.id === id)) return;
+      const isActive = id === activeIdRef.current;
       switch (event.kind) {
         case "loading":
-          setLoading(true);
+          updateTab(id, { loading: true });
           break;
         case "loaded":
-          setLoading(false);
-          setUrl(event.url);
-          if (!editing.current) setAddress(displayAddress(event.url));
+          updateTab(id, { loading: false, url: event.url });
+          if (isActive && !editing.current)
+            setAddress(displayAddress(event.url));
+          loadIcon(id, event.url);
           break;
         case "title":
-          setTitle(event.url);
+          updateTab(id, { title: event.url });
           break;
         case "popup":
-          void navigateRef.current(event.url);
+          // Links that open a new window open a new tab, as in Safari.
+          openTab(event.url);
           break;
         case "blocked":
           setNotice("That page tried to open an address the browser blocks.");
@@ -281,15 +468,16 @@ export function BrowserPanel({
       disposed = true;
       unlisten?.();
     };
-  }, []);
+  }, [openTab, updateTab]);
 
   useEffect(() => {
     if (!started) return;
+    const id = active.id;
     const slot = slotRef.current;
     // The native view draws above the DOM, so it steps aside for the import dialog.
     if (!slot || !visible || importOpen) {
       shown.current = null;
-      void setBrowserBounds(BROWSER_ID, null).catch(() => undefined);
+      void setBrowserBounds(id, null).catch(() => undefined);
       return;
     }
     let frame = 0;
@@ -300,7 +488,14 @@ export function BrowserPanel({
         const next = visibleBounds(slot, panelRef.current);
         if (sameBounds(next, shown.current)) return;
         shown.current = next;
-        void setBrowserBounds(BROWSER_ID, next).catch(() => undefined);
+        void setBrowserBounds(id, next)
+          .then(() => {
+            // A tab chosen from the keyboard while its page had focus keeps it.
+            if (!next || focusPage.current !== id) return;
+            focusPage.current = null;
+            return browserAction(id, "focus");
+          })
+          .catch(() => undefined);
       });
     };
     sync();
@@ -317,25 +512,25 @@ export function BrowserPanel({
       overlays.disconnect();
       window.removeEventListener("resize", sync);
       shown.current = null;
-      void setBrowserBounds(BROWSER_ID, null).catch(() => undefined);
+      void setBrowserBounds(id, null).catch(() => undefined);
     };
-  }, [importOpen, started, visible]);
+  }, [active.id, importOpen, started, visible]);
 
   useEffect(() => {
-    if (visible && !started) inputRef.current?.focus();
-  }, [started, visible]);
+    if (visible && !started && !url) inputRef.current?.focus();
+  }, [active.id, started, url, visible]);
 
   const act = (action: BrowserAction) => {
     if (!started) return;
     setError(null);
-    void browserAction(BROWSER_ID, action).catch((reason: unknown) =>
+    void browserAction(active.id, action).catch((reason: unknown) =>
       setError(message(reason)),
     );
   };
 
   const stopPicking = useCallback(() => {
     setPicking(false);
-    void stopPicker(BROWSER_ID).catch(() => undefined);
+    void stopPicker(pickingId.current).catch(() => undefined);
   }, []);
 
   const startPicking = async () => {
@@ -345,7 +540,8 @@ export function BrowserPanel({
     setSent(null);
     setCapture(null);
     try {
-      await startPicker(BROWSER_ID);
+      pickingId.current = active.id;
+      await startPicker(active.id);
       setPicking(true);
     } catch (reason) {
       setError(message(reason));
@@ -358,7 +554,7 @@ export function BrowserPanel({
     let image: string | null = null;
     try {
       image = await capturePage(
-        BROWSER_ID,
+        pickingId.current,
         captureRect(selection),
         selection.viewport.width,
       );
@@ -380,7 +576,7 @@ export function BrowserPanel({
     let timer = 0;
     const tick = async () => {
       try {
-        const result = await pollPicker(BROWSER_ID);
+        const result = await pollPicker(pickingId.current);
         if (cancelled) return;
         if (result.state === "active") {
           timer = window.setTimeout(tick, PICK_POLL_MS);
@@ -411,14 +607,61 @@ export function BrowserPanel({
   }, [captureSelection, picking, stopPicking]);
 
   useEffect(() => {
-    if ((!visible || importOpen) && picking) stopPicking();
-  }, [importOpen, picking, stopPicking, visible]);
+    if ((!visible || importOpen || pickingId.current !== active.id) && picking)
+      stopPicking();
+  }, [active.id, importOpen, picking, stopPicking, visible]);
 
   useEffect(
     () => () => {
-      void stopPicker(BROWSER_ID).catch(() => undefined);
+      void stopPicker(pickingId.current).catch(() => undefined);
     },
     [],
+  );
+
+  // ⌘T, ⌘W, ⌘⇧[ ⌘⇧] (and ⌃Tab), ⌘[ ⌘] act on tabs while Browser has focus.
+  useEffect(
+    () =>
+      setBrowserTabCommandHandler((command: BrowserTabCommand) => {
+        if (!visibleRef.current || !browserHasFocus(panelRef.current))
+          return false;
+        const pageFocused = !document.hasFocus();
+        const id = activeIdRef.current;
+        const tab = tabsRef.current.find((entry) => entry.id === id);
+        // The page view may hold the keyboard; give it back to the app.
+        const focusAddress = () =>
+          void getCurrentWebview()
+            .setFocus()
+            .catch(() => undefined)
+            .finally(() => inputRef.current?.focus());
+        switch (command) {
+          case "new":
+            openTab();
+            focusAddress();
+            break;
+          case "close":
+            removeTab(id);
+            break;
+          case "next":
+          case "prev": {
+            const next = cycleTab(
+              tabsRef.current,
+              id,
+              command === "next" ? 1 : -1,
+            );
+            selectTab(next, pageFocused);
+            const target = tabsRef.current.find((entry) => entry.id === next);
+            if (pageFocused && !target?.started) focusAddress();
+            break;
+          }
+          case "back":
+          case "forward":
+            if (tab?.started)
+              void browserAction(id, command).catch(() => undefined);
+            break;
+        }
+        return true;
+      }),
+    [openTab, removeTab, selectTab],
   );
 
   useEffect(() => {
@@ -513,8 +756,8 @@ export function BrowserPanel({
     setImporting(true);
     setProfilesError(null);
     try {
-      await prepareBrowser(BROWSER_ID, bounds);
-      const result = await importChromeProfile(BROWSER_ID, selectedProfile);
+      await prepareBrowser(active.id, bounds);
+      const result = await importChromeProfile(active.id, selectedProfile);
       const next = { bookmarks: result.bookmarks, history: result.history };
       setLibrary(next);
       saveImportedLibrary(next);
@@ -557,6 +800,72 @@ export function BrowserPanel({
         }`}
       />
       <div className="flex min-h-0 flex-1 flex-col border-l border-stroke">
+        <div
+          role="tablist"
+          aria-label="Browser tabs"
+          className="flex h-8 shrink-0 items-stretch gap-px overflow-x-auto border-b border-stroke bg-content/[0.03] px-1 pt-1 [scrollbar-width:none]"
+        >
+          {tabs.map((tab) => {
+            const selected = tab.id === active.id;
+            const label = tabLabel(tab);
+            return (
+              <div
+                key={tab.id}
+                role="tab"
+                aria-selected={selected}
+                tabIndex={selected ? 0 : -1}
+                title={tab.url ? `${label}\n${displayAddress(tab.url)}` : label}
+                onClick={() => selectTab(tab.id)}
+                onAuxClick={(event) => {
+                  if (event.button !== 1) return;
+                  event.preventDefault();
+                  removeTab(tab.id);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectTab(tab.id);
+                  }
+                }}
+                className={`group flex min-w-[72px] max-w-[180px] flex-1 cursor-default items-center gap-1.5 rounded-t-md pl-2 pr-1 text-[11px] focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  selected
+                    ? "bg-background-base text-content shadow-[0_0_0_1px_var(--color-stroke)]"
+                    : "text-content/55 hover:bg-content/[0.06] hover:text-content/80"
+                }`}
+              >
+                <TabIcon tab={tab} />
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`Close ${label}`}
+                  title={`Close Tab (${MOD}W)`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    removeTab(tab.id);
+                  }}
+                  className={`grid size-4 shrink-0 place-items-center rounded text-content/45 hover:bg-content/10 hover:text-content ${
+                    selected ? "" : "opacity-0 group-hover:opacity-100"
+                  }`}
+                >
+                  <X className="size-2.5" strokeWidth={2} />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            aria-label="New Tab"
+            title={`New Tab (${MOD}T)`}
+            onClick={() => {
+              openTab();
+              inputRef.current?.focus();
+            }}
+            className="mb-0.5 grid size-6 shrink-0 place-items-center self-center rounded text-content/50 hover:bg-content/10 hover:text-content"
+          >
+            <Plus className="size-3.5" strokeWidth={1.75} />
+          </button>
+        </div>
         <form
           className="flex h-9 shrink-0 items-center gap-0.5 border-b border-stroke px-1.5"
           onSubmit={(event) => {
@@ -805,7 +1114,7 @@ export function BrowserPanel({
           </div>
         ) : null}
         <div ref={slotRef} className="relative min-h-0 flex-1 bg-white">
-          {started ? null : (
+          {started || url ? null : (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background-base px-8 text-center">
               <Globe className="size-6 text-content/30" strokeWidth={1.5} />
               <p className="text-[13px] text-content/75">

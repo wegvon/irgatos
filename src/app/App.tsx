@@ -1,5 +1,6 @@
 import { sessionConversationPage } from "../features/agent-app/model/sessionConversation";
 import { appWindowTokens, hasAppWindowUserTurn } from "../features/sessions/model/appWindows";
+import { runBrowserTabCommand } from "../features/browser/model/browserTabCommands";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
 import {
   resumeIrgatUsageLimit,
@@ -13785,6 +13786,8 @@ function Workspace({
     if (name === debounce.current.name && now - debounce.current.at < 80)
       return;
     debounce.current = { name, at: now };
+    // Tab shortcuts act on Browser tabs while Browser has focus.
+    if (runBrowserTabCommand(name)) return;
     fn();
   }, []);
 
