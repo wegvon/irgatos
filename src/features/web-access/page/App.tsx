@@ -3,7 +3,7 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebOverview, WebServices } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
-import { useMediaQuery } from "./theme";
+import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
 import { ChatRow } from "./ui/ChatRow";
 import { Chats, allEntries } from "./ui/Chats";
@@ -18,21 +18,20 @@ import { Today } from "./ui/Today";
 import {
   Brand,
   IconBadge,
+  NeedsYouButton,
   RoundButton,
-  SparkleGlyph,
   TONE,
   primaryButton,
   useNow,
   type Tone,
 } from "./ui/parts";
 import {
-  Bell,
-  Home,
   Idea,
-  MessageMultiple,
+  MessageSquare,
   Monitor,
   PanelLeft,
   Plus,
+  Radar,
   WifiOff,
   X,
 } from "../../../shared/ui/icons";
@@ -112,6 +111,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   const needsYou = overview.data?.needsYou.length ?? 0;
   const mac = macTone(services.data?.services, connected);
 
+  const appearance = overview.data?.appearance;
+  const appearanceKey = JSON.stringify(appearance ?? null);
+  useEffect(() => {
+    if (!appearance) return;
+    applyAppearance(appearance);
+    const scheme = window.matchMedia("(prefers-color-scheme: light)");
+    const follow = () => applyAppearance(appearance);
+    scheme.addEventListener("change", follow);
+    return () => scheme.removeEventListener("change", follow);
+    // Only when the Mac's theme actually changes, not on every poll.
+  }, [appearanceKey]);
+
   useEffect(() => {
     document.title = needsYou ? `(${needsYou}) Irgatos` : "Irgatos";
     const badge = navigator as Navigator & {
@@ -123,15 +134,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   if (signedOut || overview.error instanceof SignedOut)
     return <Login invalid={triedToken} />;
 
-  const bell = (
-    <RoundButton
-      label={needsYou ? `${needsYou} waiting on you` : "Nothing waiting"}
-      dot={needsYou > 0}
-      onClick={showNeedsYou}
-    >
-      <Bell className="size-5" />
-    </RoundButton>
-  );
+  const bell = <NeedsYouButton count={needsYou} onClick={showNeedsYou} />;
   const header = wide ? (
     <>
       <span />
@@ -219,7 +222,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     overview.error && overview.data ? (
       <div className="pointer-events-none fixed inset-x-0 top-[calc(var(--safe-top)+10px)] z-40 flex justify-center px-4">
         <div className="glass-float web-pop-in inline-flex max-w-md items-center gap-2 rounded-full py-1.5 pl-1.5 pr-4 text-[13.5px] font-semibold text-(--ink)">
-          <IconBadge tone="orange" size="size-7">
+          <IconBadge tone="amber" size="size-7">
             <WifiOff className="size-4" />
           </IconBadge>
           <span className="truncate">{overview.error.message} Retrying…</span>
@@ -231,7 +234,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     return (
       <div className="flex h-full items-center justify-center px-6">
         <div className="glass web-pop-in flex max-w-[400px] flex-col items-center gap-3 rounded-[32px] px-7 py-9 text-center">
-          <IconBadge tone="red" size="size-14">
+          <IconBadge tone="rose" size="size-14">
             <WifiOff className="size-7" />
           </IconBadge>
           <div className="mt-2 text-[21px] font-semibold tracking-[-0.02em] text-(--ink)">
@@ -253,27 +256,27 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       <div className="flex h-full pl-(--safe-left) pr-(--safe-right)">
         <div className="contents" inert={!!sheet}>
           {sidebar ? (
-            <aside className="glass-float my-3 ml-3 mt-[calc(var(--safe-top)+12px)] mb-[calc(var(--safe-bottom)+12px)] flex w-[300px] shrink-0 flex-col overflow-hidden rounded-[32px] min-[1200px]:w-[330px]">
+            <aside className="flex w-[300px] shrink-0 flex-col overflow-hidden border-r border-(--hairline) bg-content/[0.03] pb-(--safe-bottom) pt-(--safe-top) min-[1200px]:w-[330px]">
               <div className="flex h-16 shrink-0 items-center gap-2 pl-5 pr-3">
                 <Brand />
                 <button
                   aria-label="Hide sidebar"
                   onClick={toggleSidebar}
-                  className="web-press ml-auto flex size-10 items-center justify-center rounded-full text-(--ink-2) active:bg-white/60"
+                  className="web-press ml-auto flex size-10 items-center justify-center rounded-full text-(--ink-2) active:bg-content/8"
                 >
                   <PanelLeft className="size-5" />
                 </button>
               </div>
               <nav className="flex shrink-0 flex-col gap-1 px-3">
                 <NavItem
-                  icon={<Home className="size-5" />}
+                  icon={<Radar className="size-5" />}
                   label="Today"
                   on={screen.name === "today"}
                   count={needsYou}
                   onClick={() => navigate({ name: "today" })}
                 />
                 <NavItem
-                  icon={<MessageMultiple className="size-5" />}
+                  icon={<MessageSquare className="size-5" />}
                   label="Chats"
                   on={screen.name === "chats"}
                   onClick={() => navigate({ name: "chats" })}
@@ -325,11 +328,11 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               </div>
             </aside>
           ) : (
-            <aside className="glass-float my-3 ml-3 mt-[calc(var(--safe-top)+12px)] mb-[calc(var(--safe-bottom)+12px)] flex w-[68px] shrink-0 flex-col items-center gap-1.5 rounded-full py-3">
+            <aside className="flex w-[72px] shrink-0 flex-col items-center gap-1.5 border-r border-(--hairline) bg-content/[0.03] pb-[calc(var(--safe-bottom)+12px)] pt-[calc(var(--safe-top)+12px)]">
               <button
                 aria-label="Show sidebar"
                 onClick={toggleSidebar}
-                className="web-press mb-1 flex size-11 items-center justify-center rounded-full text-(--ink-2) active:bg-white/60"
+                className="web-press mb-1 flex size-11 items-center justify-center rounded-full text-(--ink-2) active:bg-content/8"
               >
                 <PanelLeft className="size-5" />
               </button>
@@ -339,14 +342,14 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 badge={needsYou}
                 onClick={() => navigate({ name: "today" })}
               >
-                <Home className="size-[22px]" />
+                <Radar className="size-[22px]" />
               </RailItem>
               <RailItem
                 label="Chats"
                 on={screen.name === "chats"}
                 onClick={() => navigate({ name: "chats" })}
               >
-                <MessageMultiple className="size-[22px]" />
+                <MessageSquare className="size-[22px]" />
               </RailItem>
               <RailItem
                 label="Ideas"
@@ -358,14 +361,14 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               <button
                 aria-label="New chat"
                 onClick={() => openSheet({ name: "new" })}
-                className="sparkle-bubble web-press mt-2 flex size-12 items-center justify-center rounded-full"
+                className="primary-action web-press mt-2 flex size-12 items-center justify-center rounded-full"
               >
-                <SparkleGlyph className="size-6" />
+                <Plus className="size-[22px]" strokeWidth={2.2} />
               </button>
               <button
                 aria-label="Your Mac"
                 onClick={() => openSheet({ name: "services" })}
-                className="web-press mt-auto flex size-11 items-center justify-center rounded-full text-(--ink-2) active:bg-white/60"
+                className="web-press mt-auto flex size-11 items-center justify-center rounded-full text-(--ink-2) active:bg-content/8"
               >
                 <MacIcon tone={mac} />
               </button>
@@ -396,7 +399,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
         {tabView(tab)}
         <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-5 pb-[max(var(--safe-bottom),14px)]">
           {/* Content fades out under the bar instead of running into it. */}
-          <div className="absolute inset-x-0 bottom-0 h-[calc(var(--tab-height)+max(var(--safe-bottom),14px)+28px)] bg-[linear-gradient(to_top,rgb(246_241_252/0.94)_35%,rgb(246_241_252/0))]" />
+          <div className="absolute inset-x-0 bottom-0 h-[calc(var(--tab-height)+max(var(--safe-bottom),14px)+28px)] bg-[linear-gradient(to_top,var(--color-background-base)_35%,transparent)]" />
           <div className="relative glass-float pointer-events-auto flex h-(--tab-height) items-center gap-1 rounded-full px-2">
             <TabButton
               label="Today"
@@ -404,21 +407,21 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               badge={needsYou}
               onClick={() => navigate({ name: "today" })}
             >
-              <Home className="size-[22px]" />
+              <Radar className="size-[22px]" />
             </TabButton>
             <TabButton
               label="Chats"
               on={tab === "chats"}
               onClick={() => navigate({ name: "chats" })}
             >
-              <MessageMultiple className="size-[22px]" />
+              <MessageSquare className="size-[22px]" />
             </TabButton>
             <button
               aria-label="New chat"
               onClick={() => openSheet({ name: "new" })}
-              className="sparkle-bubble web-press mx-1.5 flex size-[52px] items-center justify-center rounded-full"
+              className="primary-action web-press mx-1.5 flex size-[48px] items-center justify-center rounded-full"
             >
-              <SparkleGlyph className="size-7" />
+              <Plus className="size-6" strokeWidth={2.2} />
             </button>
             <TabButton
               label="Ideas"
@@ -477,7 +480,7 @@ function MacIcon({ tone }: { tone: Tone }) {
     <span className="relative">
       <Monitor className="size-[22px]" />
       <span
-        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-white`}
+        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2 ring-(--color-background-base)`}
       />
     </span>
   );
@@ -502,7 +505,7 @@ function TabButton({
       onClick={onClick}
       aria-current={on ? "page" : undefined}
       className={`web-press relative flex size-12 items-center justify-center rounded-full ${
-        on ? "bg-(--accent-soft) text-(--accent)" : "text-(--ink-2)"
+        on ? "bg-selection text-(--ink)" : "text-(--ink-2)"
       }`}
     >
       {children}
@@ -513,7 +516,7 @@ function TabButton({
 
 function Badge({ children }: { children: ReactNode }) {
   return (
-    <span className="absolute right-0.5 top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-(--tone-orange) px-1 text-[11px] font-bold tabular-nums text-white ring-2 ring-white">
+    <span className="absolute right-0.5 top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[11px] font-semibold tabular-nums text-black ring-2 ring-(--color-background-base)">
       {children}
     </span>
   );
@@ -536,16 +539,14 @@ function NavItem({
     <button
       onClick={onClick}
       aria-current={on ? "page" : undefined}
-      className={`web-press flex h-12 items-center gap-3 rounded-full px-4 text-[16px] font-semibold ${
-        on
-          ? "bg-white text-(--ink) shadow-[0_6px_18px_-10px_rgb(64_44_150/0.4)]"
-          : "text-(--ink-2) active:bg-white/60"
+      className={`web-press flex h-11 items-center gap-3 rounded-[12px] px-3.5 text-[16px] font-medium ${
+        on ? "bg-selection text-(--ink)" : "text-(--ink-2) active:bg-content/8"
       }`}
     >
-      <span className={on ? "text-(--accent)" : "text-(--ink-3)"}>{icon}</span>
+      <span className={on ? "text-(--ink)" : "text-(--ink-3)"}>{icon}</span>
       {label}
       {count ? (
-        <span className="ml-auto flex h-6 min-w-6 items-center justify-center rounded-full bg-(--tone-orange) px-1.5 text-[12.5px] font-bold tabular-nums text-white">
+        <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[12px] font-semibold tabular-nums text-black">
           {count}
         </span>
       ) : null}
@@ -572,9 +573,7 @@ function RailItem({
       aria-current={on ? "page" : undefined}
       onClick={onClick}
       className={`web-press relative flex size-12 items-center justify-center rounded-full ${
-        on
-          ? "bg-(--accent-soft) text-(--accent)"
-          : "text-(--ink-2) active:bg-white/60"
+        on ? "bg-selection text-(--ink)" : "text-(--ink-2) active:bg-content/8"
       }`}
     >
       {children}

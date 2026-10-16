@@ -33,6 +33,13 @@ import {
   type ServiceStatus,
 } from "../../service-status/model/serviceStatus";
 import {
+  loadAccentColor,
+  loadThemeDarkLightness,
+  loadThemeHue,
+  loadThemePreference,
+  loadThemeSaturation,
+} from "../../settings/model/appearance";
+import {
   hasProbedHarnessAvailability,
   isHarnessAvailable,
 } from "../../../integrations/harness/core/availabilityState";
@@ -57,6 +64,7 @@ import {
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
 import type {
+  WebAppearance,
   WebBlock,
   WebHarnessChoice,
   WebOverview,
@@ -92,6 +100,7 @@ export type WebAccessDeps = {
   choice: (cwd?: string) => { harness: HarnessId; model: string };
   harnesses: () => HarnessId[];
   modelName: (harness: HarnessId, model: string) => string;
+  appearance: () => WebAppearance;
   /** The Mac user's first name, for the page's greeting. */
   owner: () => Promise<string>;
   ideas: {
@@ -138,6 +147,13 @@ export const webAccessDefaults: Omit<
       ),
     ),
   modelName: (harness, model) => resolveModel(harness, model).name,
+  appearance: () => ({
+    preference: loadThemePreference(),
+    hue: loadThemeHue(),
+    saturation: loadThemeSaturation(),
+    darkLightness: loadThemeDarkLightness(),
+    accent: loadAccentColor(),
+  }),
   owner: () => (owner ??= homeDir().then(ownerName, () => "")),
   ideas: {
     load: loadIdeas,
@@ -337,6 +353,7 @@ export async function handleWebAccess(
         review: fleet.review,
         interrupted: fleet.interrupted,
         idle: fleet.idle,
+        appearance: deps.appearance(),
         owner: await deps.owner(),
         at: Date.now(),
       };

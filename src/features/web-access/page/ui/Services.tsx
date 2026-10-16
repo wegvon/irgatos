@@ -7,6 +7,7 @@ import {
   IconBadge,
   Pill,
   Spinner,
+  TONE,
   secondaryButton,
   type Tone,
 } from "./parts";
@@ -15,9 +16,9 @@ import { Monitor, RefreshCw } from "../../../../shared/ui/icons";
 type Service = WebServices["services"][number];
 
 const STATE_TONE: Record<Service["state"], Tone> = {
-  online: "green",
-  slow: "orange",
-  offline: "red",
+  online: "emerald",
+  slow: "amber",
+  offline: "rose",
 };
 
 const STATE_LABEL: Record<Service["state"], string> = {
@@ -26,15 +27,15 @@ const STATE_LABEL: Record<Service["state"], string> = {
   offline: "Offline",
 };
 
-/** The worst state at a glance: green, orange or red. */
+/** The worst state at a glance. */
 export function macTone(
   services: Service[] | undefined,
   connected: boolean,
 ): Tone {
   if (!connected || services?.some((service) => service.state === "offline"))
-    return "red";
-  if (services?.some((service) => service.state === "slow")) return "orange";
-  return "green";
+    return "rose";
+  if (services?.some((service) => service.state === "slow")) return "amber";
+  return "emerald";
 }
 
 function summary(services: Service[] | undefined, connected: boolean) {
@@ -58,11 +59,11 @@ export function ServicesChip({
   return (
     <button
       onClick={() => openSheet({ name: "services" })}
-      className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-3.5 text-[13.5px] font-semibold text-(--ink)"
+      className="web-press inline-flex h-10 items-center gap-2 rounded-full bg-content/8 px-3.5 text-[13.5px] font-semibold text-(--ink)"
     >
-      <IconBadge tone={macTone(services, connected)} size="size-7">
-        <Monitor className="size-4" />
-      </IconBadge>
+      <span
+        className={`${TONE[macTone(services, connected)]} tone-dot size-2 rounded-full`}
+      />
       {summary(services, connected)}
     </button>
   );
@@ -88,10 +89,8 @@ export function ServicesSheet({
   };
   return (
     <div className="flex flex-col gap-4 px-5 pb-6">
-      <div
-        className={`flex items-center gap-3.5 rounded-[24px] p-4 ${connected ? "tinted [--tint:var(--tone-green)]" : "tinted [--tint:var(--tone-red)]"}`}
-      >
-        <IconBadge tone={connected ? "green" : "red"} size="size-11">
+      <div className="glass flex items-center gap-3.5 rounded-[24px] p-4">
+        <IconBadge tone={connected ? "muted" : "rose"} size="size-11">
           <Monitor className="size-5" />
         </IconBadge>
         <div className="min-w-0 flex-1">
@@ -102,7 +101,7 @@ export function ServicesSheet({
               : "Not answering. Is Irgatos open and the Mac awake?"}
           </div>
         </div>
-        <Pill tone={connected ? "green" : "red"} live={connected}>
+        <Pill tone={connected ? "emerald" : "rose"}>
           {connected ? "Live" : "Offline"}
         </Pill>
       </div>

@@ -13,7 +13,7 @@ import { basename, dueLabel } from "../format";
 import { Markdown } from "./Markdown";
 import {
   Empty,
-  Pill,
+  LabelChip,
   Spinner,
   Ticks,
   plainButton,
@@ -82,9 +82,9 @@ export function IdeaDetail({
         {labels.length ? (
           <div className="flex flex-wrap gap-1.5">
             {labels.map((label) => (
-              <Pill key={label.id} tone={label.color}>
+              <LabelChip key={label.id} color={label.color}>
                 {label.name}
-              </Pill>
+              </LabelChip>
             ))}
           </div>
         ) : null}
@@ -105,7 +105,7 @@ export function IdeaDetail({
 
       <div>
         <Label>List</Label>
-        <div className="flex rounded-full bg-white/55 p-1 shadow-[inset_0_0_0_1px_var(--hairline)]">
+        <div className="flex rounded-full bg-content/6 p-1 shadow-[inset_0_0_0_1px_var(--hairline)]">
           {board.lists.map((entry) => (
             <button
               key={entry.id}
@@ -123,7 +123,7 @@ export function IdeaDetail({
               }}
               className={`min-h-9 min-w-0 flex-1 truncate rounded-full px-1.5 text-[13.5px] font-semibold transition-colors ${
                 entry.id === list.id
-                  ? "bg-white text-(--ink) shadow-[0_4px_14px_-6px_rgb(64_44_150/0.35)]"
+                  ? "bg-selection text-(--ink)"
                   : "text-(--ink-2)"
               }`}
             >
@@ -267,7 +267,7 @@ function Notes({
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Write in Markdown"
-          className="web-field min-h-32 w-full resize-none rounded-[22px] bg-white/85 px-4 py-3 shadow-[inset_0_0_0_1.5px_var(--accent)] outline-none"
+          className="web-field min-h-32 w-full resize-none rounded-[22px] bg-content/6 px-4 py-3 shadow-[inset_0_0_0_1.5px_var(--accent)] outline-none"
         />
       ) : value ? (
         <div className="glass web-selectable rounded-[22px] px-4 py-3">
@@ -276,7 +276,7 @@ function Notes({
       ) : (
         <button
           onClick={() => setEditing(true)}
-          className="w-full rounded-[22px] border-[1.5px] border-dashed border-white bg-white/35 px-4 py-4 text-left text-[15px] font-medium text-(--ink-3)"
+          className="w-full rounded-[22px] border-[1.5px] border-dashed border-(--card-edge) bg-content/6 px-4 py-4 text-left text-[15px] font-medium text-(--ink-3)"
         >
           Add notes…
         </button>
@@ -311,7 +311,7 @@ function Checklist({
         ) : null}
       </div>
       {tasks.length ? (
-        <Ticks value={done / tasks.length} tone="green" className="mb-3" />
+        <Ticks value={done / tasks.length} className="mb-3" />
       ) : null}
       <div className="glass divide-y divide-(--hairline) overflow-hidden rounded-[22px]">
         {tasks.map((task) => (
@@ -334,7 +334,7 @@ function Checklist({
               }
               className={`flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
                 task.done
-                  ? "border-(--ok) bg-(--ok) text-white"
+                  ? "border-(--accent) bg-(--accent) text-white"
                   : "border-(--ink-3)"
               }`}
             >
@@ -352,7 +352,7 @@ function Checklist({
               onClick={() =>
                 onChange(tasks.filter((entry) => entry.id !== task.id))
               }
-              className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--ink-3) active:bg-white/60"
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-(--ink-3) active:bg-content/8"
             >
               <X className="size-4" />
             </button>

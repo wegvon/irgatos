@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { signIn } from "../client";
-import { SparkleBubble, primaryButton } from "./parts";
+import { BrandMark, primaryButton } from "./parts";
 
 /** First visit on a device, or after a new token: paste the token once. */
 export function Login({ invalid }: { invalid: boolean }) {
@@ -14,9 +14,9 @@ export function Login({ invalid }: { invalid: boolean }) {
           if (token.trim()) signIn(token);
         }}
       >
-        <SparkleBubble size="size-[84px]" glyph="size-11" />
+        <BrandMark className="size-[72px] rounded-[18px]" />
         <h1 className="mt-7 text-[30px] font-semibold tracking-[-0.025em] text-(--ink)">
-          Welcome to <span className="accent-text">Irgatos</span>
+          Welcome to Irgatos
         </h1>
         <p className="mt-2 max-w-[32ch] text-[15px] leading-snug text-(--ink-2)">
           Your Mac's chats, ideas and approvals, wherever you are.
@@ -29,7 +29,7 @@ export function Login({ invalid }: { invalid: boolean }) {
           value={token}
           onChange={(event) => setToken(event.target.value)}
           placeholder="Access token"
-          className="glass web-field mt-8 h-14 w-full rounded-full px-5 text-center text-(--ink) outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-card)]"
+          className="glass web-field mt-8 h-14 w-full rounded-full px-5 text-center text-(--ink) outline-none focus:shadow-[inset_0_0_0_1.5px_var(--accent)]"
         />
         {invalid ? (
           <div className="mt-2.5 text-[14px] font-medium text-(--bad)">

@@ -14,31 +14,10 @@ import {
 import { write } from "../client";
 import { basename, dueLabel } from "../format";
 import { openSheet } from "../route";
-import {
-  Empty,
-  Pill,
-  Spinner,
-  TONE,
-  Ticks,
-  useAction,
-  type Tone,
-} from "./parts";
+import { Empty, LabelChip, Spinner, Ticks, useAction } from "./parts";
 import { Calendar, Folder, Idea, Plus } from "../../../../shared/ui/icons";
 
 const BOARD_KEY = "irgatos.web.board";
-
-/** Each list keeps one color, in board order: Inbox blue, Exploring violet… */
-const LIST_TONES: Tone[] = [
-  "blue",
-  "purple",
-  "orange",
-  "gray",
-  "green",
-  "pink",
-  "teal",
-];
-const listTone = (index: number): Tone =>
-  LIST_TONES[index % LIST_TONES.length]!;
 
 function storedBoard(): string | null {
   try {
@@ -140,13 +119,10 @@ export function Ideas({
                 aria-pressed={index === page}
                 className={`web-press inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13.5px] font-semibold ${
                   index === page
-                    ? "bg-white text-(--ink) shadow-[0_4px_14px_-6px_rgb(64_44_150/0.35)]"
+                    ? "bg-selection text-(--ink)"
                     : "text-(--ink-2)"
                 }`}
               >
-                <span
-                  className={`${TONE[listTone(index)]} tone-dot size-2 rounded-full`}
-                />
                 {list.title}
                 <span className="font-medium tabular-nums text-(--ink-3)">
                   {list.cards.length}
@@ -178,10 +154,9 @@ export function Ideas({
             wide ? "gap-4 px-8 pb-8 pt-5" : "snap-x snap-mandatory pt-1"
           }`}
         >
-          {board.lists.map((list, index) => (
+          {board.lists.map((list) => (
             <Column
               key={list.id}
-              tone={listTone(index)}
               board={board}
               listId={list.id}
               title={list.title}
@@ -224,7 +199,7 @@ function Capture({
   };
   return (
     <form
-      className="glass flex h-[52px] items-center gap-2 rounded-full pl-4 pr-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-card)]"
+      className="glass flex h-[52px] items-center gap-2 rounded-full pl-4 pr-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]"
       onSubmit={(event) => {
         event.preventDefault();
         void add();
@@ -243,7 +218,7 @@ function Capture({
           aria-label="List"
           value={listId}
           onChange={(event) => onTarget(event.target.value)}
-          className="h-9 shrink-0 rounded-full bg-white/80 px-3 text-[14px] font-semibold text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)] outline-none"
+          className="h-9 shrink-0 rounded-full bg-content/6 px-3 text-[14px] font-semibold text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)] outline-none"
         >
           {lists.map((list) => (
             <option key={list.id} value={list.id}>
@@ -255,7 +230,7 @@ function Capture({
       <button
         aria-label="Add idea"
         disabled={!text.trim() || busy !== null}
-        className="accent-fill web-press flex size-10 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
+        className="primary-action web-press flex size-10 shrink-0 items-center justify-center rounded-full"
       >
         {busy ? <Spinner /> : <Plus className="size-5" strokeWidth={2.4} />}
       </button>
@@ -265,7 +240,6 @@ function Capture({
 
 function Column({
   board,
-  tone,
   listId,
   title,
   cards,
@@ -274,7 +248,6 @@ function Column({
   onDrop,
 }: {
   board: IdeaBoard;
-  tone: Tone;
   listId: string;
   title: string;
   cards: IdeaCard[];
@@ -302,7 +275,7 @@ function Column({
     <section
       className={`flex min-h-0 shrink-0 flex-col ${
         wide
-          ? `w-[310px] rounded-[28px] bg-white/35 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.7)] ${over ? "shadow-[inset_0_0_0_2px_var(--accent)]" : ""}`
+          ? `w-[310px] rounded-[28px] bg-content/6 shadow-[inset_0_0_0_1px_var(--card-edge)] ${over ? "shadow-[inset_0_0_0_2px_var(--accent)]" : ""}`
           : "w-full snap-start"
       }`}
       onDragOver={
@@ -318,11 +291,10 @@ function Column({
     >
       {wide ? (
         <div className="flex items-center gap-2 px-4 pb-2.5 pt-4">
-          <span className={`${TONE[tone]} tone-dot size-2.5 rounded-full`} />
           <h2 className="flex-1 text-[16px] font-semibold text-(--ink)">
             {title}
           </h2>
-          <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-white/85 px-1.5 text-[12px] font-semibold tabular-nums text-(--ink-2)">
+          <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-content/6 px-1.5 text-[12px] font-semibold tabular-nums text-(--ink-2)">
             {cards.length}
           </span>
         </div>
@@ -337,7 +309,6 @@ function Column({
         {cards.map((card) => (
           <CardView
             key={card.id}
-            tone={tone}
             card={card}
             board={board}
             now={now}
@@ -345,7 +316,7 @@ function Column({
           />
         ))}
         {cards.length === 0 ? (
-          <div className="rounded-[22px] border-[1.5px] border-dashed border-white/90 bg-white/30 px-4 py-9 text-center text-[14px] font-medium text-(--ink-3)">
+          <div className="rounded-[22px] border-[1.5px] border-dashed border-(--card-edge) bg-content/6 px-4 py-9 text-center text-[14px] font-medium text-(--ink-3)">
             {wide ? "Drop ideas here" : `Nothing in ${title} yet`}
           </div>
         ) : null}
@@ -365,13 +336,11 @@ function preview(markdown: string) {
 function CardView({
   card,
   board,
-  tone,
   now,
   draggable,
 }: {
   card: IdeaCard;
   board: IdeaBoard;
-  tone: Tone;
   now: number;
   draggable: boolean;
 }) {
@@ -381,8 +350,6 @@ function CardView({
   const done = card.tasks.filter((task) => task.done).length;
   const description = preview(card.description);
   const startOfToday = new Date(now).setHours(0, 0, 0, 0);
-  // A labelled idea takes its first label's color, like a priority.
-  const tint: Tone = labels[0]?.color ?? tone;
   return (
     <button
       data-idea={card.id}
@@ -392,14 +359,14 @@ function CardView({
         event.dataTransfer.effectAllowed = "move";
       }}
       onClick={() => openSheet({ name: "idea", id: card.id })}
-      className={`${TONE[tint]} tinted web-press flex w-full flex-col gap-2 rounded-[24px] p-4 text-left`}
+      className="glass web-press flex w-full flex-col gap-2 rounded-[20px] p-4 text-left"
     >
       {labels.length ? (
         <span className="flex flex-wrap gap-1.5">
           {labels.map((label) => (
-            <Pill key={label.id} tone={label.color}>
+            <LabelChip key={label.id} color={label.color}>
               {label.name}
-            </Pill>
+            </LabelChip>
           ))}
         </span>
       ) : null}
@@ -417,13 +384,9 @@ function CardView({
             Progress
           </span>
           <span className="flex items-center gap-2.5">
-            <Ticks
-              value={done / card.tasks.length}
-              tone={tint}
-              className="flex-1"
-            />
-            <span className="shrink-0 rounded-full bg-white/85 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-(--ink-2)">
-              {Math.round((done / card.tasks.length) * 100)}%
+            <Ticks value={done / card.tasks.length} className="flex-1" />
+            <span className="shrink-0 text-[12px] font-medium tabular-nums text-(--ink-2)">
+              {done}/{card.tasks.length}
             </span>
           </span>
         </span>

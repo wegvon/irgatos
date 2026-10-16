@@ -55,7 +55,7 @@ export function Sheet({
   return (
     <div className="fixed inset-0 z-50">
       <div
-        className="web-fade-in absolute inset-0 bg-[rgb(40_30_80/0.28)] backdrop-blur-[2px]"
+        className="web-fade-in absolute inset-0 bg-black/50"
         style={drag ? { opacity: Math.max(0.2, 1 - drag / 400) } : undefined}
         onClick={onClose}
       />
@@ -68,7 +68,7 @@ export function Sheet({
             ? { transform: `translateY(${drag}px)` }
             : { transition: "transform 200ms var(--motion-ease-out)" }
         }
-        className={`flex flex-col overflow-hidden bg-[linear-gradient(180deg,#faf8ff_0%,#f3effc_100%)] shadow-[inset_0_0_0_1px_white,0_30px_80px_-20px_rgb(50_30_120/0.45)] ${
+        className={`flex flex-col overflow-hidden bg-(--sheet) shadow-[inset_0_0_0_1px_var(--card-edge),0_30px_80px_-20px_rgb(0_0_0/0.5)] ${
           wide
             ? "web-pop-in absolute left-1/2 top-1/2 max-h-[min(86%,920px)] w-[min(620px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 rounded-[32px]"
             : "web-sheet-up absolute inset-x-0 bottom-0 max-h-[calc(var(--app-height,100dvh)-var(--safe-top)-8px)] rounded-t-[32px]"

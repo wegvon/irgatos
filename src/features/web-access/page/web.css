@@ -1,7 +1,7 @@
 /*
- * Browser access page: a light, pastel work space for the phone and iPad.
- * Soft gradient sky, frosted white cards, one violet accent, and tinted
- * status colors that also tint whole cards.
+ * Browser access page: the phone and iPad layout over the desktop app's own
+ * theme tokens. Colors are the desktop's: content at a few opacities for
+ * surfaces and text, the accent, and amber/rose/emerald for status.
  */
 
 :root {
@@ -13,61 +13,48 @@
 }
 
 html.web-companion {
-  /* The app's own tokens, so shared pieces (markdown, harness logos) match. */
-  --color-background-base: #f4f1fb;
-  --color-content: #1c1a2b;
-  --color-accent: #7357ff;
-  --link-color: #5b3ff0;
-  color-scheme: light;
-
-  --ink: #1c1a2b;
-  --ink-2: #6c6884;
-  --ink-3: #a3a0b8;
-  --accent: #7357ff;
-  --accent-strong: #5a3df0;
-  --accent-soft: #eeeaff;
-  --accent-gradient: linear-gradient(
-    135deg,
-    #a78bff 0%,
-    #7357ff 55%,
-    #5a3df0 100%
+  --ink: var(--color-content);
+  --ink-2: color-mix(in srgb, var(--color-content) 60%, transparent);
+  --ink-3: color-mix(in srgb, var(--color-content) 40%, transparent);
+  --accent: var(--color-accent);
+  --hairline: var(--color-stroke);
+  --card: color-mix(in srgb, var(--color-content) 3%, transparent);
+  --card-edge: color-mix(in srgb, var(--color-content) 10%, transparent);
+  --raised: color-mix(
+    in srgb,
+    var(--color-content) 6%,
+    var(--color-background-base)
+  );
+  --sheet: hsl(
+    var(--theme-hue) var(--theme-saturation)
+      calc(var(--background-lightness) + 4%)
   );
 
-  --glass: rgb(255 255 255 / 0.68);
-  --glass-strong: rgb(255 255 255 / 0.86);
-  --glass-edge: rgb(255 255 255 / 0.95);
-  --hairline: rgb(28 26 43 / 0.07);
-  --shadow-card:
-    0 1px 2px rgb(52 36 120 / 0.04), 0 12px 32px -14px rgb(64 44 150 / 0.18);
-  --shadow-float:
-    0 2px 6px rgb(52 36 120 / 0.06), 0 18px 44px -12px rgb(64 44 150 / 0.28);
+  /* Status colors, as the desktop's Fleet and sidebar use them. */
+  --tone-amber: oklch(82.8% 0.189 84.429);
+  --tone-rose: oklch(71.2% 0.194 13.428);
+  --tone-emerald: oklch(76.5% 0.177 163.223);
+  --tone-accent: var(--color-accent);
+  --tone-muted: color-mix(in srgb, var(--color-content) 55%, transparent);
 
-  --tone-orange: #e8730f;
-  --tone-purple: #7357ff;
-  --tone-green: #12a067;
-  --tone-red: #e5484d;
-  --tone-blue: #2f7cf6;
-  --tone-pink: #db4b97;
-  --tone-teal: #0f9fa3;
-  --tone-yellow: #c79200;
-  --tone-gray: #8a87a0;
+  --ok: var(--tone-emerald);
+  --warn: var(--tone-amber);
+  --bad: var(--tone-rose);
+  background: var(--color-background-base);
+}
 
-  --ok: var(--tone-green);
-  --warn: var(--tone-orange);
-  --bad: var(--tone-red);
-
-  /* The sky every screen sits on; overlays repeat it so they stay opaque. */
-  --page-sky:
-    radial-gradient(70% 42% at 0% 0%, #e2d8ff 0%, rgb(226 216 255 / 0) 72%),
-    radial-gradient(60% 38% at 100% 6%, #d6e7ff 0%, rgb(214 231 255 / 0) 72%),
-    radial-gradient(75% 46% at 100% 100%, #fcdcee 0%, rgb(252 220 238 / 0) 72%),
-    radial-gradient(70% 40% at 0% 88%, #eadfff 0%, rgb(234 223 255 / 0) 72%);
-  background: var(--page-sky), var(--color-background-base);
+/* The same hues one step darker, so they still read on a light page. */
+html.web-companion.theme-light {
+  --sheet: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --raised: hsl(var(--theme-hue) var(--theme-saturation) 100%);
+  --tone-amber: oklch(66.6% 0.179 58.318);
+  --tone-rose: oklch(58.6% 0.253 17.585);
+  --tone-emerald: oklch(59.6% 0.145 163.225);
 }
 
 /* A full-screen layer over the tabs: the chat, a new chat. */
 .web-page {
-  background: var(--page-sky), var(--color-background-base);
+  background: var(--color-background-base);
 }
 
 html.keyboard-open {
@@ -79,9 +66,7 @@ html.web-companion body,
 html.web-companion #root {
   height: var(--app-height, 100dvh);
   color: var(--ink);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
-    system-ui, "Inter", "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
@@ -119,92 +104,61 @@ html.web-companion button {
 
 /* In the components layer, so a utility on the same element still wins. */
 @layer components {
-  /* A frosted card. Cards sit on a calm gradient, so no blur is needed. */
+  /* A card, like the desktop's Fleet cards: a faint fill and a hairline. */
   .glass {
-    background: var(--glass);
-    box-shadow:
-      inset 0 0 0 1px var(--glass-edge),
-      var(--shadow-card);
+    background: var(--card);
+    box-shadow: inset 0 0 0 1px var(--card-edge);
   }
 
-  /* Floating chrome over moving content: tab bar, headers, sheets. */
+  /* Chrome over moving content: tab bar, composer, sidebar. */
   .glass-float {
-    background: rgb(255 255 255 / 0.84);
-    backdrop-filter: saturate(1.8) blur(22px);
-    -webkit-backdrop-filter: saturate(1.8) blur(22px);
+    background: color-mix(in srgb, var(--raised) 88%, transparent);
+    backdrop-filter: saturate(1.4) blur(20px);
+    -webkit-backdrop-filter: saturate(1.4) blur(20px);
     box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.85),
-      var(--shadow-float);
+      inset 0 0 0 1px var(--card-edge),
+      0 8px 24px -8px rgb(0 0 0 / 0.35);
   }
 
   .glass-bar {
-    background: rgb(246 243 253 / 0.72);
-    backdrop-filter: saturate(1.8) blur(22px);
-    -webkit-backdrop-filter: saturate(1.8) blur(22px);
+    background: color-mix(
+      in srgb,
+      var(--color-background-base) 82%,
+      transparent
+    );
+    backdrop-filter: saturate(1.4) blur(20px);
+    -webkit-backdrop-filter: saturate(1.4) blur(20px);
   }
 
-  /*
-   * A pastel card in one tone: set --tint (a --tone-* color) on the element.
-   * Mint for done, lavender for running, peach for waiting, like sticky notes.
-   */
-  .tinted {
-    background: color-mix(in srgb, var(--tint) 13%, rgb(255 255 255 / 0.66));
-    box-shadow:
-      inset 0 0 0 1px
-        color-mix(in srgb, var(--tint) 10%, rgb(255 255 255 / 0.9)),
-      var(--shadow-card);
+  /* A card that waits on you: the desktop's amber edge. */
+  .attention {
+    background: color-mix(in srgb, var(--tone-amber) 5%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--tone-amber) 32%, transparent);
   }
 
   .tone-text {
     color: var(--tint);
   }
 
+  /* A status chip: the tone at 12% behind its own color, as on Kanban cards. */
   .tone-soft {
-    background: color-mix(in srgb, var(--tint) 14%, white);
-    color: color-mix(in srgb, var(--tint) 88%, black);
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    color: var(--tint);
   }
 
   .tone-dot {
     background: var(--tint);
   }
-
-  .accent-fill {
-    background: var(--accent-gradient);
-    color: white;
-    box-shadow: 0 8px 18px -8px rgb(90 61 240 / 0.7);
-  }
-
-  .accent-text {
-    background: var(--accent-gradient);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
-  /* The brand mark: a violet sparkle floating in a white bubble. */
-  .sparkle-bubble {
-    background: radial-gradient(circle at 50% 35%, #ffffff 0%, #f6f2ff 100%);
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.9),
-      0 10px 30px -8px rgb(115 87 255 / 0.45),
-      0 0 0 8px rgb(255 255 255 / 0.35);
-  }
 }
 
-/*
- * Progress as a row of thin ticks, filled up to --value (0-1). The empty part
- * keeps the ticks so the bar reads as a scale.
- */
+/* Progress: a thin bar filled up to --value (0-1). */
 .ticks {
-  --tick: var(--tint, var(--accent));
   position: relative;
-  height: 16px;
-  border-radius: 4px;
-  background: repeating-linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--tick) 22%, transparent) 0 2px,
-    transparent 2px 5px
-  );
+  height: 4px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--color-content) 10%, transparent);
 }
 
 .ticks::after {
@@ -212,32 +166,9 @@ html.web-companion button {
   position: absolute;
   inset: 0 auto 0 0;
   width: calc(var(--value, 0) * 100%);
-  background: repeating-linear-gradient(
-    90deg,
-    var(--tick) 0 2px,
-    transparent 2px 5px
-  );
+  border-radius: inherit;
+  background: var(--tint, var(--accent));
   transition: width 400ms var(--motion-ease-out);
-}
-
-/* Working, with no end known: a lit stretch sweeps along the ticks. */
-.ticks-live::after {
-  width: 34%;
-  animation: web-ticks 1.8s ease-in-out infinite;
-}
-
-@keyframes web-ticks {
-  0% {
-    transform: translateX(-10%);
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(205%);
-    opacity: 0.4;
-  }
 }
 
 /* iOS zooms into any field under 16px; keep every field at 16px. */
@@ -290,9 +221,9 @@ html.web-companion button {
 .web-shimmer {
   background: linear-gradient(
       90deg,
-      var(--ink-2) 0%,
-      var(--accent) 50%,
-      var(--ink-2) 100%
+      var(--ink-3) 0%,
+      var(--ink) 50%,
+      var(--ink-3) 100%
     )
     0 0 / 200% 100%;
   -webkit-background-clip: text;
@@ -408,8 +339,7 @@ html.web-companion button {
   .web-sheet-up,
   .web-pop-in,
   .web-fade-in,
-  .web-rise > *,
-  .ticks-live::after {
+  .web-rise > * {
     animation: none;
   }
 
