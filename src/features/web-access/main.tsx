@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { WebApp } from "./page/App";
-import { restoreAppearance, trackVisualViewport } from "./page/theme";
+import { trackVisualViewport } from "./page/theme";
 import { ToastHost } from "./page/ui/parts";
 import "../../styles/index.css";
 import "./page/web.css";
@@ -10,7 +10,6 @@ import "./page/web.css";
  * Browser access page. The Mac serves it to phones and tablets over
  * Tailscale; everything it shows comes from the running app.
  */
-restoreAppearance();
 trackVisualViewport();
 
 // The Mac only sends a token back here when it did not match. Either way it

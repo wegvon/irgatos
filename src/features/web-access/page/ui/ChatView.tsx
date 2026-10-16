@@ -11,10 +11,19 @@ import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { Markdown } from "./Markdown";
 import { RequestBody } from "./Requests";
-import { Empty, Harness, Spinner, primaryButton, useAction } from "./parts";
+import {
+  Empty,
+  Harness,
+  Pill,
+  RoundButton,
+  SparkleBubble,
+  SparkleGlyph,
+  Spinner,
+  primaryButton,
+  useAction,
+} from "./parts";
 import {
   ArrowDownCircle,
-  ArrowUp,
   ChevronDown,
   ChevronLeft,
   CircleX,
@@ -23,6 +32,7 @@ import {
   MessageSquare,
   Pencil,
   Search,
+  Send,
   Shield,
   Square,
   Terminal,
@@ -76,7 +86,11 @@ export function ChatView({
         <div className="flex flex-1 items-center justify-center">
           {missing ? (
             <Empty
-              icon={<MessageSquare className="size-6" />}
+              icon={
+                <span className="glass flex size-16 items-center justify-center rounded-full text-(--ink-3)">
+                  <MessageSquare className="size-7" />
+                </span>
+              }
               title="This chat is closed"
             >
               It is no longer open in Irgatos on your Mac.
@@ -87,9 +101,9 @@ export function ChatView({
               </div>
             </Empty>
           ) : (
-            <div className="flex flex-col items-center gap-3 text-[15px] text-content/45">
-              <Spinner className="size-6" />
-              {error ? "Starting the chat…" : null}
+            <div className="flex flex-col items-center gap-4 text-[15px] font-medium text-(--ink-2)">
+              <SparkleBubble />
+              {error ? "Starting the chat…" : <Spinner className="size-5" />}
             </div>
           )}
         </div>
@@ -101,19 +115,25 @@ export function ChatView({
     <div className="flex h-full flex-col">
       <ChatHeader wide={wide} onBack={onBack} session={data} />
       <Transcript session={data} pending={pending} wide={wide} />
-      <div className="web-bar border-t border-stroke pb-[max(var(--safe-bottom),10px)]">
+      <div className="pb-[max(var(--safe-bottom),12px)]">
         <div
-          className={`mx-auto w-full ${wide ? "max-w-[800px] px-6" : "px-3"}`}
+          className={`mx-auto w-full ${wide ? "max-w-[820px] px-6" : "px-3"}`}
         >
           {data.requests.length ? (
-            <div className="web-scroll -mx-1 flex max-h-[48vh] flex-col gap-2.5 px-1 pb-1 pt-3">
+            <div className="web-scroll -mx-3 flex max-h-[48vh] flex-col gap-2.5 px-3 pb-3 pt-2 [mask-image:linear-gradient(to_bottom,black_calc(100%-14px),transparent)]">
               {data.requests.map((request) => (
                 <div
                   key={request.requestId}
-                  className="web-pop-in rounded-[18px] bg-(--surface) p-4 shadow-[0_0_0_1px_color-mix(in_srgb,var(--warn)_32%,transparent)]"
+                  className="glass web-pop-in rounded-[26px] bg-white/85 p-4 shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--warn)_45%,white),var(--shadow-card)]"
                 >
-                  <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-(--warn)">
-                    {request.kind === "approval" ? "Needs your OK" : "Question"}
+                  <div className="mb-2.5 flex">
+                    <Pill
+                      tone={request.kind === "approval" ? "orange" : "purple"}
+                    >
+                      {request.kind === "approval"
+                        ? "Needs your OK"
+                        : "Question"}
+                    </Pill>
                   </div>
                   <RequestBody sessionId={data.id} request={request} />
                 </div>
@@ -141,26 +161,22 @@ function ChatHeader({
   session?: WebSession;
 }) {
   return (
-    <header className="web-bar relative z-10 shrink-0 border-b border-stroke pt-(--safe-top)">
+    <header className="glass-bar relative z-10 shrink-0 pt-(--safe-top) shadow-[0_1px_0_var(--hairline)]">
       <div
-        className={`flex h-[54px] items-center gap-1 ${wide ? "mx-auto max-w-[800px] px-6" : "px-1.5"}`}
+        className={`flex h-[60px] items-center gap-2 ${wide ? "mx-auto max-w-[820px] px-6" : "px-3"}`}
       >
         {wide ? null : (
-          <button
-            aria-label="Back"
-            onClick={onBack}
-            className="web-press flex size-11 shrink-0 items-center justify-center rounded-full text-(--accent)"
-          >
-            <ChevronLeft className="size-7" strokeWidth={2} />
-          </button>
+          <RoundButton label="Back" onClick={onBack}>
+            <ChevronLeft className="size-5" strokeWidth={2.2} />
+          </RoundButton>
         )}
         <div className={`min-w-0 flex-1 ${wide ? "" : "text-center"}`}>
-          <div className="truncate text-[16px] font-semibold leading-tight">
+          <div className="truncate text-[16px] font-semibold leading-tight tracking-[-0.01em] text-(--ink)">
             {session?.title ?? ""}
           </div>
           {session ? (
             <div
-              className={`mt-0.5 flex items-center gap-1 text-[12px] text-content/50 ${wide ? "" : "justify-center"}`}
+              className={`mt-0.5 flex items-center gap-1 text-[12px] text-(--ink-2) ${wide ? "" : "justify-center"}`}
             >
               <Harness harness={session.harness} className="size-3" />
               <span className="truncate">
@@ -171,7 +187,7 @@ function ChatHeader({
             </div>
           ) : null}
         </div>
-        {wide ? null : <div className="size-11 shrink-0" />}
+        {wide ? null : <div className="size-10 shrink-0" />}
       </div>
     </header>
   );
@@ -269,16 +285,16 @@ function Transcript({
         }}
       >
         <div
-          className={`mx-auto flex w-full flex-col gap-5 py-5 ${wide ? "max-w-[800px] px-6" : "px-4"}`}
+          className={`mx-auto flex w-full flex-col gap-4 py-5 ${wide ? "max-w-[820px] px-6" : "px-4"}`}
         >
           {session.omitted ? (
-            <div className="self-center rounded-full bg-content/[0.05] px-3 py-1.5 text-[13px] text-content/45">
+            <div className="self-center rounded-full bg-white/60 px-3.5 py-1.5 text-[12.5px] font-medium text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
               {session.omitted} earlier messages stay on your Mac
             </div>
           ) : null}
           {items.length === 0 && !pending.length ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-[15px] text-content/45">
-              <Spinner className="size-6" />
+            <div className="flex flex-col items-center gap-4 py-16 text-[15px] font-medium text-(--ink-2)">
+              <SparkleBubble />
               Starting…
             </div>
           ) : null}
@@ -298,9 +314,7 @@ function Transcript({
           ))}
           {showActivity ? (
             <div className="flex items-center gap-2.5 px-1 text-[14px]">
-              <span className="relative inline-flex size-2.5 text-(--accent)">
-                <span className="web-pulse size-2.5 rounded-full bg-current" />
-              </span>
+              <SparkleGlyph className="size-5 shrink-0 animate-pulse" />
               <span className="web-shimmer min-w-0 truncate font-medium">
                 {session.activity ?? "Thinking…"}
               </span>
@@ -315,7 +329,7 @@ function Transcript({
             stick.current = true;
             toBottom(true);
           }}
-          className="web-pop-in web-bar absolute bottom-3 left-1/2 flex size-10 -translate-x-1/2 items-center justify-center rounded-full text-content/70 shadow-lg shadow-black/20 ring-[0.5px] ring-stroke"
+          className="glass-float web-pop-in absolute bottom-3 left-1/2 flex size-10 -translate-x-1/2 items-center justify-center rounded-full text-(--ink-2)"
         >
           <ArrowDownCircle className="size-5" />
         </button>
@@ -337,7 +351,7 @@ function UserBubble({
     <div
       className={`flex flex-col items-end gap-1.5 ${sending ? "opacity-60" : ""}`}
     >
-      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] rounded-br-[6px] bg-[color-mix(in_srgb,var(--accent)_24%,var(--surface))] px-4 py-2.5 text-[16px] leading-snug">
+      <div className="accent-fill max-w-[85%] whitespace-pre-wrap break-words rounded-[22px] rounded-br-[8px] px-4 py-2.5 text-[16px] leading-snug">
         {text}
       </div>
       {files?.length ? (
@@ -345,7 +359,7 @@ function UserBubble({
           {files.map((name) => (
             <span
               key={name}
-              className="inline-flex max-w-[14rem] items-center gap-1 rounded-lg bg-content/[0.06] px-2 py-1 text-[12px] text-content/60"
+              className="inline-flex max-w-[14rem] items-center gap-1 rounded-full bg-white/70 px-2.5 py-1 text-[12px] text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]"
             >
               <File className="size-3 shrink-0" />
               <span className="truncate">{name}</span>
@@ -354,7 +368,7 @@ function UserBubble({
         </div>
       ) : null}
       {sending ? (
-        <span className="text-[11px] text-content/40">Sending…</span>
+        <span className="text-[11px] text-(--ink-3)">Sending…</span>
       ) : null}
     </div>
   );
@@ -366,10 +380,12 @@ function BlockView({ block }: { block: WebBlock }) {
       return <UserBubble text={block.text} files={block.files} />;
     case "assistant":
       return (
-        <div className="min-w-0">
-          <Markdown text={block.text} streaming={block.streaming} />
+        <div className="flex min-w-0 flex-col items-start gap-1.5">
+          <div className="glass min-w-0 max-w-full rounded-[22px] rounded-tl-[8px] px-4 py-3">
+            <Markdown text={block.text} streaming={block.streaming} />
+          </div>
           {block.durationMs && block.at ? (
-            <div className="mt-1.5 text-[12px] text-content/35">
+            <div className="px-2 text-[11.5px] font-medium text-(--ink-3)">
               {duration(block.durationMs)} · {clock(block.at)}
             </div>
           ) : null}
@@ -378,9 +394,9 @@ function BlockView({ block }: { block: WebBlock }) {
     case "plan":
     case "tasks":
       return (
-        <div className="rounded-[16px] bg-content/[0.04] px-4 py-3">
-          <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.06em] text-content/40">
-            {block.role === "plan" ? "Plan" : "Tasks"}
+        <div className="glass rounded-[22px] px-4 py-3">
+          <div className="mb-1.5 flex">
+            <Pill tone="blue">{block.role === "plan" ? "Plan" : "Tasks"}</Pill>
           </div>
           <Markdown text={block.text} />
         </div>
@@ -388,9 +404,9 @@ function BlockView({ block }: { block: WebBlock }) {
     case "tool":
     case "approval":
       return (
-        <div className="flex items-center gap-2.5 rounded-[14px] bg-(--warn)/10 px-3 py-2.5 text-[14px]">
+        <div className="flex items-center gap-2.5 rounded-[18px] bg-[color-mix(in_srgb,var(--warn)_12%,white)] px-3.5 py-3 text-[14px]">
           <Shield className="size-4 shrink-0 text-(--warn)" />
-          <span className="min-w-0 flex-1 truncate">
+          <span className="min-w-0 flex-1 truncate text-(--ink)">
             {block.tool?.label ?? "Permission"}
           </span>
           <span className="shrink-0 text-[12px] font-medium text-(--warn)">
@@ -400,13 +416,13 @@ function BlockView({ block }: { block: WebBlock }) {
       );
     case "image":
       return (
-        <div className="self-end rounded-xl bg-content/[0.06] px-3 py-2 text-[13px] text-content/50">
+        <div className="self-end rounded-full bg-white/70 px-3.5 py-2 text-[13px] text-(--ink-2)">
           Image (open on your Mac)
         </div>
       );
     default:
       return block.text ? (
-        <div className="line-clamp-3 self-center px-6 text-center text-[13px] text-content/40">
+        <div className="line-clamp-3 self-center px-6 text-center text-[13px] text-(--ink-3)">
           {block.text}
         </div>
       ) : null;
@@ -417,8 +433,8 @@ function ToolIcon({ block }: { block: WebBlock }) {
   const status = block.tool?.status;
   if (status === "failed") return <CircleX className="size-4 text-(--bad)" />;
   if (status === "pending" || status === "in_progress")
-    return <Spinner className="size-4 text-content/45" />;
-  if (block.approval) return <Shield className="size-4 text-content/45" />;
+    return <Spinner className="size-4 text-(--accent)" />;
+  if (block.approval) return <Shield className="size-4 text-(--ink-3)" />;
   const icon: Record<string, ReactNode> = {
     read: <File className="size-4" />,
     edit: <Pencil className="size-4" />,
@@ -429,7 +445,7 @@ function ToolIcon({ block }: { block: WebBlock }) {
     fetch: <Globe className="size-4" />,
   };
   return (
-    <span className="text-content/45">
+    <span className="text-(--ink-3)">
       {icon[block.tool?.kind ?? ""] ?? <Wrench className="size-4" />}
     </span>
   );
@@ -449,7 +465,7 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
     (block) => block.tool?.status === "failed",
   ).length;
   return (
-    <div className="overflow-hidden rounded-[14px] bg-content/[0.04]">
+    <div className="overflow-hidden rounded-[18px] bg-white/55 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.8)]">
       <button
         className="flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left"
         onClick={() => setOpen((value) => !value)}
@@ -457,7 +473,7 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
       >
         <ToolIcon block={last} />
         <span
-          className={`min-w-0 flex-1 truncate text-[14px] text-content/70 ${live ? "web-shimmer" : ""}`}
+          className={`min-w-0 flex-1 truncate text-[14px] text-(--ink-2) ${live ? "web-shimmer" : ""}`}
         >
           {stepLabel(last)}
         </span>
@@ -467,16 +483,16 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
           </span>
         ) : null}
         {blocks.length > 1 ? (
-          <span className="shrink-0 text-[12px] tabular-nums text-content/40">
+          <span className="shrink-0 rounded-full bg-white/80 px-2 py-0.5 text-[11.5px] font-semibold tabular-nums text-(--ink-2)">
             {blocks.length} steps
           </span>
         ) : null}
         <ChevronDown
-          className={`size-4 shrink-0 text-content/35 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`size-4 shrink-0 text-(--ink-3) transition-transform ${open ? "rotate-180" : ""}`}
         />
       </button>
       {open ? (
-        <div className="border-t border-stroke py-1">
+        <div className="border-t border-(--hairline) py-1">
           {blocks.map((block) => (
             <ToolRow key={block.id} block={block} />
           ))}
@@ -497,12 +513,12 @@ function ToolRow({ block }: { block: WebBlock }) {
         onClick={() => setOpen((value) => !value)}
       >
         <ToolIcon block={block} />
-        <span className="min-w-0 flex-1 truncate text-[13.5px] text-content/65">
+        <span className="min-w-0 flex-1 truncate text-[13.5px] text-(--ink-2)">
           {stepLabel(block)}
         </span>
       </button>
       {open && detail ? (
-        <pre className="mx-3 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-content/[0.06] px-2.5 py-2 font-mono text-[12px] leading-relaxed text-content/75">
+        <pre className="mx-3 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-[12px] bg-white/80 px-3 py-2 font-mono text-[12px] leading-relaxed text-(--ink)">
           {detail}
         </pre>
       ) : null}
@@ -562,14 +578,14 @@ function Composer({
 
   const empty = !text.trim();
   return (
-    <div className="flex items-end gap-2 pt-2.5">
-      <div className="flex min-h-11 min-w-0 flex-1 items-end rounded-[22px] bg-(--surface) px-4 py-2.5 shadow-[0_0_0_0.5px_var(--color-stroke)] focus-within:shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_60%,transparent)]">
+    <div className="glass-float mt-2 flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent),var(--shadow-float)]">
+      <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
         <textarea
           ref={field}
           rows={1}
           value={text}
           enterKeyHint={wide ? "send" : "enter"}
-          placeholder={`Message ${session.projectLabel}`}
+          placeholder={`Ask anything about ${session.projectLabel}…`}
           className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -589,7 +605,7 @@ function Composer({
           aria-label="Stop"
           onClick={() => void stop()}
           disabled={busy !== null}
-          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-content text-(--color-background-base) disabled:opacity-50"
+          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-white disabled:opacity-50"
         >
           {busy === "stop" ? (
             <Spinner />
@@ -602,9 +618,9 @@ function Composer({
           aria-label="Send"
           onClick={() => void send()}
           disabled={empty || busy !== null}
-          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--accent) text-white disabled:bg-content/15 disabled:text-content/40"
+          className="accent-fill web-press flex size-11 shrink-0 items-center justify-center rounded-full disabled:bg-none disabled:bg-(--accent-soft) disabled:text-(--accent)/50 disabled:shadow-none"
         >
-          <ArrowUp className="size-5" strokeWidth={2.4} />
+          <Send className="size-5" />
         </button>
       )}
     </div>

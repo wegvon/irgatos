@@ -23,14 +23,14 @@ export function SwipeBack({
 
   if (!standalone)
     return (
-      <div className="web-push-in absolute inset-0 z-20 bg-background-base">
+      <div className="web-push-in absolute inset-0 z-20 web-page">
         {children}
       </div>
     );
 
   return (
     <div
-      className="web-push-in absolute inset-0 z-20 bg-background-base shadow-[-12px_0_30px_rgb(0_0_0/0.35)]"
+      className="web-push-in absolute inset-0 z-20 web-page shadow-[-12px_0_30px_rgb(50_30_120/0.25)]"
       style={
         dx
           ? { transform: `translateX(${dx}px)` }
