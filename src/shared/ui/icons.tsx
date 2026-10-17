@@ -110,6 +110,7 @@ import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
 import Share02Icon from "@hugeicons/core-free-icons/Share02Icon";
 import ShieldAlertIcon from "@hugeicons/core-free-icons/ShieldAlertIcon";
 import SidebarRight01Icon from "@hugeicons/core-free-icons/SidebarRight01Icon";
+import LayoutTwoColumnIcon from "@hugeicons/core-free-icons/LayoutTwoColumnIcon";
 import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
 import SquareIcon from "@hugeicons/core-free-icons/SquareIcon";
 import SquareLock02Icon from "@hugeicons/core-free-icons/SquareLock02Icon";
@@ -285,6 +286,7 @@ export const Pause = wrap(PauseIcon, "Pause");
 export const PanelBottom = wrap(LayoutBottomIcon, "PanelBottom");
 export const PanelLeft = wrap(LayoutAlignRightIcon, "PanelLeft");
 export const PanelRight = wrap(SidebarRight01Icon, "PanelRight");
+export const Columns = wrap(LayoutTwoColumnIcon, "Columns");
 /** `PanelLeft` mirrored, for panels docked on the right. */
 export const PanelRightToggle = wrap(LayoutAlignLeftIcon, "PanelRightToggle");
 export const PanelTop = wrap(LayoutTopIcon, "PanelTop");

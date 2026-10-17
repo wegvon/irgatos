@@ -8,6 +8,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  Columns,
   ImagePlus,
   LoaderCircle,
   MoreHorizontal,
@@ -68,6 +69,8 @@ export type IrgatRailProps = {
   chatStates?: ReadonlyMap<string, FreeChatState>;
   onRenameChat?: (sessionId: string, title: string) => void;
   onOpenChat?: (irgatId: string, sessionId: string) => void;
+  /** Shows the chat next to the one open, in its own pane. */
+  onOpenChatBeside?: (sessionId: string) => void;
   onCreateChat?: (irgatId: string) => void;
   onDeleteChat?: (irgatId: string, sessionId: string) => void;
   onDelete: (irgatId: string) => void;
@@ -152,6 +155,7 @@ export function IrgatRailSection({
   chatStates,
   onRenameChat,
   onOpenChat,
+  onOpenChatBeside,
   onCreateChat,
   onDeleteChat,
   onDelete,
@@ -366,7 +370,13 @@ export function IrgatRailSection({
                     const title = chatTitles?.get(id) || `Chat ${index + 1}`;
                     const state = chatStates?.get(id) ?? "idle";
                     const stateLabel = CHAT_STATE_LABEL[state];
-                    const hasMenu = !!(onDeleteChat || onRenameChat);
+                    const hasMenu = !!(
+                      onDeleteChat ||
+                      onRenameChat ||
+                      onOpenChatBeside
+                    );
+                    const canOpenBeside =
+                      !!onOpenChatBeside && activeSessionId !== id;
                     return (
                       <div
                         key={id}
@@ -408,8 +418,12 @@ export function IrgatRailSection({
                             aria-label={
                               stateLabel ? `${title}, ${stateLabel}` : title
                             }
-                            className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 pr-7 text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
-                            onClick={() => onOpenChat?.(irgat.id, id)}
+                            className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 ${canOpenBeside ? "pr-12" : "pr-7"} text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
+                            onClick={(event) => {
+                              if (event.altKey && canOpenBeside)
+                                onOpenChatBeside?.(id);
+                              else onOpenChat?.(irgat.id, id);
+                            }}
                           >
                             <span className="min-w-0 flex-1 truncate">
                               {title}
@@ -432,6 +446,17 @@ export function IrgatRailSection({
                             ) : null}
                           </button>
                         )}
+                        {canOpenBeside && renamingChat !== id ? (
+                          <button
+                            type="button"
+                            aria-label={`Open ${title} beside`}
+                            title="Open beside (⌥-click)"
+                            onClick={() => onOpenChatBeside?.(id)}
+                            className="absolute right-6 hidden size-5 place-items-center rounded text-content/55 hover:bg-content/8 hover:text-content group-hover/chat:grid group-focus-within/chat:grid"
+                          >
+                            <Columns className="size-3.5" />
+                          </button>
+                        ) : null}
                         {hasMenu && renamingChat !== id ? (
                           <button
                             type="button"
@@ -501,7 +526,7 @@ export function IrgatRailSection({
           onClose={() => setBackground(undefined)}
         />
       ) : null}
-      {chatMenu && (onDeleteChat || onRenameChat) ? (
+      {chatMenu && (onDeleteChat || onRenameChat || onOpenChatBeside) ? (
         <Popover
           anchor={chatMenu.anchor}
           side="right"
@@ -512,6 +537,19 @@ export function IrgatRailSection({
           onDismiss={() => setChatMenu(undefined)}
           className="p-1"
         >
+          {onOpenChatBeside && activeSessionId !== chatMenu.sessionId ? (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setChatMenu(undefined);
+                onOpenChatBeside(chatMenu.sessionId);
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs hover:bg-content/8"
+            >
+              <Columns className="size-3.5" /> Open beside
+            </button>
+          ) : null}
           {onRenameChat ? (
             <button
               type="button"
