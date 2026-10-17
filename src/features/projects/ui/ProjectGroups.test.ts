@@ -207,3 +207,47 @@ it("creates, styles, assigns, and deletes a group from the rail", async () => {
     document.querySelector('button[aria-label="New project group"]'),
   ).toBeNull();
 });
+
+it("marks projects with sessions waiting on you or unread, not line counts", async () => {
+  vi.mocked(useProjectDiffStats).mockReturnValue({
+    files: 12,
+    additions: 2164,
+    deletions: 7,
+  } as ReturnType<typeof useProjectDiffStats>);
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: "/work/personal",
+        recents: [
+          { path: "/work/client", openedAt: 1 },
+          { path: "/work/personal", openedAt: 2 },
+        ],
+        projectAlerts: new Map([
+          [pathKey("/work/client"), { needsYou: 1, unread: 2 }],
+        ]),
+        onSelectProject: vi.fn(),
+        onOpenProject: vi.fn(),
+      }),
+    ),
+  );
+  const nav = container.querySelector('nav[aria-label="Projects"]')!;
+  expect(nav.textContent).not.toContain("+2,164");
+  expect(nav.textContent).not.toContain("+2164");
+  const row = (name: string) =>
+    [...nav.querySelectorAll<HTMLElement>(".project-reorder-item")].find(
+      (item) => item.textContent?.startsWith(name),
+    )!;
+  const client = row("client");
+  expect(client.querySelector("[data-rail-needs-you]")?.textContent).toBe("1");
+  expect(client.querySelector("[data-rail-unread]")?.textContent).toBe("2");
+  expect(client.querySelector("[data-rail-alert-edge]")).not.toBeNull();
+  expect(client.className).not.toContain("opacity-65");
+  const personal = row("personal");
+  expect(personal.querySelector("[data-rail-alert]")).toBeNull();
+  // The Projects header sums its rows.
+  const header = [...nav.querySelectorAll("div")].find(
+    (div) => div.firstElementChild?.textContent === "Projects",
+  )!;
+  expect(header.querySelector("[data-rail-unread]")?.textContent).toBe("2");
+  vi.mocked(useProjectDiffStats).mockReturnValue(null);
+});

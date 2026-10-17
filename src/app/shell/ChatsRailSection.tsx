@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Plus } from "../../shared/ui/icons";
 import type { FreeChatRow } from "../../features/freechat/model/freeChat";
+import { RailAlertBadge, railAlertLabel } from "./RailAlert";
 import {
   CHAT_STATE_LABEL,
   ChatList,
@@ -28,6 +29,12 @@ export function ChatsRailSection({
   const Chevron = collapsed ? ChevronRight : ChevronDown;
   // A collapsed list still says when a chat works, waits on you or replied.
   const hidden = collapsed ? chatsState(rows) : "idle";
+  // How many chats wait on you or replied, open or collapsed.
+  const alert = {
+    needsYou: rows.filter((row) => row.state === "needs-input").length,
+    unread: rows.filter((row) => row.state === "unread").length,
+  };
+  const alertLabel = railAlertLabel(alert);
   return (
     <section aria-label="Chats" className="mb-2 shrink-0">
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
@@ -38,7 +45,12 @@ export function ChatsRailSection({
           className="flex min-w-0 flex-1 items-center gap-1 text-left text-xs leading-5 text-content/50 hover:text-content"
         >
           <Chevron className="size-3" /> Chats
-          {hidden !== "idle" ? (
+          {alertLabel ? (
+            <>
+              <span className="sr-only">, {alertLabel}</span>
+              <RailAlertBadge counts={alert} className="ml-1" />
+            </>
+          ) : hidden === "running" ? (
             <>
               <span className="sr-only">, {CHAT_STATE_LABEL[hidden]}</span>
               <span className="ml-1 flex items-center">

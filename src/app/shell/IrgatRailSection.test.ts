@@ -96,21 +96,35 @@ it("lists irgats once there are some, with the plus in the header", () => {
   );
 });
 
-it("counts a irgat's unread replies, selected or not", () => {
+it("counts a irgat's chats waiting on you and unread, selected or not", () => {
   const irgat = createIrgat();
-  const badge = () => container.querySelector("[data-irgat-unread]");
-  render({ unseenCounts: new Map([[irgat.id, 3]]) });
-  expect(badge()?.textContent).toBe("3");
+  const unread = () => container.querySelector("[data-rail-unread]");
+  const needsYou = () => container.querySelector("[data-rail-needs-you]");
+  render({ alerts: new Map([[irgat.id, { needsYou: 0, unread: 3 }]]) });
+  expect(unread()?.textContent).toBe("3");
+  expect(needsYou()).toBeNull();
+  expect(container.querySelector(`[aria-label*="3 unread"]`)).not.toBeNull();
+  // The header sums every Irgat, so a glance at it is enough.
+  expect(container.querySelectorAll("[data-rail-unread]")).toHaveLength(2);
+  expect(container.querySelector("[data-rail-alert-edge]")).not.toBeNull();
+
+  render({ alerts: new Map([[irgat.id, { needsYou: 1, unread: 120 }]]) });
+  expect(unread()?.textContent).toBe("99+");
+  expect(needsYou()?.textContent).toBe("1");
   expect(
-    container.querySelector(`[aria-label*="3 new replies"]`),
+    container.querySelector(`[aria-label*="1 needs you, 120 unread"]`),
   ).not.toBeNull();
 
-  render({ unseenCounts: new Map([[irgat.id, 120]]) });
-  expect(badge()?.textContent).toBe("99+");
-
   // Another chat of the selected Irgat replied; the open one is not counted.
-  render({ activeId: irgat.id, unseenCounts: new Map([[irgat.id, 3]]) });
-  expect(badge()?.textContent).toBe("3");
+  render({
+    activeId: irgat.id,
+    alerts: new Map([[irgat.id, { needsYou: 0, unread: 3 }]]),
+  });
+  expect(unread()?.textContent).toBe("3");
+
+  render({ alerts: new Map() });
+  expect(container.querySelector("[data-rail-alert]")).toBeNull();
+  expect(container.querySelector("[data-rail-alert-edge]")).toBeNull();
 });
 
 it("opens and creates independent chats under the same Irgat", () => {

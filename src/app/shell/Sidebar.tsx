@@ -1,4 +1,9 @@
 import type { ChatsRailProps } from "./ChatsRailSection";
+import {
+  hasRailAlert,
+  railAlertLabel,
+  type RailAlertCounts,
+} from "./RailAlert";
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import {
   type WorktreeFocus,
@@ -211,8 +216,6 @@ import type { PickerIrgats } from "../../features/projects/ui/SearchableProjectP
 import { isHabitRun } from "../../features/irgats/model/irgatHabits";
 import {
   IrgatContextMenu,
-  unreadBadge,
-  unreadLabel,
   type IrgatRailProps,
 } from "./IrgatRailSection";
 import {
@@ -333,6 +336,8 @@ type Props = {
   textHarness?: HarnessId;
   recents?: RecentProject[];
   busyProjectPaths?: Iterable<string>;
+  /** Sessions waiting on the user or unread, per project (`pathKey`). */
+  projectAlerts?: ReadonlyMap<string, RailAlertCounts>;
   liveAgents?: LiveAgent[];
   onSelectAgent?: (sessionId: string) => void;
   onSelectProject?: (path: string) => void;
@@ -464,6 +469,7 @@ function SidebarComponent({
   textHarness,
   recents = [],
   busyProjectPaths,
+  projectAlerts,
   liveAgents = [],
   onSelectAgent,
   onSelectProject,
@@ -2441,6 +2447,7 @@ function SidebarComponent({
           recents={recents}
           inboxUnseen={inboxUnseen}
           busyPaths={busyProjectPaths}
+          projectAlerts={projectAlerts}
           liveAgents={liveAgents}
           activeSessionId={activeSessionId}
           onSelectAgent={onSelectAgent}
@@ -2886,10 +2893,8 @@ function CompactProjectRail({
       id: irgat.id,
       ...irgatLook(irgat),
       status: irgats.states.get(irgat.id)?.status ?? "idle",
-      unseen:
-        irgat.id === irgats.activeId
-          ? 0
-          : (irgats.unseenCounts?.get(irgat.id) ?? 0),
+      // Chats waiting on you or unread, never reply totals.
+      unseen: railAlertTotal(irgats.alerts?.get(irgat.id)),
     }));
     // The roster is read through its snapshot.
   }, [irgats, irgatsSnap]);
@@ -2970,11 +2975,7 @@ function CompactProjectRail({
                   color={irgat.color}
                   status={irgat.status}
                   active={irgat.id === irgats.activeId}
-                  unseen={
-                    irgat.id === irgats.activeId
-                      ? 0
-                      : (irgats.unseenCounts?.get(irgat.id) ?? 0)
-                  }
+                  alert={irgats.alerts?.get(irgat.id)}
                   onClick={() => irgats.onOpen(irgat.id)}
                   onContextMenu={(anchor) =>
                     setCompactIrgatMenu({ id: irgat.id, anchor })
@@ -3161,13 +3162,17 @@ function fleetLabel(needsYou: number): string {
   return `Fleet, ${needsYou} ${needsYou === 1 ? "session needs" : "sessions need"} you`;
 }
 
+function railAlertTotal(alert: RailAlertCounts | undefined): number {
+  return alert ? alert.needsYou + alert.unread : 0;
+}
+
 function CompactRailIrgat({
   name,
   mascot,
   color,
   status,
   active,
-  unseen,
+  alert,
   onClick,
   onContextMenu,
 }: {
@@ -3176,18 +3181,26 @@ function CompactRailIrgat({
   color: string;
   status: IrgatStatus;
   active: boolean;
-  /** Replies the user has not read. */
-  unseen: number;
+  /** Chats waiting on the user or holding an unread reply. */
+  alert?: RailAlertCounts;
   onClick: () => void;
   /** Opens the Irgat's menu, as a right-click does on the full rail. */
   onContextMenu?: (anchor: { x: number; y: number }) => void;
 }) {
   const label = `${name}, ${IRGAT_STATUS_LABEL[status]}`;
+  const alertLabel = railAlertLabel(alert);
+  const alerted = hasRailAlert(alert);
+  // Waiting on you outranks unread; the label still names both.
+  const badgeCount = alert
+    ? alert.needsYou > 0
+      ? alert.needsYou
+      : alert.unread
+    : 0;
   return (
     <button
       type="button"
       title={`${name}\n${IRGAT_STATUS_LABEL[status]}`}
-      aria-label={unseen ? `${label}, ${unreadLabel(unseen)}` : label}
+      aria-label={alertLabel ? `${label}, ${alertLabel}` : label}
       aria-current={active ? "true" : undefined}
       data-compact-rail-irgat
       onClick={onClick}
@@ -3202,17 +3215,23 @@ function CompactRailIrgat({
       className={`relative grid size-8 shrink-0 place-items-center rounded-md active:scale-[0.97] ${
         active
           ? "bg-selection"
-          : "opacity-65 hover:bg-content/10 hover:opacity-100"
+          : alerted
+            ? "hover:bg-content/10"
+            : "opacity-65 hover:bg-content/10 hover:opacity-100"
       }`}
     >
       <IrgatRailMascot name={mascot} color={color} status={status} />
-      {unseen ? (
+      {alert && alerted ? (
         <span
           aria-hidden
-          data-irgat-unread={unseen}
-          className="absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-background-base px-0.5 text-[9px] font-medium tabular-nums leading-none text-content/80 ring-1 ring-content/15"
+          data-irgat-unread={railAlertTotal(alert)}
+          className={`absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full px-0.5 text-[9px] font-semibold tabular-nums leading-none ${
+            alert.needsYou > 0
+              ? "bg-amber-500 text-black"
+              : "bg-accent text-white"
+          }`}
         >
-          {unreadBadge(unseen)}
+          {badgeCount > 99 ? "99+" : badgeCount}
         </span>
       ) : null}
     </button>

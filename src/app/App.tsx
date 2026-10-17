@@ -634,6 +634,10 @@ import {
   runCheckCommand,
 } from "../features/sessions/model/completionGate";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
+import {
+  projectAlertsFromSessions,
+  type RailAlertCounts,
+} from "./shell/RailAlert";
 import { useUnseenReplyCounts } from "../features/sessions/hooks/useUnseenReplyCounts";
 import {
   loadNotificationsEnabled,
@@ -15056,7 +15060,7 @@ function Workspace({
     ) : null;
   const irgatRailState = useMemo(() => {
     const states = new Map<string, IrgatState>();
-    const unseen = new Map<string, number>();
+    const alerts = new Map<string, RailAlertCounts>();
     for (const irgat of listIrgats()) {
       const chats = sessions.filter((entry) =>
         allIrgatSessionIds(irgat).includes(entry.id),
@@ -15066,23 +15070,48 @@ function Workspace({
         chats.find((entry) => entry.busy) ??
         chats[0];
       if (session) states.set(irgat.id, irgatState(session));
-      // Only the chat on screen is read; its siblings' replies still count.
-      const count = allIrgatSessionIds(irgat).reduce(
-        (total, id) =>
-          id === irgatViewId
-            ? total
-            : total + (irgatReplies.counts.get(id) ?? 0),
-        0,
-      );
-      if (count) unseen.set(irgat.id, count);
+      // Chats, not replies: one busy chat must not read as thousands.
+      // Only the chat on screen is read; its siblings still count.
+      let needsYou = 0;
+      let unread = 0;
+      for (const chat of chats) {
+        if (sessionNeedsInput(chat)) needsYou += 1;
+        else if (
+          chat.id !== irgatViewId &&
+          ((irgatReplies.counts.get(chat.id) ?? 0) > 0 ||
+            unseenFinishedIds.has(chat.id))
+        )
+          unread += 1;
+      }
+      if (needsYou || unread) alerts.set(irgat.id, { needsYou, unread });
     }
-    return { states, unseen };
+    return { states, alerts };
     // The roster is read through its snapshot.
-  }, [irgatsSnap, sessions, irgatReplies.counts, irgatViewId]);
+  }, [
+    irgatsSnap,
+    sessions,
+    irgatReplies.counts,
+    unseenFinishedIds,
+    irgatViewId,
+  ]);
   const irgatRail = useStableValue(irgatRailState);
   const busyProjectPaths = useStableValue(
     promptableSessions.flatMap((session) =>
       session.busy && session.cwd ? [session.cwd] : [],
+    ),
+  );
+  const projectAlerts = useStableValue(
+    projectAlertsFromSessions(
+      // Rows the project's list leaves out cannot be opened from it.
+      promptableSessions.filter(
+        (session) => !session.sidebarHidden && !isHabitRun(session.id),
+      ),
+      {
+        needsYou: sessionNeedsInput,
+        unread: unseenFinishedIds,
+        activeSessionId,
+        excluded: irgatSessionIds,
+      },
     ),
   );
   const onOpenRailIrgat = useCallback(
@@ -15229,7 +15258,7 @@ function Workspace({
         ? {
             activeId: irgatViewIrgat?.id,
             states: irgatRail.states,
-            unseenCounts: irgatRail.unseen,
+            alerts: irgatRail.alerts,
             onOpen: onOpenRailIrgat,
             activeSessionId: irgatViewId ?? undefined,
             onOpenChat: (irgatId: string, sessionId: string) =>
@@ -15273,7 +15302,9 @@ function Workspace({
                   ? ("needs-input" as const)
                   : session.busy
                     ? ("running" as const)
-                    : unseenFinishedIds.has(session.id)
+                    : unseenFinishedIds.has(session.id) ||
+                        (session.id !== irgatViewId &&
+                          (irgatReplies.counts.get(session.id) ?? 0) > 0)
                       ? ("unread" as const)
                       : ("idle" as const),
               ]),
@@ -15299,6 +15330,7 @@ function Workspace({
       onDeleteIrgatChat,
       onRenameHistorySession,
       unseenFinishedIds,
+      irgatReplies.counts,
       irgatViewId,
       sessions,
       onCreateIrgat,
@@ -15476,6 +15508,7 @@ function Workspace({
               textHarness={pickTextHarness(active?.harness)}
               recents={recents}
               busyProjectPaths={busyProjectPaths}
+              projectAlerts={projectAlerts}
               liveAgents={liveAgents}
               onSelectAgent={onSelectLiveAgent}
               onSelectProject={onSelectProject}

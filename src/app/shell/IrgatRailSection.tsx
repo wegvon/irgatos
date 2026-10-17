@@ -54,14 +54,26 @@ import {
   updateIrgat,
   type IrgatState,
 } from "../../features/irgats/model/irgat";
+import {
+  NO_RAIL_ALERT,
+  RailAlertBadge,
+  RailAlertEdge,
+  addRailAlerts,
+  hasRailAlert,
+  railAlertLabel,
+  type RailAlertCounts,
+} from "./RailAlert";
 
 export type IrgatRailProps = {
   /** The Irgat open in the main area, if any. */
   activeId?: string;
   /** What each Irgat is doing, by Irgat id; missing reads as idle. */
   states: ReadonlyMap<string, IrgatState>;
-  /** Replies each Irgat has that the user has not looked at yet, by Irgat id. */
-  unseenCounts?: ReadonlyMap<string, number>;
+  /**
+   * Chats of each Irgat waiting on the user or holding a reply the user has
+   * not opened, by Irgat id. Chat counts, never message counts.
+   */
+  alerts?: ReadonlyMap<string, RailAlertCounts>;
   onOpen: (irgatId: string) => void;
   onCreate: () => void;
   activeSessionId?: string;
@@ -133,15 +145,6 @@ function ChatTitleInput({
   );
 }
 
-/** A Irgat's unread count as its badge shows it. */
-export function unreadBadge(count: number): string {
-  return count > 99 ? "99+" : String(count);
-}
-
-export function unreadLabel(count: number): string {
-  return count === 1 ? "1 new reply" : `${count} new replies`;
-}
-
 /**
  * The user's Irgats, above the projects. Each opens like a project does, but
  * into its conversation; none belongs to a project, so they get a section of
@@ -150,7 +153,7 @@ export function unreadLabel(count: number): string {
 export function IrgatRailSection({
   activeId,
   states,
-  unseenCounts,
+  alerts,
   onOpen,
   onCreate,
   activeSessionId,
@@ -184,13 +187,22 @@ export function IrgatRailSection({
   const [background, setBackground] = useState<string>();
   const backgroundIrgat = background ? findIrgat(background) : undefined;
   const [newGroup, setNewGroup] = useState(false);
+  const totalAlert = irgats.reduce(
+    (total, irgat) => addRailAlerts(total, alerts?.get(irgat.id)),
+    NO_RAIL_ALERT,
+  );
+  const totalAlertLabel = railAlertLabel(totalAlert);
 
   return (
     <div className="mb-2 shrink-0" data-irgat-rail>
       <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
-        <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
-          Irgats
-        </span>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 text-xs leading-5 text-content/50">
+          <span className="min-w-0 truncate">Irgats</span>
+          {totalAlertLabel ? (
+            <span className="sr-only">, {totalAlertLabel}</span>
+          ) : null}
+          <RailAlertBadge counts={totalAlert} />
+        </div>
         {groups && irgats.length ? (
           <button
             type="button"
@@ -247,7 +259,9 @@ export function IrgatRailSection({
           const expanded = irgat.chatsCollapsed === false;
           const Chevron = expanded ? ChevronDown : ChevronRight;
           // The open chat is already left out of the count.
-          const unseen = unseenCounts?.get(irgat.id) ?? 0;
+          const alert = alerts?.get(irgat.id);
+          const alerted = hasRailAlert(alert);
+          const alertLabel = railAlertLabel(alert);
           const projects = look.projects.length
             ? irgatProjectsPhrase(look.projects)
             : "No projects yet";
@@ -262,7 +276,11 @@ export function IrgatRailSection({
                 data-selected={selected || undefined}
                 data-irgat-status={state.status}
                 className={`reorder-item project-reorder-item group relative flex h-8 cursor-default touch-none items-stretch rounded-md px-2 ${
-                  selected ? "bg-selection-strong text-content" : "opacity-65"
+                  selected
+                    ? "bg-selection-strong text-content"
+                    : alerted
+                      ? ""
+                      : "opacity-65"
                 }`}
                 onPointerDown={(event) => {
                   if (event.button !== 0) return;
@@ -299,13 +317,13 @@ export function IrgatRailSection({
               >
                 <button
                   type="button"
-                  title={[look.name, projects, status]
+                  title={[look.name, projects, status, alertLabel]
                     .filter(Boolean)
                     .join("\n")}
                   aria-label={[
                     look.name,
                     status ?? "idle",
-                    unseen ? unreadLabel(unseen) : undefined,
+                    alertLabel || undefined,
                     projects,
                   ]
                     .filter(Boolean)
@@ -329,25 +347,23 @@ export function IrgatRailSection({
                     <Shimmer
                       as="span"
                       duration={1.4}
-                      className="min-w-0 flex-1 truncate text-sm font-medium leading-tight"
+                      className={`min-w-0 flex-1 truncate text-sm leading-tight ${alerted ? "font-semibold" : "font-medium"}`}
                     >
                       {look.name}
                     </Shimmer>
                   ) : (
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium leading-tight">
+                    <span
+                      className={`min-w-0 flex-1 truncate text-sm leading-tight ${alerted ? "font-semibold text-content" : "font-medium"}`}
+                    >
                       {look.name}
                     </span>
                   )}
-                  {unseen ? (
-                    <span
-                      aria-hidden
-                      data-irgat-unread={unseen}
-                      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-content/15 px-1 text-[10px] font-medium tabular-nums leading-none text-content/80 group-hover:hidden group-has-[:focus-visible]:hidden"
-                    >
-                      {unreadBadge(unseen)}
-                    </span>
-                  ) : null}
+                  <RailAlertBadge
+                    counts={alert}
+                    className="group-hover:hidden group-has-[:focus-visible]:hidden"
+                  />
                 </button>
+                <RailAlertEdge counts={alert} />
                 <button
                   type="button"
                   data-no-drag
@@ -422,7 +438,7 @@ export function IrgatRailSection({
                             aria-label={
                               stateLabel ? `${title}, ${stateLabel}` : title
                             }
-                            className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 ${canOpenBeside ? "pr-12" : "pr-7"} text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : "text-content/55"}`}
+                            className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 ${canOpenBeside ? "pr-12" : "pr-7"} text-left text-xs hover:bg-content/8 ${activeSessionId === id ? "bg-selection-strong text-content" : state === "needs-input" || state === "unread" ? "font-semibold text-content" : "text-content/55"}`}
                             onClick={(event) => {
                               if (event.altKey && canOpenBeside)
                                 onOpenChatBeside?.(id);

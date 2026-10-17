@@ -102,6 +102,16 @@ import {
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { useProjectMenu } from "./useProjectMenu";
 import { IrgatRailSection, type IrgatRailProps } from "./IrgatRailSection";
+import {
+  ProjectAlertsContext,
+  RailAlertBadge,
+  RailAlertEdge,
+  hasRailAlert,
+  railAlertLabel,
+  useProjectAlert,
+  useProjectsAlert,
+  type RailAlertCounts,
+} from "./RailAlert";
 
 type Props = {
   visible?: boolean;
@@ -109,6 +119,8 @@ type Props = {
   recents: RecentProject[];
   inboxUnseen?: boolean;
   busyPaths?: Iterable<string>;
+  /** Sessions waiting on the user or unread, per project (`pathKey`). */
+  projectAlerts?: ReadonlyMap<string, RailAlertCounts>;
   canGoBack?: boolean;
   canGoForward?: boolean;
   onGoBack?: () => void;
@@ -168,6 +180,7 @@ export function ProjectRail({
   recents,
   inboxUnseen = false,
   busyPaths,
+  projectAlerts = NO_PROJECT_ALERTS,
   canGoBack = false,
   canGoForward = false,
   onGoBack,
@@ -394,6 +407,7 @@ export function ProjectRail({
   const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y");
   const projectSortable = useAnimatedReorder(projectIds, onReorderProjects, "y");
   return (
+    <ProjectAlertsContext.Provider value={projectAlerts}>
     <nav
       ref={resize.setPaneRef}
       aria-label="Projects"
@@ -675,8 +689,11 @@ export function ProjectRail({
         onDoubleClick={resize.onDoubleClick}
       />
     </nav>
+    </ProjectAlertsContext.Provider>
   );
 }
+
+const NO_PROJECT_ALERTS: ReadonlyMap<string, RailAlertCounts> = new Map();
 
 type SortableHandle = ReturnType<typeof useAnimatedReorder>;
 
@@ -725,7 +742,11 @@ function ProjectSection({
 }) {
   return (
     <div className="shrink-0 mb-2">
-      <ProjectSectionHeader label={label} onAdd={onAdd} />
+      <ProjectSectionHeader
+        label={label}
+        onAdd={onAdd}
+        paths={items.map((item) => item.path)}
+      />
       {items.length === 0 && emptyLabel ? (
         <p className="px-4 pb-1 text-[11px] leading-tight text-content/40">
           {emptyLabel}
@@ -762,17 +783,26 @@ function ProjectSectionHeader({
   label,
   onAdd,
   onAddGroup,
+  paths = [],
 }: {
   label: string;
   onAdd?: () => void;
   onAddGroup?: (x: number, y: number) => void;
+  /** The projects listed under it, whose alerts it sums. */
+  paths?: readonly string[];
 }) {
+  const alert = useProjectsAlert(paths);
+  const alertLabel = railAlertLabel(alert);
   return (
     <div className="flex items-center gap-1 px-3 pb-1.5 pt-1">
       {/* As tall as the header buttons, so every section header matches. */}
-      <span className="min-w-0 flex-1 truncate px-1 text-xs leading-5 text-content/50">
-        {label}
-      </span>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 px-1 text-xs leading-5 text-content/50">
+        <span className="min-w-0 truncate">{label}</span>
+        {alertLabel ? (
+          <span className="sr-only">, {alertLabel}</span>
+        ) : null}
+        <RailAlertBadge counts={alert} />
+      </div>
       {onAddGroup ? (
         <button
           type="button"
@@ -840,6 +870,10 @@ function ProjectGroupSection({
   );
   const countLabel = `${items.length} ${items.length === 1 ? "project" : "projects"}`;
   const expanded = !group.collapsed;
+  // Open groups show it on each project; a closed one carries it itself.
+  const groupAlert = useProjectsAlert(items.map((item) => item.path));
+  const shownAlert = expanded ? undefined : groupAlert;
+  const groupAlertLabel = railAlertLabel(shownAlert);
   const openMenu = (target: HTMLElement, x?: number, y?: number) => {
     const rect = target.getBoundingClientRect();
     onOpenGroupMenu(x ?? rect.left, y ?? rect.bottom);
@@ -855,7 +889,9 @@ function ProjectGroupSection({
       aria-label={group.name}
     >
       <div
-        className="project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 opacity-65 cursor-default"
+        className={`project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 cursor-default ${
+          hasRailAlert(shownAlert) ? "" : "opacity-65"
+        }`}
         onContextMenu={(event) => {
           event.preventDefault();
           event.currentTarget.querySelector<HTMLButtonElement>("button")?.focus();
@@ -865,8 +901,12 @@ function ProjectGroupSection({
         <button
           type="button"
           aria-expanded={!group.collapsed}
-          aria-label={`${group.name}, ${countLabel}`}
-          title={`${group.name} · ${countLabel}`}
+          aria-label={[group.name, countLabel, groupAlertLabel]
+            .filter(Boolean)
+            .join(", ")}
+          title={[`${group.name} · ${countLabel}`, groupAlertLabel]
+            .filter(Boolean)
+            .join("\n")}
           onClick={onToggleCollapsed}
           className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
         >
@@ -898,8 +938,19 @@ function ProjectGroupSection({
               />
             )}
           </div>
-          <span className={nameClassName}>{group.name}</span>
+          <span
+            className={
+              hasRailAlert(shownAlert) ? alertNameClassName : nameClassName
+            }
+          >
+            {group.name}
+          </span>
+          <RailAlertBadge
+            counts={shownAlert}
+            className="group-hover:hidden group-has-[:focus-visible]:hidden"
+          />
         </button>
+        <RailAlertEdge counts={shownAlert} />
         <button
           type="button"
           data-no-drag
@@ -947,6 +998,9 @@ function ProjectGroupSection({
 
 const nameClassName =
   "min-w-0 flex-1 truncate text-sm font-medium leading-tight";
+/** A row's name while it holds sessions waiting on the user or unread. */
+const alertNameClassName =
+  "min-w-0 flex-1 truncate text-sm font-semibold leading-tight text-content";
 
 function ProjectCard({
   item,
@@ -991,10 +1045,9 @@ function ProjectCard({
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
   const stats = useProjectDiffStats(item.path, diffEnabled);
-  const files = stats?.files ?? 0;
-  const additions = stats?.additions ?? 0;
-  const deletions = stats?.deletions ?? 0;
-  const hasChanges = files > 0 || additions > 0 || deletions > 0;
+  const alert = useProjectAlert(item.path);
+  const alerted = hasRailAlert(alert);
+  const alertLabel = railAlertLabel(alert);
   const remote = remoteProjectFor(item.path);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
@@ -1024,8 +1077,16 @@ function ProjectCard({
     busy,
   );
   const labelClassName = machine
-    ? "min-w-0 max-w-[75%] shrink-0 truncate text-sm font-medium leading-tight"
-    : nameClassName;
+    ? `min-w-0 max-w-[75%] shrink-0 truncate text-sm leading-tight ${alerted ? "font-semibold text-content" : "font-medium"}`
+    : alerted
+      ? alertNameClassName
+      : nameClassName;
+  const rowTitle = [cardTitle, alertLabel, muteStatus]
+    .filter(Boolean)
+    .join("\n");
+  const rowAriaLabel = [cardAriaLabel, alertLabel, muteStatus]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div
@@ -1034,7 +1095,9 @@ function ProjectCard({
       className={`reorder-item project-reorder-item group relative flex touch-none items-stretch rounded-md px-2 h-8 ${
         selected
           ? "bg-selection-strong text-content"
-          : "opacity-65"
+          : alerted
+            ? ""
+            : "opacity-65"
       } cursor-default`}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
@@ -1064,8 +1127,8 @@ function ProjectCard({
     >
       <button
         type="button"
-        title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
-        aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
+        title={rowTitle}
+        aria-label={rowAriaLabel}
         aria-current={selected ? "true" : undefined}
         className="flex min-w-0 flex-1 cursor-default items-center gap-2 text-left transition-[padding] duration-150 motion-reduce:transition-none group-hover:pr-6 group-has-[:focus-visible]:pr-6"
       >
@@ -1098,11 +1161,10 @@ function ProjectCard({
             {machine.name}
           </span>
         ) : null}
-        {hasChanges ? (
-          <span className="project-card-stats shrink-0 group-hover:hidden group-has-[:focus-visible]:hidden">
-            <ProjectDiffStat additions={additions} deletions={deletions} />
-          </span>
-        ) : null}
+        <RailAlertBadge
+          counts={alert}
+          className="group-hover:hidden group-has-[:focus-visible]:hidden"
+        />
         {remote ? (
           <span
             role="img"
@@ -1167,6 +1229,7 @@ function ProjectCard({
           <Pin className="size-3.5" strokeWidth={1.75} />
         )}
       </button>
+      <RailAlertEdge counts={alert} />
     </div>
   );
 }
@@ -1176,37 +1239,6 @@ function isBusyPath(path: string, busy: Set<string>): boolean {
     if (sameProjectPath(path, other)) return true;
   }
   return false;
-}
-
-function ProjectDiffStat({
-  additions,
-  deletions,
-}: {
-  additions: number;
-  deletions: number;
-}) {
-  if (additions <= 0 && deletions <= 0) return null;
-
-  const label = [
-    additions > 0 ? `+${formatInteger(additions)}` : "",
-    deletions > 0 ? `-${formatInteger(deletions)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <span
-      title={`${label} uncommitted`}
-      className="flex shrink-0 items-center gap-1 font-sans text-[11px] font-semibold tabular-nums"
-    >
-      {additions > 0 ? (
-        <span className="text-diff-add-fg">+{formatInteger(additions)}</span>
-      ) : null}
-      {deletions > 0 ? (
-        <span className="text-diff-del-fg">-{formatInteger(deletions)}</span>
-      ) : null}
-    </span>
-  );
 }
 
 function projectCardTitle(

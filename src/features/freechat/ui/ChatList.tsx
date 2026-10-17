@@ -159,6 +159,7 @@ function ChatRow({
     inputRef.current?.select();
   }, [renaming]);
   const stateLabel = CHAT_STATE_LABEL[row.state];
+  const alerted = row.state === "needs-input" || row.state === "unread";
   return (
     <div
       data-free-chat-row={row.id}
@@ -170,9 +171,20 @@ function ChatRow({
       className={`group relative flex h-8 items-center gap-2 rounded-md pl-2 pr-1 ${
         active
           ? "bg-selection text-content"
-          : "text-content/70 hover:bg-content/10 hover:text-content"
+          : alerted
+            ? "text-content hover:bg-content/10"
+            : "text-content/70 hover:bg-content/10 hover:text-content"
       }`}
     >
+      {alerted && !active ? (
+        <span
+          aria-hidden
+          data-chat-alert-edge
+          className={`pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full ${
+            row.state === "needs-input" ? "bg-amber-500" : "bg-accent"
+          }`}
+        />
+      ) : null}
       <HarnessIcon
         harness={row.harness}
         className="size-3.5 shrink-0 opacity-70"
@@ -208,7 +220,7 @@ function ChatRow({
           }}
           aria-current={active ? "true" : undefined}
           aria-label={stateLabel ? `${row.title}, ${stateLabel}` : row.title}
-          className="min-w-0 flex-1 truncate text-left text-[13px]"
+          className={`min-w-0 flex-1 truncate text-left text-[13px] ${alerted ? "font-semibold" : ""}`}
         >
           {row.title}
         </button>
