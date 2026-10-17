@@ -31,6 +31,10 @@ import {
   showProviderInModelPicker,
   stepModelPickerTab,
   type AgentModel,
+  favoriteSlotFromKey,
+  loadFavoriteModels,
+  saveFavoriteModels,
+  toggleFavoriteModel,
 } from "./models";
 import {
   setProjectDefaultProvider,
@@ -715,5 +719,47 @@ describe("every bundled model resolves to its own native id", () => {
       resetHarnessModelOverlays();
     }
     expect(wrong).toEqual([]);
+  });
+});
+
+describe("favorite models", () => {
+  it("stars in order and refuses a fourth until one is unstarred", () => {
+    let favorites: string[] = [];
+    for (const id of ["a", "b", "c", "d"]) {
+      favorites = toggleFavoriteModel(favorites, id);
+    }
+    expect(favorites).toEqual(["a", "b", "c"]);
+    favorites = toggleFavoriteModel(favorites, "b");
+    expect(toggleFavoriteModel(favorites, "d")).toEqual(["a", "c", "d"]);
+  });
+
+  it("keeps at most three saved favorites", () => {
+    localStorage.setItem(
+      "irgat.favoriteModels",
+      JSON.stringify(["a", "b", "c", "d"]),
+    );
+    expect(loadFavoriteModels()).toEqual(["a", "b", "c"]);
+    saveFavoriteModels(["x", "y", "z", "w"]);
+    expect(JSON.parse(localStorage.getItem("irgat.favoriteModels")!)).toEqual([
+      "x",
+      "y",
+      "z",
+    ]);
+  });
+
+  it("maps Option+1..3 to favorite slots only", () => {
+    const key = (code: string, extra = {}) => ({
+      altKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      code,
+      ...extra,
+    });
+    expect(favoriteSlotFromKey(key("Digit1"))).toBe(0);
+    expect(favoriteSlotFromKey(key("Numpad3"))).toBe(2);
+    expect(favoriteSlotFromKey(key("Digit4"))).toBeNull();
+    expect(favoriteSlotFromKey(key("Digit1", { altKey: false }))).toBeNull();
+    expect(favoriteSlotFromKey(key("Digit1", { metaKey: true }))).toBeNull();
   });
 });

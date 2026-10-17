@@ -10,10 +10,12 @@ import {
 import { emit } from "@tauri-apps/api/event";
 import { Check, RotateCcw, Search, Star, Zap } from "../../../shared/ui/icons";
 import {
+  favoriteSlotFromKey,
   findModel,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
   loadFavoriteModels,
+  MAX_FAVORITE_MODELS,
   modelEffortSetting,
   modelsFor,
   preferredModelSettings,
@@ -21,6 +23,7 @@ import {
   showProviderInModelPicker,
   subscribeModels,
   subscribePickerVisibility,
+  toggleFavoriteModel,
   type AgentModel,
   type ModelPickerTab,
 } from "../../sessions/model/models";
@@ -30,6 +33,7 @@ import {
   type HarnessId,
 } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { FavoriteModels } from "../../sessions/ui/FavoriteModels";
 import {
   filterQuickModels,
   QUICK_COMPOSER_CATALOG_REQUEST_EVENT,
@@ -74,15 +78,20 @@ export function QuickModelSelector({
   );
   const tabs: ModelPickerTab[] = ["favorites", ...providers];
   const visibleTab = tabs.includes(tab) ? tab : "favorites";
+  const favoriteModels = favorites
+    .map(findModel)
+    .filter(
+      (item): item is AgentModel => !!item && providers.includes(item.harness),
+    );
+  const favoritesFull = favorites.length >= MAX_FAVORITE_MODELS;
+  const toggleFavorite = (id: string) => {
+    const next = toggleFavoriteModel(favorites, id);
+    if (next === favorites) return;
+    setFavorites(next);
+    saveFavoriteModels(next);
+  };
   const pool =
-    visibleTab === "favorites"
-      ? favorites
-          .map(findModel)
-          .filter(
-            (item): item is AgentModel =>
-              !!item && providers.includes(item.harness),
-          )
-      : modelsFor(visibleTab);
+    visibleTab === "favorites" ? favoriteModels : modelsFor(visibleTab);
   const models = filterQuickModels(pool, query);
   const effort =
     modelEffortSetting(model) ??
@@ -167,6 +176,14 @@ export function QuickModelSelector({
       aria-label="Model selector"
       className="flex min-h-0 flex-col border-t border-stroke"
       onKeyDown={(event) => {
+        const slot = favoriteSlotFromKey(event);
+        const favorite = slot == null ? undefined : favoriteModels[slot];
+        if (favorite) {
+          event.preventDefault();
+          event.stopPropagation();
+          pick(favorite);
+          return;
+        }
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
@@ -262,6 +279,16 @@ export function QuickModelSelector({
             }}
           />
         </label>
+        {visibleTab !== "favorites" && !query.trim() ? (
+          <FavoriteModels
+            models={favoriteModels}
+            currentId={model.id}
+            enabled={enabled}
+            onPick={pick}
+            onRemove={toggleFavorite}
+            className="shrink-0 border-b border-stroke px-2 py-1"
+          />
+        ) : null}
         <div
           ref={listRef}
           id={listId}
@@ -308,17 +335,20 @@ export function QuickModelSelector({
                   title={
                     favorites.includes(item.id)
                       ? "Remove from favorites"
-                      : "Add to favorites"
+                      : favoritesFull
+                        ? `Favorites are full (${MAX_FAVORITE_MODELS}). Unstar one to add this.`
+                        : "Add to favorites"
                   }
                   aria-label={`${favorites.includes(item.id) ? "Remove" : "Add"} ${item.name} ${favorites.includes(item.id) ? "from" : "to"} favorites`}
-                  onClick={() => {
-                    const next = favorites.includes(item.id)
-                      ? favorites.filter((id) => id !== item.id)
-                      : [...favorites, item.id];
-                    setFavorites(next);
-                    saveFavoriteModels(next);
-                  }}
-                  className="grid size-8 shrink-0 place-items-center text-content/35 hover:text-content"
+                  aria-disabled={
+                    (!favorites.includes(item.id) && favoritesFull) || undefined
+                  }
+                  onClick={() => toggleFavorite(item.id)}
+                  className={`grid size-8 shrink-0 place-items-center ${
+                    !favorites.includes(item.id) && favoritesFull
+                      ? "cursor-not-allowed text-content/20"
+                      : "text-content/35 hover:text-content"
+                  }`}
                 >
                   <Star
                     className="size-3.5"
