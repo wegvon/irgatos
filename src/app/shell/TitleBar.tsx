@@ -2,6 +2,7 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  ColumnInsert,
   DashboardSquare,
   Inbox,
   PanelLeft,
@@ -102,6 +103,8 @@ type Props = {
   /** Shows or hides the Irgat's overview panel beside its chat. */
   onToggleIrgatOverview?: () => void;
   irgatOverviewOpen?: boolean;
+  /** Starts a new chat under the Irgat beside the one open. */
+  onNewIrgatChatBeside?: () => void;
   /** The full-height Irgat panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -626,6 +629,7 @@ function TitleBarComponent({
   irgat,
   onToggleIrgatOverview,
   irgatOverviewOpen = false,
+  onNewIrgatChatBeside,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -905,6 +909,18 @@ function TitleBarComponent({
         ) : null}
         {irgat && onToggleIrgatOverview ? (
           <div className="flex items-center gap-1 px-3">
+            {onNewIrgatChatBeside ? (
+              <button
+                type="button"
+                aria-label="New chat beside"
+                title={`New chat beside (${MOD}D)`}
+                data-tauri-drag-region="false"
+                onClick={onNewIrgatChatBeside}
+                className="grid size-6 place-items-center rounded-md text-content/60 hover:bg-content/8 hover:text-content"
+              >
+                <ColumnInsert className="size-3.5" strokeWidth={1.75} />
+              </button>
+            ) : null}
             {onToggleIrgatOverview ? (
               <button
                 type="button"

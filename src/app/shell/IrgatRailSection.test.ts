@@ -250,3 +250,33 @@ it("shows each child chat's state and renames it from its menu", () => {
   expect(onRenameChat).toHaveBeenCalledWith("quiet", "Release notes");
   expect(row("quiet").querySelector("input")).toBeNull();
 });
+
+it("starts a new chat under the Irgat beside the open one", () => {
+  const irgat = createIrgat();
+  updateIrgat(irgat.id, (current) => ({
+    ...current,
+    sessionId: "main",
+    childSessionIds: [],
+    chatsCollapsed: false,
+  }));
+  const onCreateChat = vi.fn();
+  const onCreateChatBeside = vi.fn();
+  render({ activeSessionId: "main", onCreateChat, onCreateChatBeside });
+  const branch = container.querySelector(`[data-irgat-chats="${irgat.id}"]`)!;
+  const beside = branch.querySelector<HTMLButtonElement>(
+    '[title="New chat beside (⌥-click)"]',
+  )!;
+  act(() => beside.click());
+  expect(onCreateChatBeside).toHaveBeenCalledWith(irgat.id);
+  // Option-click on New chat opens it beside too.
+  const newChat = [...branch.querySelectorAll("button")].find(
+    (button) => button.textContent === " New chat",
+  )!;
+  act(() => {
+    newChat.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, altKey: true }),
+    );
+  });
+  expect(onCreateChatBeside).toHaveBeenCalledTimes(2);
+  expect(onCreateChat).not.toHaveBeenCalled();
+});

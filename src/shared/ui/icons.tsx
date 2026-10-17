@@ -35,6 +35,7 @@ import CircleDotIcon from "@hugeicons/core-free-icons/CircleDotIcon";
 import CloudUploadIcon from "@hugeicons/core-free-icons/CloudUploadIcon";
 import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
 import ColorPickerIcon from "@hugeicons/core-free-icons/ColorPickerIcon";
+import ColumnInsertIcon from "@hugeicons/core-free-icons/ColumnInsertIcon";
 import Comment01Icon from "@hugeicons/core-free-icons/Comment01Icon";
 import CommentAdd01Icon from "@hugeicons/core-free-icons/CommentAdd01Icon";
 import ComputerTerminal01Icon from "@hugeicons/core-free-icons/ComputerTerminal01Icon";
@@ -287,6 +288,7 @@ export const PanelBottom = wrap(LayoutBottomIcon, "PanelBottom");
 export const PanelLeft = wrap(LayoutAlignRightIcon, "PanelLeft");
 export const PanelRight = wrap(SidebarRight01Icon, "PanelRight");
 export const Columns = wrap(LayoutTwoColumnIcon, "Columns");
+export const ColumnInsert = wrap(ColumnInsertIcon, "ColumnInsert");
 /** `PanelLeft` mirrored, for panels docked on the right. */
 export const PanelRightToggle = wrap(LayoutAlignLeftIcon, "PanelRightToggle");
 export const PanelTop = wrap(LayoutTopIcon, "PanelTop");
