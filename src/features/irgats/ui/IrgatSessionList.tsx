@@ -452,8 +452,8 @@ export function IrgatSessionList({
                   ?.name ?? projectName(summary.cwd)
               }
               now={Date.now()}
-              onSelect={(id) => {
-                if (!opening) void open(id);
+              onSelect={(id, event) => {
+                if (!opening && !repeatClick(event)) void open(id);
               }}
               onContextMenu={
                 hasActions
@@ -520,8 +520,9 @@ export function IrgatSessionList({
           needsApproval={false}
           project={projectLabel(launch.cwd)}
           now={0}
-          onSelect={(id) => {
-            if ((failed || remote) && !opening) void open(id);
+          onSelect={(id, event) => {
+            if ((failed || remote) && !opening && !repeatClick(event))
+              void open(id);
           }}
         />
       </div>
@@ -576,6 +577,16 @@ export function IrgatSessionList({
       ) : null}
       {actionMenu}
     </div>
+  );
+}
+
+/**
+ * The second click of a double-click. Clicking the shown session again hides
+ * it, so a double-click would open it and close it at once.
+ */
+function repeatClick(event: object): boolean {
+  return (
+    "detail" in event && typeof event.detail === "number" && event.detail > 1
   );
 }
 

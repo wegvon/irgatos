@@ -39,6 +39,8 @@ import {
 import { irgatMessagePrompt } from "../features/irgats/model/irgatDirectMessages";
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import { launchRemoteSession } from "../features/connections/model/remoteAgentLaunch";
+import { waitForRemoteTurn } from "../features/connections/model/remoteCompletion";
+import { loadRemoteSession } from "../features/connections/model/connections";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import { HarnessEventQueue } from "./model/harnessFlush";
@@ -5614,16 +5616,17 @@ function Workspace({
         return;
       }
       // A session on another machine opens in that project's remote tab.
+      // Any of the Irgat's chats may have launched it, not just this one.
       const irgat = sessionsRef.current.find(
         (entry) => entry.id === irgatSessionId,
       );
-      const remoteLaunch = irgat
-        ? irgatSpawnedSessions(irgat.blocks).find(
-            (entry) =>
-              entry.sessionId === launchedId &&
-              isRemoteProjectPath(entry.cwd),
-          )
-        : undefined;
+      const remoteLaunch = [
+        ...(irgat ? irgatSpawnedSessions(irgat.blocks) : []),
+        ...irgatLaunchesRef.current,
+      ].find(
+        (entry) =>
+          entry.sessionId === launchedId && isRemoteProjectPath(entry.cwd),
+      );
       if (remoteLaunch) {
         closeIrgatView();
         setSidebarTab("sessions", remoteLaunch.cwd);
@@ -12174,6 +12177,21 @@ function Workspace({
                   harness: launch.harness,
                   model: resolveModel(launch.harness, launch.model).id,
                 });
+                // The host runs it, so its finish is read from the host and
+                // reported to the Irgat as a session here would be.
+                if (notifyIrgatId) {
+                  const settle = monitorCompletion(
+                    notifyIrgatId,
+                    remote.sessionId,
+                    id,
+                    launch.cwd,
+                    launch.prompt,
+                  );
+                  settle.accept();
+                  void waitForRemoteTurn((known) =>
+                    loadRemoteSession(remote.machineId, remote.sessionId, known),
+                  ).then(settle);
+                }
                 return;
               }
               const rememberLaunch = () => {
