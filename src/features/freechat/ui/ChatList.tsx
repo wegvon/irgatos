@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, MoreHorizontal, Pin } from "../../../shared/ui/icons";
+import {
+  Columns,
+  LoaderCircle,
+  MoreHorizontal,
+  Pin,
+} from "../../../shared/ui/icons";
 import {
   ExplorerMenu,
   type ExplorerMenuItem,
@@ -13,6 +18,8 @@ export type ChatListActions = {
   onPin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
   onBoard: (id: string) => void;
+  /** Shows the chat next to the one open, in its own pane. */
+  onOpenBeside?: (id: string) => void;
 };
 
 export const CHAT_STATE_LABEL: Record<FreeChatRow["state"], string> = {
@@ -25,6 +32,7 @@ export const CHAT_STATE_LABEL: Record<FreeChatRow["state"], string> = {
 /**
  * Chat rows with their state (running, needs you, new reply) and the
  * Rename, Pin, Board and Delete actions, on right-click or the row's menu.
+ * Option-click, or the row's columns button, opens a chat beside the open one.
  */
 export function ChatList({
   rows,
@@ -36,6 +44,7 @@ export function ChatList({
   onPin,
   onDelete,
   onBoard,
+  onOpenBeside,
 }: ChatListActions & {
   rows: readonly FreeChatRow[];
   activeId?: string;
@@ -51,6 +60,12 @@ export function ChatList({
   const menuRow = menu ? rows.find((row) => row.id === menu.id) : undefined;
   const menuItems: ExplorerMenuItem[] = menuRow
     ? [
+        ...(onOpenBeside
+          ? [
+              { kind: "item" as const, id: "beside", label: "Open beside" },
+              { kind: "sep" as const },
+            ]
+          : []),
         { kind: "item", id: "rename", label: "Rename" },
         {
           kind: "item",
@@ -70,7 +85,8 @@ export function ChatList({
 
   const onPick = (action: string) => {
     if (!menuRow) return;
-    if (action === "rename") setRenaming(menuRow.id);
+    if (action === "beside") onOpenBeside?.(menuRow.id);
+    else if (action === "rename") setRenaming(menuRow.id);
     else if (action === "pin") onPin(menuRow.id, !menuRow.pinned);
     else if (action === "board") onBoard(menuRow.id);
     else if (action === "delete") onDelete(menuRow.id);
@@ -87,6 +103,9 @@ export function ChatList({
               active={row.id === activeId}
               renaming={renaming === row.id}
               onSelect={() => onSelect(row.id)}
+              onOpenBeside={
+                onOpenBeside ? () => onOpenBeside(row.id) : undefined
+              }
               onMenu={(x, y) => setMenu({ id: row.id, x, y })}
               onRename={(title) => {
                 setRenaming(null);
@@ -117,6 +136,7 @@ function ChatRow({
   active,
   renaming,
   onSelect,
+  onOpenBeside,
   onMenu,
   onRename,
   onCancelRename,
@@ -125,6 +145,7 @@ function ChatRow({
   active: boolean;
   renaming: boolean;
   onSelect: () => void;
+  onOpenBeside?: () => void;
   onMenu: (x: number, y: number) => void;
   onRename: (title: string) => void;
   onCancelRename: () => void;
@@ -181,7 +202,10 @@ function ChatRow({
       ) : (
         <button
           type="button"
-          onClick={onSelect}
+          onClick={(event) => {
+            if (event.altKey && onOpenBeside) onOpenBeside();
+            else onSelect();
+          }}
           aria-current={active ? "true" : undefined}
           aria-label={stateLabel ? `${row.title}, ${stateLabel}` : row.title}
           className="min-w-0 flex-1 truncate text-left text-[13px]"
@@ -193,6 +217,17 @@ function ChatRow({
         <Pin aria-hidden className="size-3 shrink-0 opacity-50" />
       ) : null}
       <ChatStateMark state={row.state} />
+      {onOpenBeside && !active ? (
+        <button
+          type="button"
+          aria-label={`Open ${row.title} beside`}
+          title="Open beside (⌥-click)"
+          onClick={onOpenBeside}
+          className="grid size-6 shrink-0 place-items-center rounded text-content/50 opacity-0 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Columns className="size-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         aria-label={`More actions for ${row.title}`}

@@ -41,6 +41,7 @@ type Props = {
   onPin: (id: string, pinned: boolean) => void;
   onDelete: (id: string) => void;
   onBoard: (id: string) => void;
+  onOpenBeside?: (id: string) => void;
 };
 
 export function FreeChatView({
@@ -66,6 +67,7 @@ export function FreeChatView({
   onPin,
   onDelete,
   onBoard,
+  onOpenBeside,
 }: Props) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
@@ -136,6 +138,7 @@ export function FreeChatView({
         onPin={onPin}
         onDelete={onDelete}
         onBoard={onBoard}
+        onOpenBeside={activeId ? onOpenBeside : undefined}
       />
     </nav>
   );
