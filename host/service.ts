@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { promisify } from "node:util";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
@@ -172,6 +173,30 @@ export async function uninstallService(
   throw new Error("Irgatos Host supports Windows, Linux and macOS");
 }
 
+function startDetached(options: ServiceOptions, path: string) {
+  const log = openSync(join(options.directory, "host.log"), "a", 0o600);
+  try {
+    spawn(
+      options.executable,
+      [
+        options.entry,
+        "serve",
+        "--data-dir",
+        options.directory,
+        "--port",
+        String(options.port),
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", log, log],
+        env: { ...process.env, PATH: path },
+      },
+    ).unref();
+  } finally {
+    closeSync(log);
+  }
+}
+
 export async function installService(
   options: ServiceOptions,
 ): Promise<{ port: number; pid: number }> {
@@ -220,6 +245,14 @@ export async function installService(
       await writeFile(file, launchAgent(options, path), { mode: 0o600 });
       await run("launchctl", ["bootstrap", domain, file]);
     }
+  } else if (
+    process.platform === "linux" &&
+    !existsSync("/run/systemd/system")
+  ) {
+    // Containers such as Coder workspaces have no systemd. Run the host as a
+    // detached process instead: it outlives the SSH session, but not a restart
+    // of the machine or container, so the next connection starts it again.
+    startDetached(options, path);
   } else if (process.platform === "linux") {
     const user = userInfo();
     const env = systemdEnvironment(user.uid);

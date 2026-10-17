@@ -278,6 +278,33 @@ pub fn remote_disconnect(
 }
 
 #[tauri::command(async)]
+pub fn remote_rename(
+    app: AppHandle,
+    state: State<'_, RemoteConnections>,
+    machine_id: String,
+    name: String,
+) -> Result<Machine, String> {
+    let name: String = name.trim().chars().take(100).collect();
+    if name.is_empty() {
+        return Err("Enter a name for this machine".into());
+    }
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let path = store_path(&app)?;
+    let mut machines = read(&path)?;
+    let machine = machines
+        .iter_mut()
+        .find(|m| m.id == machine_id)
+        .ok_or("Machine is no longer connected")?;
+    machine.name = name;
+    let public = machine.public();
+    write(&path, &machines)?;
+    Ok(public)
+}
+
+#[tauri::command(async)]
 pub fn remote_request(
     app: AppHandle,
     state: State<'_, RemoteConnections>,
@@ -510,13 +537,9 @@ fn start_ssh_job(
                 }
             }
             if machine.name.trim().is_empty() {
-                machine.name = descriptor
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or(&target.target)
-                    .chars()
-                    .take(100)
-                    .collect();
+                // The SSH address names the machine the way the user knows it;
+                // a container's hostname is often just its random ID.
+                machine.name = remote_ssh::default_machine_name(&target.target);
             }
             Ok((machine, tunnel))
         })();

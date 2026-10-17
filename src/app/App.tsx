@@ -37,6 +37,7 @@ import {
   IrgatSessionCompletionBatches,
 } from "../features/irgats/model/irgatSessionCompletion";
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
+import { launchRemoteSession } from "../features/connections/model/remoteAgentLaunch";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
 import { useIdleSessionDetach } from "./hooks/useIdleSessionDetach";
 import { HarnessEventQueue } from "./model/harnessFlush";
@@ -12095,6 +12096,12 @@ function Workspace({
           {
             computer: (sessionId, tool, args) => invoke("computer_use_call", { sessionId, tool, args }),
             start: async (launch, id, placement, notifyIrgatId) => {
+              // The machine that holds the project runs the session; it is
+              // listed in that project's Sessions sidebar.
+              if (isRemoteProjectPath(launch.cwd)) {
+                await launchRemoteSession(launch, id);
+                return;
+              }
               const rememberLaunch = () => {
                 const created =
                   sessionsRef.current.find((session) => session.id === id) ??

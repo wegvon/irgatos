@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Adding a Linux container over SSH.** Setup no longer fails on hosts without systemd, such as Coder workspaces: the host then runs as a background process that survives SSH disconnects, and the next connection starts it again after a restart. Unpacking the Node.js runtime as root inside a container no longer fails with "Cannot change ownership".
+
 - **Adding a machine over SSH works without a GitHub release.** For macOS and Linux hosts, **Settings › Connections › Add machine** and **Update Host** now send the host code built into the installed app over SSH, and the host fetches its pinned Node.js runtime from nodejs.org. Before, setup downloaded the host package from a GitHub release for the app's version, and failed because no such release existed. The machine needs HTTPS access to nodejs.org the first time. Windows hosts still use the release package.
 
 - **Voice mode reads a short summary.** Instead of the whole reply, voice mode now says in a sentence or three what the agent did, what it changed and any question it asks you, in the selected speech model's voice. With a Live voice (Gemini) key the summary comes from Gemini Flash-Lite in the reply's own language. Without one, or when that call fails, it reads the reply's opening paragraph, its questions, its `Next:` lines and a closing offer, and leaves code, tables and file lists on screen. Turn off **Settings › Voice › Read a short summary** to hear the whole reply again.
