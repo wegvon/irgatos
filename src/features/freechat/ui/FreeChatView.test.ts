@@ -229,4 +229,33 @@ describe("FreeChatView", () => {
     expect(besidePane.contains(slot("dock"))).toBe(true);
     expect(besidePane.contains(slot("footer"))).toBe(false);
   });
+
+  it("opens another chat beside the open one", () => {
+    const onOpenBeside = vi.fn();
+    const onSelect = vi.fn();
+    render({
+      rows: [row("a"), row("b")],
+      activeId: "a",
+      pane: createElement("div"),
+      onOpenBeside,
+      onSelect,
+    });
+    // The open chat has no beside button; the others do.
+    expect(button("Open Chat a beside")).toBeNull();
+    act(() => button("Open Chat b beside")!.click());
+    expect(onOpenBeside).toHaveBeenCalledWith("b");
+    // Option-click on a row does the same instead of switching chats.
+    act(() =>
+      button("Chat b")!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, altKey: true }),
+      ),
+    );
+    expect(onOpenBeside).toHaveBeenCalledTimes(2);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("offers no beside button while no chat is open", () => {
+    render({ rows: [row("a")], onOpenBeside: vi.fn() });
+    expect(button("Open Chat a beside")).toBeNull();
+  });
 });

@@ -111,6 +111,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { useStableValue } from "../shared/hooks/useStableValue";
 import { Sidebar } from "./shell/Sidebar";
@@ -281,6 +282,19 @@ import {
   type SplitDir,
   type WorkspaceTab,
 } from "../features/workspace/model/layout";
+import {
+  closeSidePane,
+  forgetSidePane,
+  irgatSidePaneKey,
+  loadSidePanes,
+  openBeside,
+  saveSidePanes,
+  shownSidePanes,
+  type SidePaneKey,
+  type SidePaneMap,
+  type SidePanes,
+} from "../features/workspace/model/sidePanes";
+import { SidePaneRow } from "../features/workspace/ui/SidePaneRow";
 import {
   releaseNotesForVersion,
   releaseNotesTitle,
@@ -1261,6 +1275,7 @@ function filesInWorkspaceTabs(tabs: readonly WorkspaceTab[]): FilePaneTab[] {
 /** Stable empty tab list for the title bar while a Irgat is in full view. */
 const NO_TITLE_TABS: [] = [];
 const NO_USAGE_PROVIDERS: RateLimitProvider[] = [];
+const NO_SIDE_PANES: SidePanes = { ids: [], sizes: [1] };
 
 /** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
 function confirmDiscardUnsaved(message: string): Promise<boolean> {
@@ -5749,6 +5764,96 @@ function Workspace({
     },
     [ensureOpenSession, tabCloseScope],
   );
+
+  // Chats open beside the Irgat's or the Chat page's own chat.
+  const [sidePanes, setSidePanes] = useState<SidePaneMap>(loadSidePanes);
+  useEffect(() => saveSidePanes(sidePanes), [sidePanes]);
+  const [sidePaneFocusId, setSidePaneFocusId] = useState<string | null>(null);
+  const sidePaneIrgat = irgatViewId ? irgatForSession(irgatViewId) : undefined;
+  const sidePaneKey: SidePaneKey | null = sidePaneIrgat
+    ? irgatSidePaneKey(sidePaneIrgat.id)
+    : chatViewOpen && !irgatViewId
+      ? "chats"
+      : null;
+  const sidePaneKeyRef = useRef(sidePaneKey);
+  sidePaneKeyRef.current = sidePaneKey;
+  // Focus goes back to the main chat when the view changes.
+  useEffect(() => setSidePaneFocusId(null), [sidePaneKey]);
+  // A row saved before a restart loads its chats; ones that are gone leave it.
+  useEffect(() => {
+    if (!sidePaneKey) return;
+    for (const id of sidePanes[sidePaneKey]?.ids ?? []) {
+      if (sessionsRef.current.some((session) => session.id === id)) continue;
+      void ensureOpenSession(id)
+        .catch(() => null)
+        .then((session) => {
+          if (!session) setSidePanes((map) => forgetSidePane(map, id));
+        });
+    }
+    // Only on entering a view; opening beside loads its chat itself.
+  }, [sidePaneKey, ensureOpenSession]);
+
+  /**
+   * Shows `sessionId` next to what is open: beside the Irgat's or the Chat
+   * page's chat, or as a split right of the focused pane in a project.
+   */
+  const onOpenBeside = useCallback(
+    async (sessionId: string) => {
+      const key = sidePaneKeyRef.current;
+      if (key) {
+        const session = await ensureOpenSession(sessionId).catch(() => null);
+        if (!session || sidePaneKeyRef.current !== key) return;
+        const mainId =
+          key === "chats"
+            ? freeChatIdRef.current
+            : (irgatViewIdRef.current ?? undefined);
+        // With no chat open yet, the chat simply opens.
+        if (!mainId) {
+          openFreeChat(sessionId);
+          return;
+        }
+        setSidePanes((map) => ({
+          ...map,
+          [key]: openBeside(map[key], mainId, sessionId),
+        }));
+        setSidePaneFocusId(sessionId === mainId ? null : sessionId);
+        setProjectTerminalFocused(false);
+        setComposerFocused(true);
+        setComposerFocusToken((token) => token + 1);
+        return;
+      }
+      const tab =
+        tabsRef.current.find((entry) => entry.id === activeTabIdRef.current) ??
+        tabsRef.current[0];
+      const session = sessionsRef.current.find(
+        (entry) => entry.id === sessionId,
+      );
+      // Irgat chats and free chats have their own pages, not project panes.
+      if (
+        !tab ||
+        isIrgatSession(sessionId) ||
+        (session && isFreeChatSession(session))
+      ) {
+        return;
+      }
+      const target = tab.focusedId || firstLeafId(tab.layout);
+      if (!target || target === sessionId) return;
+      await onPlaceSessionOnPane(sessionId, target, "right");
+    },
+    [ensureOpenSession, onPlaceSessionOnPane, openFreeChat],
+  );
+  const onCloseSidePane = useCallback((sessionId: string) => {
+    const key = sidePaneKeyRef.current;
+    if (!key) return;
+    setSidePanes((map) => {
+      const next = { ...map };
+      const after = closeSidePane(map[key], sessionId);
+      if (after) next[key] = after;
+      else delete next[key];
+      return next;
+    });
+    setSidePaneFocusId((focused) => (focused === sessionId ? null : focused));
+  }, []);
 
   const onPlaceTabOnPane = useCallback(
     (sourceTabId: string, targetId: string, edge: PaneEdge) => {
@@ -14561,6 +14666,64 @@ function Workspace({
       ),
     [irgatLaunchesKey],
   );
+  // The view's chat with the chats opened beside it. Every Irgat chat and the
+  // Chat page's chat render through this, with or without side panes, so
+  // opening the first one does not remount the chat already shown.
+  const withSidePanes = (
+    main: ReactNode,
+    mainId: string | undefined,
+    showSides: boolean,
+  ) => {
+    const shown =
+      showSides && sidePaneKey
+        ? shownSidePanes(sidePanes[sidePaneKey], mainId, (id) =>
+            sessions.some((session) => session.id === id),
+          )
+        : undefined;
+    const key = sidePaneKey;
+    return (
+      <SidePaneRow
+        main={main}
+        layout={shown ?? NO_SIDE_PANES}
+        panes={(shown?.ids ?? []).flatMap((id) => {
+          const session = sessions.find((entry) => entry.id === id);
+          if (!session) return [];
+          const focused = sidePaneFocusId === id && !projectTerminalFocused;
+          return [
+            {
+              id,
+              node: (
+                <SessionPane
+                  {...sessionPaneProps}
+                  key={id}
+                  session={session}
+                  visible
+                  focused={focused}
+                  inSplit
+                  addToChatTarget={false}
+                  composerFocused={focused && composerFocused}
+                  composerFocusToken={composerFocusToken}
+                  onFocus={() => setSidePaneFocusId(id)}
+                  onClose={onCloseSidePane}
+                  // Handing off or a second opinion belongs in its own tab.
+                  onSecondOpinion={undefined}
+                  onHandoff={undefined}
+                />
+              ),
+            },
+          ];
+        })}
+        onResize={(layout) =>
+          key && setSidePanes((map) => ({ ...map, [key]: layout }))
+        }
+        onFocusMain={() => setSidePaneFocusId(null)}
+        onFocusPane={(id) => {
+          setSidePaneFocusId(id);
+          setProjectTerminalFocused(false);
+        }}
+      />
+    );
+  };
   const irgatShownSessionPane = shownIrgatSessionId
     ? sessions.find((session) => session.id === shownIrgatSessionId)
     : undefined;
@@ -14844,6 +15007,9 @@ function Workspace({
             activeSessionId: irgatViewId ?? undefined,
             onOpenChat: (irgatId: string, sessionId: string) =>
               void onOpenIrgat(irgatId, sessionId),
+            onOpenChatBeside: sidePaneKey
+              ? (sessionId: string) => void onOpenBeside(sessionId)
+              : undefined,
             onCreateChat: (irgatId: string) =>
               void onCreateIrgatChat(irgatId).catch((error) =>
                 message(String(error), {
@@ -14891,6 +15057,8 @@ function Workspace({
       irgatRail,
       onOpenRailIrgat,
       onOpenIrgat,
+      sidePaneKey,
+      onOpenBeside,
       onCreateIrgatChat,
       onDeleteIrgatChat,
       onRenameHistorySession,
@@ -15128,9 +15296,13 @@ function Workspace({
                   onPin: (id, pinned) => void onPinFreeChat(id, pinned),
                   onDelete: (id) => void onDeleteFreeChat(id),
                   onBoard: (id) => void onFreeChatBoard(id),
+                  onOpenBeside: sidePaneKey
+                    ? (id) => void onOpenBeside(id)
+                    : undefined,
                 }}
               fleetNeedsYou={fleetNeedsYouCount}
               onSessionBoard={onSessionBoard}
+              onOpenSessionBeside={onOpenBeside}
               boardSessionIds={kanbanSessions.linkedIds}
               onGoToFile={onGoToFile}
               searchActive={searchViewOpen}
@@ -15372,6 +15544,7 @@ function Workspace({
                                         : "hidden"
                                     }
                                   >
+                                    {withSidePanes(
                                     <SessionPane
                                       {...sessionPaneProps}
                                       session={session}
@@ -15379,7 +15552,8 @@ function Workspace({
                                       focused={
                                         visible &&
                                         !projectTerminalFocused &&
-                                        !irgatShownSessionActive
+                                        !irgatShownSessionActive &&
+                                        !sidePaneFocusId
                                       }
                                       inSplit={false}
                                       addToChatTarget={visible}
@@ -15387,7 +15561,8 @@ function Workspace({
                                         visible &&
                                         composerFocused &&
                                         !projectTerminalFocused &&
-                                        !irgatShownSessionActive
+                                        !irgatShownSessionActive &&
+                                        !sidePaneFocusId
                                       }
                                       composerFocusToken={composerFocusToken}
                                       onShowIrgatActivity={onShowIrgatActivity}
@@ -15404,7 +15579,10 @@ function Workspace({
                                           : undefined
                                       }
                                       openIrgatSessionId={shownIrgatSessionId}
-                                    />
+                                    />,
+                                    session.id,
+                                    visible,
+                                    )}
                                   </div>
                                 );
                               })}
@@ -15658,22 +15836,28 @@ function Workspace({
                   rows={freeChatList}
                   activeId={freeChatId}
                   pane={
-                    freeChat ? (
-                      <SessionPane
-                        {...sessionPaneProps}
-                        key={freeChat.id}
-                        session={freeChat}
-                        visible
-                        focused={!projectTerminalFocused}
-                        inSplit={false}
-                        composerFocused={
-                          composerFocused && !projectTerminalFocused
-                        }
-                        composerFocusToken={composerFocusToken}
-                        onSecondOpinion={undefined}
-                        onHandoff={undefined}
-                      />
-                    ) : undefined
+                    freeChat
+                      ? withSidePanes(
+                          <SessionPane
+                            {...sessionPaneProps}
+                            key={freeChat.id}
+                            session={freeChat}
+                            visible
+                            focused={!projectTerminalFocused && !sidePaneFocusId}
+                            inSplit={false}
+                            composerFocused={
+                              composerFocused &&
+                              !projectTerminalFocused &&
+                              !sidePaneFocusId
+                            }
+                            composerFocusToken={composerFocusToken}
+                            onSecondOpinion={undefined}
+                            onHandoff={undefined}
+                          />,
+                          freeChat.id,
+                          true,
+                        )
+                      : undefined
                   }
                   footer={
                     freeChat ? (
@@ -15724,6 +15908,7 @@ function Workspace({
                   onPin={(id, pinned) => void onPinFreeChat(id, pinned)}
                   onDelete={(id) => void onDeleteFreeChat(id)}
                   onBoard={(id) => void onFreeChatBoard(id)}
+                  onOpenBeside={(id) => void onOpenBeside(id)}
                 />
               ) : null}
               {chatDocks.map((dock) =>

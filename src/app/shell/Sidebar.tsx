@@ -359,6 +359,8 @@ type Props = {
   chats?: ChatsRailProps;
   /** Opens the session's board card, filing one first when it has none. */
   onSessionBoard?: (sessionId: string) => void | Promise<void>;
+  /** Shows the session next to the open one, in its own pane. */
+  onOpenSessionBeside?: (sessionId: string) => void;
   /** Sessions that already have a card on some board. */
   boardSessionIds?: ReadonlySet<string>;
   onGoToFile?: () => void;
@@ -485,6 +487,7 @@ function SidebarComponent({
   chatShortcut,
   chats,
   onSessionBoard,
+  onOpenSessionBeside,
   boardSessionIds,
   onGoToFile,
   searchActive = false,
@@ -1195,6 +1198,12 @@ function SidebarComponent({
     { kind: "item", id: "ungroup", label: "Ungroup" },
   ];
   const sessionMenuItems: ExplorerMenuItem[] = [
+    ...(!multipleMenuSessions && onOpenSessionBeside
+      ? [
+          { kind: "item" as const, id: "beside", label: "Open beside" },
+          { kind: "sep" as const },
+        ]
+      : []),
     ...(onCancelReminders && menuReminderTimes.length > 0
       ? [
           {
@@ -1416,6 +1425,10 @@ function SidebarComponent({
     }
     if (id === "board") {
       void onSessionBoard?.(sessionId);
+      return;
+    }
+    if (id === "beside") {
+      onOpenSessionBeside?.(sessionId);
       return;
     }
     if (id === "folder-new") {
