@@ -2682,6 +2682,23 @@ function UserMessageBlock({
       <div
         className={`user-message-hover-zone min-w-0 overflow-visible ${chat ? "flex w-fit max-w-full flex-col items-end" : "w-full"}`}
       >
+        {block.fromIrgat ? (
+          <div
+            className="mb-1 flex items-center gap-1.5 px-1 text-xs text-content/55"
+            title={`Sent by ${block.fromIrgat.name}, another Irgat`}
+          >
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-content/40"
+              style={
+                block.fromIrgat.color
+                  ? { background: block.fromIrgat.color }
+                  : undefined
+              }
+            />
+            From {block.fromIrgat.name}
+          </div>
+        ) : null}
         {/* Photos and their bubble enter as one message. */}
         <div
           data-chat-message={photos.length ? block.id : undefined}

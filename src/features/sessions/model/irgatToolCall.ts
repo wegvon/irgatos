@@ -11,6 +11,8 @@ const ACTION_LABELS: Record<string, string> = {
   "computer.act": "Control shared application",
   "projects.list": "List projects",
   "projects.requestAccess": "Request project access",
+  "irgats.list": "List Irgats",
+  "irgats.send": "Message a Irgat",
   "models.list": "List models",
   "sessions.list": "List sessions",
   "sessions.read": "Read a session",

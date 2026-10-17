@@ -949,6 +949,37 @@ describe("agent app commands", () => {
     expect(request).toHaveBeenCalledWith(source.id, "irgat", "/code/app");
   });
 
+  it("lets a Irgat message another Irgat without project access", async () => {
+    const { source, host } = fixture();
+    const messageIrgat = vi.fn(async () => ({ alreadySubmitted: false }));
+    host.irgats = () => [
+      { id: "invader", name: "IrgatInvader", busy: false },
+      { id: "local", name: "LocalAI", busy: false },
+    ];
+    host.messageIrgat = messageIrgat;
+    await expect(handleAgentApp(source, "plain", "irgats.list", {}, host))
+      .rejects.toThrow("Only a Irgat's chat");
+    host.isIrgat = (id) => id === source.id;
+    host.irgatOf = () => ({ id: "invader", projects: [] });
+    expect(await handleAgentApp(source, "list", "irgats.list", {}, host)).toEqual({
+      irgats: [{ id: "local", name: "LocalAI", busy: false }],
+    });
+    await expect(handleAgentApp(source, "self", "irgats.send", {
+      irgat: "irgatinvader", message: "Hi",
+    }, host)).rejects.toThrow("yourself");
+    await expect(handleAgentApp(source, "extra", "irgats.send", {
+      irgat: "LocalAI", message: "Hi", project: "localai",
+    }, host)).rejects.toThrow("Unknown irgats.send fields");
+    expect(await handleAgentApp(source, "ask", "irgats.send", {
+      irgat: "localai", message: "What is rem's LAN IP?",
+    }, host)).toMatchObject({
+      irgatId: "local", name: "LocalAI", submitted: true, notifyOnComplete: true,
+    });
+    expect(messageIrgat).toHaveBeenCalledWith(
+      "local", "What is rem's LAN IP?", `app-${source.id}-ask`, source.id,
+    );
+  });
+
   it("requires user approval once before starting four sessions in a sidebar project", async () => {
     const { source, host } = fixture();
     source.cwd = "/home/user";
