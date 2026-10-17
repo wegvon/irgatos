@@ -1281,11 +1281,13 @@ export async function handleAgentApp(
         throw new Error("placement must be tab, right or down");
       if (input.besideSessionId !== undefined && placement === "tab")
         throw new Error("besideSessionId requires placement right or down");
+      // A split defaults to the caller's pane, but an Irgat's chat is not a
+      // project pane, so its launch opens normally unless it names a pane.
       const besideSessionId =
         placement === "tab"
           ? undefined
           : (optionalString(input.besideSessionId, "besideSessionId", 256) ??
-            source.id);
+            (host.isIrgat(source.id) ? undefined : source.id));
       const id = `app-${source.id}-${requestId}`;
       if (besideSessionId)
         await host.start(

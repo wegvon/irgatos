@@ -534,6 +534,7 @@ describe("agent app commands", () => {
       {
         prompt: "Review",
         placement: "right",
+        besideSessionId: "other",
       },
       host,
     );
@@ -542,11 +543,32 @@ describe("agent app commands", () => {
       "app-lead-monitored-split",
       {
         direction: "right",
-        besideSessionId: "lead",
+        besideSessionId: "other",
       },
       "lead",
     );
   });
+
+  it.each(["right", "down"])(
+    "opens an Irgat's %s split normally when no pane is named",
+    async (placement) => {
+      const { source, host } = fixture();
+      host.isIrgat = (id) => id === source.id;
+      await handleAgentApp(
+        source,
+        "irgat-split",
+        "sessions.start",
+        { prompt: "Review", placement, reveal: true },
+        host,
+      );
+      expect(host.start).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: "Review", reveal: false }),
+        "app-lead-irgat-split",
+        undefined,
+        "lead",
+      );
+    },
+  );
 
   it.each(["sessions.start", "sessions.send"])(
     "validates completion notification options for %s before submission",
