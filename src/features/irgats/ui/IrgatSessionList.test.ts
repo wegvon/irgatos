@@ -467,3 +467,14 @@ it("groups sessions by what waits on the user, what works and what is done", asy
     container.querySelector('[data-irgat-session-group="done"]')!.textContent,
   ).toContain("Finished");
 });
+
+it("opens a session once on a double-click instead of opening and closing it", async () => {
+  const child = { ...newSession("codex", "/repo"), id: launch.sessionId };
+  await render([child]);
+  const card = container.querySelector<HTMLElement>("[data-session-card]")!;
+  await act(async () => {
+    card.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+    card.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+  });
+  expect(onOpenSession).toHaveBeenCalledTimes(1);
+});
