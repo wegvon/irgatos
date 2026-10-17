@@ -117,6 +117,13 @@ it("says how to keep memory and update the soul only at the user's request", () 
   };
   const full = irgatContext(look, files(), { soul: true, memory: true });
   expect(full).toContain("You are Skull, a Irgat in Irgatos");
+  expect(full).toContain("app irgats.send");
+  expect(full).not.toContain("The other Irgats now are");
+  expect(
+    irgatContext(look, files(), { soul: true, memory: true }, ["LocalAI", "Kahya"]),
+  ).toContain(
+    "The other Irgats now are: LocalAI, Kahya. When the user names one of them, they mean that Irgat",
+  );
   expect(full).toContain("app sessions.list {} without a project");
   expect(full).toContain("Reading your own main and child chats needs no project access or approval");
   expect(full).toContain("these 2 projects (irgat and site)");
