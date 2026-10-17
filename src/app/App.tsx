@@ -639,7 +639,7 @@ import {
   loadNotificationsEnabled,
   NOTIFICATION_CLICK_EVENT,
   announceSessionFinished,
-  probeNotificationPermission,
+  primeNotificationPermission,
   setWindowFocused,
 } from "../features/notifications/model/notifications";
 import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
@@ -2634,9 +2634,10 @@ function Workspace({
   useInputNotifications(promptableSessions, activeSessionId);
   useTerminalAgentNotifications();
 
-  // Cache the OS decision so a turn ending later can skip a denied banner.
+  // Cache the OS decision so a turn ending later can skip a denied banner;
+  // still undecided, ask now so the first banner is not lost to the prompt.
   useEffect(() => {
-    if (loadNotificationsEnabled()) void probeNotificationPermission();
+    if (loadNotificationsEnabled()) void primeNotificationPermission();
   }, []);
   const unseenFinishedIds = useUnseenFinishedSessions(
     sessions,
@@ -14098,6 +14099,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onOpenIrgat,
     onShowTerminal,
     onNewChat,
   });
@@ -14132,6 +14134,7 @@ function Workspace({
     onNavigateProjectList,
     openSettings,
     onOpenApprovalSession,
+    onOpenIrgat,
     onShowTerminal,
     onNewChat,
   };
@@ -14469,7 +14472,9 @@ function Workspace({
           .unminimize()
           .then(() => win.setFocus())
           .catch(() => {});
+        const irgat = terminalId ? undefined : irgatForSession(target);
         if (terminalId) actions.current.onShowTerminal(terminalId);
+        else if (irgat) void actions.current.onOpenIrgat(irgat.id, target);
         else actions.current.onOpenApprovalSession(target);
       }),
       listen("zoom_in", () => {
