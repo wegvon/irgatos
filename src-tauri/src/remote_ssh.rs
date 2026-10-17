@@ -165,6 +165,9 @@ impl Job {
     }
 }
 
+/// Host key checking is left to OpenSSH (its default asks) and the user's
+/// ~/.ssh/config, so a host whose config disables it, such as a Coder
+/// workspace whose tunnel authenticates the host, still reconnects unattended.
 fn command(target: &SshTarget, interactive: bool) -> Command {
     let mut command = Command::new("ssh");
     command.args([
@@ -189,8 +192,6 @@ fn command(target: &SshTarget, interactive: bool) -> Command {
         "PermitLocalCommand=no",
         "-o",
         "ExitOnForwardFailure=yes",
-        "-o",
-        "StrictHostKeyChecking=ask",
         "-o",
         "NumberOfPasswordPrompts=3",
         "-o",
@@ -709,6 +710,26 @@ pub fn device_name() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leaves_host_key_checking_to_the_users_ssh_config() {
+        let target = SshTarget {
+            target: "coder-vscode.example--owner--workspace.main".into(),
+            port: None,
+            remote_port: 3774,
+        };
+        for interactive in [true, false] {
+            let command = command(&target, interactive);
+            let args: Vec<_> = command
+                .get_args()
+                .map(|arg| arg.to_string_lossy().to_lowercase())
+                .collect();
+            assert!(
+                !args.iter().any(|arg| arg.starts_with("stricthostkeychecking")),
+                "{args:?}"
+            );
+        }
+    }
 
     #[test]
     fn stale_requests_cannot_invalidate_a_newer_tunnel() {
