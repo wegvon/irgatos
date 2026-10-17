@@ -105,6 +105,8 @@ const APP_ACTIONS: [&str; 54] = [
     "computer.act",
     "projects.list",
     "projects.requestAccess",
+    "irgats.list",
+    "irgats.send",
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -234,6 +236,13 @@ Actions:
                   Returns pending immediately; end your turn and wait. Do not
                   access the project or substitute provider-native subagents.
                   Approval saves access and resumes the request automatically.
+  irgats.list   {} Irgat only. The other Irgats: id, name and whether busy.
+  irgats.send   {"irgat":"<name or id>","message":"..."}
+                  Irgat only. Ask another Irgat something; no project access
+                  needed. The message shows in its own chat, labeled as yours;
+                  it answers with its own memory and projects. Its reply comes
+                  back to your chat once you are idle, so end your turn after
+                  sending. A busy Irgat is rejected. Reuse --request-id on retries.
   models.list    {}  Available providers, models, settings and permission modes.
   sessions.list  {}  Your Irgat's main and child chats, without project access.
                   Add "project":"<path>" to list an assigned project's sessions.
@@ -748,7 +757,12 @@ mod tests {
     }
     #[test]
     fn app_mode_exposes_only_app_actions_and_safe_request_ids() {
-        for action in ["projects.list", "projects.requestAccess"] {
+        for action in [
+            "projects.list",
+            "projects.requestAccess",
+            "irgats.list",
+            "irgats.send",
+        ] {
             assert!(parse_args_for(&args(&[action, "--json", "{}"]), true).is_ok());
             assert!(parse_args_for(&args(&[action, "--json", "{}"]), false).is_err());
         }

@@ -272,6 +272,13 @@ export type FolderSummary = {
   skipped: number;
 };
 
+/** The Irgat that sent a message to another Irgat's chat. */
+export type IrgatSender = {
+  id: string;
+  name: string;
+  color?: string;
+};
+
 export type IrgatSessionCompletion = {
   sessionId: string;
   title: string;
@@ -343,6 +350,8 @@ export type Block = {
   draft?: boolean;
   /** This user turn activated Irgatos app access for its thread. */
   irgat?: boolean;
+  /** Sent by another Irgat with app irgats.send, not by the user. */
+  fromIrgat?: IrgatSender;
   /** The Plan or Orchestrator mode this user turn was sent in. */
   intent?: Extract<TurnIntent, "plan" | "orchestrate">;
   /** Stable CLI request that submitted this turn, for safe retries. */

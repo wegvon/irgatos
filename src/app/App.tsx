@@ -36,6 +36,7 @@ import {
   irgatSessionCompletionResult,
   IrgatSessionCompletionBatches,
 } from "../features/irgats/model/irgatSessionCompletion";
+import { irgatMessagePrompt } from "../features/irgats/model/irgatDirectMessages";
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import { launchRemoteSession } from "../features/connections/model/remoteAgentLaunch";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
@@ -1117,6 +1118,8 @@ type SubmitOptions = ComposerTurnOptions & {
   /** App-written continuation after a user approves project access. */
   internal?: boolean;
   irgatSessionCompletion?: Block["irgatSessionCompletion"];
+  /** Another Irgat sent this message with app irgats.send. */
+  fromIrgat?: Block["fromIrgat"];
   /** An automatic retry after the Completion Gate's validator failed. */
   completionGateBounce?: boolean;
   onSettled?: (outcome: ControlOutcome) => void;
@@ -7927,7 +7930,11 @@ function Workspace({
       const ciContext = options?.ciRepair?.prompt ?? options?.ciContext;
       const harnessText =
         options?.ciRepair?.prompt ??
-        (rawCommand ? submittedText : composeNoteMessage(noteCard, promptText));
+        (rawCommand
+          ? submittedText
+          : options?.fromIrgat
+            ? irgatMessagePrompt(options.fromIrgat, promptText)
+            : composeNoteMessage(noteCard, promptText));
 
       const pendingSwitch = pendingComposerSwitch(current);
 
@@ -8301,6 +8308,7 @@ function Workspace({
         ...(options?.irgatSessionCompletion
           ? { irgatSessionCompletion: options.irgatSessionCompletion }
           : {}),
+        ...(options?.fromIrgat ? { fromIrgat: options.fromIrgat } : {}),
       };
       const live = isLiveHarness(current.harness);
       const queuedHandoff =
@@ -12070,6 +12078,7 @@ function Workspace({
           requestId: string,
           project: string,
           prompt: string,
+          irgat?: string,
         ) => {
           const settle = irgatCompletionBatches.current!.watch(
             { irgatId, turn: sourceTurn },
@@ -12089,6 +12098,7 @@ function Workspace({
                   session: sessionsRef.current.find(
                     (session) => session.id === sessionId,
                   ),
+                  ...(irgat ? { irgat } : {}),
                 }),
               ),
             { accept: settle.accept, discard: settle.discard },
@@ -12439,6 +12449,76 @@ function Workspace({
               if (!isHabitRun(sessionId)) await upsertSession(updated);
             },
             isIrgat: (id) => isIrgatSession(id),
+            irgats: () =>
+              listIrgats().map((irgat) => ({
+                id: irgat.id,
+                name: irgatLook(irgat).name,
+                busy: !!sessionsRef.current.find(
+                  (session) => session.id === irgat.sessionId,
+                )?.busy,
+              })),
+            messageIrgat: async (irgatId, message, requestId, notifyIrgatId) => {
+              const irgat = findIrgat(irgatId);
+              if (!irgat || !sourceIrgat)
+                throw new Error("That Irgat is no longer available");
+              const name = irgatLook(irgat).name;
+              // Its main chat, created the way opening the Irgat would.
+              const target = await ensureIrgatSession(irgatId, {
+                home: homeDir,
+                load: (id) => ensureOpenSessionRef.current(id),
+                create: (path) => newDefaultSession(path),
+                add: (created) => {
+                  sessionsRef.current = [...sessionsRef.current, created];
+                  setSessions(sessionsRef.current);
+                },
+              });
+              if (!target) throw new Error("That Irgat is no longer available");
+              const current =
+                sessionsRef.current.find((session) => session.id === target.id) ??
+                target;
+              const previous = current.blocks.find(
+                (block) => block.appRequestId === requestId,
+              );
+              if (previous) {
+                if (previous.text !== message)
+                  throw new Error(
+                    "Request ID was already used with another message",
+                  );
+                return { alreadySubmitted: true };
+              }
+              if (current.busy || current.queuedMessages?.length)
+                throw new Error(
+                  `${name} is busy; try again when it finishes`,
+                );
+              const onSettled = monitorCompletion(
+                notifyIrgatId,
+                current.id,
+                requestId,
+                "",
+                message,
+                name,
+              );
+              const accepted = await submitWithSettlement({
+                submit: (onSettled) =>
+                  submitSessionRef.current(current.id, message, [], {
+                    appRequestId: requestId,
+                    onSettled,
+                    fromIrgat: {
+                      id: sourceIrgat.id,
+                      name: irgatLook(sourceIrgat).name,
+                      color: sourceIrgat.color,
+                    },
+                  }),
+                onSettled,
+                rejectionMessage: `${name} could not take the message.`,
+              });
+              if (!accepted) {
+                onSettled.discard();
+                throw new Error(`${name} could not take the message`);
+              }
+              onSettled.accept();
+              return { alreadySubmitted: false };
+            },
             projects: () => {
               const irgat = irgatForSession(source.id);
               return irgat ? irgatLook({

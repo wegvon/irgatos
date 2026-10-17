@@ -191,6 +191,25 @@ function persistableMeta(
   };
 }
 
+function sanitizeIrgatSender(value: unknown): Block["fromIrgat"] {
+  if (!value || typeof value !== "object") return undefined;
+  const sender = value as NonNullable<Block["fromIrgat"]>;
+  if (
+    typeof sender.id !== "string" ||
+    !isPersistableId(sender.id) ||
+    typeof sender.name !== "string" ||
+    !sender.name.trim()
+  )
+    return undefined;
+  return {
+    id: sender.id,
+    name: sender.name.slice(0, 120),
+    ...(typeof sender.color === "string" && sender.color.length <= 64
+      ? { color: sender.color }
+      : {}),
+  };
+}
+
 function sanitizeIrgatSessionCompletion(
   value: unknown,
 ): Block["irgatSessionCompletion"] {
@@ -938,6 +957,8 @@ function sanitizeBlock(
   if (block.role === "user" && turnModel) next.turnModel = turnModel;
   if (block.role === "user" && block.draft) next.draft = true;
   if (block.role === "user" && block.irgat) next.irgat = true;
+  const sender = block.role === "user" ? sanitizeIrgatSender(block.fromIrgat) : undefined;
+  if (sender) next.fromIrgat = sender;
   if (
     block.role === "user" &&
     (block.intent === "plan" || block.intent === "orchestrate")

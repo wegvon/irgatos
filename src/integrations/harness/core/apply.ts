@@ -451,6 +451,7 @@ type UserTurnExtra = {
   intent?: Block["intent"];
   appRequestId?: string;
   irgatSessionCompletion?: Block["irgatSessionCompletion"];
+  fromIrgat?: Block["fromIrgat"];
 };
 
 function userTurnFields(extra?: UserTurnExtra) {
@@ -465,6 +466,7 @@ function userTurnFields(extra?: UserTurnExtra) {
     ...(extra?.irgatSessionCompletion
       ? { irgatSessionCompletion: extra.irgatSessionCompletion }
       : {}),
+    ...(extra?.fromIrgat ? { fromIrgat: extra.fromIrgat } : {}),
   };
 }
 

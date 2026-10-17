@@ -83,6 +83,10 @@ import {
   supersedeMemoryEntry,
   topicName,
 } from "../../irgats/model/irgatMemory";
+import {
+  resolveIrgatContact,
+  type IrgatContact,
+} from "../../irgats/model/irgatDirectMessages";
 
 export type AppSessionListing = {
   id: string;
@@ -154,6 +158,18 @@ export type AgentAppHost = {
     /** Files the sessions it starts into a folder named after it. */
     folder?: { name: string; color: string };
   } | undefined;
+  /** Every Irgat, for irgats.list and to resolve irgats.send. */
+  irgats?(): IrgatContact[];
+  /**
+   * Puts a message from the calling Irgat in another Irgat's main chat. Its
+   * reply comes back to `notifyIrgatId` as a completion report.
+   */
+  messageIrgat?(
+    irgatId: string,
+    message: string,
+    requestId: string,
+    notifyIrgatId: string,
+  ): Promise<{ alreadySubmitted: boolean }>;
   /** A hidden run of one of a Irgat's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
   /** Puts a card in the Irgat's chat, or holds it for a habit run's report. */
@@ -186,6 +202,8 @@ const FIELDS = new Map<string, readonly string[]>([
   ["computer.act", ["tool", "args"]],
   ["projects.list", []],
   ["projects.requestAccess", ["project"]],
+  ["irgats.list", []],
+  ["irgats.send", ["irgat", "message"]],
   ["models.list", []],
   ["sessions.list", ["project"]],
   ["sessions.read", ["sessionId", "before", "limit", "maxChars", "project"]],
@@ -1106,6 +1124,38 @@ export async function handleAgentApp(
     host.requestProjectAccess(source.id, irgat.id, project.path);
     return { project: project.path, access: false, pending: true,
       note: "The user must approve in the chat. End your turn and wait; do not access the project or substitute provider-native subagents. After approval Irgatos will continue your request." };
+  }
+  if (action === "irgats.list" || action === "irgats.send") {
+    const self = host.isIrgat(source.id) ? host.irgatOf?.(source.id) : undefined;
+    if (!self || !host.irgats || !host.messageIrgat)
+      throw new Error("Only a Irgat's chat can message other Irgats");
+    const contacts = host.irgats();
+    if (action === "irgats.list")
+      return { irgats: contacts.filter((contact) => contact.id !== self.id) };
+    const target = resolveIrgatContact(
+      contacts,
+      requiredString(input.irgat, "irgat", 256),
+      self.id,
+    );
+    const message = requiredString(input.message, "message", 240_000);
+    if (consumeOperatorCommand(message).matched)
+      throw new Error("App calls cannot enable /operator in another session");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
+      throw new Error("Invalid request ID");
+    const result = await host.messageIrgat(
+      target.id,
+      message,
+      `app-${source.id}-${requestId}`,
+      source.id,
+    );
+    return {
+      irgatId: target.id,
+      name: target.name,
+      submitted: true,
+      ...result,
+      notifyOnComplete: true,
+      note: `${target.name} answers in its own chat. Its reply comes back to you as a notification once you are idle: tell the user you asked ${target.name}, end your turn, and pass the answer on when it arrives.`,
+    };
   }
   if (action.startsWith("artifacts."))
     return handleArtifacts(source, requestId, action, input, host);
