@@ -8914,12 +8914,17 @@ function Workspace({
             : undefined;
           // Who it is counts as part of its soul: a rename or a change to its
           // projects is handed over too, and so is a change to the fixed rules.
+          const otherIrgats = irgatRecord
+            ? listIrgats()
+                .filter((other) => other.id !== irgatRecord.id)
+                .map((other) => irgatLook(other).name)
+            : [];
           const handedFiles = agentFiles &&
             agentLook && {
               ...agentFiles,
               soulHash: `${agentFiles.soulHash}:${agentLook.name}:${agentLook.projects
                 .map((project) => project.path)
-                .join("|")}:${IRGAT_PROMPT_VERSION}`,
+                .join("|")}:${otherIrgats.join("|")}:${IRGAT_PROMPT_VERSION}`,
             };
           const agentPlan = handedFiles
             ? planAgentContext(sessionId, current.providerSessionId, handedFiles)
@@ -8946,7 +8951,9 @@ function Workspace({
             agentPlan &&
             (agentPlan.soul || agentPlan.memory)
           ) {
-            appContext.push(irgatContext(agentLook, agentFiles, agentPlan));
+            appContext.push(
+              irgatContext(agentLook, agentFiles, agentPlan, otherIrgats),
+            );
           }
           // A command owns its arguments, and a plan proposal has a fixed shape.
           const adhdPlan =
