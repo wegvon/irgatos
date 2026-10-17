@@ -261,7 +261,9 @@ Actions:
                   Create a tab with the prompt, or set placement to right or
                   down to split a visible session pane. A split defaults to the
                   calling session; besideSessionId chooses another visible
-                  session in this project, including one just created. Set
+                  session in this project, including one just created. An
+                  Irgat's chat is not a pane: without besideSessionId its
+                  launch opens normally in the Irgat's session list. Set
                   draft:true to save the prompt unsent; no agent turn runs.
                   Otherwise the turn is submitted.
                   Submitted sessions notify the calling Irgat by default when
