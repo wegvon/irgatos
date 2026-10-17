@@ -5589,6 +5589,25 @@ function Workspace({
         setIrgatShownSession(null);
         return;
       }
+      // A session on another machine opens in that project's remote tab.
+      const irgat = sessionsRef.current.find(
+        (entry) => entry.id === irgatSessionId,
+      );
+      const remoteLaunch = irgat
+        ? irgatSpawnedSessions(irgat.blocks).find(
+            (entry) =>
+              entry.sessionId === launchedId &&
+              isRemoteProjectPath(entry.cwd),
+          )
+        : undefined;
+      if (remoteLaunch) {
+        closeIrgatView();
+        setSidebarTab("sessions", remoteLaunch.cwd);
+        setProjectCwd(remoteLaunch.cwd);
+        setRecents(rememberProject(remoteLaunch.cwd));
+        onSelectRemoteSession(remoteLaunch.cwd, launchedId);
+        return;
+      }
       // Load it first, then switch in one step: the overview goes straight
       // from what it shows to this session, never through the list.
       const session = await ensureOpenSession(launchedId).catch(() => null);
@@ -5607,7 +5626,7 @@ function Workspace({
       setProjectTerminalFocused(false);
       setComposerFocused(true);
     },
-    [ensureOpenSession],
+    [ensureOpenSession, closeIrgatView, onSelectRemoteSession],
   );
   const onOpenIrgatSession = useCallback(
     (
@@ -11994,7 +12013,14 @@ function Workspace({
               // The machine that holds the project runs the session; it is
               // listed in that project's Sessions sidebar.
               if (isRemoteProjectPath(launch.cwd)) {
-                await launchRemoteSession(launch, id);
+                const remote = await launchRemoteSession(launch, id);
+                rememberSession({
+                  sessionId: remote.sessionId,
+                  cwd: launch.cwd,
+                  title: launch.prompt.trim().slice(0, 300),
+                  harness: launch.harness,
+                  model: resolveModel(launch.harness, launch.model).id,
+                });
                 return;
               }
               const rememberLaunch = () => {
