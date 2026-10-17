@@ -412,3 +412,19 @@ it("shows a finished session the user has not seen as done", async () => {
     "Done",
   );
 });
+
+it("lists and opens a session started on another machine", async () => {
+  const remote: IrgatSpawnedSession = {
+    ...launch,
+    sessionId: "6f1c2a3b-0000-4000-8000-000000000001",
+    cwd: "remote://env-1/project-1",
+    title: "Ask for a favourite colour",
+  };
+  await render([], [remote]);
+  expect(listSessionsByProject).not.toHaveBeenCalled();
+  const card = container.querySelector<HTMLElement>("[data-session-card]")!;
+  expect(card.textContent).toContain(remote.title);
+  expect(card.closest("[inert]")).toBeNull();
+  await act(async () => card.click());
+  expect(onOpenSession).toHaveBeenCalledWith(remote.sessionId);
+});

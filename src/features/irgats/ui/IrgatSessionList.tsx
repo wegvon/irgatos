@@ -26,6 +26,7 @@ import {
   type SessionSidebarFilters,
 } from "../../sessions/model/sessionFilters";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
+import { isRemoteProjectPath } from "../../projects/model/recents";
 import {
   hasPendingApproval,
   type IrgatSpawnedSession,
@@ -115,7 +116,11 @@ export function IrgatSessionList({
   const [error, setError] = useState<string>();
   useEffect(() => {
     let cancelled = false;
-    const refs: [string, string][] = JSON.parse(launchesKey);
+    // Sessions on another machine live in its host, not this computer's
+    // store, so they always stand in from their launch.
+    const refs: [string, string][] = (
+      JSON.parse(launchesKey) as [string, string][]
+    ).filter(([, cwd]) => !isRemoteProjectPath(cwd));
     const projects = [...new Set(refs.map(([, cwd]) => cwd))];
     void Promise.allSettled(
       projects.map((cwd) => listSessionsByProject(cwd)),
@@ -430,7 +435,9 @@ export function IrgatSessionList({
           // still, from what the launch recorded.
           const unavailable = unavailableIds.has(launch.sessionId);
           const failed = !unavailable && stored.failed.has(launch.cwd);
-          const loading = !unavailable && !failed;
+          // One on another machine is listed by its host: open it there.
+          const remote = isRemoteProjectPath(launch.cwd);
+          const loading = !unavailable && !failed && !remote;
           return (
             <div
               key={launch.sessionId}
@@ -476,7 +483,7 @@ export function IrgatSessionList({
                 project={projectLabel(launch.cwd)}
                 now={0}
                 onSelect={(id) => {
-                  if (failed && !opening) void open(id);
+                  if ((failed || remote) && !opening) void open(id);
                 }}
               />
             </div>
