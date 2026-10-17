@@ -428,3 +428,42 @@ it("lists and opens a session started on another machine", async () => {
   await act(async () => card.click());
   expect(onOpenSession).toHaveBeenCalledWith(remote.sessionId);
 });
+
+it("groups sessions by what waits on the user, what works and what is done", async () => {
+  const launches = ["app-ask", "app-run", "app-done"].map((sessionId) => ({
+    ...launch,
+    sessionId,
+  }));
+  const ask = {
+    ...newSession("codex", "/repo"),
+    id: "app-ask",
+    title: "Asks",
+    pendingQuestion: { requestId: 1, questions: [] },
+  } as unknown as Session;
+  const run = {
+    ...newSession("codex", "/repo"),
+    id: "app-run",
+    title: "Runs",
+    busy: true,
+    blocks: [
+      { id: "u", role: "user" as const, text: "go" },
+      { id: "a", role: "assistant" as const, text: "", streaming: true },
+    ],
+  };
+  const done = { ...newSession("codex", "/repo"), id: "app-done", title: "Finished" };
+  await render([ask, run, done], launches);
+  const groups = [...container.querySelectorAll("[data-irgat-session-group]")];
+  expect(groups.map((group) => group.getAttribute("data-irgat-session-group")))
+    .toEqual(["needsYou", "working", "done"]);
+  expect(groups[0].textContent).toContain("Asks");
+  expect(groups[1].textContent).toContain("Runs");
+  expect(
+    groups[1].querySelector("[data-session-activity]")?.textContent,
+  ).toBe("Writing a reply");
+  // Finished work folds away while others are going, and opens on a click.
+  expect(groups[2].textContent).not.toContain("Finished");
+  await act(async () => groups[2].querySelector("button")!.click());
+  expect(
+    container.querySelector('[data-irgat-session-group="done"]')!.textContent,
+  ).toContain("Finished");
+});

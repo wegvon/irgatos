@@ -6,6 +6,7 @@ import {
 } from "../../sessions/model/session";
 import {
   launchedSessionState,
+  irgatLaunchesAcrossChats,
   irgatSpawnedSessions,
   recordIrgatSpawnedSession,
   sanitizeIrgatSpawnedSessions,
@@ -55,9 +56,7 @@ function receipt(command = "irgat app sessions.start", ok = true): Block {
 it("recovers confirmed launches from older chats, including shell wrappers, and deduplicates metadata", () => {
   expect(irgatSpawnedSessions([receipt()])).toEqual([launch]);
   expect(
-    irgatSpawnedSessions([
-      receipt("/bin/zsh -lc 'irgat app sessions.start'"),
-    ]),
+    irgatSpawnedSessions([receipt("/bin/zsh -lc 'irgat app sessions.start'")]),
   ).toEqual([launch]);
   expect(
     irgatSpawnedSessions([
@@ -252,4 +251,39 @@ it("reads a launched session's state for its card", () => {
   expect(ran([prompt, { id: "r", role: "assistant", text: "Done." }])).toBe(
     "done",
   );
+});
+
+it("lists launches from every chat of an Irgat, the shown chat first and each once", () => {
+  const other: IrgatSpawnedSession = {
+    ...launch,
+    sessionId: "app-other",
+    title: "Other",
+  };
+  const shown: Block[] = [
+    { id: "a", role: "user", text: "x", irgatSpawnedSessions: [launch] },
+  ];
+  const second: Block[] = [
+    { id: "b", role: "user", text: "y", irgatSpawnedSessions: [other, launch] },
+  ];
+  const blocks = new Map<string, Block[]>([
+    ["chat-2", second],
+    ["chat-1", shown],
+  ]);
+  expect(
+    irgatLaunchesAcrossChats(["chat-2", "chat-1", "chat-3"], "chat-1", (id) =>
+      blocks.get(id),
+    ),
+  ).toEqual([launch, other]);
+});
+
+it("keeps a launch whose harness ran its default model", () => {
+  const blank = { ...launch, model: "" };
+  expect(sanitizeIrgatSpawnedSessions([blank])).toEqual([blank]);
+  const irgat = newSession("codex", "/repo");
+  irgat.blocks = [{ id: "turn", role: "user", text: "Fix" }];
+  expect(
+    irgatSpawnedSessions(
+      recordIrgatSpawnedSession(irgat, "turn", blank).blocks,
+    ),
+  ).toEqual([blank]);
 });
