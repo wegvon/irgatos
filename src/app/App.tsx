@@ -130,6 +130,7 @@ import {
 import { IrgatActivityPanel } from "../features/irgats/ui/IrgatActivityPanel";
 import {
   launchedSessionState,
+  irgatLaunchesAcrossChats,
   irgatSpawnedSessions,
   recordIrgatSpawnedSession,
   type LaunchedSessionState,
@@ -14607,10 +14608,56 @@ function Workspace({
       editedPaths: irgatEditedPaths,
     },
   );
-  const irgatLaunches = useMemo(
-    () => (irgatViewBlocks ? irgatSpawnedSessions(irgatViewBlocks) : []),
-    [irgatViewBlocks],
+  // The Irgat's other chats launch sessions too; its list shows them all.
+  // A chat that is not open is read once from the store.
+  const irgatChatIds = irgatViewIrgat ? allIrgatSessionIds(irgatViewIrgat) : [];
+  const [savedIrgatChats, setSavedIrgatChats] = useState<
+    ReadonlyMap<string, readonly Block[]>
+  >(() => new Map());
+  const unloadedIrgatChatsKey = JSON.stringify(
+    irgatChatIds.filter(
+      (id) =>
+        !savedIrgatChats.has(id) &&
+        !sessions.some((session) => session.id === id),
+    ),
   );
+  useEffect(() => {
+    const ids: string[] = JSON.parse(unloadedIrgatChatsKey);
+    if (ids.length === 0) return;
+    let current = true;
+    void Promise.all(ids.map((id) => getSession(id).catch(() => null))).then(
+      (stored) => {
+        if (!current) return;
+        setSavedIrgatChats((previous) => {
+          const next = new Map(previous);
+          stored.forEach((session, index) =>
+            next.set(ids[index], session?.blocks ?? []),
+          );
+          return next;
+        });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [unloadedIrgatChatsKey]);
+  // Receipts are parsed once per block, so this is cheap to redo; the list
+  // keeps its identity until a launch is added.
+  const nextIrgatLaunches = irgatViewSession
+    ? irgatLaunchesAcrossChats(irgatChatIds, irgatViewSession.id, (id) =>
+        id === irgatViewSession.id
+          ? irgatViewSession.blocks
+          : (sessions.find((session) => session.id === id)?.blocks ??
+            savedIrgatChats.get(id)),
+      )
+    : [];
+  const irgatLaunchesRef = useRef(nextIrgatLaunches);
+  if (
+    JSON.stringify(irgatLaunchesRef.current) !==
+    JSON.stringify(nextIrgatLaunches)
+  )
+    irgatLaunchesRef.current = nextIrgatLaunches;
+  const irgatLaunches = irgatLaunchesRef.current;
   const irgatDocuments = useMemo(
     () => (irgatViewBlocks ? artifactCards(irgatViewBlocks) : []),
     [irgatViewBlocks],

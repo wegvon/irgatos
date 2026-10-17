@@ -3689,6 +3689,7 @@ export const SessionCard = memo(function SessionCard({
   compact = false,
   modelInFooter = false,
   statusLabel,
+  activity,
   project,
   now,
   onSelect,
@@ -3718,6 +3719,8 @@ export const SessionCard = memo(function SessionCard({
   modelInFooter?: boolean;
   /** Stands in for the time, for a session with no state of its own to show. */
   statusLabel?: string;
+  /** One line under the title on what the agent is doing now. */
+  activity?: string;
   /** Names its project before the branch, where sessions span several. */
   project?: string;
   now: number;
@@ -4116,6 +4119,14 @@ export const SessionCard = memo(function SessionCard({
               </span>
             )}
           </span>
+          {activity ? (
+            <span
+              data-session-activity=""
+              className="relative mt-0.5 line-clamp-1 text-[11px] text-content/55"
+            >
+              {activity}
+            </span>
+          ) : null}
         </div>
         {orchestrationExpanded ? (
           <OrchestrationSidebarAgents

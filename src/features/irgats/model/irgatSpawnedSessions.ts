@@ -24,8 +24,9 @@ export function sanitizeIrgatSpawnedSessions(
       !item.cwd.trim() ||
       typeof item.title !== "string" ||
       !HARNESSES.includes(item.harness) ||
-      typeof item.model !== "string" ||
-      !item.model.trim()
+      // A harness that lists no models launches with its own default,
+      // which leaves the model blank.
+      typeof item.model !== "string"
     )
       continue;
     if (!result.has(item.sessionId))
@@ -34,7 +35,7 @@ export function sanitizeIrgatSpawnedSessions(
         cwd: item.cwd,
         title: item.title.trim().slice(0, 300) || "Agent session",
         harness: item.harness,
-        model: item.model,
+        model: item.model.trim(),
       });
   }
   return [...result.values()];
@@ -195,4 +196,26 @@ export function launchedSessionState(session: Session): LaunchedSessionState {
   if (notice === "error") return "failed";
   if (notice === "interrupt") return "stopped";
   return "done";
+}
+
+/**
+ * Every session an Irgat launched, from all of its chats: the chat on screen
+ * first, then the others, live where open and saved otherwise. A session two
+ * chats launched or followed up is listed once.
+ */
+export function irgatLaunchesAcrossChats(
+  chatIds: readonly string[],
+  viewId: string,
+  blocksFor: (chatId: string) => readonly Block[] | undefined,
+): IrgatSpawnedSession[] {
+  const found = new Map<string, IrgatSpawnedSession>();
+  const ordered = [viewId, ...chatIds.filter((id) => id !== viewId)];
+  for (const chatId of ordered) {
+    const blocks = blocksFor(chatId);
+    if (!blocks) continue;
+    for (const entry of irgatSpawnedSessions(blocks)) {
+      if (!found.has(entry.sessionId)) found.set(entry.sessionId, entry);
+    }
+  }
+  return [...found.values()];
 }
