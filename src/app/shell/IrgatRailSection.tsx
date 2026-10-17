@@ -8,6 +8,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  ColumnInsert,
   Columns,
   ImagePlus,
   LoaderCircle,
@@ -72,6 +73,8 @@ export type IrgatRailProps = {
   /** Shows the chat next to the one open, in its own pane. */
   onOpenChatBeside?: (sessionId: string) => void;
   onCreateChat?: (irgatId: string) => void;
+  /** Starts a new chat under the Irgat next to the one open, in its own pane. */
+  onCreateChatBeside?: (irgatId: string) => void;
   onDeleteChat?: (irgatId: string, sessionId: string) => void;
   onDelete: (irgatId: string) => void;
   /** Whether the intro may show now, when there is no Irgat yet. */
@@ -157,6 +160,7 @@ export function IrgatRailSection({
   onOpenChat,
   onOpenChatBeside,
   onCreateChat,
+  onCreateChatBeside,
   onDeleteChat,
   onDelete,
   introAvailable = false,
@@ -477,14 +481,31 @@ export function IrgatRailSection({
                       </div>
                     );
                   })}
-                  <button
-                    type="button"
-                    aria-label={`New chat under ${look.name}`}
-                    onClick={() => onCreateChat(irgat.id)}
-                    className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-xs text-content/45 hover:bg-content/8 hover:text-content"
-                  >
-                    <Plus className="size-3" /> New chat
-                  </button>
+                  <div className="group/chat relative flex items-center">
+                    <button
+                      type="button"
+                      aria-label={`New chat under ${look.name}`}
+                      onClick={(event) => {
+                        if (event.altKey && onCreateChatBeside)
+                          onCreateChatBeside(irgat.id);
+                        else onCreateChat(irgat.id);
+                      }}
+                      className={`flex h-7 w-full items-center gap-1.5 rounded-md px-2 ${onCreateChatBeside ? "pr-7" : ""} text-xs text-content/45 hover:bg-content/8 hover:text-content`}
+                    >
+                      <Plus className="size-3" /> New chat
+                    </button>
+                    {onCreateChatBeside ? (
+                      <button
+                        type="button"
+                        aria-label={`New chat under ${look.name} beside`}
+                        title="New chat beside (⌥-click)"
+                        onClick={() => onCreateChatBeside(irgat.id)}
+                        className="absolute right-1 hidden size-5 place-items-center rounded text-content/55 hover:bg-content/8 hover:text-content group-hover/chat:grid group-focus-within/chat:grid"
+                      >
+                        <ColumnInsert className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </div>

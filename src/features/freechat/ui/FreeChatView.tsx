@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
-import { IS_MAC } from "../../../platform/tauri/platform";
+import { IS_MAC, MOD } from "../../../platform/tauri/platform";
 import {
   ChevronRight,
+  ColumnInsert,
   Kanban,
   LoaderCircle,
   MessageSquare,
@@ -42,6 +43,8 @@ type Props = {
   onDelete: (id: string) => void;
   onBoard: (id: string) => void;
   onOpenBeside?: (id: string) => void;
+  /** Starts a new chat next to the open one, in its own pane. */
+  onNewChatBeside?: () => void;
 };
 
 export function FreeChatView({
@@ -68,6 +71,7 @@ export function FreeChatView({
   onDelete,
   onBoard,
   onOpenBeside,
+  onNewChatBeside,
 }: Props) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
@@ -199,9 +203,24 @@ export function FreeChatView({
               <Kanban className="size-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
+          {activeId && onNewChatBeside ? (
+            <button
+              type="button"
+              onClick={onNewChatBeside}
+              aria-label="New chat beside"
+              title={`New chat beside (${MOD}D)`}
+              className="grid size-7 place-items-center rounded-md text-content/55 hover:bg-content/10 hover:text-content"
+            >
+              <ColumnInsert className="size-3.5" strokeWidth={1.75} />
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={onNewChat}
+            onClick={(event) => {
+              if (event.altKey && activeId && onNewChatBeside)
+                onNewChatBeside();
+              else onNewChat();
+            }}
             aria-label={`New chat (${shortcut})`}
             className="flex h-7 items-center gap-1.5 rounded-md bg-content/10 px-2.5 text-[12px] text-content/85 hover:bg-content/15"
           >

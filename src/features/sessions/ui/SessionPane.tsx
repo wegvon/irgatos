@@ -1,5 +1,5 @@
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
-import { GripVertical, X } from "../../../shared/ui/icons";
+import { ColumnInsert, GripVertical, X } from "../../../shared/ui/icons";
 import {
   memo,
   useCallback,
@@ -185,6 +185,8 @@ export type SessionPaneProps = {
   hideProjectPicker?: boolean;
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
+  /** Starts a new chat right of this pane, from its header in a split. */
+  onNewBeside?: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
   onBranchChange: (sessionId: string) => void;
   onWorktreeChange?: (sessionId: string, tree: Worktree) => Promise<void>;
@@ -357,6 +359,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   hideProjectPicker,
   onFocus,
   onClose,
+  onNewBeside,
   onCwdChange,
   onBranchChange,
   onWorktreeChange,
@@ -999,6 +1002,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
           >
             {title}
           </span>
+          {onNewBeside ? (
+            <button
+              type="button"
+              title={`New chat beside (${MOD}D)`}
+              aria-label="New chat beside"
+              data-no-drag
+              className="grid size-5 shrink-0 place-items-center rounded text-content/50 hover:bg-content/10 hover:text-content"
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNewBeside(session.id);
+              }}
+            >
+              <ColumnInsert className="size-3" strokeWidth={1.75} />
+            </button>
+          ) : null}
           <button
             type="button"
             title={`Close Pane (${MOD}W)`}

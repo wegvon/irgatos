@@ -254,6 +254,31 @@ describe("FreeChatView", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
+  it("starts a new chat beside the open one", () => {
+    const onNewChatBeside = vi.fn();
+    const onNewChat = vi.fn();
+    render({
+      rows: [row("a")],
+      activeId: "a",
+      pane: createElement("div"),
+      onNewChat,
+      onNewChatBeside,
+    });
+    act(() => button("New chat beside")!.click());
+    expect(onNewChatBeside).toHaveBeenCalledTimes(1);
+    // Option-click on New chat opens it beside too.
+    act(() =>
+      button(`New chat (${props.shortcut})`)!.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, altKey: true }),
+      ),
+    );
+    expect(onNewChatBeside).toHaveBeenCalledTimes(2);
+    expect(onNewChat).not.toHaveBeenCalled();
+    // With no chat open there is nothing to sit beside.
+    render({ activeId: undefined, pane: undefined });
+    expect(button("New chat beside")).toBeNull();
+  });
+
   it("offers no beside button while no chat is open", () => {
     render({ rows: [row("a")], onOpenBeside: vi.fn() });
     expect(button("Open Chat a beside")).toBeNull();

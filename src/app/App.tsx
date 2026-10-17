@@ -3414,6 +3414,11 @@ function Workspace({
 
   const onSplit = useCallback(
     (dir: SplitDir) => {
+      // The Irgat and Chat pages split by opening a new chat beside theirs.
+      if (sidePaneKeyRef.current) {
+        newChatBesideRef.current();
+        return;
+      }
       closeIrgatView();
       if (!activeTab) return;
       const session = newDefaultSession(
@@ -5801,6 +5806,8 @@ function Workspace({
       : null;
   const sidePaneKeyRef = useRef(sidePaneKey);
   sidePaneKeyRef.current = sidePaneKey;
+  // Starts a new chat beside the open one; set once the creators exist below.
+  const newChatBesideRef = useRef<() => void>(() => {});
   // Focus goes back to the main chat when the view changes.
   useEffect(() => setSidePaneFocusId(null), [sidePaneKey]);
   // A row saved before a restart loads its chats; ones that are gone leave it.
@@ -10520,6 +10527,29 @@ function Workspace({
     [appendTab],
   );
 
+  /**
+   * A pane header's "New chat beside": a new chat on the Irgat or Chat page,
+   * or a new session in the pane's project, split right of it.
+   */
+  const onNewSessionBeside = useCallback(
+    (sourceId: string) => {
+      if (sidePaneKeyRef.current) {
+        newChatBesideRef.current();
+        return;
+      }
+      const source = sessionsRef.current.find(
+        (session) => session.id === sourceId,
+      );
+      if (!source) return;
+      const session = newDefaultSession(
+        source.cwd,
+        sessionDefaults?.runtimeMode,
+      );
+      openSessionBeside(sourceId, session, source.cwd, true);
+    },
+    [openSessionBeside, sessionDefaults?.runtimeMode],
+  );
+
   const onSecondOpinion = useCallback(
     (sourceId: string, target: ModelTarget, turn: Block[]) => {
       const source = sessionsRef.current.find(
@@ -13637,9 +13667,13 @@ function Workspace({
     openFreeChat();
   }, [openFreeChat]);
 
-  const onNewChat = useCallback(async () => {
+  /** Opens a fresh chat on the Chat page, or `beside` the one open there. */
+  const onNewChat = useCallback(async (beside = false) => {
+    const show = (id: string) =>
+      beside ? void onOpenBeside(id) : openFreeChat(id);
     // A blank chat is reused rather than piling up empty ones. One holding
-    // a typed draft or a board card's prompt is not blank.
+    // a typed draft or a board card's prompt is not blank. Beside, the blank
+    // chat already open on the left does not count.
     const blank = sessionsRef.current.find(
       (session) =>
         isFreeChatSession(session) &&
@@ -13647,10 +13681,11 @@ function Workspace({
         !session.busy &&
         session.blocks.length === 0 &&
         !session.composerSeed &&
-        !getComposerDraft(session.id)?.trim(),
+        !getComposerDraft(session.id)?.trim() &&
+        !(beside && session.id === freeChatIdRef.current),
     );
     if (blank) {
-      openFreeChat(blank.id);
+      show(blank.id);
       return;
     }
     const dir = await resolveFreeChatDir().catch((error) => {
@@ -13670,8 +13705,8 @@ function Workspace({
     const next = [...sessionsRef.current, session];
     sessionsRef.current = next;
     setSessions(next);
-    openFreeChat(session.id);
-  }, [openFreeChat, sessionDefaults?.runtimeMode]);
+    show(session.id);
+  }, [onOpenBeside, openFreeChat, sessionDefaults?.runtimeMode]);
 
   const onRenameFreeChat = useCallback(
     async (id: string, title: string) => {
@@ -14606,6 +14641,7 @@ function Workspace({
     hideProjectPicker: true,
     onFocus: onFocusPane,
     onClose: onClosePane,
+    onNewBeside: onNewSessionBeside,
     onCwdChange,
     onBranchChange,
     onWorktreeChange: onComposerWorktreeChange,
@@ -15054,7 +15090,7 @@ function Workspace({
     [onOpenIrgat],
   );
   const onCreateIrgatChat = useCallback(
-    async (irgatId: string) => {
+    async (irgatId: string, beside = false) => {
       if (!findIrgat(irgatId)?.sessionId) await onOpenIrgat(irgatId);
       const irgat = findIrgat(irgatId);
       if (!irgat?.sessionId) return;
@@ -15082,10 +15118,34 @@ function Workspace({
         setSessions(sessionsRef.current);
         throw error;
       }
-      await onOpenIrgat(irgatId, child.id);
+      if (beside) await onOpenBeside(child.id);
+      else await onOpenIrgat(irgatId, child.id);
     },
-    [ensureOpenSession, onOpenIrgat],
+    [ensureOpenSession, onOpenBeside, onOpenIrgat],
   );
+  /**
+   * Starts a new chat beside the one open: under the same Irgat on its page,
+   * on the Chat page, or as a new session split right in a project.
+   */
+  const onNewChatBeside = useCallback(() => {
+    const key = sidePaneKeyRef.current;
+    if (key === "chats") {
+      void onNewChat(true);
+      return;
+    }
+    if (key) {
+      void onCreateIrgatChat(key.slice("irgat:".length), true).catch(
+        (error) =>
+          message(String(error), {
+            title: "Could not create chat",
+            kind: "error",
+          }),
+      );
+      return;
+    }
+    onSplit("right");
+  }, [onCreateIrgatChat, onNewChat, onSplit]);
+  newChatBesideRef.current = onNewChatBeside;
   const onDeleteRailIrgat = useCallback(
     (irgatId: string) => void onDeleteIrgat(irgatId),
     [onDeleteIrgat],
@@ -15176,6 +15236,15 @@ function Workspace({
               void onOpenIrgat(irgatId, sessionId),
             onOpenChatBeside: sidePaneKey
               ? (sessionId: string) => void onOpenBeside(sessionId)
+              : undefined,
+            onCreateChatBeside: sidePaneKey
+              ? (irgatId: string) =>
+                  void onCreateIrgatChat(irgatId, true).catch((error) =>
+                    message(String(error), {
+                      title: "Could not create chat",
+                      kind: "error",
+                    }),
+                  )
               : undefined,
             onCreateChat: (irgatId: string) =>
               void onCreateIrgatChat(irgatId).catch((error) =>
@@ -15275,6 +15344,9 @@ function Workspace({
           : undefined
       }
       irgatOverviewOpen={irgatOverviewShown}
+      onNewIrgatChatBeside={
+        irgatCovers && irgatViewIrgat ? onNewChatBeside : undefined
+      }
       hideWindowControls={irgatCovers && irgatSidebarOpen && !!irgatOverviewPanel}
       activeId={irgatViewSession ? "" : activeTabId}
       cwd={sidebarCwd}
@@ -16076,6 +16148,7 @@ function Workspace({
                   onDelete={(id) => void onDeleteFreeChat(id)}
                   onBoard={(id) => void onFreeChatBoard(id)}
                   onOpenBeside={(id) => void onOpenBeside(id)}
+                  onNewChatBeside={onNewChatBeside}
                 />
               ) : null}
               {chatDocks.map((dock) =>

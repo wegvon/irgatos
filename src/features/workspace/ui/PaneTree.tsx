@@ -70,6 +70,7 @@ type Shared = {
   hideProjectPicker?: boolean;
   onFocus: (paneId: string) => void;
   onClose: (sessionId: string) => void;
+  onNewBeside?: (sessionId: string) => void;
   onSelectFile: (paneId: string, fileId: string) => void;
   onCloseFile: (paneId: string, fileId: string) => void;
   onCloseOtherFiles: (paneId: string, fileId: string) => void;
@@ -220,6 +221,7 @@ function PaneTreeComponent({
   workspaceSwitchingSessionId,
   onFocus,
   onClose,
+  onNewBeside,
   onSelectFile,
   onCloseFile,
   onCloseOtherFiles,
@@ -522,6 +524,7 @@ function PaneTreeComponent({
                   hideProjectPicker={hideProjectPicker}
                   onFocus={onFocus}
                   onClose={onClose}
+                  onNewBeside={onNewBeside}
                   onCwdChange={onCwdChange}
                   onBranchChange={onBranchChange}
                   onWorktreeChange={onWorktreeChange}
