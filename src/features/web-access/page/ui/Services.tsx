@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { WebServices } from "../../model/protocol";
 import { read } from "../client";
 import { openSheet } from "../route";
@@ -8,10 +8,13 @@ import {
   Pill,
   Spinner,
   TONE,
+  plainButton,
   secondaryButton,
+  useToast,
   type Tone,
 } from "./parts";
-import { Monitor, RefreshCw } from "../../../../shared/ui/icons";
+import { Bell, BellOff, Monitor, RefreshCw } from "../../../../shared/ui/icons";
+import { disablePush, enablePush, pushState, type PushState } from "../push";
 
 type Service = WebServices["services"][number];
 
@@ -109,6 +112,7 @@ export function ServicesSheet({
           {connected ? "Live" : "Offline"}
         </Pill>
       </div>
+      <PushRow />
       <Group>
         {services?.length ? (
           services.map((service) => (
@@ -153,5 +157,67 @@ export function ServicesSheet({
         Check now
       </button>
     </div>
+  );
+}
+
+const PUSH_DETAIL: Record<PushState, string> = {
+  on: "This device gets a banner when a chat finishes or waits for you.",
+  off: "Get a banner on this device when a chat finishes or waits for you.",
+  denied: "Blocked in this device's Settings, under Notifications.",
+  install:
+    "Add this page to your Home Screen, open it from there, then turn notifications on here.",
+  insecure:
+    "Open this page at your Mac's https:// Tailscale address to get notifications.",
+  unsupported: "This browser can't receive notifications.",
+};
+
+/** Turns Web Push on or off for this phone or tablet. */
+function PushRow() {
+  const toast = useToast();
+  const [state, setState] = useState<PushState | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void pushState()
+      .then(setState)
+      .catch(() => setState("unsupported"));
+  }, []);
+  const toggle = (on: boolean) => {
+    setBusy(true);
+    // Called straight from the tap: iOS only prompts inside a user gesture.
+    (on ? enablePush() : disablePush())
+      .then((next) => {
+        setState(next);
+        if (next === "on") toast("Notifications on");
+      })
+      .catch((error: unknown) =>
+        toast(error instanceof Error ? error.message : String(error), "error"),
+      )
+      .finally(() => setBusy(false));
+  };
+  if (!state) return null;
+  const on = state === "on";
+  return (
+    <Group>
+      <div className="flex items-center gap-3 px-4 py-3.5">
+        <IconBadge tone={on ? "emerald" : "muted"} size="size-9">
+          {on ? <Bell className="size-4" /> : <BellOff className="size-4" />}
+        </IconBadge>
+        <div className="min-w-0 flex-1">
+          <div className="text-[15px] font-semibold text-(--ink)">
+            Notifications
+          </div>
+          <div className="text-[13px] text-(--ink-2)">{PUSH_DETAIL[state]}</div>
+        </div>
+        {state === "on" || state === "off" ? (
+          <button
+            className={plainButton}
+            disabled={busy}
+            onClick={() => toggle(!on)}
+          >
+            {busy ? <Spinner /> : on ? "Turn off" : "Turn on"}
+          </button>
+        ) : null}
+      </div>
+    </Group>
   );
 }

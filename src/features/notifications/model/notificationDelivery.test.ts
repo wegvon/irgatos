@@ -84,3 +84,24 @@ it("does not deliver an input event observed during a mute after expiry", async 
     vi.useRealTimers();
   }
 });
+
+it("pushes to subscribed devices while the Mac is not looking at the chat", async () => {
+  const session = newSession("claude", "/work/app");
+  await notifySession(session, "finished", false);
+  const pushes = invoke.mock.calls.filter(
+    ([command]) => command === "web_push_send",
+  );
+  expect(pushes).toHaveLength(1);
+  expect(pushes[0][1]).toMatchObject({
+    url: `/#/chat/${session.id}`,
+    tag: session.id,
+  });
+});
+
+it("does not push the chat the Mac is showing", async () => {
+  setWindowFocused(true);
+  await notifySession(newSession("claude", "/work/app"), "finished", true);
+  expect(
+    invoke.mock.calls.filter(([command]) => command === "web_push_send"),
+  ).toEqual([]);
+});

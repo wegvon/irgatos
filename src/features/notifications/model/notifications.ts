@@ -311,8 +311,10 @@ async function deliverNotification(
   subject: NotificationSubject,
 ): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
+  const enabled = loadNotificationsEnabled();
+  if (enabled && !(windowFocused && visible)) pushToDevices(targetId, text());
   const decision = shouldNotify({
-    enabled: loadNotificationsEnabled(),
+    enabled,
     permission,
     windowFocused,
     sessionVisible: visible,
@@ -331,6 +333,26 @@ async function deliverNotification(
   } catch {
     return false;
   }
+}
+
+/** Where a tap on a phone banner lands on the browser-access page. */
+export function webPushUrl(targetId: string): string {
+  return targetId.startsWith("terminal:")
+    ? "/"
+    : `/#/chat/${encodeURIComponent(targetId)}`;
+}
+
+/**
+ * Phones and tablets that turned on notifications on the browser-access page
+ * get the same banner; the Mac skips this when none subscribed.
+ */
+function pushToDevices(targetId: string, text: NotificationText) {
+  void invoke("web_push_send", {
+    title: text.subtitle || text.title,
+    body: text.body,
+    url: webPushUrl(targetId),
+    tag: targetId,
+  }).catch(() => {});
 }
 
 /** A coding agent running in a raw terminal changed state. */

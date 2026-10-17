@@ -73,6 +73,7 @@ mod trackpad_zoom;
 mod tray;
 mod voice;
 mod web_access;
+mod web_push;
 mod window;
 mod window_transfer;
 #[cfg(windows)]
@@ -537,6 +538,7 @@ pub fn run() {
             feed::feed_save_collector,
             service_status::service_status_check,
             web_access::web_access_status,
+            web_push::web_push_send,
             web_access::web_access_set_enabled,
             web_access::web_access_rotate_token,
             web_access::web_access_reply,

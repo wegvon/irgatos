@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
+import { resyncPush } from "./push";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
@@ -120,6 +121,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     () => read<WebIrgats>("irgats"),
     () => (screen.name === "irgats" ? 3000 : 15_000),
   );
+  // Re-registers the banner worker and reminds the Mac of this device.
+  useEffect(() => {
+    if (live) void resyncPush().catch(() => {});
+  }, [live]);
   const now = useNow(overview.data?.at);
   const connected = !overview.error;
   const needsYou = overview.data?.needsYou.length ?? 0;
