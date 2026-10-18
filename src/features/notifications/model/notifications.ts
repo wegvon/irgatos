@@ -6,12 +6,20 @@ import {
   type NotificationSubject,
 } from "./notificationPreferences";
 import { irgatReplyText } from "../../irgats/model/irgatReaction";
-import { knownNotificationProject } from "./notificationProjects";
+import {
+  irgatNotificationProject,
+  knownNotificationProject,
+  type NotificationProject,
+} from "./notificationProjects";
+import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
 
 const KEY = "irgat.notifications";
 
-/** Off until the user opts in; enabling asks the OS for permission. */
-export const NOTIFICATIONS_DEFAULT = false;
+/**
+ * On unless the user switched it off: the app asks the OS for permission at
+ * launch, and macOS keeps that answer.
+ */
+export const NOTIFICATIONS_DEFAULT = true;
 
 export const NOTIFICATIONS_CHANGE_EVENT = "irgat:notifications-change";
 
@@ -71,6 +79,12 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
     permission = "unsupported";
   }
   return permission;
+}
+
+/** Launch probe: asks the OS once while undecided, so banners can fire. */
+export async function primeNotificationPermission(): Promise<NotificationPermission> {
+  const current = await probeNotificationPermission();
+  return current === "prompt" ? requestNotificationPermission() : current;
 }
 
 export function openNotificationSettings(): Promise<void> {
@@ -221,6 +235,18 @@ function clip(text: string): string {
 }
 
 /**
+ * Irgat chats run in the home folder, which is not a project, so they are
+ * filed under their Irgat instead of being dropped.
+ */
+export function sessionNotificationProject(
+  session: Session,
+): NotificationProject | undefined {
+  const irgat = irgatForSession(session.id);
+  if (irgat) return irgatNotificationProject(irgat.id, irgatLook(irgat).name);
+  return knownNotificationProject(session.cwd);
+}
+
+/**
  * Sends the banner when policy allows. Resolves true once the OS accepted it
  * so callers can skip the in-app cue: the OS sound stands in for it. A
  * rejected dispatch resolves false so the cue still plays.
@@ -232,7 +258,7 @@ export async function notifySession(
 ): Promise<boolean> {
   if (session.inboxAsk) return false;
   const occurredAt = Date.now();
-  const project = knownNotificationProject(session.cwd);
+  const project = sessionNotificationProject(session);
   if (!project) return false;
   return notifyProjectSession(session, event, sessionVisible, {
     projectId: project.id,
@@ -248,7 +274,7 @@ export async function announceSessionFinished(
 ): Promise<void> {
   if (session.inboxAsk) return;
   const occurredAt = Date.now();
-  const project = knownNotificationProject(session.cwd);
+  const project = sessionNotificationProject(session);
   if (!project) return;
   const subject: NotificationSubject = {
     projectId: project.id,
@@ -285,8 +311,10 @@ async function deliverNotification(
   subject: NotificationSubject,
 ): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
+  const enabled = loadNotificationsEnabled();
+  if (enabled && !(windowFocused && visible)) pushToDevices(targetId, text());
   const decision = shouldNotify({
-    enabled: loadNotificationsEnabled(),
+    enabled,
     permission,
     windowFocused,
     sessionVisible: visible,
@@ -305,6 +333,26 @@ async function deliverNotification(
   } catch {
     return false;
   }
+}
+
+/** Where a tap on a phone banner lands on the browser-access page. */
+export function webPushUrl(targetId: string): string {
+  return targetId.startsWith("terminal:")
+    ? "/"
+    : `/#/chat/${encodeURIComponent(targetId)}`;
+}
+
+/**
+ * Phones and tablets that turned on notifications on the browser-access page
+ * get the same banner; the Mac skips this when none subscribed.
+ */
+function pushToDevices(targetId: string, text: NotificationText) {
+  void invoke("web_push_send", {
+    title: text.subtitle || text.title,
+    body: text.body,
+    url: webPushUrl(targetId),
+    tag: targetId,
+  }).catch(() => {});
 }
 
 /** A coding agent running in a raw terminal changed state. */

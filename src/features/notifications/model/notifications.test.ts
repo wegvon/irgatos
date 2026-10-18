@@ -1,12 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadNotificationsEnabled,
   NOTIFICATIONS_DEFAULT,
   notificationText,
   pendingInputNotifications,
   saveNotificationsEnabled,
+  sessionNotificationProject,
   shouldNotify,
 } from "./notifications";
+import { createIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
 import { newSession, type Session } from "../../sessions/model/session";
 
 const KEY = "irgat.notifications";
@@ -77,9 +79,9 @@ describe("notifications setting", () => {
   beforeEach(mockLocalStorage);
   afterEach(() => localStorage.removeItem(KEY));
 
-  it("is off until the user opts in", () => {
-    expect(NOTIFICATIONS_DEFAULT).toBe(false);
-    expect(loadNotificationsEnabled()).toBe(false);
+  it("is on until the user switches it off", () => {
+    expect(NOTIFICATIONS_DEFAULT).toBe(true);
+    expect(loadNotificationsEnabled()).toBe(true);
   });
 
   it("round-trips", () => {
@@ -87,6 +89,25 @@ describe("notifications setting", () => {
     expect(loadNotificationsEnabled()).toBe(true);
     saveNotificationsEnabled(false);
     expect(loadNotificationsEnabled()).toBe(false);
+  });
+});
+
+describe("sessionNotificationProject", () => {
+  beforeEach(() => {
+    mockLocalStorage();
+    vi.stubGlobal("window", new EventTarget());
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("files an Irgat chat in the home folder under its Irgat", () => {
+    const irgat = createIrgat();
+    const session = newSession("claude", "/Users/me");
+    saveIrgatSessionId(irgat.id, session.id);
+    expect(sessionNotificationProject(session)?.id).toBe(`irgat:${irgat.id}`);
+  });
+
+  it("keeps project sessions on their project", () => {
+    expect(sessionNotificationProject(chat())?.id).toBe("local:/tmp/a");
   });
 });
 

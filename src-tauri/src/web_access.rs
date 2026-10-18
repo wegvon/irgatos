@@ -35,15 +35,16 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(20);
 const RECV_POLL: Duration = Duration::from_millis(250);
 /// The page is the app's own `web.html` build, served from its bundled assets.
 const PAGE: &str = "web.html";
-/// Files the page loads besides its hashed `/assets/…` bundles.
-const PUBLIC_FILES: [&str; 2] = ["/web.webmanifest", "/irgat.png"];
+/// Files the page loads besides its hashed `/assets/…` bundles; `sw.js` is
+/// the service worker that shows Web Push banners.
+const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 6] = [
-    "overview", "session", "projects", "ideas", "services", "irgats",
+const READ_ACTIONS: [&str; 7] = [
+    "overview", "session", "projects", "ideas", "services", "irgats", "pushKey",
 ];
-const WRITE_ACTIONS: [&str; 13] = [
+const WRITE_ACTIONS: [&str; 15] = [
     "send",
     "approval",
     "answer",
@@ -57,6 +58,8 @@ const WRITE_ACTIONS: [&str; 13] = [
     "ideaUpdate",
     "ideaMove",
     "ideaDelete",
+    "pushSubscribe",
+    "pushUnsubscribe",
 ];
 
 #[derive(Default, Serialize, Deserialize)]
@@ -472,7 +475,9 @@ fn serve(mut request: tiny_http::Request, app: &AppHandle, inner: &Arc<Mutex<Inn
             } else {
                 query_object(request.url())
             };
-            let reply = relay(app, inner, action, input);
+            // Push subscriptions live in the app's data folder, not the window.
+            let reply = crate::web_push::handle_web_action(app, &action, &input)
+                .unwrap_or_else(|| relay(app, inner, action, input));
             let status = if reply.get("ok").and_then(Value::as_bool) == Some(true) {
                 200
             } else {
@@ -779,6 +784,37 @@ mod tests {
             route("POST", "/api/delete", peer, TOKEN, Some(TOKEN), true),
             Route::Reject(404, _)
         ));
+    }
+
+    #[test]
+    fn push_calls_need_the_token() {
+        let peer = ip("127.0.0.1");
+        assert!(matches!(
+            route("GET", "/api/pushKey", peer, TOKEN, None, false),
+            Route::Reject(401, _)
+        ));
+        assert_eq!(
+            route("GET", "/api/pushKey", peer, TOKEN, Some(TOKEN), false),
+            Route::Api {
+                action: "pushKey".into(),
+                write: false
+            }
+        );
+        assert!(matches!(
+            route(
+                "POST",
+                "/api/pushSubscribe",
+                peer,
+                TOKEN,
+                Some(TOKEN),
+                false
+            ),
+            Route::Reject(403, _)
+        ));
+        assert_eq!(
+            route("GET", "/sw.js", peer, TOKEN, None, false),
+            Route::Static("/sw.js".into())
+        );
     }
 
     #[test]

@@ -25,6 +25,19 @@ function localNotificationProject(path: string): NotificationProject {
   };
 }
 
+export function irgatNotificationProject(
+  irgatId: string,
+  name: string,
+): NotificationProject {
+  return {
+    id: `irgat:${irgatId}`,
+    name,
+    detail: "Irgat",
+    kind: "local",
+    paths: [],
+  };
+}
+
 export function knownNotificationProject(
   path: string,
 ): NotificationProject | undefined {

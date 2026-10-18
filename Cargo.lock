@@ -2297,6 +2297,7 @@ dependencies = [
  "png 0.18.1",
  "portable-pty",
  "raw-window-handle",
+ "ring",
  "rookie-cookies",
  "rusqlite",
  "serde",
