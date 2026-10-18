@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  AlertCircle,
   Archive,
+  ChevronDown,
+  ExternalLink,
   LoaderCircle,
   Mail,
   MessageSquare,
@@ -19,6 +23,8 @@ import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import {
   DEFAULT_MAIL_ASK,
   MAIL_FOLDERS,
+  accountLabel,
+  executorAccountsUrl,
   isFromMe,
   listMail,
   loadMailAccounts,
@@ -27,6 +33,7 @@ import {
   mailQuery,
   mailThreadSessions,
   modifyMailThread,
+  needsReconnect,
   saveMailDraft,
   saveMailSettings,
   sendMailDraft,
@@ -109,6 +116,8 @@ export function MailView({
   const [accountErrors, setAccountErrors] = useState<
     { account: string; message: string }[]
   >([]);
+  /** Accounts whose Google sign-in Executor says must be renewed. */
+  const [expired, setExpired] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<Selection | null>(
     rememberedSelection,
   );
@@ -149,9 +158,12 @@ export function MailView({
   }, [connected, loadAccounts]);
 
   const emailOf = useCallback(
-    (id: string) =>
-      accounts?.find((a) => a.id === id)?.email ??
-      (accounts?.length === 1 ? accounts[0].email : ""),
+    (id: string) => {
+      const found =
+        accounts?.find((a) => a.id === id) ??
+        (accounts?.length === 1 ? accounts[0] : undefined);
+      return found ? accountLabel(found) : "";
+    },
     [accounts],
   );
 
@@ -170,6 +182,11 @@ export function MailView({
   const load = useCallback(
     async (more = false) => {
       const request = ++listRequest.current;
+      const asked = more
+        ? Object.keys(nextPages)
+        : account
+          ? [account]
+          : (accounts ?? []).map((a) => a.id);
       setLoading(true);
       try {
         const page = await listMail(
@@ -183,6 +200,13 @@ export function MailView({
         );
         setNextPages(page.nextPageTokens);
         setAccountErrors(page.errors);
+        setExpired((current) => {
+          const next = new Set(current);
+          for (const id of asked) next.delete(id);
+          for (const e of page.errors)
+            if (needsReconnect(e.message)) next.add(e.account);
+          return next;
+        });
         setError(null);
       } catch (err: unknown) {
         if (request === listRequest.current) setError(message(err));
@@ -190,7 +214,7 @@ export function MailView({
         if (request === listRequest.current) setLoading(false);
       }
     },
-    [folder, appliedSearch, account, nextPages],
+    [folder, appliedSearch, account, accounts, nextPages],
   );
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -321,7 +345,9 @@ export function MailView({
                 <option value="">All accounts ({accounts.length})</option>
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.email}
+                    {expired.has(a.id)
+                      ? `⚠︎ ${accountLabel(a)} (sign in again)`
+                      : accountLabel(a)}
                   </option>
                 ))}
               </select>
@@ -355,12 +381,16 @@ export function MailView({
               <p className="px-2 py-3 text-[12px] text-red-400">{error}</p>
             ) : null}
             {accountErrors.map((e) => (
-              <p
+              <AccountNotice
                 key={e.account}
-                className="px-2 py-1.5 text-[12px] text-red-400"
-              >
-                {emailOf(e.account) || "An account"}: {e.message}
-              </p>
+                name={emailOf(e.account) || "An account"}
+                message={e.message}
+                reconnectUrl={
+                  needsReconnect(e.message)
+                    ? executorAccountsUrl(settings.endpoint, e.account)
+                    : ""
+                }
+              />
             ))}
             {(loading || !accounts) && !error && threads.length === 0 ? (
               <div className="flex justify-center py-6 text-content/45">
@@ -445,6 +475,82 @@ function Shell({
     >
       {header}
       {children}
+    </div>
+  );
+}
+
+/**
+ * One line for an account that could not be read. The raw Executor answer
+ * stays behind Details so it does not crowd the list.
+ */
+function AccountNotice({
+  name,
+  message,
+  reconnectUrl,
+}: {
+  name: string;
+  message: string;
+  /** Executor's page for the account, when signing in again fixes it. */
+  reconnectUrl: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      role="alert"
+      className="mx-0.5 mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-[12px]"
+    >
+      <div className="flex items-start gap-1.5">
+        <AlertCircle
+          className="mt-px size-3.5 shrink-0 text-amber-500"
+          strokeWidth={1.75}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-content">
+            {reconnectUrl ? (
+              <>
+                Gmail access for <span className="font-medium">{name}</span>{" "}
+                expired. Sign in again in Executor.
+              </>
+            ) : (
+              <>
+                Could not load mail for{" "}
+                <span className="font-medium">{name}</span>.
+              </>
+            )}
+          </p>
+          <div className="mt-1 flex items-center gap-3 text-content/60">
+            {reconnectUrl ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void openUrl(reconnectUrl).catch(() => undefined)
+                }
+                className="flex items-center gap-1 text-content hover:underline"
+              >
+                Open Executor
+                <ExternalLink className="size-3" strokeWidth={1.75} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen((value) => !value)}
+              className="flex items-center gap-0.5 hover:text-content"
+            >
+              Details
+              <ChevronDown
+                className={`size-3 transition-transform ${open ? "rotate-180" : ""}`}
+                strokeWidth={1.75}
+              />
+            </button>
+          </div>
+          {open ? (
+            <p className="mt-1 select-text break-words text-[11px] text-content/50">
+              {message}
+            </p>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

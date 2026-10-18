@@ -183,3 +183,30 @@ export function isFromMe(from: string, me: string): boolean {
   const address = from.match(/<([^>]+)>/)?.[1] ?? from;
   return address.trim().toLowerCase() === me.trim().toLowerCase();
 }
+
+/** `google_gmail.user.personalGmail.` → `personalGmail`. */
+export function connectionName(accountId: string): string {
+  const parts = accountId.split(".").filter(Boolean);
+  return parts[parts.length - 1] ?? accountId;
+}
+
+/** The address, or the connection's name when Executor could not read it. */
+export const accountLabel = (account: MailAccount) =>
+  account.email || connectionName(account.id);
+
+/**
+ * Whether Executor says the account's Google sign-in expired or was revoked,
+ * which only reconnecting the account in Executor fixes.
+ */
+export const needsReconnect = (message: string) =>
+  /requires reauthorization|invalid_grant|oauth_reauth_required/i.test(message);
+
+/**
+ * Executor's page for the account's integration, where its Reconnect item
+ * lives. Account ids start with the integration, such as `google_gmail.`.
+ */
+export function executorAccountsUrl(endpoint: string, accountId: string) {
+  const integration = accountId.split(".").find(Boolean);
+  if (!endpoint || !integration) return endpoint;
+  return `${endpoint.replace(/\/+$/, "")}/integrations/${encodeURIComponent(integration)}?tab=accounts`;
+}
