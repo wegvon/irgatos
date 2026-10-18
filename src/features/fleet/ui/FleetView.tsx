@@ -41,6 +41,11 @@ import {
   type FleetEntry,
   type FleetRequest,
 } from "../model/fleet";
+import {
+  OutsideClaudeSessions,
+  filterOutsideClaudeSessions,
+  useOutsideClaudeSessions,
+} from "./OutsideClaudeSessions";
 
 type Props = {
   /** Every open session across all projects. */
@@ -195,7 +200,13 @@ export function FleetView({
     () => filterHabitApprovals(habitApprovals, query),
     [habitApprovals, query],
   );
-  const empty = fleet.total === 0 && habitApprovals.length === 0;
+  const outside = useOutsideClaudeSessions();
+  const shownOutside = useMemo(
+    () => (sidebar ? [] : filterOutsideClaudeSessions(outside, query)),
+    [outside, query, sidebar],
+  );
+  const empty =
+    fleet.total === 0 && habitApprovals.length === 0 && (sidebar || outside.length === 0);
 
   const toggle = (bucket: FleetBucket) =>
     setCollapsed((current) => {
@@ -273,7 +284,10 @@ export function FleetView({
           title="No agents yet"
           body="Sessions from every project show up here, sorted by what needs you first: approvals and questions, finished work to review, then what is still running."
         />
-      ) : filtering && shown.total === 0 && shownHabits.length === 0 ? (
+      ) : filtering &&
+        shown.total === 0 &&
+        shownHabits.length === 0 &&
+        shownOutside.length === 0 ? (
         <FleetMessage
           title="No sessions match"
           body={`Nothing matches “${query.trim()}”.`}
@@ -389,6 +403,11 @@ export function FleetView({
                 </section>
               );
             })}
+            <OutsideClaudeSessions
+              sessions={shownOutside}
+              now={now}
+              forceOpen={filtering}
+            />
           </div>
         </div>
       )}

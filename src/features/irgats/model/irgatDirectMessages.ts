@@ -1,4 +1,4 @@
-import type { IrgatSender } from "../../sessions/model/session";
+import type { IrgatSender, Session } from "../../sessions/model/session";
 
 /** One Irgat as another Irgat sees it in app irgats.list. */
 export type IrgatContact = {
@@ -36,4 +36,34 @@ export function resolveIrgatContact(
  */
 export function irgatMessagePrompt(sender: IrgatSender, message: string): string {
   return `Irgatos delivers this message from ${sender.name}, another Irgat, not from the user. Answer it in your reply as you would answer the user, using your own knowledge, memory and projects. Irgatos returns your reply to ${sender.name} automatically, so do not message ${sender.name} back with app irgats.send. The user can read this exchange in your chat.\n\n<irgat_message from="${sender.name.replace(/"/g, "'")}">\n${message}\n</irgat_message>`;
+}
+
+/**
+ * How many agent messages a Irgat chat may take part in before its user
+ * writes again. Two Irgats that keep answering each other, or a ring of them,
+ * stop here instead of talking on their own indefinitely.
+ */
+export const AGENT_EXCHANGE_LIMIT = 6;
+
+/**
+ * Agent messages in this chat since its user last wrote: messages that came
+ * in from another Irgat, and answers to the ones it sent out.
+ */
+export function agentExchangesSinceUser(session: Pick<Session, "blocks">): number {
+  let count = 0;
+  for (let index = session.blocks.length - 1; index >= 0; index--) {
+    const block = session.blocks[index];
+    if (block.role !== "user" || block.draft) continue;
+    if (block.fromIrgat || block.irgatSessionCompletion?.agentReply) count++;
+    else if (!block.internal && !block.irgatSessionCompletion) break;
+  }
+  return count;
+}
+
+/** Refuses another agent message once the chat reached the limit. */
+export function assertAgentExchangeAllowed(session: Pick<Session, "blocks">): void {
+  if (agentExchangesSinceUser(session) >= AGENT_EXCHANGE_LIMIT)
+    throw new Error(
+      `This chat already exchanged ${AGENT_EXCHANGE_LIMIT} messages with other agents since the user last wrote. Do not message again: give the user what you have and let them decide whether to continue.`,
+    );
 }

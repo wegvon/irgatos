@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { irgatMessagePrompt, resolveIrgatContact } from "./irgatDirectMessages";
+import { agentExchangesSinceUser, irgatMessagePrompt, resolveIrgatContact } from "./irgatDirectMessages";
 
 const contacts = [
   { id: "a", name: "IrgatInvader", busy: false },
@@ -38,5 +38,21 @@ describe("irgatMessagePrompt", () => {
     expect(prompt).toContain(
       '<irgat_message from="IrgatInvader">\nWhat is rem\'s LAN IP?\n</irgat_message>',
     );
+  });
+});
+
+describe("agentExchangesSinceUser", () => {
+  const user = (id: string, extra: object = {}) => ({ id, role: "user" as const, text: id, ...extra });
+  it("counts agent messages back to the user's last own message", () => {
+    expect(agentExchangesSinceUser({ blocks: [] })).toBe(0);
+    expect(agentExchangesSinceUser({ blocks: [
+      user("old-in", { fromIrgat: { id: "x", name: "X" } }),
+      user("typed"),
+      { id: "a", role: "assistant", text: "ok" },
+      user("in", { fromIrgat: { id: "x", name: "X" } }),
+      user("report", { internal: true, irgatSessionCompletion: { sessionId: "s", title: "t", status: "completed" } }),
+      user("reply", { internal: true, irgatSessionCompletion: { sessionId: "s", title: "t", status: "completed", agentReply: true } }),
+      user("draft", { draft: true }),
+    ] })).toBe(2);
   });
 });
