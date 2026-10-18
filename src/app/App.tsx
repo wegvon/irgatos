@@ -13452,24 +13452,52 @@ function Workspace({
   );
 
   /** Starts a chat about a mail thread; its agent may read the thread and
-   *  save a reply draft, never send. */
+   *  save a reply draft, never send. The chat gets its own tab: reusing a
+   *  blank pane would land it in whatever tab was active (often a free chat
+   *  or another project), where it stayed out of sight and was lost. */
   const onAskMail = useCallback(
     async ({ account, threadId, subject, project, text }: MailAskRequest) => {
+      const freeChat = isFreeChatCwd(project);
       const session = {
-        ...newDefaultSession(project, sessionDefaults?.runtimeMode),
+        ...(freeChat
+          ? newFreeChatSession(project, sessionDefaults?.runtimeMode)
+          : newDefaultSession(project, sessionDefaults?.runtimeMode)),
         title: `Mail: ${subject}`,
       };
       await linkMailSession(session.id, account, threadId, subject);
-      const next = [...sessionsRef.current, session];
-      sessionsRef.current = next;
-      setSessions(next);
-      setRecents(rememberProject(project));
-      onSubmit(session.id, text, []);
+      const before = sessionsRef.current;
+      sessionsRef.current = [...before, session];
+      setSessions(sessionsRef.current);
+      if (!onSubmit(session.id, text, [])) {
+        sessionsRef.current = sessionsRef.current.filter(
+          (entry) => entry.id !== session.id,
+        );
+        setSessions(sessionsRef.current);
+        throw new Error("The chat could not start. Try again.");
+      }
+      if (freeChat) {
+        openFreeChat(session.id);
+        return;
+      }
+      workspaceNavigation.cancel();
+      if (irgatViewIdRef.current) closeIrgatView();
       setMailViewOpen(false);
       setSidebarTab("sessions", project);
-      await onSelectHistorySession(session.id);
+      setProjectCwd(project);
+      setRecents(rememberProject(project));
+      const tab = newTab(session.id);
+      appendTab(tab, project);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
     },
-    [onSubmit, onSelectHistorySession, sessionDefaults?.runtimeMode],
+    [
+      appendTab,
+      closeIrgatView,
+      onSubmit,
+      openFreeChat,
+      sessionDefaults?.runtimeMode,
+      workspaceNavigation.cancel,
+    ],
   );
 
   // Not a transition: the compact drawer opens in the same batch and closes
