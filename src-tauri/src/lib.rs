@@ -72,6 +72,7 @@ mod state_file;
 mod trackpad_zoom;
 #[cfg(target_os = "windows")]
 mod tray;
+mod untrusted_text;
 mod voice;
 mod web_access;
 mod web_push;

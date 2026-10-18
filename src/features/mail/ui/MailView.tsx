@@ -20,6 +20,7 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import type { RecentProject } from "../../projects/model/recents";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
+import { HiddenTextNotice } from "./HiddenTextNotice";
 import {
   DEFAULT_MAIL_ASK,
   DEFAULT_MAIL_FOLDER,
@@ -1003,6 +1004,7 @@ function ThreadDetail({
             <div className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
               {m.body || <span className="text-content/40">(no text)</span>}
             </div>
+            <HiddenTextNotice parts={m.hidden ?? []} />
             {m.attachments.length ? (
               <p className="mt-2 text-[11px] text-content/50">
                 Attachments: {m.attachments.join(", ")}
