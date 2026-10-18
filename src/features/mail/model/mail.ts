@@ -64,15 +64,17 @@ export type MailPage = {
 /** `account` is empty in links saved before accounts existed. */
 export type MailLink = { account: string; threadId: string; subject: string };
 
-/** The Gmail searches offered above the list. */
+/** The Gmail searches offered above the list; the first opens by default. */
 export const MAIL_FOLDERS = [
-  { id: "inbox", label: "Inbox", query: "in:inbox" },
   { id: "unread", label: "Unread", query: "in:inbox is:unread" },
+  { id: "inbox", label: "Inbox", query: "in:inbox" },
   { id: "sent", label: "Sent", query: "in:sent" },
   { id: "all", label: "All mail", query: "" },
 ] as const;
 
 export type MailFolderId = (typeof MAIL_FOLDERS)[number]["id"];
+
+export const DEFAULT_MAIL_FOLDER: MailFolderId = MAIL_FOLDERS[0].id;
 
 /** The folder's Gmail query narrowed by what the user typed. */
 export function mailQuery(folder: MailFolderId, search: string): string {
