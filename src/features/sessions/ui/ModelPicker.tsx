@@ -20,13 +20,16 @@ import {
 } from "react";
 import {
   coerceModelPickerTab,
+  favoriteSlotFromKey,
   getModelSnapshot,
   getPickerVisibilitySnapshot,
   isEffortSettingId,
   loadFavoriteModels,
   loadRecentModelChoices,
+  MAX_FAVORITE_MODELS,
   saveFavoriteModels,
   showProviderInModelPicker,
+  toggleFavoriteModel,
   subscribeModels,
   subscribePickerVisibility,
   type AgentModel,
@@ -48,8 +51,9 @@ import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { LAYER } from "../../../shared/lib/layers";
 import { HarnessIcon } from "./HarnessIcon";
+import { FavoriteModels } from "./FavoriteModels";
 import { Popover } from "../../../shared/ui/Popover";
-import { MOD } from "../../../platform/tauri/platform";
+import { ALT, MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/model/settings";
 import "./ModelPicker.css";
 
@@ -85,7 +89,8 @@ type MenuEntry = { kind: "setting"; setting: ModelSetting } | { kind: "model" };
 
 type Submenu = { kind: "setting"; setting: ModelSetting } | { kind: "models" };
 
-type RecentMenu = { models: AgentModel[] };
+/** Favorites lead the quick menu; `favorites` counts those leading rows. */
+type RecentMenu = { models: AgentModel[]; favorites: number };
 
 type ModelGroup = {
   id: string;
@@ -240,13 +245,25 @@ function settingValueLabel(
 function recentMenuModels(
   current: AgentModel,
   source: ModelSource,
-): AgentModel[] {
+  favorites: AgentModel[] = [],
+): RecentMenu {
+  const favoriteIds = new Set(favorites.map((item) => item.id));
   const models = loadRecentModelChoices().flatMap((choice) => {
     const item = source.find(choice.model);
-    return item?.harness === choice.harness ? [item] : [];
+    return item?.harness === choice.harness && !favoriteIds.has(item.id)
+      ? [item]
+      : [];
   });
-  if (!models.some((item) => item.id === current.id)) models.push(current);
-  return models.slice(0, 6);
+  if (
+    !favoriteIds.has(current.id) &&
+    !models.some((item) => item.id === current.id)
+  ) {
+    models.push(current);
+  }
+  return {
+    models: [...favorites, ...models.slice(0, 6)],
+    favorites: favorites.length,
+  };
 }
 
 function modelGroups(tab: ModelPickerTab, models: AgentModel[]): ModelGroup[] {
@@ -407,6 +424,18 @@ export function ModelPicker({
     );
   }, [source, catalogVersion, favorites, providerKey, query, visibleTab]);
 
+  const favoriteModels = useMemo(() => {
+    void catalogVersion;
+    return favorites
+      .map((id) => source.find(id))
+      .filter(
+        (item): item is AgentModel =>
+          item != null && pickerHarnesses.includes(item.harness),
+      );
+  }, [source, catalogVersion, favorites, providerKey]);
+  const favoriteModelsRef = useRef(favoriteModels);
+  favoriteModelsRef.current = favoriteModels;
+
   const dismiss = (restore: boolean) => {
     setOpen(false);
     setRecentMenu(null);
@@ -425,12 +454,14 @@ export function ModelPicker({
   const openRecentMenu = () => {
     const selected = currentRef.current;
     if (!selected) return;
-    const models = recentMenuModels(selected, source);
-    const selectedIndex = models.findIndex((item) => item.id === selected.id);
+    const menu = recentMenuModels(selected, source, favoriteModelsRef.current);
+    const selectedIndex = menu.models.findIndex(
+      (item) => item.id === selected.id,
+    );
     setOpen(false);
     setSubmenu(null);
     setRecentActive(selectedIndex >= 0 ? selectedIndex : 0);
-    setRecentMenu({ models });
+    setRecentMenu(menu);
   };
 
   const toggleRecentMenu = () => {
@@ -556,6 +587,23 @@ export function ModelPicker({
     dismiss(true);
   };
 
+  // ⌥1–⌥3 pick a favorite from any open picker menu.
+  useEffect(() => {
+    if (!open && !recentMenu) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      const slot = favoriteSlotFromKey(event);
+      if (slot == null) return;
+      const item = favoriteModelsRef.current[slot];
+      if (!item) return;
+      event.preventDefault();
+      event.stopPropagation();
+      pickModel(item);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, recentMenu != null]);
+
   useEffect(() => {
     if (!recentMenu) return;
     const onKey = (event: KeyboardEvent) => {
@@ -589,10 +637,8 @@ export function ModelPicker({
 
   const toggleFavorite = (id: string) => {
     setFavorites((previous) => {
-      const next = previous.includes(id)
-        ? previous.filter((item) => item !== id)
-        : [...previous, id];
-      saveFavoriteModels(next);
+      const next = toggleFavoriteModel(previous, id);
+      if (next !== previous) saveFavoriteModels(next);
       return next;
     });
   };
@@ -766,6 +812,7 @@ export function ModelPicker({
           active={activeModel}
           query={query}
           favorites={favorites}
+          favoriteModels={favoriteModels}
           searchRef={search}
           onQuery={setQuery}
           onSelectTab={selectTab}
@@ -792,6 +839,15 @@ export function ModelPicker({
             data-model-picker
             className="p-1 font-sans"
           >
+            <FavoriteModels
+              models={favoriteModels}
+              currentId={current.id}
+              enabled={(item) => source.available(item.harness)}
+              disabledHint={(item) => harnessUnavailableHint(item.harness)}
+              onPick={pickModel}
+              onRemove={toggleFavorite}
+              className="mb-1 border-b border-stroke pb-1"
+            />
             {entries.map((entry, index) => {
               const highlighted = index === active;
               if (entry.kind === "model") {
@@ -962,6 +1018,7 @@ export function ModelPicker({
               active={activeModel}
               query={query}
               favorites={favorites}
+              favoriteModels={favoriteModels}
               searchRef={search}
               onQuery={setQuery}
               onSelectTab={selectTab}
@@ -992,48 +1049,71 @@ export function ModelPicker({
             const selected = item.id === current.id;
             const highlighted = index === recentActive;
             const disabled = !source.available(item.harness);
+            const favorite = index < recentMenu.favorites;
+            const heading =
+              index === 0 && recentMenu.favorites > 0
+                ? "Favorites"
+                : index === recentMenu.favorites && recentMenu.favorites > 0
+                  ? "Recent"
+                  : null;
             return (
-              <button
-                key={item.id}
-                id={`${recentMenuId}-${index}`}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                disabled={disabled}
-                title={
-                  disabled ? harnessUnavailableHint(item.harness) : undefined
-                }
-                onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setRecentActive(index)}
-                onClick={() => pickModel(item)}
-                className={`flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left disabled:cursor-not-allowed ${
-                  disabled
-                    ? "text-content/30"
-                    : highlighted
-                      ? "bg-selection text-content"
-                      : "text-content hover:bg-content/5"
-                }`}
-              >
-                <HarnessIcon
-                  harness={item.harness}
-                  className="size-4 shrink-0"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] leading-4">
-                    {item.name}
-                  </span>
-                  <span className="block truncate text-[11px] leading-4 text-content/45">
-                    {HARNESS_TITLE[item.harness]}
-                    {item.provider ? ` · ${item.provider.name}` : ""}
-                  </span>
-                </span>
-                {selected ? (
-                  <Check
-                    className="size-3.5 shrink-0 text-content/55"
-                    strokeWidth={2}
-                  />
+              <Fragment key={item.id}>
+                {heading ? (
+                  <div
+                    className={`px-2.5 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-content/40 ${
+                      heading === "Recent" ? "mt-1 border-t border-stroke" : ""
+                    }`}
+                  >
+                    {heading}
+                  </div>
                 ) : null}
-              </button>
+                <button
+                  id={`${recentMenuId}-${index}`}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  title={
+                    disabled ? harnessUnavailableHint(item.harness) : undefined
+                  }
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setRecentActive(index)}
+                  onClick={() => pickModel(item)}
+                  className={`flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left disabled:cursor-not-allowed ${
+                    disabled
+                      ? "text-content/30"
+                      : highlighted
+                        ? "bg-selection text-content"
+                        : "text-content hover:bg-content/5"
+                  }`}
+                >
+                  <HarnessIcon
+                    harness={item.harness}
+                    className="size-4 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] leading-4">
+                      {item.name}
+                    </span>
+                    <span className="block truncate text-[11px] leading-4 text-content/45">
+                      {HARNESS_TITLE[item.harness]}
+                      {item.provider ? ` · ${item.provider.name}` : ""}
+                    </span>
+                  </span>
+                  {favorite ? (
+                    <kbd className="shrink-0 font-sans text-[10px] text-content/35">
+                      {ALT}
+                      {index + 1}
+                    </kbd>
+                  ) : null}
+                  {selected ? (
+                    <Check
+                      className="size-3.5 shrink-0 text-content/55"
+                      strokeWidth={2}
+                    />
+                  ) : null}
+                </button>
+              </Fragment>
             );
           })}
         </Popover>
@@ -1426,6 +1506,7 @@ function ModelFlyout({
   active,
   query,
   favorites,
+  favoriteModels,
   searchRef,
   onQuery,
   onSelectTab,
@@ -1444,6 +1525,7 @@ function ModelFlyout({
   active: number;
   query: string;
   favorites: string[];
+  favoriteModels: AgentModel[];
   searchRef: React.RefObject<HTMLInputElement | null>;
   onQuery: (query: string) => void;
   onSelectTab: (tab: ModelPickerTab) => void;
@@ -1455,6 +1537,7 @@ function ModelFlyout({
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const activeRef = useRef<HTMLButtonElement>(null);
   const groups = modelGroups(tab, models);
+  const favoritesFull = favorites.length >= MAX_FAVORITE_MODELS;
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest" });
@@ -1591,6 +1674,19 @@ function ModelFlyout({
           />
         </label>
 
+        {tab !== "favorites" && !query.trim() ? (
+          <FavoriteModels
+            models={favoriteModels}
+            currentId={currentId}
+            enabled={(item) => source.available(item.harness)}
+            disabledHint={(item) => harnessUnavailableHint(item.harness)}
+            onPick={onPick}
+            onRemove={onToggleFavorite}
+            showEmptyHint
+            className="shrink-0 border-b border-stroke p-1"
+          />
+        ) : null}
+
         <div
           ref={lockOverscroll}
           role="listbox"
@@ -1623,6 +1719,7 @@ function ModelFlyout({
                   const selected = item.id === currentId;
                   const highlighted = index === active;
                   const favorited = favorites.includes(item.id);
+                  const starBlocked = !favorited && favoritesFull;
                   const disabled = !source.available(item.harness);
                   // Favorites mix harnesses, so every row names its source.
                   // Provider first (OpenCode Go vs OpenCode), else harness.
@@ -1670,22 +1767,27 @@ function ModelFlyout({
                         title={
                           favorited
                             ? "Remove from favorites"
-                            : "Add to favorites"
+                            : starBlocked
+                              ? `Favorites are full (${MAX_FAVORITE_MODELS}). Unstar one to add this.`
+                              : "Add to favorites"
                         }
                         aria-label={
                           favorited
                             ? "Remove from favorites"
                             : "Add to favorites"
                         }
+                        aria-disabled={starBlocked || undefined}
                         onMouseDown={(event) => event.preventDefault()}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onToggleFavorite(item.id);
+                          if (!starBlocked) onToggleFavorite(item.id);
                         }}
                         className={`grid size-6 shrink-0 place-items-center rounded-md transition-opacity ${
                           favorited
                             ? "text-content/60"
-                            : "text-content/35 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            : starBlocked
+                              ? "cursor-not-allowed text-content/20 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                              : "text-content/35 opacity-0 group-hover:opacity-100 focus:opacity-100"
                         }`}
                       >
                         <Star

@@ -153,6 +153,17 @@ it("shows saved favorites across provider tabs", () => {
   );
 });
 
+it("pins favorites above every provider's list", () => {
+  act(() =>
+    container
+      .querySelector<HTMLButtonElement>('[title="Add to favorites"]')!
+      .click(),
+  );
+  const pinned = container.querySelector("[data-favorite-models]");
+  expect(pinned?.textContent).toContain("Test Claude");
+  expect(pinned?.textContent).toContain("1/3");
+});
+
 it("toggles fast mode from the lightning button", () => {
   const fast = container.querySelector<HTMLButtonElement>(
     '[aria-label="Fast mode"]',

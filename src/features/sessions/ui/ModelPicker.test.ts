@@ -306,8 +306,8 @@ describe("model picker", () => {
     hover(modelRow);
 
     expect(
-      [...container.querySelectorAll('[role="group"]')].map((group) =>
-        group.getAttribute("aria-label"),
+      [...container.querySelectorAll('[role="listbox"] [role="group"]')].map(
+        (group) => group.getAttribute("aria-label"),
       ),
     ).toEqual(["OpenCode Go", "OpenAI"]);
     expect(
@@ -331,8 +331,8 @@ describe("model picker", () => {
       "OpenAI",
     );
     expect(
-      [...container.querySelectorAll('[role="group"]')].map((group) =>
-        group.getAttribute("aria-label"),
+      [...container.querySelectorAll('[role="listbox"] [role="group"]')].map(
+        (group) => group.getAttribute("aria-label"),
       ),
     ).toEqual(["OpenAI"]);
     expect(container.querySelectorAll('[role="option"]')).toHaveLength(2);
@@ -763,9 +763,7 @@ describe("model picker", () => {
       );
       const effortRow = [
         ...container.querySelectorAll<HTMLButtonElement>("button"),
-      ].find((button) =>
-        button.textContent?.startsWith(settingLabel),
-      )!;
+      ].find((button) => button.textContent?.startsWith(settingLabel))!;
       hover(effortRow);
 
       expect(
@@ -1214,5 +1212,140 @@ describe("model picker", () => {
     expect(
       container.querySelector('[role="menu"][aria-label="Model and settings"]'),
     ).toBeNull();
+  });
+});
+
+describe("favorite models", () => {
+  const cursorModels = ["auto", "muse", "luna", "nova"].map((id) => ({
+    id: `cursor:${id}`,
+    harness: "cursor" as const,
+    name: id[0].toUpperCase() + id.slice(1),
+    nativeId: id,
+  }));
+
+  function renderPicker(onChange = vi.fn(), hideSettings = false) {
+    setHarnessModels("cursor", cursorModels);
+    act(() =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "cursor",
+          model: "cursor:auto",
+          values: {},
+          hideSettings,
+          onChange,
+          onSettingsChange: vi.fn(),
+        }),
+      ),
+    );
+    return container.querySelector<HTMLButtonElement>(
+      hideSettings
+        ? 'button[aria-haspopup="dialog"]'
+        : 'button[aria-haspopup="menu"]',
+    )!;
+  }
+
+  function pinned(): string[] {
+    const group = container.querySelector(
+      '[role="menu"] > [data-favorite-models]',
+    );
+    return [...(group?.querySelectorAll('[role="menuitemradio"]') ?? [])].map(
+      (row) => row.getAttribute("aria-label") ?? "",
+    );
+  }
+
+  it("pins favorites atop the picker menu, one click from the trigger", () => {
+    localStorage.setItem(
+      "irgat.favoriteModels",
+      JSON.stringify(["cursor:luna", "cursor:muse"]),
+    );
+    const onChange = vi.fn();
+    const trigger = renderPicker(onChange);
+    act(() => trigger.click());
+
+    expect(pinned()).toEqual(["Luna, Cursor", "Muse, Cursor"]);
+    const luna = container.querySelector<HTMLButtonElement>(
+      '[data-favorite-models] [aria-label="Luna, Cursor"]',
+    )!;
+    act(() => luna.click());
+    expect(onChange).toHaveBeenCalledWith("cursor", "cursor:luna");
+  });
+
+  it("caps favorites at three and refuses a fourth star", () => {
+    const trigger = renderPicker(vi.fn(), true);
+    act(() => trigger.click());
+    const star = (name: string) =>
+      [...container.querySelectorAll('[role="listbox"] .group')]
+        .find((row) => row.textContent?.includes(name))!
+        .querySelector<HTMLButtonElement>('button[aria-label$="favorites"]')!;
+
+    for (const name of ["Auto", "Muse", "Luna", "Nova"]) {
+      act(() => star(name).click());
+    }
+    expect(JSON.parse(localStorage.getItem("irgat.favoriteModels")!)).toEqual([
+      "cursor:auto",
+      "cursor:muse",
+      "cursor:luna",
+    ]);
+    expect(star("Nova").getAttribute("aria-disabled")).toBe("true");
+    expect(star("Nova").title).toContain("Favorites are full (3)");
+    expect(container.textContent).toContain("3/3");
+
+    // Unstarring one frees a slot for the swap.
+    act(() => star("Muse").click());
+    act(() => star("Nova").click());
+    expect(JSON.parse(localStorage.getItem("irgat.favoriteModels")!)).toEqual([
+      "cursor:auto",
+      "cursor:luna",
+      "cursor:nova",
+    ]);
+  });
+
+  it("shows how to pin when nothing is starred", () => {
+    const trigger = renderPicker(vi.fn(), true);
+    act(() => trigger.click());
+    expect(container.textContent).toContain(
+      "Star a model to pin it here. Up to 3.",
+    );
+  });
+
+  it("picks a favorite with Option and its slot number", () => {
+    localStorage.setItem(
+      "irgat.favoriteModels",
+      JSON.stringify(["cursor:luna", "cursor:nova"]),
+    );
+    const onChange = vi.fn();
+    const trigger = renderPicker(onChange, true);
+    act(() => trigger.click());
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "™",
+          code: "Digit2",
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(onChange).toHaveBeenCalledWith("cursor", "cursor:nova");
+  });
+
+  it("leads the right-click quick menu with favorites", () => {
+    localStorage.setItem(
+      "irgat.favoriteModels",
+      JSON.stringify(["cursor:nova"]),
+    );
+    saveRecentModelChoice("cursor", "cursor:muse");
+    contextMenu(renderPicker());
+    const menu = container.querySelector(
+      '[aria-label="Recently used models"]',
+    )!;
+    const rows = [...menu.querySelectorAll('[role="menuitemradio"]')].map(
+      (row) => row.textContent,
+    );
+    expect(rows[0]).toContain("Nova");
+    expect(menu.textContent).toContain("Favorites");
+    expect(menu.textContent).toContain("Recent");
+    expect(rows.filter((row) => row?.includes("Nova"))).toHaveLength(1);
   });
 });

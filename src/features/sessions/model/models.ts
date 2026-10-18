@@ -619,13 +619,18 @@ export function encodeModelLaunchId(
   return `${native}[${parts.join(",")}]`;
 }
 
+/** Favorites are a quick-access shortlist pinned atop every model picker. */
+export const MAX_FAVORITE_MODELS = 3;
+
 export function loadFavoriteModels(): string[] {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((id): id is string => typeof id === "string");
+    return parsed
+      .filter((id): id is string => typeof id === "string")
+      .slice(0, MAX_FAVORITE_MODELS);
   } catch {
     return [];
   }
@@ -633,10 +638,40 @@ export function loadFavoriteModels(): string[] {
 
 export function saveFavoriteModels(ids: string[]) {
   try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(ids));
+    localStorage.setItem(
+      FAVORITES_KEY,
+      JSON.stringify(ids.slice(0, MAX_FAVORITE_MODELS)),
+    );
   } catch {
     // private mode / quota
   }
+}
+
+/**
+ * Stars or unstars a model, keeping favorite order. A full list stays as it
+ * is: the user unstars one first, so a swap is always a deliberate choice.
+ */
+export function toggleFavoriteModel(favorites: string[], id: string): string[] {
+  if (favorites.includes(id)) return favorites.filter((item) => item !== id);
+  if (favorites.length >= MAX_FAVORITE_MODELS) return favorites;
+  return [...favorites, id];
+}
+
+/** Picker shortcut for a favorite slot: ⌥1, ⌥2, ⌥3 (by physical key). */
+export function favoriteSlotFromKey(event: {
+  altKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  code: string;
+}): number | null {
+  if (!event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) {
+    return null;
+  }
+  const match = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
+  if (!match) return null;
+  const slot = Number(match[1]) - 1;
+  return slot < MAX_FAVORITE_MODELS ? slot : null;
 }
 
 function isHarnessId(value: string): value is HarnessId {
