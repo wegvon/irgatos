@@ -428,7 +428,7 @@ fn clean_text(value: String) -> Option<String> {
     Some(collapsed.chars().take(240).collect())
 }
 
-fn decode_entities(value: &str) -> String {
+pub(crate) fn decode_entities(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     let mut rest = value;
     while let Some(index) = rest.find('&') {

@@ -66,6 +66,11 @@ import {
   type FeedOverview,
   type FeedViewId,
 } from "../model/feed";
+import {
+  TrendingControls,
+  TrendingList,
+  useTrendingChoice,
+} from "./TrendingPanel";
 
 type Props = {
   besideRail?: boolean;
@@ -80,7 +85,10 @@ const message = (error: unknown) =>
 const time = (ms: number | null | undefined) =>
   ms ? formatRelativeTime(new Date(ms).toISOString()) : "";
 
-let rememberedView: FeedViewId = "feed";
+/** The post views, plus GitHub's trending repositories. */
+type FeedTab = FeedViewId | "github";
+
+let rememberedView: FeedTab = "feed";
 let rememberedInterest: string | null = null;
 let rememberedUnread = false;
 
@@ -93,7 +101,10 @@ export function FeedView({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [overview, setOverview] = useState<FeedOverview | null>(null);
-  const [view, setView] = useState<FeedViewId>(rememberedView);
+  const [view, setView] = useState<FeedTab>(rememberedView);
+  const trending = useTrendingChoice();
+  const [trendingRefresh, setTrendingRefresh] = useState(0);
+  const [trendingLoading, setTrendingLoading] = useState(false);
   const [interestId, setInterestId] = useState<string | null>(
     rememberedInterest,
   );
@@ -137,6 +148,7 @@ export function FeedView({
 
   const load = useCallback(
     async (more = false) => {
+      if (view === "github") return;
       const request = ++listRequest.current;
       setLoading(true);
       try {
@@ -178,6 +190,7 @@ export function FeedView({
   useEffect(() => {
     const unlisten = listen(FEED_CHANGED, () => {
       void reloadOverview();
+      if (rememberedView === "github") return;
       const atTop = (scrollRef.current?.scrollTop ?? 0) < 40;
       if (atTop) void loadRef.current();
       else setPendingNew(true);
@@ -243,6 +256,7 @@ export function FeedView({
   );
 
   const markAllRead = useCallback(async () => {
+    if (view === "github") return;
     try {
       await markFeedViewRead(view, interestId);
       await Promise.all([loadRef.current(), reloadOverview()]);
@@ -279,12 +293,17 @@ export function FeedView({
           label="Refresh"
           onClick={() => {
             void reloadOverview();
-            void loadRef.current();
+            if (view === "github") setTrendingRefresh((n) => n + 1);
+            else void loadRef.current();
           }}
-          disabled={loading}
+          disabled={view === "github" ? trendingLoading : loading}
         >
           <RefreshCw
-            className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+            className={`size-3.5 ${
+              (view === "github" ? trendingLoading : loading)
+                ? "animate-spin"
+                : ""
+            }`}
             strokeWidth={1.75}
           />
         </IconAction>
@@ -309,7 +328,9 @@ export function FeedView({
   return (
     <Shell header={header}>
       <div className="flex min-h-0 min-w-0 flex-1">
-        <aside className="flex w-[300px] shrink-0 flex-col overflow-y-auto border-r border-stroke">
+        <aside
+          className={`${view === "github" ? "hidden" : "flex"} w-[300px] shrink-0 flex-col overflow-y-auto border-r border-stroke`}
+        >
           <InterestsPanel
             interests={interests}
             selected={interestId}
@@ -359,37 +380,65 @@ export function FeedView({
                   </button>
                 );
               })}
-            </div>
-            <div className="ml-auto flex items-center gap-2 pb-1 text-[12px] text-content/60">
-              {activeInterest ? (
-                <button
-                  type="button"
-                  onClick={() => setInterestId(null)}
-                  className="flex items-center gap-1 rounded-md bg-content/5 px-2 py-0.5 text-content/75 hover:text-content"
-                  title="Show every interest"
-                >
-                  {activeInterest.title}
-                  <X className="size-3" strokeWidth={1.75} />
-                </button>
-              ) : null}
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={unreadOnly}
-                  onChange={(event) => setUnreadOnly(event.target.checked)}
-                />
-                Unread only
-              </label>
-              <IconAction
-                label="Mark all read"
-                onClick={() => void markAllRead()}
-                disabled={items.length === 0}
+              <button
+                type="button"
+                role="tab"
+                aria-selected={view === "github"}
+                onClick={() => setView("github")}
+                title="Trending repositories on GitHub"
+                className={`relative h-8 text-[12px] ${
+                  view === "github"
+                    ? "text-content"
+                    : "text-content/50 hover:text-content"
+                }`}
               >
-                <CheckCheck className="size-3.5" strokeWidth={1.75} />
-              </IconAction>
+                GitHub
+                {view === "github" ? (
+                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-content" />
+                ) : null}
+              </button>
             </div>
+            {view === "github" ? (
+              <div className="ml-auto flex items-center gap-2 pb-1 text-[12px] text-content/60">
+                <TrendingControls
+                  period={trending.period}
+                  language={trending.language}
+                  onPeriod={trending.setPeriod}
+                  onLanguage={trending.setLanguage}
+                />
+              </div>
+            ) : (
+              <div className="ml-auto flex items-center gap-2 pb-1 text-[12px] text-content/60">
+                {activeInterest ? (
+                  <button
+                    type="button"
+                    onClick={() => setInterestId(null)}
+                    className="flex items-center gap-1 rounded-md bg-content/5 px-2 py-0.5 text-content/75 hover:text-content"
+                    title="Show every interest"
+                  >
+                    {activeInterest.title}
+                    <X className="size-3" strokeWidth={1.75} />
+                  </button>
+                ) : null}
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={unreadOnly}
+                    onChange={(event) => setUnreadOnly(event.target.checked)}
+                  />
+                  Unread only
+                </label>
+                <IconAction
+                  label="Mark all read"
+                  onClick={() => void markAllRead()}
+                  disabled={items.length === 0}
+                >
+                  <CheckCheck className="size-3.5" strokeWidth={1.75} />
+                </IconAction>
+              </div>
+            )}
           </div>
-          {pendingNew ? (
+          {pendingNew && view !== "github" ? (
             <button
               type="button"
               onClick={() => {
@@ -407,48 +456,61 @@ export function FeedView({
             aria-busy={loading}
           >
             <div className="mx-auto flex max-w-[720px] flex-col gap-2 px-4 py-3">
-              {error ? (
-                <p className="text-[12px] text-red-400">{error}</p>
-              ) : null}
-              {view === "filtered" && items.length > 0 ? (
-                <p className="text-[12px] text-content/45">
-                  Posts the agent sent that did not match an interest closely
-                  enough. If good posts end up here, loosen the filter or
-                  sharpen the interest's description.
-                </p>
-              ) : null}
-              {loading && items.length === 0 ? (
-                <div className="flex justify-center py-8 text-content/45">
-                  <LoaderCircle className="size-4 animate-spin" />
-                </div>
-              ) : null}
-              {!loading && items.length === 0 && !error ? (
-                <EmptyState
-                  view={view}
-                  hasInterests={interests.length > 0}
-                  hasCollector={!!overview.collector}
-                  unreadOnly={unreadOnly}
+              {view === "github" ? (
+                <TrendingList
+                  period={trending.period}
+                  language={trending.language}
+                  refreshKey={trendingRefresh}
+                  onLoading={setTrendingLoading}
                 />
-              ) : null}
-              {items.map((item) => (
-                <PostCard
-                  key={item.id}
-                  item={item}
-                  interest={titleOf(item.interestId)}
-                  threshold={overview.threshold}
-                  onChange={(change) => void changeItem(item, change)}
-                />
-              ))}
-              {hasMore ? (
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={() => void load(true)}
-                  className="w-full rounded-md py-1.5 text-[12px] text-content/60 hover:bg-content/5 hover:text-content disabled:opacity-50"
-                >
-                  {loading ? "Loading…" : `Load more (${total - items.length})`}
-                </button>
-              ) : null}
+              ) : (
+                <>
+                  {error ? (
+                    <p className="text-[12px] text-red-400">{error}</p>
+                  ) : null}
+                  {view === "filtered" && items.length > 0 ? (
+                    <p className="text-[12px] text-content/45">
+                      Posts the agent sent that did not match an interest
+                      closely enough. If good posts end up here, loosen the
+                      filter or sharpen the interest's description.
+                    </p>
+                  ) : null}
+                  {loading && items.length === 0 ? (
+                    <div className="flex justify-center py-8 text-content/45">
+                      <LoaderCircle className="size-4 animate-spin" />
+                    </div>
+                  ) : null}
+                  {!loading && items.length === 0 && !error ? (
+                    <EmptyState
+                      view={view}
+                      hasInterests={interests.length > 0}
+                      hasCollector={!!overview.collector}
+                      unreadOnly={unreadOnly}
+                    />
+                  ) : null}
+                  {items.map((item) => (
+                    <PostCard
+                      key={item.id}
+                      item={item}
+                      interest={titleOf(item.interestId)}
+                      threshold={overview.threshold}
+                      onChange={(change) => void changeItem(item, change)}
+                    />
+                  ))}
+                  {hasMore ? (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => void load(true)}
+                      className="w-full rounded-md py-1.5 text-[12px] text-content/60 hover:bg-content/5 hover:text-content disabled:opacity-50"
+                    >
+                      {loading
+                        ? "Loading…"
+                        : `Load more (${total - items.length})`}
+                    </button>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         </section>
