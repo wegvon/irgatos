@@ -53,7 +53,7 @@ export function TrendingControls({
             onClick={() => onPeriod(p.id)}
             className={`rounded px-2 py-0.5 ${
               period === p.id
-                ? "bg-background-base text-content shadow-sm"
+                ? "bg-content/15 text-content"
                 : "text-content/55 hover:text-content"
             }`}
           >
@@ -210,7 +210,7 @@ function RepoCard({
         </span>
         {owner ? (
           <img
-            src={`https://github.com/${encodeURIComponent(owner)}.png?size=40`}
+            src={`https://avatars.githubusercontent.com/${encodeURIComponent(owner)}?s=40`}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
