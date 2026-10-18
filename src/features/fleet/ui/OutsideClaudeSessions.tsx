@@ -92,6 +92,7 @@ export function OutsideClaudeSessions({
           {sessions.map((session) => {
             const name = externalClaudeName(session);
             const busy = session.status === "busy";
+            const waiting = session.status === "waiting";
             const since = session.statusUpdatedAt ?? session.startedAt;
             return (
               <li key={session.sessionId}>
@@ -116,9 +117,9 @@ export function OutsideClaudeSessions({
                     </span>
                   </span>
                   <span
-                    className={`shrink-0 text-[11px] tabular-nums ${busy ? "text-accent" : "text-content/35"}`}
+                    className={`shrink-0 text-[11px] tabular-nums ${waiting ? "text-amber-400" : busy ? "text-accent" : "text-content/35"}`}
                   >
-                    {busy ? "Working" : "Idle"}
+                    {waiting ? "Waiting for you" : busy ? "Working" : "Idle"}
                     {since ? ` · ${formatLiveElapsed(since, now)}` : ""}
                   </span>
                   <button

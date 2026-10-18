@@ -39,7 +39,7 @@ pub struct ExternalClaudeSession {
     pid: u32,
     cwd: String,
     name: Option<String>,
-    /// `busy` or `idle`, as Claude Code reports it.
+    /// `busy`, `waiting` (on a prompt in its window) or `idle`, as Claude Code reports it.
     status: String,
     status_updated_at: Option<i64>,
     started_at: Option<i64>,
@@ -233,7 +233,8 @@ fn send(dir: &Path, session_id: &str, text: &str) -> Result<ExternalClaudeSent, 
     let socket = entry.messaging_socket_path.ok_or(
         "That Claude Code session does not take messages; it may need a newer Claude Code",
     )?;
-    if session.status == "busy" {
+    // `waiting` means a permission prompt or question is open in it.
+    if session.status != "idle" {
         return Err("That Claude Code session is busy; try again when it finishes".into());
     }
     let offset = file_len(transcript_path(dir, session_id).as_deref());
@@ -470,6 +471,8 @@ mod tests {
                    "messagingSocketPath":socket.to_str().unwrap()})
         };
         registry(dir.path(), pid, entry("busy", 0));
+        assert!(send(dir.path(), "s1", "hi").unwrap_err().contains("busy"));
+        registry(dir.path(), pid, entry("waiting", 0));
         assert!(send(dir.path(), "s1", "hi").unwrap_err().contains("busy"));
         registry(dir.path(), pid, entry("idle", 0));
         std::fs::create_dir_all(dir.path().join("projects/-w")).unwrap();

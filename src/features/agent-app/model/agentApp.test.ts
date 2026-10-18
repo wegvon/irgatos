@@ -1014,6 +1014,7 @@ describe("agent app commands", () => {
       { sessionId: "s-api", pid: 10, cwd: "/w/api", name: "api", status: "idle", canMessage: true },
       { sessionId: "s-web", pid: 11, cwd: "/w/web", name: null, status: "busy", canMessage: true },
       { sessionId: "s-old", pid: 12, cwd: "/w/old", status: "idle", canMessage: false },
+      { sessionId: "s-ask", pid: 13, cwd: "/w/ask", status: "waiting", canMessage: true },
     ];
     const messageExternalClaude = vi.fn(async () => {});
     host.externalClaudeSessions = async () => outside;
@@ -1026,9 +1027,12 @@ describe("agent app commands", () => {
         { id: "s-api", name: "api", folder: "/w/api", busy: false, canMessage: true },
         { id: "s-web", name: "web", folder: "/w/web", busy: true, canMessage: true },
         { id: "s-old", name: "old", folder: "/w/old", busy: false, canMessage: false },
+        { id: "s-ask", name: "ask", folder: "/w/ask", busy: true, canMessage: true },
       ],
     });
     await expect(handleAgentApp(source, "busy", "claude.send", { session: "web", message: "Hi" }, host))
+      .rejects.toThrow("busy");
+    await expect(handleAgentApp(source, "prompt", "claude.send", { session: "ask", message: "Hi" }, host))
       .rejects.toThrow("busy");
     await expect(handleAgentApp(source, "old", "claude.send", { session: "old", message: "Hi" }, host))
       .rejects.toThrow("does not take messages");

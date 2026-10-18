@@ -6,7 +6,7 @@ export type ExternalClaudeSession = {
   pid: number;
   cwd: string;
   name?: string | null;
-  /** "busy" or "idle", as Claude Code reports it. */
+  /** "busy", "waiting" (on a prompt in its window) or "idle", as Claude Code reports it. */
   status: string;
   statusUpdatedAt?: number | null;
   startedAt?: number | null;
@@ -40,7 +40,7 @@ export function externalClaudeContact(session: ExternalClaudeSession): ExternalC
     id: session.sessionId,
     name: externalClaudeName(session),
     folder: session.cwd,
-    busy: session.status === "busy",
+    busy: session.status !== "idle",
     canMessage: session.canMessage,
   };
 }
