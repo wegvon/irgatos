@@ -13,6 +13,8 @@ const ACTION_LABELS: Record<string, string> = {
   "projects.requestAccess": "Request project access",
   "irgats.list": "List Irgats",
   "irgats.send": "Message a Irgat",
+  "claude.list": "List Claude Code sessions",
+  "claude.send": "Message a Claude Code session",
   "models.list": "List models",
   "sessions.list": "List sessions",
   "sessions.read": "Read a session",

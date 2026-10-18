@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { newSession } from "../../sessions/model/session";
+import { newSession, type Block } from "../../sessions/model/session";
 import {
   resetHarnessModelOverlays,
   setHarnessModels,
@@ -977,6 +977,72 @@ describe("agent app commands", () => {
     });
     expect(messageIrgat).toHaveBeenCalledWith(
       "local", "What is rem's LAN IP?", `app-${source.id}-ask`, source.id,
+    );
+  });
+
+  it("stops Irgats that keep messaging agents without the user", async () => {
+    const { source, host } = fixture();
+    const messageIrgat = vi.fn(async () => ({ alreadySubmitted: false }));
+    host.irgats = () => [{ id: "local", name: "LocalAI", busy: false }];
+    host.messageIrgat = messageIrgat;
+    host.isIrgat = (id) => id === source.id;
+    host.irgatOf = () => ({ id: "invader", projects: [] });
+    const block = (id: string, extra: Partial<Block>): Block => ({ id, role: "user", text: id, ...extra });
+    source.blocks = [
+      block("user", {}),
+      ...Array.from({ length: 6 }, (_, index) =>
+        index % 2
+          ? block(`in-${index}`, { fromIrgat: { id: "local", name: "LocalAI" } })
+          : block(`reply-${index}`, {
+              internal: true,
+              irgatSessionCompletion: { sessionId: "s", title: "LocalAI", status: "completed", agentReply: true },
+            })),
+    ];
+    await expect(handleAgentApp(source, "again", "irgats.send", {
+      irgat: "LocalAI", message: "And?",
+    }, host)).rejects.toThrow("since the user last wrote");
+    expect(messageIrgat).not.toHaveBeenCalled();
+    source.blocks.push(block("user-again", {}));
+    expect(await handleAgentApp(source, "fresh", "irgats.send", {
+      irgat: "LocalAI", message: "And?",
+    }, host)).toMatchObject({ submitted: true });
+  });
+
+  it("lets a Irgat message an idle Claude Code session outside Irgatos", async () => {
+    const { source, host } = fixture();
+    const outside = [
+      { sessionId: "s-api", pid: 10, cwd: "/w/api", name: "api", status: "idle", canMessage: true },
+      { sessionId: "s-web", pid: 11, cwd: "/w/web", name: null, status: "busy", canMessage: true },
+      { sessionId: "s-old", pid: 12, cwd: "/w/old", status: "idle", canMessage: false },
+      { sessionId: "s-ask", pid: 13, cwd: "/w/ask", status: "waiting", canMessage: true },
+    ];
+    const messageExternalClaude = vi.fn(async () => {});
+    host.externalClaudeSessions = async () => outside;
+    host.messageExternalClaude = messageExternalClaude;
+    await expect(handleAgentApp(source, "plain", "claude.list", {}, host))
+      .rejects.toThrow("Only a Irgat's chat");
+    host.isIrgat = (id) => id === source.id;
+    expect(await handleAgentApp(source, "list", "claude.list", {}, host)).toEqual({
+      sessions: [
+        { id: "s-api", name: "api", folder: "/w/api", busy: false, canMessage: true },
+        { id: "s-web", name: "web", folder: "/w/web", busy: true, canMessage: true },
+        { id: "s-old", name: "old", folder: "/w/old", busy: false, canMessage: false },
+        { id: "s-ask", name: "ask", folder: "/w/ask", busy: true, canMessage: true },
+      ],
+    });
+    await expect(handleAgentApp(source, "busy", "claude.send", { session: "web", message: "Hi" }, host))
+      .rejects.toThrow("busy");
+    await expect(handleAgentApp(source, "prompt", "claude.send", { session: "ask", message: "Hi" }, host))
+      .rejects.toThrow("busy");
+    await expect(handleAgentApp(source, "old", "claude.send", { session: "old", message: "Hi" }, host))
+      .rejects.toThrow("does not take messages");
+    await expect(handleAgentApp(source, "none", "claude.send", { session: "nope", message: "Hi" }, host))
+      .rejects.toThrow("claude.list");
+    expect(await handleAgentApp(source, "ask", "claude.send", {
+      session: "API", message: "Did the token format change?",
+    }, host)).toMatchObject({ sessionId: "s-api", name: "api", submitted: true, notifyOnComplete: true });
+    expect(messageExternalClaude).toHaveBeenCalledWith(
+      outside[0], "Did the token format change?", `app-${source.id}-ask`, source.id,
     );
   });
 

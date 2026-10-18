@@ -36,6 +36,15 @@ import {
   irgatSessionCompletionResult,
   IrgatSessionCompletionBatches,
 } from "../features/irgats/model/irgatSessionCompletion";
+import {
+  EXTERNAL_REPLY_TIMEOUT_SECS,
+  claimExternalClaudeRequest,
+  externalClaudeMarker,
+  externalClaudeName,
+  externalClaudePrompt,
+  releaseExternalClaudeRequest,
+  type ExternalClaudeSession,
+} from "../features/irgats/model/externalClaude";
 import { irgatMessagePrompt } from "../features/irgats/model/irgatDirectMessages";
 import { acceptQuickLaunch } from "./model/quickLaunchSession";
 import { launchRemoteSession } from "../features/connections/model/remoteAgentLaunch";
@@ -12125,6 +12134,7 @@ function Workspace({
           project: string,
           prompt: string,
           irgat?: string,
+          external?: string,
         ) => {
           const settle = irgatCompletionBatches.current!.watch(
             { irgatId, turn: sourceTurn },
@@ -12145,6 +12155,7 @@ function Workspace({
                     (session) => session.id === sessionId,
                   ),
                   ...(irgat ? { irgat } : {}),
+                  ...(external ? { external } : {}),
                 }),
               ),
             { accept: settle.accept, discard: settle.discard },
@@ -12579,6 +12590,56 @@ function Workspace({
               }
               onSettled.accept();
               return { alreadySubmitted: false };
+            },
+            externalClaudeSessions: () =>
+              invoke<ExternalClaudeSession[]>("external_claude_sessions"),
+            messageExternalClaude: async (target, message, requestId, notifyIrgatId) => {
+              if (!sourceIrgat)
+                throw new Error("Only a Irgat's chat can message Claude Code sessions");
+              if (!claimExternalClaudeRequest(requestId)) return;
+              const name = externalClaudeName(target);
+              const marker = externalClaudeMarker(requestId);
+              const sent = await invoke<{ offset: number; sentAt: number }>(
+                "external_claude_send",
+                {
+                  sessionId: target.sessionId,
+                  text: externalClaudePrompt(
+                    {
+                      id: sourceIrgat.id,
+                      name: irgatLook(sourceIrgat).name,
+                      color: sourceIrgat.color,
+                    },
+                    message,
+                    marker,
+                  ),
+                },
+              ).catch((error) => {
+                releaseExternalClaudeRequest(requestId);
+                throw error;
+              });
+              // Its answer is read from its transcript and reported like a
+              // Irgat's reply to irgats.send.
+              const settle = monitorCompletion(
+                notifyIrgatId,
+                `claude-${target.sessionId}`,
+                requestId,
+                target.cwd,
+                message,
+                undefined,
+                name,
+              );
+              settle.accept();
+              void invoke<string>("external_claude_wait_reply", {
+                sessionId: target.sessionId,
+                marker,
+                offset: sent.offset,
+                sentAt: sent.sentAt,
+                timeoutSecs: EXTERNAL_REPLY_TIMEOUT_SECS,
+              }).then(
+                (text) => settle({ status: "completed", text }),
+                (error) =>
+                  settle({ status: "failed", text: "", error: String(error) }),
+              );
             },
             projects: () => {
               const irgat = irgatForSession(source.id);

@@ -19,6 +19,7 @@ mod cursor_store;
 mod cursor_usage;
 mod devin_config;
 mod devin_usage;
+mod external_claude;
 mod external_editor;
 mod feed;
 mod free_chat;
@@ -536,7 +537,11 @@ pub fn run() {
             feed::feed_mark_all_read,
             feed::feed_set_threshold,
             feed::feed_save_collector,
+            feed::feed_github_trending,
             service_status::service_status_check,
+            external_claude::external_claude_sessions,
+            external_claude::external_claude_send,
+            external_claude::external_claude_wait_reply,
             web_access::web_access_status,
             web_push::web_push_send,
             web_access::web_access_set_enabled,

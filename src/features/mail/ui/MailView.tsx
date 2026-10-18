@@ -21,6 +21,7 @@ import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import {
   DEFAULT_MAIL_ASK,
+  DEFAULT_MAIL_FOLDER,
   MAIL_FOLDERS,
   accountLabel,
   executorAccountsUrl,
@@ -88,7 +89,7 @@ const rowKey = (account: string, id: string) => `${account}\n${id}`;
 /** `work@x.com` → `work`, short enough for a list row. */
 const shortAddress = (email: string) => email.split("@")[0] || email;
 
-let rememberedFolder: MailFolderId = "inbox";
+let rememberedFolder: MailFolderId = DEFAULT_MAIL_FOLDER;
 /** "" shows every account. */
 let rememberedAccount = "";
 let rememberedSelection: Selection | null = null;
