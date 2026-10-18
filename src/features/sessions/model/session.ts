@@ -412,6 +412,11 @@ export type Block = {
   statusKey?: string;
   /** Posted to a Irgat's chat by one of its habits, outside any turn. */
   irgatHabit?: { id: string; name: string; at: number };
+  /**
+   * An agent's request for a secret, answered in a masked card. Holds the
+   * name and limits only; the value goes straight to the vault.
+   */
+  secretRequest?: import("../../secrets/model/secrets").SecretRequest;
   /** User approval to permanently assign a registered project to this Irgat. */
   irgatProjectAccess?: { irgatId: string; project: string; userTurnId?: string };
   /**

@@ -43,6 +43,7 @@ import { ToolArtifactButton } from "../../artifacts/ui/OpenInArtifactsButton";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { PlanPreview } from "./PlanPreview";
+import { SecretRequestCard } from "../../secrets/ui/SecretRequestCard";
 import { OrchestrationPreview } from "../../orchestration/ui/OrchestrationPreview";
 import { TaskListPreview } from "./TaskListPreview";
 import { HandoffButton, SecondOpinionButton } from "./SecondOpinionButton";
@@ -2417,6 +2418,15 @@ const TranscriptBlock = memo(function TranscriptBlock({
   if (block.role === "system") {
     if (block.interjection) {
       return <InterjectionDivider block={block} />;
+    }
+    if (block.secretRequest) {
+      return (
+        <SecretRequestCard
+          blockId={block.id}
+          request={block.secretRequest}
+          embedded={embedded}
+        />
+      );
     }
     return (
       <div className={`${embedded ? "" : "px-4"} py-2 text-content/50`}>

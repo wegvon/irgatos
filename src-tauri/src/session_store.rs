@@ -236,8 +236,9 @@ pub struct SessionRecord {
 
 #[tauri::command(async)]
 pub fn session_upsert(
+    app: AppHandle,
     store: State<'_, SessionStore>,
-    session: SessionUpsert,
+    mut session: SessionUpsert,
 ) -> Result<SessionSummary, String> {
     validate_id(&session.id, "session")?;
     if session.cwd.trim().is_empty() {
@@ -264,6 +265,7 @@ pub fn session_upsert(
     if !session.blocks.is_array() {
         return Err("blocks must be an array".into());
     }
+    crate::secrets::scrub_saved(&app, &mut session.blocks);
 
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
     let summary = upsert_session(&conn, &session).map_err(|e| e.to_string())?;
@@ -569,6 +571,7 @@ pub fn session_delete(
     );
     delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
     drop(conn);
+    crate::secrets::end_session(&app, &session_id);
     if !image_paths.is_empty() {
         if let Err(error) = crate::fs::delete_generated_images_sync(&app, &image_paths) {
             eprintln!("Generated image cleanup will need a retry: {error}");
@@ -580,13 +583,20 @@ pub fn session_delete(
 
 #[tauri::command(async)]
 pub fn session_set_archived(
+    app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     archived: bool,
 ) -> Result<(), String> {
     validate_id(&session_id, "session")?;
     let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
+    set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())?;
+    drop(conn);
+    // Archiving ends the task; a value bound to the chat ends with it.
+    if archived {
+        crate::secrets::end_session(&app, &session_id);
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]

@@ -40,6 +40,8 @@ png = "0.18"
 tempfile = "3"
 wry = { version = "0.55", default-features = false, features = ["devtools", "os-webview", "x11"] }
 tiny_http = "0.12"
+regex = "1"
+zeroize = { version = "1", features = ["serde"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
