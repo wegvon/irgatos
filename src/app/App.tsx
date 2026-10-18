@@ -13444,29 +13444,50 @@ function Workspace({
   const describeMailChat = useCallback(
     (sessionId: string): MailChat | undefined => {
       const open = sessions.find((session) => session.id === sessionId);
-      if (open) return { title: open.title, busy: !!open.busy };
+      if (open) {
+        const answer = [...open.blocks]
+          .reverse()
+          .find((block) => block.role === "assistant" && block.text.trim());
+        return { title: open.title, busy: !!open.busy, reply: answer?.text };
+      }
       const saved = history.find((session) => session.id === sessionId);
       return saved ? { title: saved.title, busy: false } : undefined;
     },
     [sessions, history],
   );
 
-  /** Starts a chat about a mail thread; its agent may read the thread and
-   *  save a reply draft, never send. The chat gets its own tab: reusing a
-   *  blank pane would land it in whatever tab was active (often a free chat
-   *  or another project), where it stayed out of sight and was lost. */
+  const onLoadMailChat = useCallback(
+    (sessionId: string) => void ensureOpenSession(sessionId),
+    [ensureOpenSession],
+  );
+
+  /** Runs a chat about a mail thread while the Mail page stays open; its
+   *  agent may read the thread and save a reply draft, never send. It is an
+   *  ordinary chat on the Chat page, so it needs no project. A follow-up goes
+   *  to the chat already working on the thread. */
   const onAskMail = useCallback(
-    async ({ account, threadId, subject, project, text }: MailAskRequest) => {
-      const freeChat = isFreeChatCwd(project);
+    async ({
+      account,
+      threadId,
+      subject,
+      text,
+      sessionId,
+    }: MailAskRequest): Promise<string> => {
+      const existing = sessionId ? await ensureOpenSession(sessionId) : null;
+      if (existing) {
+        if (existing.busy)
+          throw new Error("The agent is still working on this mail.");
+        if (!onSubmit(existing.id, text, []))
+          throw new Error("The message could not be sent. Try again.");
+        return existing.id;
+      }
+      const dir = await resolveFreeChatDir();
       const session = {
-        ...(freeChat
-          ? newFreeChatSession(project, sessionDefaults?.runtimeMode)
-          : newDefaultSession(project, sessionDefaults?.runtimeMode)),
+        ...newFreeChatSession(dir, sessionDefaults?.runtimeMode),
         title: `Mail: ${subject}`,
       };
       await linkMailSession(session.id, account, threadId, subject);
-      const before = sessionsRef.current;
-      sessionsRef.current = [...before, session];
+      sessionsRef.current = [...sessionsRef.current, session];
       setSessions(sessionsRef.current);
       if (!onSubmit(session.id, text, [])) {
         sessionsRef.current = sessionsRef.current.filter(
@@ -13475,29 +13496,9 @@ function Workspace({
         setSessions(sessionsRef.current);
         throw new Error("The chat could not start. Try again.");
       }
-      if (freeChat) {
-        openFreeChat(session.id);
-        return;
-      }
-      workspaceNavigation.cancel();
-      if (irgatViewIdRef.current) closeIrgatView();
-      setMailViewOpen(false);
-      setSidebarTab("sessions", project);
-      setProjectCwd(project);
-      setRecents(rememberProject(project));
-      const tab = newTab(session.id);
-      appendTab(tab, project);
-      setActiveTabId(tab.id);
-      setComposerFocused(true);
+      return session.id;
     },
-    [
-      appendTab,
-      closeIrgatView,
-      onSubmit,
-      openFreeChat,
-      sessionDefaults?.runtimeMode,
-      workspaceNavigation.cancel,
-    ],
+    [ensureOpenSession, onSubmit, sessionDefaults?.runtimeMode],
   );
 
   // Not a transition: the compact drawer opens in the same batch and closes
@@ -16133,9 +16134,8 @@ function Workspace({
                 <MailView
                   besideRail={projectRailOpen || compactProjectRail}
                   compactRail={compactRailActive}
-                  cwd={projectCwd}
-                  recents={recents}
                   describeChat={describeMailChat}
+                  onLoadChat={onLoadMailChat}
                   onAsk={onAskMail}
                   onOpenSession={onOpenFleetSession}
                   onClose={onLeaveMail}
