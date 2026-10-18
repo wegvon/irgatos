@@ -82,7 +82,7 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 56] = [
+const APP_ACTIONS: [&str; 58] = [
     "code.search",
     "browser.state",
     "browser.read",
@@ -107,6 +107,8 @@ const APP_ACTIONS: [&str; 56] = [
     "projects.requestAccess",
     "irgats.list",
     "irgats.send",
+    "claude.list",
+    "claude.send",
     "models.list",
     "sessions.list",
     "sessions.read",
@@ -243,6 +245,14 @@ Actions:
                   it answers with its own memory and projects. Its reply comes
                   back to your chat once you are idle, so end your turn after
                   sending. A busy Irgat is rejected. Reuse --request-id on retries.
+  claude.list   {} Irgat only. Claude Code sessions running on this Mac outside
+                  Irgatos (a terminal, an editor): id, name, folder, busy and
+                  whether it takes messages.
+  claude.send   {"session":"<id, name or folder>","message":"..."}
+                  Irgat only. Ask one of those sessions something. It arrives
+                  in its own window, labeled as yours; its answer comes back to
+                  your chat once you are idle, so end your turn after sending.
+                  A busy session is rejected. Reuse --request-id on retries.
   models.list    {}  Available providers, models, settings and permission modes.
   sessions.list  {}  Your Irgat's main and child chats, without project access.
                   Add "project":"<path>" to list an assigned project's sessions.
@@ -762,6 +772,8 @@ mod tests {
             "projects.requestAccess",
             "irgats.list",
             "irgats.send",
+            "claude.list",
+            "claude.send",
         ] {
             assert!(parse_args_for(&args(&[action, "--json", "{}"]), true).is_ok());
             assert!(parse_args_for(&args(&[action, "--json", "{}"]), false).is_err());
