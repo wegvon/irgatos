@@ -469,14 +469,18 @@ describe("Chats in the navigation menu", () => {
       container.querySelector('[data-free-chat-row="done"] .rounded-full'),
     ).toBeNull();
 
-    // Collapsed, the header carries the most pressing state.
+    // Open or collapsed, the header counts the chats waiting on you.
     const header = container.querySelector<HTMLButtonElement>(
       'section[aria-label="Chats"] [aria-expanded]',
     )!;
-    expect(header.querySelector(".bg-amber-500")).toBeNull();
+    expect(header.querySelector("[data-rail-needs-you]")?.textContent).toBe(
+      "1",
+    );
     act(() => header.click());
-    expect(header.querySelector(".bg-amber-500")).not.toBeNull();
-    expect(header.textContent).toContain("Needs you");
+    expect(header.querySelector("[data-rail-needs-you]")?.textContent).toBe(
+      "1",
+    );
+    expect(header.textContent).toContain("1 needs you");
   });
 
   it("renames and deletes a chat from its menu", async () => {
