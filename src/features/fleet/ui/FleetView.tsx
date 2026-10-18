@@ -202,11 +202,11 @@ export function FleetView({
   );
   const outside = useOutsideClaudeSessions();
   const shownOutside = useMemo(
-    () => (sidebar ? [] : filterOutsideClaudeSessions(outside, query)),
-    [outside, query, sidebar],
+    () => filterOutsideClaudeSessions(outside, query),
+    [outside, query],
   );
   const empty =
-    fleet.total === 0 && habitApprovals.length === 0 && (sidebar || outside.length === 0);
+    fleet.total === 0 && habitApprovals.length === 0 && outside.length === 0;
 
   const toggle = (bucket: FleetBucket) =>
     setCollapsed((current) => {
@@ -407,6 +407,7 @@ export function FleetView({
               sessions={shownOutside}
               now={now}
               forceOpen={filtering}
+              defaultCollapsed={sidebar}
             />
           </div>
         </div>

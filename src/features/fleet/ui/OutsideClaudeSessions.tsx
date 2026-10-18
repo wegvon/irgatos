@@ -57,12 +57,15 @@ export function OutsideClaudeSessions({
   sessions,
   now,
   forceOpen = false,
+  defaultCollapsed = false,
 }: {
   sessions: readonly ExternalClaudeSession[];
   now: number;
   forceOpen?: boolean;
+  /** Folded like Idle in the narrow sidebar Fleet. */
+  defaultCollapsed?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [copied, setCopied] = useState<string | null>(null);
   if (!sessions.length) return null;
   const open = forceOpen || !collapsed;
