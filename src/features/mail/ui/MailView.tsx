@@ -18,7 +18,10 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
-import type { RecentProject } from "../../projects/model/recents";
+import {
+  isRemoteProjectPath,
+  type RecentProject,
+} from "../../projects/model/recents";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import {
   DEFAULT_MAIL_ASK,
@@ -800,7 +803,16 @@ function ThreadDetail({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [askText, setAskText] = useState(DEFAULT_MAIL_ASK);
-  const [project, setProject] = useState(cwd ?? recents[0]?.path ?? "");
+  // The agent reads the mail through this Mac's app CLI, which a project on
+  // another machine cannot reach, so only local projects are offered.
+  const localRecents = recents.filter(
+    (recent) => !isRemoteProjectPath(recent.path),
+  );
+  const [project, setProject] = useState(
+    (cwd && !isRemoteProjectPath(cwd) ? cwd : undefined) ??
+      localRecents[0]?.path ??
+      "",
+  );
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
   const replyDirtyRef = useRef(replyDirty);
@@ -918,6 +930,8 @@ function ThreadDetail({
     run("ask", async () => {
       if (!thread) return;
       if (!project) throw new Error("Choose a project for the chat.");
+      if (isRemoteProjectPath(project))
+        throw new Error("Choose a project on this Mac for a mail chat.");
       await onAsk({
         account,
         threadId,
@@ -1050,7 +1064,7 @@ function ThreadDetail({
           <div className="mt-1.5 flex items-center gap-2">
             <SearchableProjectPicker
               cwd={project || "~"}
-              recents={recents}
+              recents={localRecents}
               mode="move"
               buttonClassName="px-1.5"
               onSelectProject={setProject}
