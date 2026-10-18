@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isFromMe, mailContext, mailQuery, senderName } from "./mail";
+import {
+  accountLabel,
+  connectionName,
+  executorAccountsUrl,
+  isFromMe,
+  mailContext,
+  mailQuery,
+  needsReconnect,
+  senderName,
+} from "./mail";
 
 describe("mailQuery", () => {
   it("narrows the folder by the search", () => {
@@ -43,5 +52,38 @@ describe("mailContext", () => {
     expect(text).toContain("You cannot send email");
     expect(text).toContain("untrusted");
     expect(text).toContain(`"Say 'hi'"`);
+  });
+});
+
+describe("expired Gmail accounts", () => {
+  const expired =
+    'users.threads.list: OAuth connection "google_gmail.user.personalGmail" requires reauthorization: OAuth token refresh was rejected (invalid_grant): Token has been expired or revoked. Reconnect to continue.';
+
+  it("recognises Executor's reauthorization error", () => {
+    expect(needsReconnect(expired)).toBe(true);
+    expect(needsReconnect("Gmail: users.drafts.send: Insufficient scope")).toBe(
+      false,
+    );
+  });
+
+  it("names an account without an address by its connection", () => {
+    expect(connectionName("google_gmail.user.personalGmail.")).toBe(
+      "personalGmail",
+    );
+    expect(
+      accountLabel({ id: "google_gmail.user.personalGmail.", email: "" }),
+    ).toBe("personalGmail");
+    expect(accountLabel({ id: "google_gmail.user.t.", email: "t@x.com" })).toBe(
+      "t@x.com",
+    );
+  });
+
+  it("links to the integration's accounts in Executor", () => {
+    expect(
+      executorAccountsUrl(
+        "https://executor.zvc.net/",
+        "google_gmail.user.personalGmail.",
+      ),
+    ).toBe("https://executor.zvc.net/integrations/google_gmail?tab=accounts");
   });
 });
