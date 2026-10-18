@@ -18,6 +18,7 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
+import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import {
   DEFAULT_MAIL_ASK,
   MAIL_FOLDERS,
@@ -1063,8 +1064,11 @@ function ThreadDetail({
                 </button>
               </div>
               {current.chat.reply ? (
-                <div className="mt-1.5 max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-[13px] leading-relaxed">
-                  {current.chat.reply}
+                <div className="mt-1.5 max-h-72 overflow-y-auto break-words text-[13px]">
+                  <AgentMarkdown
+                    text={current.chat.reply}
+                    streaming={current.chat.busy}
+                  />
                 </div>
               ) : null}
             </div>
