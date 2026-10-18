@@ -17,9 +17,8 @@ import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
-import type { RecentProject } from "../../projects/model/recents";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
+import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import {
   DEFAULT_MAIL_ASK,
   DEFAULT_MAIL_FOLDER,
@@ -51,21 +50,26 @@ export type MailAskRequest = {
   account: string;
   threadId: string;
   subject: string;
-  project: string;
   text: string;
+  /** A chat already working on this thread; the text goes to it. */
+  sessionId?: string;
 };
 
-export type MailChat = { title: string; busy: boolean };
+export type MailChat = {
+  title: string;
+  busy: boolean;
+  /** The agent's latest answer, shown under the mail. */
+  reply?: string;
+};
 
 type Props = {
   besideRail?: boolean;
   compactRail?: boolean;
-  /** The project a new chat starts in unless another is picked. */
-  cwd?: string;
-  recents: RecentProject[];
   /** Title and state of a chat, or undefined when it no longer exists. */
   describeChat: (sessionId: string) => MailChat | undefined;
-  onAsk: (request: MailAskRequest) => Promise<void>;
+  /** Loads a saved chat so `describeChat` can show it after a restart. */
+  onLoadChat: (sessionId: string) => void;
+  onAsk: (request: MailAskRequest) => Promise<string>;
   onOpenSession: (sessionId: string) => void;
   onClose: () => void;
   onToggleSidebar?: () => void;
@@ -93,9 +97,8 @@ let rememberedSelection: Selection | null = null;
 export function MailView({
   besideRail = false,
   compactRail = false,
-  cwd,
-  recents,
   describeChat,
+  onLoadChat,
   onAsk,
   onOpenSession,
   onClose,
@@ -439,9 +442,8 @@ export function MailView({
               (accounts?.length ?? 0) > 1 ? emailOf(selected.account) : ""
             }
             threadId={selected.id}
-            cwd={cwd}
-            recents={recents}
             describeChat={describeChat}
+            onLoadChat={onLoadChat}
             onAsk={onAsk}
             onOpenSession={onOpenSession}
             onChanged={(change) => onThreadChanged(selected, change)}
@@ -770,9 +772,8 @@ function ThreadDetail({
   account,
   accountEmail,
   threadId,
-  cwd,
-  recents,
   describeChat,
+  onLoadChat,
   onAsk,
   onOpenSession,
   onChanged,
@@ -782,10 +783,9 @@ function ThreadDetail({
   /** Shown above the thread when there are several accounts. */
   accountEmail: string;
   threadId: string;
-  cwd?: string;
-  recents: RecentProject[];
   describeChat: (sessionId: string) => MailChat | undefined;
-  onAsk: (request: MailAskRequest) => Promise<void>;
+  onLoadChat: (sessionId: string) => void;
+  onAsk: (request: MailAskRequest) => Promise<string>;
   onOpenSession: (sessionId: string) => void;
   onChanged: (change: Partial<MailThreadSummary>) => void;
   onArchived: () => void;
@@ -801,7 +801,7 @@ function ThreadDetail({
   );
   const [notice, setNotice] = useState<string | null>(null);
   const [askText, setAskText] = useState(DEFAULT_MAIL_ASK);
-  const [project, setProject] = useState(cwd ?? recents[0]?.path ?? "");
+  const [askError, setAskError] = useState<string | null>(null);
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
   const replyDirtyRef = useRef(replyDirty);
@@ -915,18 +915,48 @@ function ThreadDetail({
       onArchived();
     });
 
-  const ask = () =>
-    run("ask", async () => {
-      if (!thread) return;
-      if (!project) throw new Error("Choose a project for the chat.");
-      await onAsk({
+  // The agent works beside the mail: its latest answer shows here and the
+  // draft it saves lands in the reply box once it is done.
+  const liveChats = chats
+    .map((id) => ({ id, chat: describeChat(id) }))
+    .filter((entry): entry is { id: string; chat: MailChat } => !!entry.chat);
+  const current = liveChats[liveChats.length - 1];
+  const currentBusy = !!current?.chat.busy;
+  const onLoadChatRef = useRef(onLoadChat);
+  onLoadChatRef.current = onLoadChat;
+  const lastChatId = chats[chats.length - 1];
+  useEffect(() => {
+    if (lastChatId) onLoadChatRef.current(lastChatId);
+  }, [lastChatId]);
+  const wasBusy = useRef(currentBusy);
+  useEffect(() => {
+    if (wasBusy.current && !currentBusy && !replyDirtyRef.current)
+      void refresh();
+    wasBusy.current = currentBusy;
+  }, [currentBusy, refresh]);
+
+  const ask = async () => {
+    if (!thread || busy) return;
+    const text = askText.trim() || (current ? "" : DEFAULT_MAIL_ASK);
+    if (!text) return;
+    setBusy("ask");
+    setAskError(null);
+    try {
+      const id = await onAsk({
         account,
         threadId,
         subject: thread.subject,
-        project,
-        text: askText.trim() || DEFAULT_MAIL_ASK,
+        text,
+        sessionId: current?.id,
       });
-    });
+      setChats((ids) => (ids.includes(id) ? ids : [...ids, id]));
+      setAskText("");
+    } catch (err: unknown) {
+      setAskError(message(err));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   if (!thread) {
     return (
@@ -939,10 +969,6 @@ function ThreadDetail({
       </div>
     );
   }
-
-  const liveChats = chats
-    .map((id) => ({ id, chat: describeChat(id) }))
-    .filter((entry): entry is { id: string; chat: MailChat } => !!entry.chat);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1019,50 +1045,70 @@ function ThreadDetail({
             />
             Ask an agent
           </div>
-          {liveChats.length ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {liveChats.map(({ id, chat }) => (
+          {current ? (
+            <div className="mt-2 rounded-md bg-content/5 px-2 py-1.5">
+              <div className="flex items-center gap-1.5 text-[12px]">
+                {current.chat.busy ? (
+                  <LoaderCircle className="size-3 animate-spin text-content/50" />
+                ) : (
+                  <span className="size-1.5 rounded-full bg-content/30" />
+                )}
+                <span className="text-content/60">
+                  {current.chat.busy ? "Working…" : "Done"}
+                </span>
                 <button
-                  key={id}
                   type="button"
-                  onClick={() => onOpenSession(id)}
-                  className="flex max-w-full items-center gap-1.5 rounded-md bg-content/5 px-2 py-1 text-[12px] hover:bg-content/10"
+                  onClick={() => onOpenSession(current.id)}
+                  className="ml-auto text-content/50 hover:text-content"
                 >
-                  {chat.busy ? (
-                    <LoaderCircle className="size-3 animate-spin text-content/50" />
-                  ) : (
-                    <span className="size-1.5 rounded-full bg-content/30" />
-                  )}
-                  <span className="truncate">{chat.title}</span>
-                  <span className="text-content/45">
-                    {chat.busy ? "working" : "open"}
-                  </span>
+                  Open chat
                 </button>
-              ))}
+              </div>
+              {current.chat.reply ? (
+                <div className="mt-1.5 max-h-72 overflow-y-auto break-words text-[13px]">
+                  <AgentMarkdown
+                    text={current.chat.reply}
+                    streaming={current.chat.busy}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
           <textarea
             value={askText}
             onChange={(event) => setAskText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && event.metaKey) {
+                event.preventDefault();
+                void ask();
+              }
+            }}
             rows={2}
+            placeholder={current ? "Ask a follow-up about this mail" : undefined}
             aria-label="What the agent should do"
             className="mt-2 w-full resize-y rounded-md border border-stroke bg-transparent px-2 py-1.5 text-[13px] outline-none focus:border-content/40"
           />
           <div className="mt-1.5 flex items-center gap-2">
-            <SearchableProjectPicker
-              cwd={project || "~"}
-              recents={recents}
-              mode="move"
-              buttonClassName="px-1.5"
-              onSelectProject={setProject}
-            />
+            {askError ? (
+              <p className="min-w-0 flex-1 text-[12px] text-red-400">
+                {askError}
+              </p>
+            ) : null}
             <button
               type="button"
-              disabled={busy !== null || !project}
+              disabled={
+                busy !== null ||
+                currentBusy ||
+                (!!current && !askText.trim())
+              }
               onClick={() => void ask()}
               className="ml-auto rounded-md bg-content px-3 py-1.5 text-[12px] font-medium text-background-base disabled:opacity-40"
             >
-              {busy === "ask" ? "Starting…" : "Start chat"}
+              {busy === "ask"
+                ? "Starting…"
+                : current
+                  ? "Send"
+                  : "Start chat"}
             </button>
           </div>
         </section>
