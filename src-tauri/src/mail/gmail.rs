@@ -7,6 +7,9 @@ use base64::Engine;
 use serde::Serialize;
 use serde_json::Value;
 
+use super::html_text::{decode_entities, html_text};
+use crate::untrusted_text::{clean_text, HiddenPart};
+
 /// Bodies longer than this are cut for the view and for agents.
 pub const MAX_BODY_CHARS: usize = 40_000;
 
@@ -37,6 +40,8 @@ pub struct Message {
     pub body: String,
     pub unread: bool,
     pub attachments: Vec<String>,
+    /// Text in the mail a person cannot see; never part of `body`.
+    pub hidden: Vec<HiddenPart>,
     #[serde(skip)]
     pub message_id_header: String,
     #[serde(skip)]
@@ -172,6 +177,12 @@ pub fn message(m: &Value) -> Message {
     if let Some(payload) = m.get("payload") {
         collect_attachments(payload, &mut attachments);
     }
+    let mut hidden = Vec::new();
+    let subject = clean_text(&header(m, "Subject"), &mut hidden);
+    let text = m
+        .get("payload")
+        .map(|payload| body(payload, &mut hidden))
+        .unwrap_or_default();
     Message {
         id: m
             .get("id")
@@ -182,10 +193,11 @@ pub fn message(m: &Value) -> Message {
         to: header(m, "To"),
         cc: header(m, "Cc"),
         date: internal_date(m),
-        subject: header(m, "Subject"),
-        body: m.get("payload").map(body).unwrap_or_default(),
+        subject,
+        body: text,
         unread: labels(m).contains(&"UNREAD"),
         attachments,
+        hidden,
         message_id_header: header(m, "Message-ID"),
         references: header(m, "References"),
         reply_to: header(m, "Reply-To"),
@@ -199,7 +211,10 @@ pub fn draft(value: &Value) -> Option<Draft> {
     Some(Draft {
         id,
         to: header(m, "To"),
-        body: m.get("payload").map(body).unwrap_or_default(),
+        body: m
+            .get("payload")
+            .map(|payload| body(payload, &mut Vec::new()))
+            .unwrap_or_default(),
         updated: internal_date(m),
     })
 }
@@ -240,11 +255,21 @@ fn part_text(part: &Value, mime: &str) -> Option<String> {
 }
 
 /// The readable text of a payload: plain text when the sender gave it,
-/// otherwise the HTML with its markup removed.
-pub fn body(payload: &Value) -> String {
-    let text = part_text(payload, "text/plain")
-        .or_else(|| part_text(payload, "text/html").map(|html| html_to_text(&html)))
-        .unwrap_or_default();
+/// otherwise what a person sees of the HTML. What they cannot see (comments,
+/// invisible styles and characters, base64 text) goes to `hidden` instead.
+pub fn body(payload: &Value, hidden: &mut Vec<HiddenPart>) -> String {
+    let text = match part_text(payload, "text/plain") {
+        Some(text) => text,
+        None => part_text(payload, "text/html")
+            .map(|html| {
+                let (text, found) = html_text(&html);
+                hidden.extend(found);
+                text
+            })
+            .unwrap_or_default(),
+    };
+    let text = clean_text(&text, hidden);
+    hidden.truncate(crate::untrusted_text::MAX_PARTS);
     truncate(text.trim(), MAX_BODY_CHARS)
 }
 
@@ -262,131 +287,6 @@ fn decode_base64url(data: &str) -> Option<String> {
         .or_else(|_| URL_SAFE.decode(&clean))
         .ok()?;
     Some(String::from_utf8_lossy(&bytes).replace("\r\n", "\n"))
-}
-
-/// Good enough to read a message: drops head, scripts and styles, keeps
-/// line structure from block tags, and decodes the common entities.
-pub fn html_to_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len() / 2);
-    let lower = html.to_ascii_lowercase();
-    let mut i = 0;
-    while i < html.len() {
-        let rest = &lower[i..];
-        if let Some(inside) = rest.strip_prefix('<') {
-            for skip in ["script", "style", "head", "title"] {
-                if tag_is(inside, skip) {
-                    let close = format!("</{skip}");
-                    if let Some(end) = rest.find(&close) {
-                        i += end;
-                        break;
-                    }
-                }
-            }
-            let rest = &lower[i..];
-            let end = rest.find('>').map(|e| i + e + 1).unwrap_or(html.len());
-            let tag = rest[1..].trim_start_matches('/');
-            if [
-                "br",
-                "p",
-                "div",
-                "tr",
-                "li",
-                "h1",
-                "h2",
-                "h3",
-                "h4",
-                "blockquote",
-            ]
-            .iter()
-            .any(|t| tag_is(tag, t))
-            {
-                // A tag closing a block and the next one opening make one break.
-                if !out.trim_end_matches(' ').ends_with('\n') || tag_is(tag, "br") {
-                    out.push('\n');
-                }
-            }
-            i = end;
-        } else {
-            let next = rest.find('<').map(|n| i + n).unwrap_or(html.len());
-            // HTML collapses whitespace runs, source newlines included.
-            let text = &html[i..next];
-            let mut last_space = out.ends_with([' ', '\n']);
-            for c in text.chars() {
-                if c.is_whitespace() {
-                    if !last_space {
-                        out.push(' ');
-                    }
-                    last_space = true;
-                } else {
-                    out.push(c);
-                    last_space = false;
-                }
-            }
-            i = next;
-        }
-    }
-    let text = decode_entities(&out);
-    let mut lines: Vec<&str> = Vec::new();
-    for line in text.lines().map(str::trim) {
-        if line.trim().is_empty() && lines.last().is_some_and(|l| l.trim().is_empty()) {
-            continue;
-        }
-        lines.push(line);
-    }
-    lines.join("\n").trim().to_string()
-}
-
-/// Whether `rest` (just past `<` or `</`) opens the tag `name` itself, not
-/// a longer one such as `<header>` for `head`.
-fn tag_is(rest: &str, name: &str) -> bool {
-    rest.starts_with(name)
-        && rest[name.len()..]
-            .chars()
-            .next()
-            .is_none_or(|c| !c.is_ascii_alphanumeric())
-}
-
-fn decode_entities(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find('&') {
-        out.push_str(&rest[..start]);
-        let tail = &rest[start..];
-        // Bytes, not str: a fixed cut can land inside a multi-byte letter.
-        let window = &tail.as_bytes()[..tail.len().min(12)];
-        let Some(end) = window.iter().position(|&b| b == b';') else {
-            out.push('&');
-            rest = &tail[1..];
-            continue;
-        };
-        let entity = &tail[1..end];
-        let decoded = match entity {
-            "amp" => Some('&'),
-            "lt" => Some('<'),
-            "gt" => Some('>'),
-            "quot" => Some('"'),
-            "apos" => Some('\''),
-            "nbsp" => Some(' '),
-            _ => entity
-                .strip_prefix("#x")
-                .or_else(|| entity.strip_prefix("#X"))
-                .and_then(|hex| u32::from_str_radix(hex, 16).ok())
-                .or_else(|| entity.strip_prefix('#').and_then(|d| d.parse().ok()))
-                .and_then(char::from_u32),
-        };
-        match decoded {
-            Some(c) => {
-                out.push(c);
-                rest = &tail[end + 1..];
-            }
-            None => {
-                out.push('&');
-                rest = &tail[1..];
-            }
-        }
-    }
-    out.push_str(rest);
-    out
 }
 
 /// The bare address in `Name <a@b>` (or the whole value when it has none).
@@ -623,20 +523,6 @@ mod tests {
                 updated: 5
             }
         );
-    }
-
-    #[test]
-    fn keeps_header_text_but_drops_head() {
-        assert_eq!(
-            html_to_text("<head><title>x</title></head><header>Üst</header><p>a &lt;b&gt;</p>"),
-            "Üst\na <b>"
-        );
-    }
-
-    #[test]
-    fn collapses_html_source_whitespace() {
-        let html = "<table>\n  <tr>\n    <td>\n      ÜCRET\n      ALINDI\n    </td>\n  </tr>\n  <tr><td>  7000&nbsp;TL </td></tr>\n</table>";
-        assert_eq!(html_to_text(html), "ÜCRET ALINDI\n7000 TL");
     }
 
     #[test]

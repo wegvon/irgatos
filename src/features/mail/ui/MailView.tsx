@@ -45,6 +45,7 @@ import {
   type MailThread,
   type MailThreadSummary,
 } from "../model/mail";
+import { HiddenTextNotice } from "./HiddenTextNotice";
 
 export type MailAskRequest = {
   account: string;
@@ -1029,6 +1030,7 @@ function ThreadDetail({
             <div className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
               {m.body || <span className="text-content/40">(no text)</span>}
             </div>
+            <HiddenTextNotice parts={m.hidden ?? []} />
             {m.attachments.length ? (
               <p className="mt-2 text-[11px] text-content/50">
                 Attachments: {m.attachments.join(", ")}
