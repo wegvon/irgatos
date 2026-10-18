@@ -87,8 +87,8 @@ export function SecretsSettings() {
     <div data-setting-id="secrets" className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <p className="min-w-0 text-[12px] leading-relaxed text-content/45">
-          Passwords, API keys and tokens you gave agents. An agent only knows a
-          secret's name: Irgatos fills the value in for the hosts listed here,
+          An agent only knows a secret's name: Irgatos fills the value in for
+          the hosts listed here,
           and it never appears in a chat, a log or the agent's output. Values
           are encrypted, with the key in your Keychain.
         </p>
