@@ -175,6 +175,17 @@ import {
   type Worktree,
 } from "../features/source-control/model/worktrees";
 import { OPEN_BROWSER_URL_EVENT } from "../features/source-control/model/worktreeEnv";
+import {
+  claimSecretsHint,
+  pendingSecretRequest,
+  SECRET_ANSWERED_EVENT,
+  SECRET_REQUEST_EVENT,
+  secretAnswerPrompt,
+  secretRequestBlock,
+  secretsContext,
+  type SecretAnswer,
+  type SecretRequestEvent,
+} from "../features/secrets/model/secrets";
 import { UsageFooter } from "./shell/UsageFooter";
 import { useProjectBranches } from "../features/source-control/hooks/useProjectBranches";
 import { useInboxActivity } from "../features/inbox/hooks/useInboxUnseen";
@@ -8997,6 +9008,11 @@ function Workspace({
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(codeSearchContext(cli));
           }
+          // Any chat can ask for a secret without seeing it; it hears how once.
+          if (!rawCommand && !orchestrator.forSession(sessionId) && claimSecretsHint(sessionId)) {
+            const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
+            appContext.push(secretsContext(cli));
+          }
           // Any chat can see and use the Browser; it hears how once, and
           // hears about the page beside it whenever that page changes.
           if (!rawCommand && !orchestrator.forSession(sessionId)) {
@@ -12051,6 +12067,60 @@ function Workspace({
     remove: (sessionId) => onRemoveHistorySession(sessionId, "delete", true),
   };
   useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);
+
+  // An agent's secrets.request: a masked card in its chat. The card saves
+  // the value to the vault itself; only its name and limits come back here.
+  useEffect(() => {
+    const replaceBlock = (sessionId: string, update: (session: Session) => Session) => {
+      const session = sessionsRef.current.find((item) => item.id === sessionId);
+      if (!session) return undefined;
+      const next = update(session);
+      if (next === session) return undefined;
+      sessionsRef.current = sessionsRef.current.map((item) => (item.id === sessionId ? next : item));
+      setSessions(sessionsRef.current);
+      persistSession(next);
+      return next;
+    };
+    const listening = listen<SecretRequestEvent>(SECRET_REQUEST_EVENT, ({ payload }) => {
+      const block = secretRequestBlock(payload);
+      if (!block) return;
+      replaceBlock(payload.sessionId, (session) =>
+        pendingSecretRequest(session.blocks, block.secretRequest!.name)
+          ? session
+          : { ...session, blocks: [...session.blocks, block] },
+      );
+    });
+    // The agent ended its turn waiting for the card; once the chat is idle
+    // it hears the answer and carries on.
+    const continueWith = (sessionId: string, prompt: string, attempt = 0) => {
+      const session = sessionsRef.current.find((item) => item.id === sessionId);
+      if (!session || session.worktreeRemoved) return;
+      if (session.busy && attempt < 200) {
+        window.setTimeout(() => continueWith(sessionId, prompt, attempt + 1), 3_000);
+        return;
+      }
+      void submitSessionRef.current(sessionId, prompt, [], { internal: true });
+    };
+    const onAnswered = (event: Event) => {
+      const { blockId, request } = (event as CustomEvent<SecretAnswer>).detail;
+      const updated = replaceBlock(request.sessionId, (session) => {
+        const current = session.blocks.find((block) => block.id === blockId);
+        if (current?.secretRequest?.state !== "pending") return session;
+        return {
+          ...session,
+          blocks: session.blocks.map((block) =>
+            block.id === blockId ? { ...block, secretRequest: request } : block,
+          ),
+        };
+      });
+      if (updated) continueWith(request.sessionId, secretAnswerPrompt(request));
+    };
+    window.addEventListener(SECRET_ANSWERED_EVENT, onAnswered);
+    return () => {
+      window.removeEventListener(SECRET_ANSWERED_EVENT, onAnswered);
+      void listening.then((stop) => stop());
+    };
+  }, [persistSession]);
 
   useEffect(() => {
     const listening = listen<{

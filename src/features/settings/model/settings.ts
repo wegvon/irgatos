@@ -28,6 +28,7 @@ export type SettingsSectionId =
   | "providers"
   | "usage"
   | "mcp"
+  | "secrets"
   | "skills"
   | "irgats"
   | "inbox"
@@ -140,6 +141,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "tools servers connections oauth authenticate login claude codex cursor opencode",
   },
   {
+    id: "secrets",
+    group: "agents",
+    label: "Secrets",
+    description:
+      "Passwords, API keys and tokens agents use without seeing them: where each may be sent, when it lapses, and where it was used.",
+    keywords:
+      "secret password api key token credential vault keychain redact revoke gizli şifre anahtar",
+  },
+  {
     id: "skills",
     group: "agents",
     label: "Skills",
@@ -214,6 +224,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "connections",
     label: "Browser access",
     keywords: "web browser ipad phone tailscale remote access token",
+  },
+  {
+    id: "secrets",
+    section: "secrets",
+    label: "Secrets",
+    keywords: "secret password api key token credential vault keychain revoke audit",
   },
   {
     id: "mcp-servers",

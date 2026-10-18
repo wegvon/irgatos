@@ -55,6 +55,7 @@ import {
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
+import { SecretsSettings } from "../../secrets/ui/SecretsSettings";
 import {
   SEMANTIC_INDEX_EVENT,
   buildSemanticIndex,
@@ -684,6 +685,7 @@ export function SettingsView({
               {section === "mcp" ? (
                 <McpSettings cwd={cwd} recents={recents} />
               ) : null}
+              {section === "secrets" ? <SecretsSettings /> : null}
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}

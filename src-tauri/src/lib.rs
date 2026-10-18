@@ -59,6 +59,7 @@ mod reminders;
 mod remote;
 mod remote_ssh;
 mod search;
+mod secrets;
 mod self_update;
 mod semantic_index;
 mod service_status;
@@ -287,6 +288,7 @@ pub fn run() {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
             control::init(app.handle())?;
+            secrets::init(app.handle());
             web_access::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
@@ -528,6 +530,10 @@ pub fn run() {
             chat_semantic::chat_semantic_warm,
             chat_semantic::chat_semantic_search,
             feed::feed_overview,
+            secrets::secrets_save,
+            secrets::secrets_list,
+            secrets::secrets_revoke,
+            secrets::secrets_audit,
             feed::feed_save_interest,
             feed::feed_remove_interest,
             feed::feed_items,

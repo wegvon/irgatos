@@ -1024,3 +1024,32 @@ it("saves the exact CI context alongside the compact user message", () => {
     ciContext: context,
   });
 });
+
+it("keeps a secret request card's name and limits, never a value", () => {
+  const session = newSession("codex", "/tmp");
+  const secretRequest = {
+    requestId: "r1",
+    sessionId: session.id,
+    name: "STRIPE_KEY",
+    label: "Stripe key",
+    description: "",
+    hosts: ["api.stripe.com"],
+    allowIn: ["header"],
+    once: false,
+    state: "saved" as const,
+    persistent: false,
+    expiresAt: 123,
+  };
+  session.blocks = [
+    { id: "u", role: "user", text: "Charge it" },
+    {
+      id: "secret-r1",
+      role: "system",
+      text: "Secret requested: STRIPE_KEY",
+      secretRequest: { ...secretRequest, value: "sk_test_FAKE" } as typeof secretRequest,
+    },
+  ];
+  const saved = sanitizeSessionForPersist(session);
+  expect(saved.blocks[1].secretRequest).toEqual(secretRequest);
+  expect(JSON.stringify(saved)).not.toContain("sk_test_FAKE");
+});

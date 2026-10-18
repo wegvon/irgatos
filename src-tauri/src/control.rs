@@ -184,7 +184,8 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
 /// checkout the agent is already working in. `mail.*` actions are answered
 /// the same way, scoped to the thread the chat was started for, and so are
 /// `feed.*`, which only read the user's interests and add posts to the Feed,
-/// and `browser.*`, which work in the browser of the turn's own window.
+/// and `browser.*`, which work in the browser of the turn's own window, and
+/// `secrets.*`, which never hand a value to the agent.
 const READ_ONLY_APP_ACTIONS: [&str; 1] = ["code.search"];
 
 /// The session and folder an app action answered by the app itself is scoped
@@ -265,7 +266,8 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             && (READ_ONLY_APP_ACTIONS.contains(&action)
                 || crate::mail::AGENT_ACTIONS.contains(&action)
                 || crate::feed::AGENT_ACTIONS.contains(&action)
-                || crate::browser_agent::AGENT_ACTIONS.contains(&action))
+                || crate::browser_agent::AGENT_ACTIONS.contains(&action)
+                || crate::secrets::AGENT_ACTIONS.contains(&action))
         {
             let (session, cwd, window) = {
                 let host = inner.lock().map_err(|_| "Control service unavailable")?;
@@ -275,6 +277,8 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
                 crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?
             } else if action.starts_with("browser.") {
                 crate::browser_agent::agent_action(app, &window, action, &request.input)?
+            } else if action.starts_with("secrets.") {
+                crate::secrets::agent_action(app, &session, &window, action, &request.input)?
             } else if action.starts_with("feed.") {
                 crate::feed::agent_action(app, &session, action, &request.input)?
             } else {
@@ -319,13 +323,16 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
         }
         result
     })();
-    let response = result.unwrap_or_else(|error| {
+    let mut response = result.unwrap_or_else(|error| {
         if error == APP_TURN_INACTIVE {
             json!({"ok": false, "error": error, "retryable": false})
         } else {
             json!({"ok": false, "error": error})
         }
     });
+    // Everything an agent reads back, errors included, is scrubbed of saved
+    // secret values and well-known secret formats first.
+    crate::secrets::scrub_for_model(app, &mut response);
     let _ = writeln!(stream, "{response}");
 }
 

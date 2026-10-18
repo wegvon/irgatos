@@ -82,8 +82,11 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 56] = [
+const APP_ACTIONS: [&str; 59] = [
     "code.search",
+    "secrets.request",
+    "secrets.list",
+    "secrets.http",
     "browser.state",
     "browser.read",
     "browser.open",
@@ -141,9 +144,9 @@ const APP_ACTIONS: [&str; 56] = [
     "chat.card",
 ];
 const APP_USAGE: &str = r#"Irgatos app access — use in a thread enabled by /operator.
-code.search, browser.*, mail.* and feed.* are the exceptions: they work during
-any agent turn started in Irgatos (mail.* only in a chat started from the Mail
-page).
+code.search, browser.*, mail.*, feed.* and secrets.* are the exceptions: they
+work during any agent turn started in Irgatos (mail.* only in a chat started
+from the Mail page).
 
 Usage: {exe} app ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
@@ -162,6 +165,32 @@ Actions:
                   (1-20) results, plus the index state. Without an index, or
                   while it is still being built, results come partly or only
                   from grep and "note" says so. Read-only.
+  secrets.request {"name":"STRIPE_KEY","label":"Stripe secret key",
+                  "description":"To list your recent charges",
+                  "hosts":["api.stripe.com"],"allowIn":["header"],
+                  "purpose":"deploy","once":false}
+                  Ask the user for a password, API key or token. They type it
+                  into a masked card in this chat; you never see it. hosts
+                  (1-8, "*.example.com" for subdomains) is where it may be
+                  sent; allowIn is where a placeholder may sit: header
+                  (default), url, body. purpose and once are optional limits.
+                  Returns pending: end your turn, Irgatos continues once it is
+                  saved. Returns ready when it is already saved. Never ask the
+                  user to paste a secret into the chat.
+  secrets.list  {} Secrets this chat may use: name, placeholder, hosts, where
+                  it may be placed, purpose, uses left and expiry. No values.
+  secrets.http  {"method":"POST","url":"https://api.stripe.com/v1/charges",
+                  "headers":{"Authorization":"Bearer {{secret:STRIPE_KEY}}"},
+                  "body":"amount=100" | "json":{...},"purpose":"deploy",
+                  "timeoutSeconds":30,"maxChars":20000}  (timeout 1-35 s)
+                  Make an HTTPS request with {{secret:NAME}} placeholders that
+                  Irgatos fills in. It is refused, and nothing is sent, when
+                  the host is not one the secret is bound to, a placeholder is
+                  in the host or outside its allowed places, or the purpose
+                  does not match. Redirects are not followed. Returns status,
+                  headers and body; secret values and secret-shaped text in
+                  them read [REDACTED]. Placeholders mean nothing anywhere
+                  else: your own shell and tools get the literal text.
   browser.state {} The Irgatos Browser the user sees beside this chat: whether
                   it is open and shown, the active page's url, title and
                   loading state, and its tabs.

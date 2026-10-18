@@ -403,8 +403,9 @@ fn upsert_with_mode(
 
 #[tauri::command(async)]
 pub fn irgat_session_upsert(
+    app: tauri::AppHandle,
     store: State<'_, SessionStore>,
-    session: SessionUpsert,
+    mut session: SessionUpsert,
     after_block_id: Option<String>,
     from_block_id: Option<String>,
     blocks_changed: bool,
@@ -427,6 +428,7 @@ pub fn irgat_session_upsert(
     {
         return Err("Invalid Irgat session".into());
     }
+    crate::secrets::scrub_saved(&app, &mut session.blocks);
     let conn = store.lock_conn()?;
     upsert_with_mode(
         &conn,
