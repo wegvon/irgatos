@@ -10,6 +10,7 @@
 //! the feed. Without Smart Search every post is shown as the agent sent it.
 
 mod store;
+mod trending;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -312,6 +313,21 @@ pub async fn feed_save_collector(app: AppHandle, collector: Value) -> Result<(),
         store.set_meta("collector", raw.as_deref())
     })
     .await
+}
+
+/// GitHub's trending repositories: `since` is daily, weekly or monthly;
+/// `language` one of the tab's languages, or empty for all of them.
+#[tauri::command]
+pub async fn feed_github_trending(
+    since: String,
+    language: Option<String>,
+    refresh: bool,
+) -> Result<trending::TrendingPage, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        trending::trending(&since, language.as_deref(), refresh)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ---- the agent's side: `feed.*` in the app CLI ----
