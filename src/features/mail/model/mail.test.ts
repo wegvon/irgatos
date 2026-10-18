@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   accountLabel,
   connectionName,
+  DEFAULT_MAIL_FOLDER,
   executorAccountsUrl,
   isFromMe,
+  MAIL_FOLDERS,
   mailContext,
   mailQuery,
   needsReconnect,
@@ -18,6 +20,18 @@ describe("mailQuery", () => {
     );
     expect(mailQuery("all", "fatura")).toBe("fatura");
     expect(mailQuery("all", "")).toBe("");
+  });
+});
+
+describe("MAIL_FOLDERS", () => {
+  it("opens on Unread, listed first", () => {
+    expect(MAIL_FOLDERS.map((f) => f.id)).toEqual([
+      "unread",
+      "inbox",
+      "sent",
+      "all",
+    ]);
+    expect(DEFAULT_MAIL_FOLDER).toBe("unread");
   });
 });
 

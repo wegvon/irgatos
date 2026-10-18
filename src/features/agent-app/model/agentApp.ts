@@ -84,9 +84,15 @@ import {
   topicName,
 } from "../../irgats/model/irgatMemory";
 import {
+  assertAgentExchangeAllowed,
   resolveIrgatContact,
   type IrgatContact,
 } from "../../irgats/model/irgatDirectMessages";
+import {
+  externalClaudeContact,
+  resolveExternalClaude,
+  type ExternalClaudeSession,
+} from "../../irgats/model/externalClaude";
 
 export type AppSessionListing = {
   id: string;
@@ -170,6 +176,18 @@ export type AgentAppHost = {
     requestId: string,
     notifyIrgatId: string,
   ): Promise<{ alreadySubmitted: boolean }>;
+  /** Claude Code sessions running outside Irgatos, for claude.list and claude.send. */
+  externalClaudeSessions?(): Promise<ExternalClaudeSession[]>;
+  /**
+   * Posts a message from the calling Irgat into an outside Claude Code
+   * session. Its answer comes back to `notifyIrgatId` as a completion report.
+   */
+  messageExternalClaude?(
+    session: ExternalClaudeSession,
+    message: string,
+    requestId: string,
+    notifyIrgatId: string,
+  ): Promise<void>;
   /** A hidden run of one of a Irgat's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
   /** Puts a card in the Irgat's chat, or holds it for a habit run's report. */
@@ -204,6 +222,8 @@ const FIELDS = new Map<string, readonly string[]>([
   ["projects.requestAccess", ["project"]],
   ["irgats.list", []],
   ["irgats.send", ["irgat", "message"]],
+  ["claude.list", []],
+  ["claude.send", ["session", "message"]],
   ["models.list", []],
   ["sessions.list", ["project"]],
   ["sessions.read", ["sessionId", "before", "limit", "maxChars", "project"]],
@@ -1142,6 +1162,7 @@ export async function handleAgentApp(
       throw new Error("App calls cannot enable /operator in another session");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
       throw new Error("Invalid request ID");
+    assertAgentExchangeAllowed(source);
     const result = await host.messageIrgat(
       target.id,
       message,
@@ -1155,6 +1176,34 @@ export async function handleAgentApp(
       ...result,
       notifyOnComplete: true,
       note: `${target.name} answers in its own chat. Its reply comes back to you as a notification once you are idle: tell the user you asked ${target.name}, end your turn, and pass the answer on when it arrives.`,
+    };
+  }
+  if (action === "claude.list" || action === "claude.send") {
+    if (!host.isIrgat(source.id) || !host.externalClaudeSessions || !host.messageExternalClaude)
+      throw new Error("Only a Irgat's chat can message Claude Code sessions outside Irgatos");
+    const sessions = await host.externalClaudeSessions();
+    if (action === "claude.list")
+      return { sessions: sessions.map(externalClaudeContact) };
+    const target = resolveExternalClaude(
+      sessions,
+      requiredString(input.session, "session", 4096),
+    );
+    const message = requiredString(input.message, "message", 240_000);
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId))
+      throw new Error("Invalid request ID");
+    const contact = externalClaudeContact(target);
+    if (!contact.canMessage)
+      throw new Error(`${contact.name} does not take messages; it may need a newer Claude Code`);
+    if (contact.busy)
+      throw new Error(`${contact.name} is busy; try again when it finishes`);
+    assertAgentExchangeAllowed(source);
+    await host.messageExternalClaude(target, message, `app-${source.id}-${requestId}`, source.id);
+    return {
+      sessionId: contact.id,
+      name: contact.name,
+      submitted: true,
+      notifyOnComplete: true,
+      note: `${contact.name} got your message in its own Claude Code window. Its answer comes back to you as a notification once you are idle: tell the user you asked it, end your turn, and pass the answer on when it arrives.`,
     };
   }
   if (action.startsWith("artifacts."))

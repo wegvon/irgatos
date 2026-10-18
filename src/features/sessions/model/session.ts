@@ -285,6 +285,8 @@ export type IrgatSessionCompletion = {
   status: "completed" | "failed" | "cancelled";
   /** A single report covering several sessions launched in one Irgat turn. */
   sessionCount?: number;
+  /** Another agent's answer to irgats.send or claude.send, not a session report. */
+  agentReply?: boolean;
 };
 
 export type QueuedMessage = {

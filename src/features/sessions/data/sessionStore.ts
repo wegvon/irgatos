@@ -232,6 +232,7 @@ function sanitizeIrgatSessionCompletion(
     completion.sessionCount > 1
       ? { sessionCount: completion.sessionCount }
       : {}),
+    ...(completion.agentReply === true ? { agentReply: true } : {}),
   };
 }
 
