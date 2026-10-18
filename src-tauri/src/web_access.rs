@@ -576,6 +576,45 @@ fn tailscale_ip_in(ifconfig: &str) -> Option<String> {
     })
 }
 
+/// Tailscale CLIs to try: a GUI app's PATH misses Homebrew and /usr/local.
+const TAILSCALE_CLIS: [&str; 4] = [
+    "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    "/opt/homebrew/bin/tailscale",
+    "/usr/local/bin/tailscale",
+    "tailscale",
+];
+
+/// The `https://…ts.net/` address when Tailscale Serve forwards to this
+/// page. Phones need it: browsers offer Web Push only on a secure page.
+fn tailscale_https_url() -> Option<String> {
+    TAILSCALE_CLIS.iter().find_map(|cli| {
+        let output = std::process::Command::new(cli)
+            .args(["serve", "status", "--json"])
+            .output()
+            .ok()?;
+        serve_url_in(&String::from_utf8_lossy(&output.stdout))
+    })
+}
+
+fn serve_url_in(status_json: &str) -> Option<String> {
+    let status: Value = serde_json::from_str(status_json).ok()?;
+    let port = format!(":{PORT}");
+    status
+        .get("Web")?
+        .as_object()?
+        .iter()
+        .find_map(|(host, web)| {
+            let proxies_here = web.get("Handlers")?.as_object()?.values().any(|handler| {
+                handler
+                    .get("Proxy")
+                    .and_then(Value::as_str)
+                    .is_some_and(|proxy| proxy.trim_end_matches('/').ends_with(&port))
+            });
+            let host = host.strip_suffix(":443").unwrap_or(host);
+            proxies_here.then(|| format!("https://{host}/"))
+        })
+}
+
 fn status(app: &AppHandle, host: &WebAccess) -> Result<WebAccessStatus, String> {
     let dir = data_dir(app)?;
     let enabled = read_config(&dir).enabled;
@@ -585,6 +624,9 @@ fn status(app: &AppHandle, host: &WebAccess) -> Result<WebAccessStatus, String> 
         .map_err(|_| "Browser access unavailable")?;
     let tailscale = tailscale_ip();
     let mut urls = Vec::new();
+    if let Some(url) = tailscale.as_ref().and_then(|_| tailscale_https_url()) {
+        urls.push(url);
+    }
     if let Some(ip) = &tailscale {
         urls.push(format!("http://{ip}:{PORT}/"));
     }
@@ -784,6 +826,19 @@ mod tests {
             route("POST", "/api/delete", peer, TOKEN, Some(TOKEN), true),
             Route::Reject(404, _)
         ));
+    }
+
+    #[test]
+    fn finds_the_tailscale_serve_address_for_this_page() {
+        let status = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{
+            "mac48.sole-shiner.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
+            "mac48.sole-shiner.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:47620"}}}}}"#;
+        assert_eq!(
+            serve_url_in(status).as_deref(),
+            Some("https://mac48.sole-shiner.ts.net/")
+        );
+        assert_eq!(serve_url_in("{}"), None);
+        assert_eq!(serve_url_in("not json"), None);
     }
 
     #[test]
