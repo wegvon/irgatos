@@ -20,7 +20,6 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import type { RecentProject } from "../../projects/model/recents";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
-import { HiddenTextNotice } from "./HiddenTextNotice";
 import {
   DEFAULT_MAIL_ASK,
   DEFAULT_MAIL_FOLDER,
@@ -47,6 +46,7 @@ import {
   type MailThread,
   type MailThreadSummary,
 } from "../model/mail";
+import { HiddenTextNotice } from "./HiddenTextNotice";
 
 export type MailAskRequest = {
   account: string;
