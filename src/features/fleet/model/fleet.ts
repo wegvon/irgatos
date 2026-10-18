@@ -220,7 +220,8 @@ export function fleetEntry(
       ? "running"
       : options.interruptedIds?.has(session.id)
         ? "interrupted"
-        : recent && (editedPaths.length > 0 || artifacts > 0)
+        : // An unread reply is waiting to be read even when it changed nothing.
+          unseen || (recent && (editedPaths.length > 0 || artifacts > 0))
           ? "review"
           : "idle";
   const workCwd = sessionWorkCwd(session);

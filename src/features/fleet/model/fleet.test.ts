@@ -165,6 +165,23 @@ describe("fleetEntry", () => {
     expect(fleetEntry(session, { now: NOW })?.bucket).toBe("idle");
   });
 
+  it("offers an unread reply without changes for review, chats included", () => {
+    const reply = { id: "r", role: "assistant", text: "Hello!" } as const;
+    const project = chat("/repo/a", { id: "p", blocks: [sent(1, "hello"), reply] });
+    const freeChat = chat("/Users/me/.irgatos/scratch", {
+      id: "c",
+      blocks: [sent(1, "hello"), reply],
+    });
+    const fleet = buildFleet([project, freeChat], {
+      now: NOW,
+      unseenFinishedIds: new Set(["p", "c"]),
+    });
+    expect(fleet.review.map((entry) => entry.sessionId).sort()).toEqual(["c", "p"]);
+    expect(fleet.review.find((entry) => entry.sessionId === "c")).toMatchObject({ chat: true, projectLabel: "Chat" });
+    expect(fleet.idle).toEqual([]);
+    expect(fleetEntry(project, { now: NOW })?.bucket).toBe("idle");
+  });
+
   it("lists a session that stopped mid-turn as Interrupted, not Idle", () => {
     const session = chat("/repo/a", {
       blocks: [sent(NOW - 1_000), { id: "r", role: "assistant", text: "Half" }],
