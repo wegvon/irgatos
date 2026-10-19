@@ -173,15 +173,19 @@ export function TrendingList({
           GitHub lists no trending repositories for this choice right now.
         </p>
       ) : null}
-      {repos.map((repo, index) => (
-        <RepoCard
-          key={repo.fullName}
-          rank={index + 1}
-          repo={repo}
-          gained={gained}
-          isNew={fresh.has(repo.fullName)}
-        />
-      ))}
+      {repos.length > 0 ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+          {repos.map((repo, index) => (
+            <RepoCard
+              key={repo.fullName}
+              rank={index + 1}
+              repo={repo}
+              gained={gained}
+              isNew={fresh.has(repo.fullName)}
+            />
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -200,13 +204,13 @@ function RepoCard({
   const { owner, name } = repoParts(repo.fullName);
   return (
     <article
-      className="group cursor-pointer rounded-lg border border-stroke px-3.5 py-3 hover:bg-content/[0.03]"
+      className="group flex cursor-pointer flex-col rounded-lg border border-stroke px-3.5 py-3 hover:bg-content/[0.03]"
       onClick={() => void openUrl(repo.url)}
       title={`Open ${repo.fullName} on GitHub`}
     >
       <header className="flex items-center gap-2 text-[13px]">
-        <span className="w-5 shrink-0 text-right text-[12px] tabular-nums text-content/35">
-          {rank}
+        <span className="shrink-0 text-[12px] tabular-nums text-content/35">
+          #{rank}
         </span>
         {owner ? (
           <img
@@ -235,11 +239,14 @@ function RepoCard({
         />
       </header>
       {repo.description ? (
-        <p className="ml-7 mt-1 text-[12px] leading-relaxed text-content/70">
+        <p
+          className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-content/70"
+          title={repo.description}
+        >
           {repo.description}
         </p>
       ) : null}
-      <footer className="ml-7 mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-content/50">
+      <footer className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2.5 text-[11px] text-content/50">
         {repo.language ? (
           <span className="flex items-center gap-1">
             <span

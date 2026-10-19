@@ -455,7 +455,11 @@ export function FeedView({
             className="min-h-0 flex-1 overflow-y-auto"
             aria-busy={loading}
           >
-            <div className="mx-auto flex max-w-[720px] flex-col gap-2 px-4 py-3">
+            <div
+              className={`mx-auto flex flex-col gap-2 px-4 py-3 ${
+                view === "github" ? "max-w-[1400px]" : "max-w-[720px]"
+              }`}
+            >
               {view === "github" ? (
                 <TrendingList
                   period={trending.period}
