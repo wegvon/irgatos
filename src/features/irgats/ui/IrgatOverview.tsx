@@ -6,6 +6,7 @@ import {
   DashboardSquare,
   File,
   FileDiff,
+  FolderTree,
   ListFilter,
   MessageMultiple,
   PanelRightToggle,
@@ -59,10 +60,16 @@ import { HARNESSES, type HarnessId } from "../../sessions/model/session";
 import { IrgatSidebar, IrgatSidebarHeader } from "./IrgatSidebar";
 import type { SessionChangeTotals } from "../../sessions/ui/SessionReview";
 import { IrgatChangesView, type IrgatChangesRequest } from "./IrgatChangesView";
+import {
+  AgentTreeView,
+  type AgentRetryRequest,
+} from "../../agent-tree/ui/AgentTreeView";
+import type { LaunchRecord } from "../../agent-tree/model/agentTree";
 
 export type IrgatOverviewTab =
   | "all"
   | "sessions"
+  | "agents"
   | "habits"
   | "documents"
   | "artifacts"
@@ -76,6 +83,7 @@ const TABS: { id: IrgatOverviewTab; label: string; icon: typeof Clock }[] = [
   { id: "habits", label: "Habits", icon: Clock },
   { id: "changes", label: "Changes", icon: FileDiff },
   { id: "artifacts", label: "Artifacts", icon: Artifacts },
+  { id: "agents", label: "Agents", icon: FolderTree },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -140,6 +148,8 @@ type Props = {
   onBackFromArtifact?: () => void;
   onClose: () => void;
   windowControls?: ReactNode;
+  /** Starts the session a failed agent's Retry asks for, on the Agents tab. */
+  onRetryAgent?: (request: AgentRetryRequest) => Promise<void>;
 };
 
 /**
@@ -176,6 +186,7 @@ export function IrgatOverview({
   onBackFromArtifact = () => {},
   onClose,
   windowControls,
+  onRetryAgent,
 }: Props) {
   const lock = useLockOverscroll<HTMLDivElement>();
   const habitsLoad = useHabitsLoad(irgatId, state.status);
@@ -339,6 +350,7 @@ export function IrgatOverview({
   const counts: Record<IrgatOverviewTab, number | undefined> = {
     all: undefined,
     sessions: launches.length,
+    agents: undefined,
     habits: habits?.length,
     documents: documents.length,
     artifacts: artifacts.artifacts.length,
@@ -428,6 +440,25 @@ export function IrgatOverview({
             />
           </div>
         ) : null}
+        {tab === "agents" && irgatSessionId ? (
+          <div
+            role="tabpanel"
+            aria-label="Agents"
+            className="flex min-h-0 flex-1 flex-col"
+            data-irgat-overview="agents"
+          >
+            <IrgatAgentTree
+              irgatSessionId={irgatSessionId}
+              name={agent.name}
+              launches={launches}
+              sessions={sessions}
+              history={history}
+              interruptedIds={sessionActions?.interruptedIds}
+              onOpenSession={(sessionId) => void onOpenSession(sessionId)}
+              onRetry={onRetryAgent}
+            />
+          </div>
+        ) : null}
         {tab === "artifacts" ? (
           <div
             role="tabpanel"
@@ -450,10 +481,18 @@ export function IrgatOverview({
           ref={lock}
           role="tabpanel"
           aria-label={TABS.find((entry) => entry.id === tab)?.label}
-          hidden={tab === "changes" || tab === "artifacts" || tab === "settings"}
+          hidden={
+            tab === "changes" ||
+            tab === "artifacts" ||
+            tab === "settings" ||
+            tab === "agents"
+          }
           className="min-h-0 flex-1 overflow-y-auto overscroll-none px-2 py-2"
           data-irgat-overview={
-            tab === "changes" || tab === "artifacts" || tab === "settings"
+            tab === "changes" ||
+            tab === "artifacts" ||
+            tab === "settings" ||
+            tab === "agents"
               ? undefined
               : tab
           }
@@ -684,5 +723,56 @@ function OverviewTabs({
         );
       })}
     </div>
+  );
+}
+
+/** The sessions the Irgat orchestrated, as the live who-started-whom tree. */
+function IrgatAgentTree({
+  irgatSessionId,
+  name,
+  launches,
+  sessions,
+  history,
+  interruptedIds,
+  onOpenSession,
+  onRetry,
+}: {
+  irgatSessionId: string;
+  name: string;
+  launches: readonly IrgatSpawnedSession[];
+  sessions: readonly Session[];
+  history?: readonly SessionSummary[];
+  interruptedIds?: ReadonlySet<string>;
+  onOpenSession: (sessionId: string) => void;
+  onRetry?: (request: AgentRetryRequest) => Promise<void>;
+}) {
+  const irgat = useMemo(() => {
+    const summaries = new Map((history ?? []).map((entry) => [entry.id, entry]));
+    const records: LaunchRecord[] = launches.map((launch) => {
+      const summary = summaries.get(launch.sessionId);
+      return {
+        sessionId: launch.sessionId,
+        title: summary?.title || launch.title,
+        harness: launch.harness,
+        model: launch.model,
+        ...(summary
+          ? {
+              createdAt: summary.createdAt,
+              updatedAt: summary.updatedAt,
+              ...(summary.archived ? { archived: true } : {}),
+            }
+          : {}),
+      };
+    });
+    return { sessionId: irgatSessionId, name, launches: records };
+  }, [history, irgatSessionId, launches, name]);
+  return (
+    <AgentTreeView
+      sessions={sessions}
+      interruptedSessionIds={interruptedIds}
+      irgat={irgat}
+      onOpenSession={onOpenSession}
+      onRetry={onRetry}
+    />
   );
 }

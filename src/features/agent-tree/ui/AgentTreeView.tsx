@@ -34,6 +34,9 @@ import {
   agentSummary,
   buildAgentTree,
   buildAgents,
+  buildIrgatTree,
+  flattenTree,
+  type LaunchRecord,
   formatAgentDuration,
   formatCost,
   formatTokens,
@@ -67,6 +70,10 @@ type Props = {
   onOpenSession: (sessionId: string) => void;
   /** Starts a real session; absent hides Retry. */
   onRetry?: (request: AgentRetryRequest) => Promise<void>;
+  /** Only what one Irgat orchestrated, its chat at the top. */
+  irgat?: { sessionId: string; name: string; launches: readonly LaunchRecord[] };
+  /** Narrow stacks every row as a list, for a side panel. */
+  layout?: "wide" | "narrow";
 };
 
 /** Ticks every second while something runs, so durations count up live. */
@@ -86,7 +93,10 @@ export function AgentTreeView({
   irgatName,
   onOpenSession,
   onRetry,
+  irgat,
+  layout = irgat ? "narrow" : "wide",
 }: Props) {
+  const wide = layout === "wide";
   const [store, setStore] = useState<AgentTreeState>(loadAgentTreeState);
   const update = useCallback((next: (state: AgentTreeState) => AgentTreeState) => {
     setStore((current) => {
@@ -102,18 +112,39 @@ export function AgentTreeView({
   const now = useClock(anyBusy);
   // The window moves with the minute, not the second.
   const minute = Math.floor(now / 60_000);
-  const agents = useMemo(
-    () =>
-      buildAgents(sessions, {
-        since: windowSince(store.window, minute * 60_000),
-        interruptedIds: interruptedSessionIds,
-        irgatName,
-        retries: store.retries,
-      }),
-    [interruptedSessionIds, irgatName, minute, sessions, store.retries, store.window],
-  );
-  const tree = useMemo(() => buildAgentTree(agents), [agents]);
-  const summary = useMemo(() => agentSummary(agents), [agents]);
+  const tree = useMemo((): AgentTreeNode => {
+    const options = {
+      since: windowSince(store.window, minute * 60_000),
+      interruptedIds: interruptedSessionIds,
+      irgatName: irgat
+        ? (id: string) => (id === irgat.sessionId ? irgat.name : irgatName?.(id))
+        : irgatName,
+      retries: store.retries,
+    };
+    if (!irgat) return buildAgentTree(buildAgents(sessions, options));
+    return (
+      buildIrgatTree(
+        {
+          irgatSessionId: irgat.sessionId,
+          launches: irgat.launches,
+          sessions,
+        },
+        options,
+      ) ?? {
+        id: irgat.sessionId,
+        name: irgat.name,
+        role: "irgat",
+        model: "",
+        task: "No sessions yet",
+        toolIcon: "chat",
+        status: "done",
+        sessionId: irgat.sessionId,
+        children: [],
+      }
+    );
+  }, [interruptedSessionIds, irgat, irgatName, minute, sessions, store.retries, store.window]);
+  // The top card is the app or the Irgat itself; the count is what it started.
+  const summary = useMemo(() => agentSummary(flattenTree(tree).slice(1)), [tree]);
   const dismissed = useMemo(() => new Set(store.dismissed), [store.dismissed]);
 
   const toggle = (id: string) =>
@@ -188,13 +219,13 @@ export function AgentTreeView({
   const measure = useCallback(() => {
     const box = canvas.current?.getBoundingClientRect();
     if (!box) return;
-    const next = treeLines(tree, collapsed, box, cards.current, heads.current);
+    const next = treeLines(tree, collapsed, box, cards.current, heads.current, wide);
     // Measured after every render; only a moved line re-renders.
     const key = next.map((line) => `${line.key}|${line.status}|${line.d}`).join("\n");
     if (key === drawn.current) return;
     drawn.current = key;
     setLines(next);
-  }, [collapsed, tree]);
+  }, [collapsed, tree, wide]);
   useLayoutEffect(measure);
   useEffect(() => {
     const element = canvas.current;
@@ -265,9 +296,17 @@ export function AgentTreeView({
       className="agent-tree flex min-h-0 min-w-0 flex-1 flex-col"
       data-agent-tree
     >
-      <div className="flex h-11 shrink-0 items-center gap-3 border-b border-[color:var(--at-line)] px-4 text-[13px]">
-        <Star className="size-4 shrink-0" strokeWidth={1.75} />
-        <span className="font-semibold">Agents</span>
+      <div
+        className={`flex shrink-0 flex-wrap items-center border-b border-[color:var(--at-line)] text-[13px] ${
+          wide ? "min-h-11 gap-3 px-4 py-1.5" : "gap-2 px-3 py-2"
+        }`}
+      >
+        {wide ? (
+          <>
+            <Star className="size-4 shrink-0" strokeWidth={1.75} />
+            <span className="font-semibold">Agents</span>
+          </>
+        ) : null}
         <select
           value={store.window}
           onChange={(event) =>
@@ -286,7 +325,7 @@ export function AgentTreeView({
           ))}
         </select>
         <div
-          className="ml-auto flex min-w-0 items-center gap-2 text-[12px] tabular-nums"
+          className="ml-auto flex min-w-0 flex-wrap items-center gap-2 text-[12px] tabular-nums"
           data-agent-tree-summary
         >
           <span className="text-[color:var(--at-muted)]">
@@ -318,7 +357,9 @@ export function AgentTreeView({
       <div className="min-h-0 flex-1 overflow-auto">
         <div
           ref={canvas}
-          className="relative mx-auto flex w-max min-w-full flex-col items-center px-8 pb-16 pt-8"
+          className={`relative flex w-max min-w-full flex-col ${
+            wide ? "mx-auto items-center px-8 pb-16 pt-8" : "items-start px-3 pb-10 pt-3"
+          }`}
         >
           <svg
             aria-hidden
@@ -335,14 +376,25 @@ export function AgentTreeView({
           </svg>
           {renderHead(tree)}
           {tree.children.length && !collapsed.has(tree.id) ? (
-            <ul className="flex items-start gap-6 pt-10">
+            <ul
+              className={
+                wide
+                  ? "flex items-start gap-6 pt-10"
+                  : "flex flex-col gap-3 pl-8 pt-3"
+              }
+            >
               {tree.children.map(renderBranch)}
             </ul>
           ) : null}
           {tree.children.length === 0 ? (
-            <p className="mt-10 max-w-sm text-center text-[13px] text-[color:var(--at-muted)]">
-              No agents in this window. Sessions, the sessions they start and
-              their subagents appear here as a live tree.
+            <p
+              className={`max-w-sm text-[13px] text-[color:var(--at-muted)] ${
+                wide ? "mt-10 text-center" : "mt-4"
+              }`}
+            >
+              {irgat
+                ? `No sessions in this window. Sessions ${irgat.name} starts, and what they start in turn, appear here as a live tree.`
+                : "No agents in this window. Sessions, the sessions they start and their subagents appear here as a live tree."}
             </p>
           ) : null}
         </div>
@@ -599,11 +651,13 @@ export function treeLines(
   box: DOMRect,
   cards: ReadonlyMap<string, HTMLElement>,
   heads: ReadonlyMap<string, HTMLElement>,
+  /** The first row fans out sideways; otherwise every row is a list. */
+  wide = true,
 ): LinePath[] {
   const paths: LinePath[] = [];
   const rootHead = rectOf(heads.get(root.id), box);
   const rootCard = rectOf(cards.get(root.id), box);
-  if (rootHead && rootCard && root.children.length && !collapsed.has(root.id)) {
+  if (wide && rootHead && rootCard && root.children.length && !collapsed.has(root.id)) {
     const tops = root.children
       .map((child) => ({ child, rect: rectOf(cards.get(child.id), box) }))
       .filter((entry): entry is { child: AgentTreeNode; rect: Rect } => !!entry.rect);
@@ -632,7 +686,7 @@ export function treeLines(
   }
   const walk = (node: AgentTreeNode) => {
     if (!node.children.length || collapsed.has(node.id)) return;
-    if (node !== root) {
+    if (node !== root || !wide) {
       const card = rectOf(cards.get(node.id), box);
       const head = rectOf(heads.get(node.id), box);
       if (card && head) {

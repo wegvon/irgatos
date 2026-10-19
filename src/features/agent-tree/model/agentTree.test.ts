@@ -6,6 +6,8 @@ import {
   agentSummary,
   buildAgentTree,
   buildAgents,
+  buildIrgatTree,
+  flattenTree,
   formatCost,
   sessionParents,
 } from "./agentTree";
@@ -173,5 +175,44 @@ describe("buildAgents / buildAgentTree", () => {
     );
     expect(agentDurationMs(agent, NOW)).toBe(5_000);
     expect(agentDurationMs(agent, NOW + 1_000)).toBe(6_000);
+  });
+});
+
+describe("buildIrgatTree", () => {
+  const irgat = session("irgat-chat", { blocks: [turn("Plan")] });
+  const launched = session("open-child", {
+    blocks: [turn("Fix", { startedAt: NOW - 1_000 }), subagent("x", "completed", "Lint")],
+  });
+  const grandchild = session("app-open-child-1", { busy: true, blocks: [turn("Deep")] });
+  const unrelated = session("other", { blocks: [turn("Elsewhere")] });
+
+  it("hangs only what the Irgat started under its own chat, saved ones included", () => {
+    const tree = buildIrgatTree(
+      {
+        irgatSessionId: "irgat-chat",
+        sessions: [irgat, launched, grandchild, unrelated],
+        launches: [
+          { sessionId: "open-child", title: "Fix", harness: "claude", model: "m" },
+          {
+            sessionId: "saved-only",
+            title: "Old review",
+            harness: "codex",
+            model: "m",
+            updatedAt: NOW - 1_000,
+          },
+        ],
+      },
+      { since: NOW - 86_400_000, irgatName: () => "Kahya" },
+    )!;
+    expect(tree.id).toBe("irgat-chat");
+    expect(tree.name).toBe("Kahya");
+    const ids = flattenTree(tree).map((node) => node.id);
+    expect(ids).toContain("open-child");
+    expect(ids).toContain("app-open-child-1");
+    expect(ids).toContain("open-child:agent:x");
+    expect(ids).toContain("saved-only");
+    expect(ids).not.toContain("other");
+    const deep = flattenTree(tree).find((node) => node.id === "app-open-child-1")!;
+    expect(deep.parentId).toBe("open-child");
   });
 });

@@ -15247,6 +15247,7 @@ function Workspace({
           setIrgatShownSessionFocused(false);
         }}
         onOpenSessionInWorkspace={onOpenIrgatLaunchedSession}
+        onRetryAgent={onRetryAgent}
         onOpenDocument={(id) => {
           setIrgatShownSession(null);
           setIrgatOverviewDocument(id);
