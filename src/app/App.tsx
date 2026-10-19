@@ -861,6 +861,7 @@ import {
 } from "../features/automations/model/automations";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
 import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
+import type { AgentRetryRequest } from "../features/agent-tree/ui/AgentTreeView";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
 import {
   SECOND_OPINION_TITLE,
@@ -12995,6 +12996,34 @@ function Workspace({
     [onOpenApprovalSession, onOpenIrgat],
   );
 
+  // Agents tree Retry: a fresh session in the failed one's project and model.
+  const onRetryAgent = useCallback(
+    async ({ sourceSessionId, prompt, newSessionId }: AgentRetryRequest) => {
+      const source =
+        sessionsRef.current.find((session) => session.id === sourceSessionId) ??
+        (await getSession(sourceSessionId));
+      if (!source) throw new Error("That session is no longer available");
+      if (isRemoteProjectPath(source.cwd))
+        throw new Error("Retry runs only for sessions on this Mac");
+      await launchQuickSessionRef.current(
+        {
+          prompt,
+          cwd: source.cwd,
+          harness: source.harness,
+          model: source.model,
+          modelSettings: source.modelSettings,
+          runtimeMode: source.runtimeMode,
+          ...(source.worktreeCwd && !source.worktreeRemoved
+            ? { worktreeCwd: source.worktreeCwd }
+            : {}),
+          reveal: false,
+        },
+        newSessionId,
+      );
+    },
+    [],
+  );
+
   const onSelectLiveAgent = useCallback(
     (sessionId: string) => {
       setSearchViewOpen(false);
@@ -16238,6 +16267,7 @@ function Workspace({
                   onClose={onLeaveFleet}
                   onToggleSidebar={onToggleSidebar}
                   onOpenSession={onOpenFleetSession}
+                  onRetryAgent={onRetryAgent}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}
                   onQuestionInteraction={onQuestionInteraction}

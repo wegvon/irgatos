@@ -1155,6 +1155,30 @@ export function turnMetricsFromResult(
   };
 }
 
+/** Dollars the CLI process has spent so far, as the `result` record reports. */
+export function totalCostFromResult(
+  rec: Record<string, unknown>,
+): number | undefined {
+  const cost = rec.total_cost_usd;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0
+    ? cost
+    : undefined;
+}
+
+/**
+ * The most a turn with these tokens could cost at well above any Claude list
+ * price, per million: input $30, output $150, cache write $40, cache read $5.
+ */
+export function turnCostCeilingUsd(metrics: TurnMetrics): number {
+  return (
+    ((metrics.inputTokens ?? 0) * 30 +
+      (metrics.outputTokens ?? 0) * 150 +
+      (metrics.cacheWriteTokens ?? 0) * 40 +
+      (metrics.cacheReadTokens ?? 0) * 5) /
+    1_000_000
+  );
+}
+
 /**
  * Context level from an `assistant` message. Callers must skip subagent
  * messages — subagents run their own window and would make the reading jump.

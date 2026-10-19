@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -42,6 +48,10 @@ import {
   type FleetRequest,
 } from "../model/fleet";
 import {
+  AgentTreeView,
+  type AgentRetryRequest,
+} from "../../agent-tree/ui/AgentTreeView";
+import {
   OutsideClaudeSessions,
   filterOutsideClaudeSessions,
   useOutsideClaudeSessions,
@@ -78,6 +88,8 @@ type Props = {
     entry: HabitApprovalEntry,
     decision: "approve" | "skip",
   ) => void;
+  /** Starts the session a failed agent's Retry asks for. */
+  onRetryAgent?: (request: AgentRetryRequest) => Promise<void>;
 };
 
 export type FleetRowActions = {
@@ -144,6 +156,19 @@ const BUCKET_TONE: Record<FleetBucket, string> = {
   idle: "text-content/40",
 };
 
+type FleetMode = "sessions" | "agents";
+const FLEET_MODE_KEY = "irgatos.fleet.mode.v1";
+
+function loadFleetMode(): FleetMode {
+  try {
+    return localStorage.getItem(FLEET_MODE_KEY) === "agents"
+      ? "agents"
+      : "sessions";
+  } catch {
+    return "sessions";
+  }
+}
+
 function useMinuteClock(): number {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -169,8 +194,25 @@ export function FleetView({
   onQuestionInteraction,
   habitApprovals = [],
   onHabitApproval,
+  onRetryAgent,
 }: Props) {
   const now = useMinuteClock();
+  const [mode, setModeState] = useState<FleetMode>(() =>
+    sidebar ? "sessions" : loadFleetMode(),
+  );
+  const setMode = (next: FleetMode) => {
+    setModeState(next);
+    try {
+      localStorage.setItem(FLEET_MODE_KEY, next);
+    } catch {
+      // Not remembered; the toggle still works.
+    }
+  };
+  const agentsMode = !sidebar && mode === "agents";
+  const irgatNameOf = useCallback((sessionId: string) => {
+    const irgat = irgatForSession(sessionId);
+    return irgat ? irgatLook(irgat).name : undefined;
+  }, []);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<ReadonlySet<FleetBucket>>(
     () => new Set(["idle"]),
@@ -251,7 +293,31 @@ export function FleetView({
                 : `${fleet.total} ${fleet.total === 1 ? "session" : "sessions"} across every project`}
             </span>
           </div>
-          {!empty ? (
+          <div
+            role="tablist"
+            aria-label="Fleet view"
+            className="mr-2 flex h-7 shrink-0 items-center rounded-md border border-content/10 p-0.5 text-[12px]"
+            data-tauri-drag-region="false"
+          >
+            {(["sessions", "agents"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                role="tab"
+                aria-selected={mode === option}
+                onClick={() => setMode(option)}
+                data-fleet-mode={option}
+                className={`h-full rounded px-2 ${
+                  mode === option
+                    ? "bg-content/10 text-content"
+                    : "text-content/50 hover:text-content/80"
+                }`}
+              >
+                {option === "sessions" ? "Sessions" : "Agents"}
+              </button>
+            ))}
+          </div>
+          {!empty && !agentsMode ? (
             <label
               className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
               data-tauri-drag-region="false"
@@ -279,7 +345,15 @@ export function FleetView({
           {IS_MAC ? null : <WindowControls />}
         </div>
       )}
-      {empty ? (
+      {agentsMode ? (
+        <AgentTreeView
+          sessions={sessions}
+          interruptedSessionIds={interruptedSessionIds}
+          irgatName={irgatNameOf}
+          onOpenSession={onOpenSession}
+          onRetry={onRetryAgent}
+        />
+      ) : empty ? (
         <FleetMessage
           title="No agents yet"
           body="Sessions from every project show up here, sorted by what needs you first: approvals and questions, finished work to review, then what is still running."

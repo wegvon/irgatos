@@ -257,6 +257,10 @@ function mergeTurnMetrics(
     ...(event.cacheHitPercent != null
       ? { cacheHitPercent: event.cacheHitPercent }
       : {}),
+    // A turn can report more than once (background follow-ups); spend adds up.
+    ...(event.costUsd != null
+      ? { costUsd: (current.turnMetrics?.costUsd ?? 0) + event.costUsd }
+      : {}),
   };
   const blocks = session.blocks.slice();
   blocks[userIndex] = { ...current, turnMetrics: metrics };

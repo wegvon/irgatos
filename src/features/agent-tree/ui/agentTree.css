@@ -1,0 +1,96 @@
+/* Agent tree palette: dark by default, light under html.theme-light. */
+.agent-tree {
+  --at-bg: #0e0e10;
+  --at-card: #1c1c1e;
+  --at-text: #ffffff;
+  --at-muted: #a1a1aa;
+  --at-faint: #71717a;
+  --at-line: #3f3f46;
+  --at-running: #3b82f6;
+  --at-done: #22c55e;
+  --at-needs: #f59e0b;
+  --at-failed: #ef4444;
+  --at-stopped: #8e8e93;
+  --at-popover: #26262a;
+  --at-shadow: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
+  --at-solid: #ffffff;
+  --at-solid-text: #0e0e10;
+  background: var(--at-bg);
+  color: var(--at-text);
+}
+
+html.theme-light .agent-tree {
+  --at-bg: #f4f4f5;
+  --at-card: #ffffff;
+  --at-text: #18181b;
+  --at-muted: #52525b;
+  --at-faint: #71717a;
+  --at-line: #d4d4d8;
+  --at-running: #2563eb;
+  --at-done: #16a34a;
+  --at-needs: #d97706;
+  --at-failed: #dc2626;
+  --at-stopped: #71717a;
+  --at-popover: #ffffff;
+  --at-shadow: 0 12px 32px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.08);
+  --at-solid: #0e0e10;
+  --at-solid-text: #ffffff;
+}
+
+.agent-tree [data-status="running"] { --at-status: var(--at-running); }
+.agent-tree [data-status="done"] { --at-status: var(--at-done); }
+.agent-tree [data-status="needs_you"] { --at-status: var(--at-needs); }
+.agent-tree [data-status="failed"] { --at-status: var(--at-failed); }
+.agent-tree [data-status="stopped"] { --at-status: var(--at-stopped); }
+
+.agent-tree-card {
+  width: 280px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--at-status);
+  background: var(--at-card);
+  transition: border-color 160ms ease;
+}
+
+.agent-tree-badge {
+  color: var(--at-status);
+  background: color-mix(in srgb, var(--at-status) 16%, transparent);
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.agent-tree-line {
+  fill: none;
+  stroke-width: 2;
+  stroke: var(--at-status, var(--at-line));
+  transition: stroke 160ms ease;
+}
+
+.agent-tree-popover {
+  position: relative;
+  width: 280px;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--at-popover);
+  border: 1px solid color-mix(in srgb, var(--at-failed) 45%, transparent);
+  box-shadow: var(--at-shadow);
+}
+
+/* The arrow: a rotated square sharing the popover's fill and border. */
+.agent-tree-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 24px;
+  width: 10px;
+  height: 10px;
+  transform: rotate(45deg);
+  background: var(--at-popover);
+  border-left: 1px solid color-mix(in srgb, var(--at-failed) 45%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--at-failed) 45%, transparent);
+}
+
+.agent-tree-solid {
+  background: var(--at-solid);
+  color: var(--at-solid-text);
+}

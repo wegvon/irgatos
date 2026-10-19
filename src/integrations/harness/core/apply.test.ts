@@ -1294,6 +1294,13 @@ describe("applyHarnessEvent turn metrics", () => {
       cacheHitPercent: 44.4,
     });
   });
+
+  it("adds up a turn's spend across reports", () => {
+    let session = appendUser(newSession("claude", "/repo"), "Explain this");
+    session = applyHarnessEvent(session, { type: "turn.metrics", costUsd: 0.1 });
+    session = applyHarnessEvent(session, { type: "turn.metrics", costUsd: 0.05 });
+    expect(session.blocks[0]?.turnMetrics?.costUsd).toBeCloseTo(0.15);
+  });
 });
 
 describe("tool enrichment", () => {
