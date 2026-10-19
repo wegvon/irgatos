@@ -25,6 +25,8 @@ import {
   contextFromResult,
   contextUsedFromAssistant,
   turnMetricsFromResult,
+  totalCostFromResult,
+  turnCostCeilingUsd,
   buildClaudeSpawnArgs,
   buildClaudeUserMessage,
   buildControlRequest,
@@ -177,6 +179,8 @@ type Live = {
   pendingAssistantBoundary: boolean;
   manualCompaction: boolean;
   compactionConfirmed: boolean;
+  /** `total_cost_usd` adds up over the process; the last one seen, to report each turn's share. */
+  reportedCostUsd: number;
 };
 
 type Resume = {
@@ -513,6 +517,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     emittedReasoning: "",
     pendingAssistantBoundary: false,
     manualCompaction: false,
+    reportedCostUsd: 0,
     compactionConfirmed: false,
   };
   liveRef.current = live;
@@ -978,7 +983,25 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
     if (context) live.onEvent({ type: "context", ...context });
   }
   const metrics = turnMetricsFromResult(rec);
-  if (metrics) live.onEvent({ type: "turn.metrics", ...metrics });
+  const totalCost = totalCostFromResult(rec);
+  let costUsd: number | undefined;
+  if (totalCost != null) {
+    // A lower total means the CLI restarted its count; it is all this turn's.
+    const share =
+      totalCost >= live.reportedCostUsd
+        ? totalCost - live.reportedCostUsd
+        : totalCost;
+    // A resumed CLI may count from the conversation's earlier spend; a share
+    // the turn's own tokens could never cost is that, not this turn.
+    if (!metrics || share <= turnCostCeilingUsd(metrics)) costUsd = share;
+    live.reportedCostUsd = totalCost;
+  }
+  if (metrics || costUsd != null)
+    live.onEvent({
+      type: "turn.metrics",
+      ...(metrics ?? {}),
+      ...(costUsd != null ? { costUsd } : {}),
+    });
 
   const result = turnStatusFromResult(rec);
   if (result.status === "failed" && result.error && !live.cancelled) {

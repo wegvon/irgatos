@@ -39,6 +39,8 @@ import {
   toolTitle,
   turnStatusFromResult,
   turnMetricsFromResult,
+  totalCostFromResult,
+  turnCostCeilingUsd,
   isUsageLimitResult,
   usageLimitFromRateLimitEvent,
 } from "./claudeProtocol";
@@ -1033,5 +1035,21 @@ describe("applyClaudeTaskTool", () => {
     expect(applyClaudeTaskTool(tasks, "TaskUpdate", { taskId: "9", status: "completed" }, "")).toBe(false);
     expect(applyClaudeTaskTool(tasks, "TaskList", {}, "#1 [pending] One")).toBe(false);
     expect(tasks.size).toBe(0);
+  });
+});
+
+describe("totalCostFromResult", () => {
+  it("reads the process total and ignores junk", () => {
+    expect(totalCostFromResult({ total_cost_usd: 0.42 })).toBe(0.42);
+    expect(totalCostFromResult({ total_cost_usd: "1" })).toBeUndefined();
+    expect(totalCostFromResult({ total_cost_usd: -1 })).toBeUndefined();
+    expect(totalCostFromResult({})).toBeUndefined();
+  });
+
+  it("bounds what a turn's tokens could cost", () => {
+    expect(
+      turnCostCeilingUsd({ inputTokens: 1_000_000, outputTokens: 1_000_000 }),
+    ).toBe(180);
+    expect(turnCostCeilingUsd({})).toBe(0);
   });
 });

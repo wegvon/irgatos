@@ -329,6 +329,8 @@ export type TurnMetrics = {
   cacheWriteTokens?: number;
   /** Provider-normalized share of input served from cache, as a percentage. */
   cacheHitPercent?: number;
+  /** What the turn cost in US dollars, when the provider reports it. */
+  costUsd?: number;
 };
 
 export type Block = {
