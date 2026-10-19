@@ -557,7 +557,8 @@ function startLaunch(
   return {
     cwd,
     prompt,
-    ...(host.irgatOf?.(source.id)?.showStartedSessionsInSidebar !== true
+    // Shown unless the Irgat behind the caller turned its sessions off.
+    ...(host.irgatOf?.(source.id)?.showStartedSessionsInSidebar === false
       ? { sidebarHidden: true }
       : {}),
     ...(draft ? { draft: true } : {}),

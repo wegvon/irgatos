@@ -708,6 +708,7 @@ import {
   createIrgat,
   findIrgat,
   updateIrgat,
+  hiddenFromSidebar,
   isIrgatSession,
   listIrgats,
   loadOpenIrgat,
@@ -15316,7 +15317,7 @@ function Workspace({
     projectAlertsFromSessions(
       // Rows the project's list leaves out cannot be opened from it.
       promptableSessions.filter(
-        (session) => !session.sidebarHidden && !isHabitRun(session.id),
+        (session) => !hiddenFromSidebar(session) && !isHabitRun(session.id),
       ),
       {
         needsYou: sessionNeedsInput,

@@ -46,7 +46,7 @@ export type Irgat = {
   color: string;
   /** Project folders it works on, in the order they were added. */
   projects: string[];
-  /** New sessions stay out of the project sidebar unless turned on. */
+  /** New sessions appear in the project sidebar unless turned off. */
   showStartedSessionsInSidebar?: boolean;
   /** Files the sessions it starts into a sidebar folder named after it. */
   useSidebarFolders?: boolean;
@@ -228,6 +228,30 @@ export function irgatSessionIds(
     ...(irgat.sessionId ? [irgat.sessionId] : []),
     ...(irgat.childSessionIds ?? []),
   ];
+}
+
+/** The Irgat whose chat started an `app-<caller>-<request>` session. */
+export function irgatThatStarted(
+  sessionId: string,
+  irgats: readonly Irgat[] = listIrgats(),
+): Irgat | undefined {
+  if (!sessionId.startsWith("app-")) return undefined;
+  return irgats.find((irgat) =>
+    irgatSessionIds(irgat).some((id) => sessionId.startsWith(`app-${id}-`)),
+  );
+}
+
+/**
+ * A session saved as hidden stays out of the sidebar only while the Irgat
+ * that started it still says so; one whose Irgat is gone keeps its flag.
+ */
+export function hiddenFromSidebar(
+  session: { id: string; sidebarHidden?: boolean },
+  irgats?: readonly Irgat[],
+): boolean {
+  if (!session.sidebarHidden) return false;
+  const irgat = irgatThatStarted(session.id, irgats);
+  return !irgat || irgat.showStartedSessionsInSidebar === false;
 }
 
 export function isIrgatSession(sessionId: string): boolean {

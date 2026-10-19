@@ -144,21 +144,21 @@ describe("settings pages", () => {
         `[role="switch"][aria-label="Show sessions started by ${irgatLook(findIrgat(id)!).name} in sidebar"]`,
       )!;
     await render("irgats");
-    // Off until turned on: a Irgat's sessions stay in its overview.
-    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
-    expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
-    await act(async () => toggle(irgat.id).click());
+    // On until turned off: a Irgat's sessions show in the project sidebar.
     expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
-    expect(findIrgat(irgat.id)?.showStartedSessionsInSidebar).toBe(true);
-    expect(toggle(other.id).getAttribute("aria-checked")).toBe("false");
+    expect(toggle(other.id).getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle(irgat.id).click());
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
+    expect(findIrgat(irgat.id)?.showStartedSessionsInSidebar).toBe(false);
+    expect(toggle(other.id).getAttribute("aria-checked")).toBe("true");
     await render("general");
     await render("irgats");
-    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
     await act(async () => updateIrgat(irgat.id, (entry) => ({
       ...entry,
-      showStartedSessionsInSidebar: false,
+      showStartedSessionsInSidebar: true,
     })));
-    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("false");
+    expect(toggle(irgat.id).getAttribute("aria-checked")).toBe("true");
   });
 
   it("asks for the endpoint and key above the semantic search switch", async () => {

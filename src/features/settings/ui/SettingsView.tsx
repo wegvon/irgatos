@@ -5245,7 +5245,7 @@ function IrgatRow({ irgat }: { irgat: Irgat }) {
       </span>
       <Toggle
         label={`Show sessions started by ${look.name} in sidebar`}
-        on={irgat.showStartedSessionsInSidebar === true}
+        on={irgat.showStartedSessionsInSidebar !== false}
         onChange={(on) =>
           updateIrgat(irgat.id, (entry) => ({
             ...entry,
