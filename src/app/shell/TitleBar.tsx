@@ -926,26 +926,6 @@ function TitleBarComponent({
                 <ColumnInsert className="size-3.5" strokeWidth={1.75} />
               </button>
             ) : null}
-            {onResetIrgatConversation ? (
-              <ConfirmConversationReset
-                name={irgat.look.name}
-                onConfirm={onResetIrgatConversation}
-              >
-                {(open, ref) => (
-                  <button
-                    ref={ref}
-                    type="button"
-                    title="Reset conversation"
-                    data-tauri-drag-region="false"
-                    onClick={open}
-                    className="flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] text-red-400 hover:bg-red-500/10"
-                  >
-                    <RotateCcw className="size-3.5" strokeWidth={1.75} />
-                    Reset
-                  </button>
-                )}
-              </ConfirmConversationReset>
-            ) : null}
             {onToggleIrgatOverview ? (
               <button
                 type="button"
@@ -962,6 +942,26 @@ function TitleBarComponent({
                 <DashboardSquare className="size-3.5" strokeWidth={1.75} />
                 Overview
               </button>
+            ) : null}
+            {onResetIrgatConversation ? (
+              <ConfirmConversationReset
+                name={irgat.look.name}
+                onConfirm={onResetIrgatConversation}
+              >
+                {(open, ref) => (
+                  <button
+                    ref={ref}
+                    type="button"
+                    title="Reset conversation"
+                    data-tauri-drag-region="false"
+                    onClick={open}
+                    className="ml-1 flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] text-red-400 hover:bg-red-500/10"
+                  >
+                    <RotateCcw className="size-3.5" strokeWidth={1.75} />
+                    Reset
+                  </button>
+                )}
+              </ConfirmConversationReset>
             ) : null}
           </div>
         ) : null}
