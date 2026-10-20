@@ -12,6 +12,9 @@ export function useAppWindows(
   const [windows, setWindows] = useState<AppWindow[]>([]);
   const [selection, setSelection] = useState<WindowSelection | null>(null);
   const [loading, setLoading] = useState(false);
+  // Listing runs on every @ mention, so its failure belongs in the picker only;
+  // `error` is for sharing actions the user chose.
+  const [listError, setListError] = useState("");
   const [error, setError] = useState("");
   const [selecting, setSelecting] = useState(false);
   const revision = useRef(0);
@@ -50,7 +53,7 @@ export function useAppWindows(
     if (!enabled || !sessionId || !open) return;
     let cancelled = false;
     setLoading(true);
-    setError("");
+    setListError("");
     void invoke<AppWindow[]>("computer_use_windows")
       .then((next) => {
         if (!cancelled) setWindows(next);
@@ -58,7 +61,7 @@ export function useAppWindows(
       .catch((cause) => {
         if (!cancelled) {
           setWindows([]);
-          setError(String(cause));
+          setListError(String(cause));
         }
       })
       .finally(() => {
@@ -116,6 +119,7 @@ export function useAppWindows(
     ),
     selection,
     loading,
+    listError,
     error,
     selecting,
     select,

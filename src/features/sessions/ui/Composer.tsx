@@ -2283,7 +2283,7 @@ export function Composer({
                 }
                 onPick={(window) => void pickAppWindow(window)}
                 loading={appWindows.loading}
-                error={appWindows.error}
+                error={appWindows.listError}
               />
             ) : null}
           </div>

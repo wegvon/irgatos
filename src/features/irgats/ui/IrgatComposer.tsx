@@ -174,7 +174,7 @@ export function IrgatComposer({
   const mentionOpen =
     mentionToken !== null &&
     (mentionCount > 0 ||
-      (computerUse && (appWindows.loading || !!appWindows.error)));
+      (computerUse && (appWindows.loading || !!appWindows.listError)));
   const trackMention = (value: string, caret: number) => {
     if (!mentions?.length && !computerUse) return;
     const token = mentionTokenAt(value, caret);
@@ -607,7 +607,7 @@ export function IrgatComposer({
                 }
                 onPick={(window) => void pickApp(window)}
                 loading={appWindows.loading}
-                error={appWindows.error}
+                error={appWindows.listError}
               />
             ) : null}
           </div>
