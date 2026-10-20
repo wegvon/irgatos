@@ -188,10 +188,66 @@ fn selections() -> &'static Mutex<HashMap<String, Arc<WindowGrant>>> {
     SELECTIONS.get_or_init(Mutex::default)
 }
 
+fn daemon_not_running(error: &str) -> bool {
+    error.contains("daemon is not running")
+}
+
+fn app_bundle_of(binary: &Path) -> Option<PathBuf> {
+    let resolved = std::fs::canonicalize(binary).unwrap_or_else(|_| binary.to_path_buf());
+    resolved
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == APP_BUNDLE))
+        .map(Path::to_path_buf)
+}
+
+/// One-shot `call` needs the driver's daemon, which stops on logout, restart
+/// or a driver update. Start it the way the driver's own `mcp` adapter does:
+/// through LaunchServices, so it keeps CuaDriver.app's Accessibility and
+/// Screen Recording grants. The lock keeps parallel calls from starting two.
+fn call_starting_daemon(
+    binary: &Path,
+    call: impl Fn() -> Result<String, String>,
+) -> Result<String, String> {
+    static STARTING: Mutex<()> = Mutex::new(());
+    let first = call();
+    let Err(error) = &first else { return first };
+    if !cfg!(target_os = "macos") || !daemon_not_running(error) {
+        return first;
+    }
+    let Some(app) = app_bundle_of(binary) else {
+        return Err("Cua Driver is not running. Open CuaDriver.app once".into());
+    };
+    let _starting = STARTING.lock().map_err(|e| e.to_string())?;
+    match call() {
+        Err(error) if daemon_not_running(&error) => {}
+        other => return other,
+    }
+    let app = app.to_string_lossy().into_owned();
+    run(
+        Path::new("/usr/bin/open"),
+        &["-n", "-g", &app, "--args", "serve"],
+        Duration::from_secs(10),
+    )
+    .map_err(|e| format!("Could not start Cua Driver: {e}"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        std::thread::sleep(Duration::from_millis(250));
+        match call() {
+            Err(error) if daemon_not_running(&error) && std::time::Instant::now() < deadline => {}
+            Err(error) if daemon_not_running(&error) => {
+                return Err("Cua Driver did not start".into())
+            }
+            other => return other,
+        }
+    }
+}
+
 fn call_driver(tool: &str, args: Value) -> Result<Value, String> {
     let binary = require_binary()?;
     let encoded = args.to_string();
-    let output = run(&binary, &["call", tool, &encoded], Duration::from_secs(30))?;
+    let output = call_starting_daemon(&binary, || {
+        run(&binary, &["call", tool, &encoded], Duration::from_secs(30))
+    })?;
     let value: Value = serde_json::from_str(&output)
         .map_err(|_| "Cua Driver returned an unreadable response".to_owned())?;
     if value.get("isError").and_then(Value::as_bool) == Some(true) || value.get("error").is_some() {
@@ -248,9 +304,13 @@ fn live_window(expected: &AppWindow) -> Result<AppWindow, String> {
 
 #[tauri::command]
 pub async fn computer_use_windows() -> Result<Vec<AppWindow>, String> {
-    tauri::async_runtime::spawn_blocking(windows)
-        .await
-        .map_err(|e| e.to_string())?
+    // Every @ mention lists windows; without the optional driver there are none to offer.
+    tauri::async_runtime::spawn_blocking(|| match resolve_binary() {
+        Some(_) => windows(),
+        None => Ok(Vec::new()),
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -649,6 +709,37 @@ mod tests {
             scoped_args(&selection(true), "click", json!({"x":10,"y":20})).unwrap(),
             json!({"x":10,"y":20,"pid":42,"window_id":19})
         );
+    }
+
+    #[test]
+    fn daemon_start_targets_the_driver_app_bundle() {
+        assert_eq!(
+            app_bundle_of(Path::new(
+                "/Applications/CuaDriver.app/Contents/MacOS/cua-driver"
+            )),
+            Some(PathBuf::from("/Applications/CuaDriver.app"))
+        );
+        assert_eq!(
+            app_bundle_of(Path::new("/opt/homebrew/bin/cua-driver")),
+            None
+        );
+        assert!(daemon_not_running(
+            "Cua Driver daemon is not running on /Users/me/Library/Caches/cua-driver/cua-driver.sock."
+        ));
+        assert!(!daemon_not_running(
+            "Cua Driver returned an unreadable response"
+        ));
+    }
+
+    #[test]
+    fn calls_that_reach_the_daemon_are_not_retried() {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let result = call_starting_daemon(Path::new("/opt/homebrew/bin/cua-driver"), || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Err("window not found".into())
+        });
+        assert_eq!(result.unwrap_err(), "window not found");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     #[test]
