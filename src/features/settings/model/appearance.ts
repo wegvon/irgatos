@@ -414,8 +414,13 @@ function opaqueWindowBackground(): Rgb {
     return Number.isFinite(value) ? value : fallback;
   };
   return hslToRgb(
-    read("--surface-hue", THEME_HUE_DEFAULT),
-    read("--surface-saturation", THEME_SATURATION_DEFAULT),
+    // The surface tokens come from the stylesheet; the raw tint is the
+    // fallback where it is not loaded.
+    read("--surface-hue", read("--theme-hue", THEME_HUE_DEFAULT)),
+    read(
+      "--surface-saturation",
+      read("--theme-saturation", THEME_SATURATION_DEFAULT),
+    ),
     read("--background-lightness", THEME_DARK_LIGHTNESS_DEFAULT),
   );
 }
