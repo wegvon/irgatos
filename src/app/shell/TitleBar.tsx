@@ -6,6 +6,7 @@ import {
   DashboardSquare,
   Inbox,
   PanelLeft,
+  RotateCcw,
   Settings,
   StickyNote,
   Terminal,
@@ -38,6 +39,7 @@ import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { TabLabel } from "../../shared/ui/TabLabel";
+import { ConfirmConversationReset } from "../../features/irgats/ui/ConfirmReset";
 import { WindowControls } from "./WindowControls";
 import { PixelMascot } from "../../features/projects/ui/PixelMascot";
 import {
@@ -105,6 +107,8 @@ type Props = {
   irgatOverviewOpen?: boolean;
   /** Starts a new chat under the Irgat beside the one open. */
   onNewIrgatChatBeside?: () => void;
+  /** Clears the Irgat's conversation, the same reset its settings offer. */
+  onResetIrgatConversation?: () => Promise<void>;
   /** The full-height Irgat panel owns these while it is open. */
   hideWindowControls?: boolean;
   projectRailOpen?: boolean;
@@ -630,6 +634,7 @@ function TitleBarComponent({
   onToggleIrgatOverview,
   irgatOverviewOpen = false,
   onNewIrgatChatBeside,
+  onResetIrgatConversation,
   hideWindowControls = false,
   projectRailOpen = true,
   sessionSidebarOpen = true,
@@ -920,6 +925,26 @@ function TitleBarComponent({
               >
                 <ColumnInsert className="size-3.5" strokeWidth={1.75} />
               </button>
+            ) : null}
+            {onResetIrgatConversation ? (
+              <ConfirmConversationReset
+                name={irgat.look.name}
+                onConfirm={onResetIrgatConversation}
+              >
+                {(open, ref) => (
+                  <button
+                    ref={ref}
+                    type="button"
+                    title="Reset conversation"
+                    data-tauri-drag-region="false"
+                    onClick={open}
+                    className="flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] text-red-400 hover:bg-red-500/10"
+                  >
+                    <RotateCcw className="size-3.5" strokeWidth={1.75} />
+                    Reset
+                  </button>
+                )}
+              </ConfirmConversationReset>
             ) : null}
             {onToggleIrgatOverview ? (
               <button
