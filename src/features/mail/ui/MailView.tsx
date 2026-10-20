@@ -12,6 +12,7 @@ import {
   Search,
   Send,
   Settings,
+  Trash2,
 } from "../../../shared/ui/icons";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
@@ -25,6 +26,7 @@ import {
   MAIL_FOLDERS,
   accountLabel,
   executorAccountsUrl,
+  isDeleteShortcut,
   isFromMe,
   listMail,
   loadMailAccounts,
@@ -34,6 +36,8 @@ import {
   mailThreadSessions,
   modifyMailThread,
   needsReconnect,
+  neighbourOf,
+  restoreRow,
   saveMailDraft,
   saveMailSettings,
   sendMailDraft,
@@ -87,6 +91,19 @@ type Selection = { account: string; id: string };
 
 const rowKey = (account: string, id: string) => `${account}\n${id}`;
 
+const sameRow = (a: Selection, b: Selection) =>
+  a.id === b.id && a.account === b.account;
+
+/** How long "Moved to Trash · Undo" stays under the list. */
+const UNDO_MS = 8000;
+
+/** The line under the list after a delete. */
+type TrashNotice =
+  | { kind: "trashing" }
+  | { kind: "trashed"; row: MailRow; index: number; list: string }
+  | { kind: "restoring" }
+  | { kind: "failed"; text: string };
+
 /** `work@x.com` → `work`, short enough for a list row. */
 const shortAddress = (email: string) => email.split("@")[0] || email;
 
@@ -126,6 +143,14 @@ export function MailView({
   const [selected, setSelected] = useState<Selection | null>(
     rememberedSelection,
   );
+  const [trashNotice, setTrashNotice] = useState<TrashNotice | null>(null);
+  const trashTimer = useRef<number | undefined>(undefined);
+  /** The latest delete or undo; an older one finishing late stays quiet. */
+  const trashOp = useRef(0);
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const listRequest = useRef(0);
   const listLock = useLockOverscroll<HTMLDivElement>();
 
@@ -174,15 +199,33 @@ export function MailView({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea")) return;
-      event.preventDefault();
-      onCloseRef.current();
+      if (target?.closest("input, textarea, select, [contenteditable='true']"))
+        return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+      } else if (isDeleteShortcut(event)) {
+        const current = selectedRef.current;
+        if (!current || event.repeat) return;
+        event.preventDefault();
+        void trashRef.current(current);
+      } else if (
+        event.key === "z" &&
+        event.metaKey &&
+        !event.shiftKey &&
+        !event.altKey
+      ) {
+        if (trashNoticeRef.current?.kind !== "trashed") return;
+        event.preventDefault();
+        void undoTrashRef.current();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => () => window.clearTimeout(trashTimer.current), []);
 
   const load = useCallback(
     async (more = false) => {
@@ -240,6 +283,88 @@ export function MailView({
     },
     [],
   );
+
+  /** Takes the row out of the list and opens the one below it. */
+  const removeAndAdvance = useCallback((target: Selection) => {
+    const rows = threadsRef.current;
+    const index = rows.findIndex((t) => sameRow(t, target));
+    const next = neighbourOf(rows, index);
+    if (selectedRef.current && sameRow(selectedRef.current, target))
+      setSelected(next ? { account: next.account, id: next.id } : null);
+    setThreads((current) => current.filter((t) => !sameRow(t, target)));
+    return index < 0 ? null : { row: rows[index], index };
+  }, []);
+
+  const showTrashNotice = useCallback((notice: TrashNotice | null) => {
+    window.clearTimeout(trashTimer.current);
+    setTrashNotice(notice);
+    if (notice?.kind === "trashed" || notice?.kind === "failed")
+      trashTimer.current = window.setTimeout(
+        () => setTrashNotice(null),
+        UNDO_MS,
+      );
+  }, []);
+
+  /** Which list is on screen, so Undo only puts a row back into its own. */
+  const listKey = `${folder}\n${account}\n${appliedSearch}`;
+  const listKeyRef = useRef(listKey);
+  listKeyRef.current = listKey;
+
+  /** Moves the whole thread to Gmail's Trash; Undo brings it back. */
+  const trash = useCallback(
+    async (target: Selection) => {
+      const op = ++trashOp.current;
+      const list = listKeyRef.current;
+      const removed = removeAndAdvance(target);
+      showTrashNotice({ kind: "trashing" });
+      try {
+        await modifyMailThread(target.account, target.id, "trash");
+        if (op === trashOp.current)
+          showTrashNotice(
+            removed ? { kind: "trashed", ...removed, list } : null,
+          );
+      } catch (err: unknown) {
+        if (removed && listKeyRef.current === list)
+          setThreads((current) =>
+            restoreRow(current, removed.row, removed.index, sameRow),
+          );
+        if (op === trashOp.current)
+          showTrashNotice({
+            kind: "failed",
+            text: `Could not delete: ${message(err)}`,
+          });
+      }
+    },
+    [removeAndAdvance, showTrashNotice],
+  );
+  const trashRef = useRef(trash);
+  trashRef.current = trash;
+
+  const undoTrash = useCallback(async () => {
+    const notice = trashNotice;
+    if (notice?.kind !== "trashed") return;
+    const op = ++trashOp.current;
+    showTrashNotice({ kind: "restoring" });
+    try {
+      await modifyMailThread(notice.row.account, notice.row.id, "untrash");
+      if (listKeyRef.current === notice.list)
+        setThreads((current) =>
+          restoreRow(current, notice.row, notice.index, sameRow),
+        );
+      setSelected({ account: notice.row.account, id: notice.row.id });
+      if (op === trashOp.current) showTrashNotice(null);
+    } catch (err: unknown) {
+      if (op === trashOp.current)
+        showTrashNotice({
+          kind: "failed",
+          text: `Could not undo: ${message(err)}`,
+        });
+    }
+  }, [trashNotice, showTrashNotice]);
+  const undoTrashRef = useRef(undoTrash);
+  undoTrashRef.current = undoTrash;
+  const trashNoticeRef = useRef(trashNotice);
+  trashNoticeRef.current = trashNotice;
 
   const myAddresses = (accounts ?? []).map((a) => a.email).filter(Boolean);
   const showAccount = account === "" && (accounts?.length ?? 0) > 1;
@@ -435,6 +560,13 @@ export function MailView({
               </button>
             ) : null}
           </div>
+          {trashNotice ? (
+            <TrashLine
+              notice={trashNotice}
+              onUndo={() => void undoTrash()}
+              onDismiss={() => showTrashNotice(null)}
+            />
+          ) : null}
         </div>
         {selected ? (
           <ThreadDetail
@@ -450,10 +582,8 @@ export function MailView({
             onAsk={onAsk}
             onOpenSession={onOpenSession}
             onChanged={(change) => onThreadChanged(selected, change)}
-            onArchived={() => {
-              onThreadChanged(selected, "removed");
-              setSelected(null);
-            }}
+            onArchived={() => removeAndAdvance(selected)}
+            onTrash={() => void trash(selected)}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center text-[12px] text-content/40">
@@ -557,6 +687,60 @@ function AccountNotice({
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function TrashLine({
+  notice,
+  onUndo,
+  onDismiss,
+}: {
+  notice: TrashNotice;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex shrink-0 items-center gap-2 border-t border-stroke px-3 py-2 text-[12px]"
+    >
+      {notice.kind === "trashing" || notice.kind === "restoring" ? (
+        <LoaderCircle className="size-3 shrink-0 animate-spin text-content/50" />
+      ) : null}
+      <span
+        className={`min-w-0 flex-1 truncate ${
+          notice.kind === "failed" ? "text-red-400" : "text-content/70"
+        }`}
+        title={notice.kind === "failed" ? notice.text : undefined}
+      >
+        {notice.kind === "trashing"
+          ? "Moving to Trash…"
+          : notice.kind === "restoring"
+            ? "Bringing it back…"
+            : notice.kind === "trashed"
+              ? "Moved to Trash."
+              : notice.text}
+      </span>
+      {notice.kind === "trashed" ? (
+        <button
+          type="button"
+          onClick={onUndo}
+          title="Undo (⌘Z)"
+          className="rounded-md px-2 py-0.5 font-medium text-content hover:bg-content/5"
+        >
+          Undo
+        </button>
+      ) : null}
+      {notice.kind === "failed" ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="rounded-md px-2 py-0.5 text-content/50 hover:bg-content/5 hover:text-content"
+        >
+          Close
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -782,6 +966,7 @@ function ThreadDetail({
   onOpenSession,
   onChanged,
   onArchived,
+  onTrash,
 }: {
   account: string;
   /** Shown above the thread when there are several accounts. */
@@ -796,6 +981,8 @@ function ThreadDetail({
   onOpenSession: (sessionId: string) => void;
   onChanged: (change: Partial<MailThreadSummary>) => void;
   onArchived: () => void;
+  /** Moves the whole thread to Trash; the list shows Undo. */
+  onTrash: () => void;
 }) {
   const [thread, setThread] = useState<MailThread | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1009,6 +1196,16 @@ function ThreadDetail({
             <Archive className="size-3.5" strokeWidth={1.75} />
           </IconAction>
         ) : null}
+        {/* Kept apart from Archive so one is not clicked for the other. */}
+        <div className="ml-2 border-l border-stroke pl-2">
+          <IconAction
+            label="Delete (⌫) · moves to Trash"
+            onClick={onTrash}
+            disabled={busy !== null}
+          >
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
+          </IconAction>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {thread.messages.map((m) => (

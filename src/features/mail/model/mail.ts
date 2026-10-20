@@ -132,10 +132,12 @@ export const saveMailDraft = (
 export const sendMailDraft = (account: string, draftId: string) =>
   invoke<void>("mail_send_draft", { account, draftId });
 
+/** "trash" moves the whole thread to Gmail's Trash (Gmail empties it after
+ *  30 days); "untrash" brings it back. Nothing deletes permanently. */
 export const modifyMailThread = (
   account: string,
   threadId: string,
-  action: "read" | "archive",
+  action: "read" | "archive" | "trash" | "untrash",
 ) => invoke<void>("mail_modify", { account, threadId, action });
 
 export const linkMailSession = (
@@ -232,3 +234,36 @@ export function executorAccountsUrl(endpoint: string, accountId: string) {
   if (!endpoint || !integration) return endpoint;
   return `${endpoint.replace(/\/+$/, "")}/integrations/${encodeURIComponent(integration)}?tab=accounts`;
 }
+
+/**
+ * The row to open after the row at `index` leaves the list: the one below
+ * it, or the one above when it was last.
+ */
+export function neighbourOf<T>(rows: readonly T[], index: number): T | null {
+  if (index < 0) return null;
+  return rows[index + 1] ?? rows[index - 1] ?? null;
+}
+
+/** `row` put back at `index`, unless the list already has it again. */
+export function restoreRow<T>(
+  rows: readonly T[],
+  row: T,
+  index: number,
+  same: (a: T, b: T) => boolean,
+): T[] {
+  if (rows.some((r) => same(r, row))) return [...rows];
+  const at = Math.max(0, Math.min(index, rows.length));
+  return [...rows.slice(0, at), row, ...rows.slice(at)];
+}
+
+/** ⌫ or ⌦, alone or with ⌘, deletes the open mail. */
+export const isDeleteShortcut = (event: {
+  key: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}) =>
+  (event.key === "Backspace" || event.key === "Delete") &&
+  !event.altKey &&
+  !event.ctrlKey &&
+  !event.shiftKey;

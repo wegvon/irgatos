@@ -335,6 +335,19 @@ await gmail("users.threads.modify", {
 return true;
 "#;
 
+/// Moves the whole thread to Gmail's Trash, from where Gmail deletes it
+/// after 30 days. Never a permanent delete.
+pub const TRASH: &str = r#"
+await gmail("users.threads.trash", { userId: "me", id: INPUT.threadId });
+return true;
+"#;
+
+/// Takes the thread back out of Trash: the Undo after a delete.
+pub const UNTRASH: &str = r#"
+await gmail("users.threads.untrash", { userId: "me", id: INPUT.threadId });
+return true;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
