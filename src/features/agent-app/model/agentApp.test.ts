@@ -158,7 +158,7 @@ describe("agent app commands", () => {
         }, host);
         const launch = vi.mocked(host.start).mock.calls.at(-1)![0];
         expect(launch.sidebarHidden).toBe(
-          showStartedSessionsInSidebar === true ? undefined : true,
+          showStartedSessionsInSidebar === false ? true : undefined,
         );
       }
     },

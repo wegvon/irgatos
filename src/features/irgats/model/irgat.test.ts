@@ -1,12 +1,36 @@
 import { expect, it } from "vitest";
 import {
   defaultIrgatName,
+  hiddenFromSidebar,
   irgatMessagePage,
   irgatMessages,
   irgatReply,
   irgatState,
 } from "./irgat";
 import type { Block } from "../../sessions/model/session";
+import type { Irgat } from "./irgat";
+
+it("brings back a hidden session once its Irgat shows started sessions", () => {
+  const irgat = (showStartedSessionsInSidebar?: boolean): Irgat => ({
+    id: "local",
+    sessionId: "irgat-main",
+    childSessionIds: ["irgat-chat"],
+    mascot: "owl",
+    color: "#000",
+    projects: [],
+    ...(showStartedSessionsInSidebar === undefined
+      ? {}
+      : { showStartedSessionsInSidebar }),
+  });
+  const started = { id: "app-irgat-main-core-server", sidebarHidden: true };
+  const fromChat = { id: "app-irgat-chat-req", sidebarHidden: true };
+  expect(hiddenFromSidebar(started, [irgat()])).toBe(false);
+  expect(hiddenFromSidebar(fromChat, [irgat(true)])).toBe(false);
+  expect(hiddenFromSidebar(started, [irgat(false)])).toBe(true);
+  // Nobody left to ask: the saved flag stands.
+  expect(hiddenFromSidebar(started, [])).toBe(true);
+  expect(hiddenFromSidebar({ id: "app-irgat-main-x" }, [irgat(false)])).toBe(false);
+});
 
 it("is idle between turns", () => {
   expect(irgatState({ blocks: [], busy: false })).toEqual({

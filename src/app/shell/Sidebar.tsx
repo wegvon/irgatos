@@ -202,6 +202,7 @@ import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import { SourceControl } from "../../features/source-control/ui/SourceControl";
 import { GithubStarPrompt } from "./GithubStarPrompt";
 import {
+  hiddenFromSidebar,
   isIrgatSession,
   listIrgats,
   IRGAT_STATUS_LABEL,
@@ -736,6 +737,7 @@ function SidebarComponent({
   const worktreeFocus = useWorktreeFocus(cwd);
   const focusedWorktree = remoteProject ? undefined : worktreeFocus;
   useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
+  const roster = listIrgats();
   const listedSessions = mergeFolderSessionSummaries(
     projectSessions,
     remoteProject ? [] : openSessions,
@@ -743,7 +745,7 @@ function SidebarComponent({
   ).filter(
     (session) =>
       !isIrgatSession(session.id) &&
-      !session.sidebarHidden &&
+      !hiddenFromSidebar(session, roster) &&
       !("ephemeral" in session && session.ephemeral) &&
       !isHabitRun(session.id) &&
       !session.orchestrationLeadId &&

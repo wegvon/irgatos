@@ -77,7 +77,7 @@ export function IrgatSettings({
   const lock = useLockOverscroll<HTMLDivElement>();
   const shown = useSyncExternalStore(
     subscribeIrgats,
-    () => findIrgat(irgatId)?.showStartedSessionsInSidebar === true,
+    () => findIrgat(irgatId)?.showStartedSessionsInSidebar !== false,
   );
   const folders = useSyncExternalStore(
     subscribeIrgats,
