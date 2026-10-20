@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::html_text::{decode_entities, html_text};
+use super::quoted::split_quoted;
 use crate::untrusted_text::{clean_text, HiddenPart};
 
 /// Bodies longer than this are cut for the view and for agents.
@@ -37,7 +38,11 @@ pub struct Message {
     pub cc: String,
     pub date: i64,
     pub subject: String,
+    /// What the sender wrote in this message.
     pub body: String,
+    /// The earlier conversation the message quotes under `body`; empty
+    /// when it quotes nothing.
+    pub quoted: String,
     pub unread: bool,
     pub attachments: Vec<String>,
     /// Text in the mail a person cannot see; never part of `body`.
@@ -48,6 +53,17 @@ pub struct Message {
     pub references: String,
     #[serde(skip)]
     pub reply_to: String,
+}
+
+impl Message {
+    /// The body as sent, quote included.
+    pub fn full_body(&self) -> String {
+        if self.quoted.is_empty() {
+            self.body.clone()
+        } else {
+            format!("{}\n\n{}", self.body, self.quoted)
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -183,6 +199,7 @@ pub fn message(m: &Value) -> Message {
         .get("payload")
         .map(|payload| body(payload, &mut hidden))
         .unwrap_or_default();
+    let (text, quoted) = split_quoted(&text);
     Message {
         id: m
             .get("id")
@@ -195,6 +212,7 @@ pub fn message(m: &Value) -> Message {
         date: internal_date(m),
         subject,
         body: text,
+        quoted,
         unread: labels(m).contains(&"UNREAD"),
         attachments,
         hidden,
@@ -434,6 +452,27 @@ mod tests {
                 }
             ]
         })
+    }
+
+    #[test]
+    fn folds_the_quoted_conversation_out_of_the_body() {
+        let html = "<div dir=\"ltr\">Sounds good.<br>Turel</div><br><div class=\"gmail_quote\"><div dir=\"ltr\" class=\"gmail_attr\">On Fri, Oct 16, 2026 at 12:04 Ayşe &lt;ayse@example.com&gt; wrote:<br></div><blockquote class=\"gmail_quote\">Can you send it?</blockquote></div>";
+        let m = message(&json!({
+            "id": "m3",
+            "payload": {
+                "mimeType": "text/html",
+                "headers": [{"name": "From", "value": "Turel <turel@example.com>"}],
+                "body": {"data": b64(html)}
+            }
+        }));
+        assert_eq!(m.body, "Sounds good.\nTurel");
+        assert!(
+            m.quoted.starts_with("On Fri, Oct 16, 2026"),
+            "{:?}",
+            m.quoted
+        );
+        assert!(m.quoted.contains("Can you send it?"));
+        assert!(m.full_body().starts_with("Sounds good.\nTurel\n\nOn Fri"));
     }
 
     #[test]

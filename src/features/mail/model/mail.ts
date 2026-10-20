@@ -34,7 +34,10 @@ export type MailMessage = {
   cc: string;
   date: number;
   subject: string;
+  /** What the sender wrote in this message. */
   body: string;
+  /** The earlier conversation quoted under `body`; empty when none. */
+  quoted?: string;
   unread: boolean;
   attachments: string[];
   hidden: MailHiddenPart[];
@@ -189,11 +192,18 @@ export function senderName(from: string): string {
   return from.trim();
 }
 
-/** Whether `from` is the mailbox's own address. */
-export function isFromMe(from: string, me: string): boolean {
-  if (!me) return false;
-  const address = from.match(/<([^>]+)>/)?.[1] ?? from;
-  return address.trim().toLowerCase() === me.trim().toLowerCase();
+/**
+ * Whether `from` is the mailbox's own address, or one of `others` (the
+ * user's other connected accounts).
+ */
+export function isFromMe(
+  from: string,
+  me: string,
+  others: readonly string[] = [],
+): boolean {
+  const address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();
+  if (!address) return false;
+  return [me, ...others].some((a) => a && a.trim().toLowerCase() === address);
 }
 
 /** `google_gmail.user.personalGmail.` → `personalGmail`. */

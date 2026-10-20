@@ -45,7 +45,7 @@ import {
   type MailThread,
   type MailThreadSummary,
 } from "../model/mail";
-import { HiddenTextNotice } from "./HiddenTextNotice";
+import { MailMessageCard } from "./MailMessageCard";
 
 export type MailAskRequest = {
   account: string;
@@ -241,6 +241,7 @@ export function MailView({
     [],
   );
 
+  const myAddresses = (accounts ?? []).map((a) => a.email).filter(Boolean);
   const showAccount = account === "" && (accounts?.length ?? 0) > 1;
   const hasMore = Object.keys(nextPages).length > 0;
 
@@ -442,6 +443,7 @@ export function MailView({
             accountEmail={
               (accounts?.length ?? 0) > 1 ? emailOf(selected.account) : ""
             }
+            myAddresses={myAddresses}
             threadId={selected.id}
             describeChat={describeChat}
             onLoadChat={onLoadChat}
@@ -772,6 +774,7 @@ function ThreadRow({
 function ThreadDetail({
   account,
   accountEmail,
+  myAddresses,
   threadId,
   describeChat,
   onLoadChat,
@@ -783,6 +786,9 @@ function ThreadDetail({
   account: string;
   /** Shown above the thread when there are several accounts. */
   accountEmail: string;
+  /** Every connected account's address, so mail the user sent from any of
+   *  them reads as theirs. */
+  myAddresses: string[];
   threadId: string;
   describeChat: (sessionId: string) => MailChat | undefined;
   onLoadChat: (sessionId: string) => void;
@@ -1006,37 +1012,12 @@ function ThreadDetail({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {thread.messages.map((m) => (
-          <article
+          <MailMessageCard
             key={m.id}
-            className={`mb-3 rounded-md border border-stroke px-3 py-2 ${
-              isFromMe(m.from, thread.me) ? "bg-content/[0.03]" : ""
-            }`}
-          >
-            <header className="flex items-baseline gap-2 text-[12px]">
-              <span
-                className="min-w-0 flex-1 truncate font-medium"
-                title={m.from}
-              >
-                {isFromMe(m.from, thread.me) ? "You" : senderName(m.from)}
-              </span>
-              <span className="shrink-0 tabular-nums text-content/45">
-                {time(m.date)}
-              </span>
-            </header>
-            <p className="truncate text-[11px] text-content/45" title={m.to}>
-              to {m.to}
-              {m.cc ? `, cc ${m.cc}` : ""}
-            </p>
-            <div className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-relaxed">
-              {m.body || <span className="text-content/40">(no text)</span>}
-            </div>
-            <HiddenTextNotice parts={m.hidden ?? []} />
-            {m.attachments.length ? (
-              <p className="mt-2 text-[11px] text-content/50">
-                Attachments: {m.attachments.join(", ")}
-              </p>
-            ) : null}
-          </article>
+            message={m}
+            mine={isFromMe(m.from, thread.me, myAddresses)}
+            time={time(m.date)}
+          />
         ))}
 
         <section className="mb-3 rounded-md border border-stroke px-3 py-2">
@@ -1086,7 +1067,9 @@ function ThreadDetail({
               }
             }}
             rows={2}
-            placeholder={current ? "Ask a follow-up about this mail" : undefined}
+            placeholder={
+              current ? "Ask a follow-up about this mail" : undefined
+            }
             aria-label="What the agent should do"
             className="mt-2 w-full resize-y rounded-md border border-stroke bg-transparent px-2 py-1.5 text-[13px] outline-none focus:border-content/40"
           />
@@ -1099,18 +1082,12 @@ function ThreadDetail({
             <button
               type="button"
               disabled={
-                busy !== null ||
-                currentBusy ||
-                (!!current && !askText.trim())
+                busy !== null || currentBusy || (!!current && !askText.trim())
               }
               onClick={() => void ask()}
               className="ml-auto rounded-md bg-content px-3 py-1.5 text-[12px] font-medium text-background-base disabled:opacity-40"
             >
-              {busy === "ask"
-                ? "Starting…"
-                : current
-                  ? "Send"
-                  : "Start chat"}
+              {busy === "ask" ? "Starting…" : current ? "Send" : "Start chat"}
             </button>
           </div>
         </section>
