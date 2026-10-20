@@ -67,6 +67,10 @@ export type AgentTreeOptions = {
   interruptedIds?: ReadonlySet<string>;
   irgatName?: (sessionId: string) => string | undefined;
   retries?: AgentRetryLinks;
+  /** Known launches (child -> starter) the sessions' own records may lack. */
+  launchedBy?: Readonly<Record<string, string>>;
+  /** Shown whatever the window, such as the Irgat a tree hangs from. */
+  keepIds?: readonly string[];
 };
 
 export const AGENT_TREE_ROOT_ID = "irgatos";
@@ -301,9 +305,13 @@ export function subagentsOf(
 export function sessionParents(
   sessions: readonly Session[],
   retries: AgentRetryLinks = {},
+  launchedBy: Readonly<Record<string, string>> = {},
 ): Map<string, string> {
   const ids = new Set(sessions.map((session) => session.id));
   const parents = new Map<string, string>();
+  for (const [child, starter] of Object.entries(launchedBy)) {
+    if (child !== starter && ids.has(starter)) parents.set(child, starter);
+  }
   for (const session of sessions) {
     for (const block of session.blocks) {
       for (const spawned of block.irgatSpawnedSessions ?? []) {
@@ -369,14 +377,16 @@ export function buildAgents(
       unique.set(session.id, session);
   }
   const all = [...unique.values()];
-  const parents = sessionParents(all, options.retries);
+  const parents = sessionParents(all, options.retries, options.launchedBy);
   const agents = new Map<string, Agent>();
   for (const session of all) agents.set(session.id, sessionAgent(session, options));
   const keep = new Set<string>();
   const since = options.since ?? 0;
+  const pinned = new Set(options.keepIds ?? []);
   for (const session of all) {
     const agent = agents.get(session.id)!;
     const live =
+      pinned.has(session.id) ||
       agent.status === "running" ||
       agent.status === "needs_you" ||
       lastActivity(session) >= since;
@@ -429,6 +439,13 @@ export function rootAgent(agents: readonly Agent[]): Agent {
   };
 }
 
+function attentionFirst(a: Agent, b: Agent): number {
+  return (
+    STATUS_RANK.indexOf(a.status) - STATUS_RANK.indexOf(b.status) ||
+    (b.startedAt ?? 0) - (a.startedAt ?? 0)
+  );
+}
+
 /** Nest agents under their parents; unknown parents fall back to the root. */
 export function buildAgentTree(agents: readonly Agent[]): AgentTreeNode {
   const root: AgentTreeNode = { ...rootAgent(agents), children: [] };
@@ -439,11 +456,7 @@ export function buildAgentTree(agents: readonly Agent[]): AgentTreeNode {
     (nodes.get(agent.parentId ?? root.id) ?? root).children.push(node);
   }
   // What needs a look leads the top row; below a card, launch order.
-  root.children.sort(
-    (a, b) =>
-      STATUS_RANK.indexOf(a.status) - STATUS_RANK.indexOf(b.status) ||
-      (b.startedAt ?? 0) - (a.startedAt ?? 0),
-  );
+  root.children.sort(attentionFirst);
   const chronological = (node: AgentTreeNode) => {
     if (node !== root)
       node.children.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
@@ -531,4 +544,81 @@ export function formatTokens(tokens: number): string {
   if (tokens < 1000) return `${tokens} tok`;
   if (tokens < 1_000_000) return `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k tok`;
   return `${(tokens / 1_000_000).toFixed(1)}M tok`;
+}
+
+/** A session an Irgat started that is saved but not open: what its record tells. */
+export type LaunchRecord = {
+  sessionId: string;
+  title: string;
+  harness: HarnessId;
+  model: string;
+  createdAt?: number;
+  updatedAt?: number;
+  archived?: boolean;
+};
+
+export type IrgatTreeInput = {
+  irgatSessionId: string;
+  /** Every session the Irgat started, open or not. */
+  launches: readonly LaunchRecord[];
+  sessions: readonly Session[];
+};
+
+function findNode(node: AgentTreeNode, id: string): AgentTreeNode | undefined {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function flattenTree(node: AgentTreeNode): AgentTreeNode[] {
+  return [node, ...node.children.flatMap(flattenTree)];
+}
+
+/**
+ * The tree an Irgat orchestrated: its own chat at the top, the sessions it
+ * started below, and what those started in turn. Sessions that are saved but
+ * not open show what their record knows.
+ */
+export function buildIrgatTree(
+  input: IrgatTreeInput,
+  options: AgentTreeOptions = {},
+): AgentTreeNode | undefined {
+  const launchedBy: Record<string, string> = { ...(options.launchedBy ?? {}) };
+  for (const launch of input.launches)
+    launchedBy[launch.sessionId] ??= input.irgatSessionId;
+  const agents = buildAgents(input.sessions, {
+    ...options,
+    launchedBy,
+    keepIds: [...(options.keepIds ?? []), input.irgatSessionId],
+  });
+  const have = new Set(agents.map((agent) => agent.id));
+  const since = options.since ?? 0;
+  for (const launch of input.launches) {
+    if (have.has(launch.sessionId)) continue;
+    // One with no date is shown rather than guessed away.
+    const at = launch.updatedAt ?? launch.createdAt;
+    if (at !== undefined && at < since) continue;
+    have.add(launch.sessionId);
+    agents.push({
+      id: launch.sessionId,
+      parentId: input.irgatSessionId,
+      name: launch.title || "Session",
+      role: "session",
+      harness: launch.harness,
+      model: modelName(launch.harness, launch.model),
+      task: launch.title || "Saved session",
+      toolIcon: "chat",
+      status: launch.archived ? "stopped" : "done",
+      ...(launch.createdAt ? { startedAt: launch.createdAt } : {}),
+      ...(launch.updatedAt ? { endedAt: launch.updatedAt } : {}),
+      sessionId: launch.sessionId,
+    });
+  }
+  const node = findNode(buildAgentTree(agents), input.irgatSessionId);
+  // What needs a look first, then the newest, as on the top row.
+  node?.children.sort(attentionFirst);
+  return node;
 }

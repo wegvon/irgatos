@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IrgatOverview, type IrgatOverviewTab } from "./IrgatOverview";
+import { newSession } from "../../sessions/model/session";
 
 vi.mock("../model/irgatHabits", async (original) => ({
   ...(await original<object>()),
@@ -132,6 +133,7 @@ it("names only the open tab, with its count, and switches tabs", async () => {
     "closed",
     "closed",
     "closed",
+    "closed",
   ]);
   expect(tabs().map((tab) => tab.getAttribute("aria-label"))).toEqual([
     "All",
@@ -140,6 +142,7 @@ it("names only the open tab, with its count, and switches tabs", async () => {
     "Habits",
     "Changes",
     "Artifacts",
+    "Agents",
     "Settings",
   ]);
   expect(tabs()[1].textContent).toBe("Sessions2");
@@ -301,4 +304,21 @@ it("keeps its settings on their own tab, with soul and memory opening over it", 
   );
   await act(async () => link("Soul").click());
   expect(container.querySelector("[data-irgat-soul]")).not.toBeNull();
+});
+
+it("shows what the Irgat orchestrated as a tree on the Agents tab", async () => {
+  const chat = {
+    ...newSession("claude", "/home"),
+    id: "irgat-chat",
+    title: "Broski",
+    blocks: [
+      { id: "u", role: "user" as const, text: "Plan", startedAt: Date.now() - 1_000, durationMs: 500 },
+    ],
+  };
+  await render("agents", vi.fn(), { irgatSessionId: "irgat-chat", sessions: [chat] });
+  const panel = container.querySelector('[data-irgat-overview="agents"]')!;
+  const cards = [...panel.querySelectorAll<HTMLElement>("[data-agent-id]")];
+  expect(cards[0].dataset.agentId).toBe("irgat-chat");
+  expect(cards[0].textContent).toContain("Broski");
+  expect(cards.map((card) => card.dataset.agentId).sort()).toEqual(["a", "b", "irgat-chat"]);
 });
