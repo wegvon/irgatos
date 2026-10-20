@@ -926,6 +926,23 @@ function TitleBarComponent({
                 <ColumnInsert className="size-3.5" strokeWidth={1.75} />
               </button>
             ) : null}
+            {onToggleIrgatOverview ? (
+              <button
+                type="button"
+                aria-pressed={irgatOverviewOpen}
+                title={irgatOverviewOpen ? "Hide overview" : "Show overview"}
+                data-tauri-drag-region="false"
+                onClick={onToggleIrgatOverview}
+                className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
+                  irgatOverviewOpen
+                    ? "bg-content/10 text-content"
+                    : "bg-content/5 text-content/70 hover:bg-content/8 hover:text-content"
+                }`}
+              >
+                <DashboardSquare className="size-3.5" strokeWidth={1.75} />
+                Overview
+              </button>
+            ) : null}
             {onResetIrgatConversation ? (
               <ConfirmConversationReset
                 name={irgat.look.name}
@@ -945,23 +962,6 @@ function TitleBarComponent({
                   </button>
                 )}
               </ConfirmConversationReset>
-            ) : null}
-            {onToggleIrgatOverview ? (
-              <button
-                type="button"
-                aria-pressed={irgatOverviewOpen}
-                title={irgatOverviewOpen ? "Hide overview" : "Show overview"}
-                data-tauri-drag-region="false"
-                onClick={onToggleIrgatOverview}
-                className={`flex h-6 items-center gap-1.5 rounded-md px-2 text-[12px] ${
-                  irgatOverviewOpen
-                    ? "bg-content/10 text-content"
-                    : "bg-content/5 text-content/70 hover:bg-content/8 hover:text-content"
-                }`}
-              >
-                <DashboardSquare className="size-3.5" strokeWidth={1.75} />
-                Overview
-              </button>
             ) : null}
           </div>
         ) : null}
