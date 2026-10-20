@@ -3011,7 +3011,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         <Row
           id="saturation"
           label="Saturation"
-          description="How strongly the hue tints the interface. Zero keeps it neutral."
+          description="How strongly the hue tints the interface. At zero, dark mode stays neutral and light mode uses a soft warm paper tone."
         >
           <Slider
             label="Saturation"
