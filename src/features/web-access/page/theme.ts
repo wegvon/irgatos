@@ -14,6 +14,7 @@ export function applyAppearance(appearance: WebAppearance) {
   root.classList.toggle("theme-light", light);
   root.style.setProperty("--theme-hue", String(appearance.hue));
   root.style.setProperty("--theme-saturation", `${appearance.saturation}%`);
+  root.classList.toggle("has-theme-tint", appearance.saturation > 0);
   root.style.setProperty(
     "--theme-dark-lightness",
     `${appearance.darkLightness}%`,
@@ -24,7 +25,7 @@ export function applyAppearance(appearance: WebAppearance) {
     .trim();
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", background || (light ? "#f7f7f7" : "#161616"));
+    ?.setAttribute("content", background || (light ? "#f4f1ec" : "#161616"));
   try {
     localStorage.setItem(STORED, JSON.stringify(appearance));
   } catch {

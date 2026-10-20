@@ -20,21 +20,23 @@
 }
 
 html.theme-light .agent-tree {
-  --at-bg: #f4f4f5;
-  --at-card: #ffffff;
-  --at-text: #18181b;
-  --at-muted: #52525b;
-  --at-faint: #71717a;
-  --at-line: #d4d4d8;
-  --at-running: #2563eb;
-  --at-done: #16a34a;
-  --at-needs: #d97706;
-  --at-failed: #dc2626;
-  --at-stopped: #71717a;
-  --at-popover: #ffffff;
-  --at-shadow: 0 12px 32px rgb(0 0 0 / 0.14), 0 2px 6px rgb(0 0 0 / 0.08);
-  --at-solid: #0e0e10;
-  --at-solid-text: #ffffff;
+  --at-bg: var(--color-background-base);
+  --at-card: color-mix(in srgb, var(--color-background-base) 45%, #fffdf8);
+  --at-text: var(--color-content);
+  --at-muted: color-mix(in srgb, var(--color-content) 72%, transparent);
+  --at-faint: color-mix(in srgb, var(--color-content) 52%, transparent);
+  --at-line: color-mix(in srgb, var(--color-content) 18%, transparent);
+  --at-running: #4f7fbf;
+  --at-done: #4a9a6a;
+  --at-needs: #c48a2c;
+  --at-failed: #c75a55;
+  --at-stopped: #8f877c;
+  --at-popover: color-mix(in srgb, var(--color-background-base) 45%, #fffdf8);
+  --at-shadow:
+    0 12px 32px color-mix(in srgb, var(--color-content) 12%, transparent),
+    0 2px 6px color-mix(in srgb, var(--color-content) 7%, transparent);
+  --at-solid: var(--color-content);
+  --at-solid-text: var(--color-background-base);
 }
 
 .agent-tree [data-status="running"] { --at-status: var(--at-running); }

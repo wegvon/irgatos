@@ -96,7 +96,7 @@ const ANSI_LIGHT = {
   blue: "#4078f2",
   magenta: "#a626a4",
   cyan: "#0184bc",
-  white: "#fafafa",
+  white: "#a39c91",
   brightBlack: "#7c8591",
   brightRed: "#df6b60",
   brightGreen: "#68b567",
@@ -104,16 +104,16 @@ const ANSI_LIGHT = {
   brightBlue: "#5c89f5",
   brightMagenta: "#b54bb3",
   brightCyan: "#1f9cc9",
-  brightWhite: "#ffffff",
+  brightWhite: "#c9c2b6",
 };
 
 function terminalTheme(light: boolean) {
   return {
     background: "#00000000",
-    foreground: cssColor("var(--color-content)", light ? "#2e2e2e" : "#e8eef2"),
+    foreground: cssColor("var(--color-content)", light ? "#3b3631" : "#e8eef2"),
     cursor: cssColor("var(--color-accent)", light ? "#4078f2" : "#4da3f5"),
-    cursorAccent: light ? "#ffffff" : "#000000",
-    selectionBackground: light ? "rgba(0,0,0,0.18)" : "rgba(255,255,255,0.18)",
+    cursorAccent: light ? "#f4f1ec" : "#000000",
+    selectionBackground: light ? "rgba(74,60,40,0.16)" : "rgba(255,255,255,0.18)",
     selectionInactiveBackground: light
       ? "rgba(0,0,0,0.08)"
       : "rgba(255,255,255,0.08)",
@@ -140,11 +140,11 @@ function oscColors() {
   return {
     fg: cssHexColor(
       "var(--color-content)",
-      light ? "#2e2e2e" : "#ebebeb",
+      light ? "#3b3631" : "#ebebeb",
     ),
     bg: cssHexColor(
       "var(--color-background-base)",
-      light ? "#f7f7f7" : "#171717",
+      light ? "#f4f1ec" : "#171717",
     ),
     cursor: cssHexColor(
       "var(--color-accent)",

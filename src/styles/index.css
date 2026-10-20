@@ -26,10 +26,10 @@
   /* Preserve descenders in compact labels, including two 10px lines in a 30px tab. */
   --leading-label: 1.4;
   --color-background-base: hsl(
-    var(--theme-hue) var(--theme-saturation) var(--background-lightness)
+    var(--surface-hue) var(--surface-saturation) var(--background-lightness)
   );
   --color-content: hsl(
-    var(--theme-hue) var(--theme-saturation) var(--content-lightness)
+    var(--surface-hue) var(--content-saturation) var(--content-lightness)
   );
   /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
   --color-stroke: color-mix(in srgb, var(--color-content) 7%, transparent);
@@ -123,6 +123,11 @@
   --theme-hue: 240;
   --theme-saturation: 0%;
   --theme-dark-lightness: 9%;
+  /* What surfaces are drawn with: the user's tint, or the light theme's own
+     paper tone when no tint is set (see html.theme-light below). */
+  --surface-hue: var(--theme-hue);
+  --surface-saturation: var(--theme-saturation);
+  --content-saturation: var(--surface-saturation);
   --sidebar-opacity: 0.85;
   --window-background-opacity: 0.4;
   --chat-background-empty-opacity: 0.24;
@@ -144,21 +149,89 @@ html {
   color-scheme: dark;
 }
 
+/* Soft light theme: warm paper instead of white, warm charcoal instead of
+   black, and muted accents. A user tint still wins over the paper tone. */
 html.theme-light {
-  --background-lightness: 97%;
-  --content-lightness: 18%;
-  --link-color: hsl(211 92% 40%);
-  --color-skill: #a07c10;
-  --color-mention: #0284c7;
-  --color-markdown-heading: #be185d;
+  --background-lightness: 95%;
+  --content-lightness: 22%;
+  --link-color: hsl(208 52% 40%);
+  --color-accent: hsl(210 48% 50%);
+  --color-skill: #94761f;
+  --color-mention: #2f7ea8;
+  --color-markdown-heading: #a5436d;
   --selection-subtle-strength: 5%;
   --selection-strength: 6%;
   --selection-strong-strength: 7%;
   --selection-hover-strength: 10%;
   --selection-emphasis-strength: 14%;
-  --color-diff-add-fg: #047857;
-  --color-diff-del-fg: #be123c;
+  --color-diff-add: #3f9f78;
+  --color-diff-add-fg: #2f6f55;
+  --color-diff-del: #cc5a66;
+  --color-diff-del-fg: #a23b48;
   color-scheme: light;
+}
+
+/* Tailwind's pale 200-400 shades are tuned for the dark theme and wash out
+   on paper. In light mode they become deeper, muted inks, so status text
+   such as text-amber-400 stays readable without a dark: variant. */
+html.theme-light {
+  --color-red-200: #c86a66;
+  --color-red-300: #c86a66;
+  --color-red-400: #c0504d;
+  --color-rose-200: #c9677b;
+  --color-rose-300: #c9677b;
+  --color-rose-400: #c04a62;
+  --color-pink-200: #c56b93;
+  --color-pink-300: #c56b93;
+  --color-pink-400: #b8507f;
+  --color-fuchsia-200: #b466b4;
+  --color-fuchsia-300: #b466b4;
+  --color-fuchsia-400: #a64aa6;
+  --color-purple-200: #9a72c4;
+  --color-purple-300: #9a72c4;
+  --color-purple-400: #8a5bb8;
+  --color-violet-200: #8676c8;
+  --color-violet-300: #8676c8;
+  --color-violet-400: #7560c0;
+  --color-indigo-200: #6f78c2;
+  --color-indigo-300: #6f78c2;
+  --color-indigo-400: #5a64b8;
+  --color-blue-200: #5f84c2;
+  --color-blue-300: #5f84c2;
+  --color-blue-400: #4a72b8;
+  --color-sky-200: #5590b5;
+  --color-sky-300: #5590b5;
+  --color-sky-400: #3f7fa8;
+  --color-cyan-200: #4795a3;
+  --color-cyan-300: #4795a3;
+  --color-cyan-400: #2f8494;
+  --color-teal-200: #479588;
+  --color-teal-300: #479588;
+  --color-teal-400: #2f8577;
+  --color-emerald-200: #4f9a74;
+  --color-emerald-300: #4f9a74;
+  --color-emerald-400: #3a8a62;
+  --color-green-200: #5f9a5f;
+  --color-green-300: #5f9a5f;
+  --color-green-400: #4a8a4a;
+  --color-lime-200: #7d9a40;
+  --color-lime-300: #7d9a40;
+  --color-lime-400: #6b8a2a;
+  --color-yellow-200: #b39236;
+  --color-yellow-300: #b39236;
+  --color-yellow-400: #a8841c;
+  --color-amber-200: #ba8734;
+  --color-amber-300: #ba8734;
+  --color-amber-400: #b0761c;
+  --color-orange-200: #c47d45;
+  --color-orange-300: #c47d45;
+  --color-orange-400: #bc6a2c;
+}
+
+html.theme-light:not(.has-theme-tint) {
+  --surface-hue: 40;
+  --surface-saturation: 26%;
+  --content-saturation: 9%;
 }
 
 /* Blue/orange stays distinguishable for protanopia, deuteranopia and
@@ -2603,8 +2676,8 @@ html.has-user-accent .agent-chat-user-bubble {
 }
 
 html.theme-light .agent-chat-user-bubble {
-  background: #0a0a0a;
-  color: #fff;
+  background: color-mix(in srgb, var(--color-content) 9%, transparent);
+  color: var(--color-content);
 }
 
 html.theme-light.has-user-accent .agent-chat-user-bubble {
@@ -2613,11 +2686,11 @@ html.theme-light.has-user-accent .agent-chat-user-bubble {
 }
 
 html.theme-light .irgat-pill {
-  background: #fff;
-  border-color: rgb(0 0 0 / 0.06);
+  background: color-mix(in srgb, var(--color-background-base) 40%, #fffdf8);
+  border-color: color-mix(in srgb, var(--color-content) 6%, transparent);
   box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.06),
-    0 4px 14px rgb(0 0 0 / 0.08);
+    0 1px 2px color-mix(in srgb, var(--color-content) 6%, transparent),
+    0 4px 14px color-mix(in srgb, var(--color-content) 8%, transparent);
 }
 
 /* Agent chat bubbles: trim only the outer edges so paragraphs keep their gaps.

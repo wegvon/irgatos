@@ -306,6 +306,11 @@ export function applyThemeTint(hue: number, saturation: number) {
     "--theme-saturation",
     `${nextSaturation}%`,
   );
+  // Without a tint the light theme uses its own warm paper tone.
+  document.documentElement.classList.toggle(
+    "has-theme-tint",
+    nextSaturation > 0,
+  );
   refreshNativeTint();
   return { hue: nextHue, saturation: nextSaturation };
 }
@@ -409,8 +414,8 @@ function opaqueWindowBackground(): Rgb {
     return Number.isFinite(value) ? value : fallback;
   };
   return hslToRgb(
-    read("--theme-hue", THEME_HUE_DEFAULT),
-    read("--theme-saturation", THEME_SATURATION_DEFAULT),
+    read("--surface-hue", THEME_HUE_DEFAULT),
+    read("--surface-saturation", THEME_SATURATION_DEFAULT),
     read("--background-lightness", THEME_DARK_LIGHTNESS_DEFAULT),
   );
 }
