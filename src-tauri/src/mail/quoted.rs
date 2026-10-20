@@ -93,7 +93,8 @@ fn is_attribution(lines: &[&str], i: usize) -> bool {
     // Gmail wraps a long "On …" line so "wrote:" lands on the next one.
     let lower = line.to_lowercase();
     let starts_well = ATTRIBUTION_STARTS.iter().any(|s| lower.starts_with(s))
-        || line.starts_with(|c: char| c.is_ascii_digit());
+        || line.starts_with(|c: char| c.is_ascii_digit())
+        || line.contains('@');
     match lines.get(i + 1).map(|l| l.trim()) {
         Some(next) if starts_well && next.chars().count() < 60 => {
             looks_like_attribution(&format!("{line} {next}"))
@@ -200,6 +201,15 @@ mod tests {
         );
         assert!(quoted.starts_with("________________________________\nFrom: Turel"));
         assert!(quoted.ends_with("Hello Eglė,"));
+    }
+
+    #[test]
+    fn folds_turkish_gmail_attribution_wrapped_after_the_name() {
+        let text = "Teşekkürler, iyi günler dilerim.\n\nMERVE BAYAM\n\n\n\nTürel Özdil <turel@idealhosting.net>, 8 Eki 2026 Per, 18:13 tarihinde şunu\nyazdı:\n\n> Merhaba Merve Hanım,\n>\n> Teklif için teşekkür ederim.";
+        let (new, quoted) = split_quoted(text);
+        assert_eq!(new, "Teşekkürler, iyi günler dilerim.\n\nMERVE BAYAM");
+        assert!(quoted.starts_with("Türel Özdil <turel@idealhosting.net>, 8 Eki"));
+        assert!(quoted.ends_with("> Teklif için teşekkür ederim."));
     }
 
     #[test]
