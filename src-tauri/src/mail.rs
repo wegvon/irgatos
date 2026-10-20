@@ -10,6 +10,7 @@
 mod executor;
 mod gmail;
 mod html_text;
+mod quoted;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -517,7 +518,7 @@ fn agent_view(thread: &Thread) -> Value {
                 "to": m.to,
                 "cc": m.cc,
                 "date": m.date,
-                "body": fenced(&m.body),
+                "body": fenced(&m.full_body()),
                 "attachments": m.attachments,
             });
             if !m.hidden.is_empty() {

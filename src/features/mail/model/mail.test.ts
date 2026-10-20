@@ -52,6 +52,13 @@ describe("isFromMe", () => {
     expect(isFromMe("Bob <bob@example.com>", "turel@example.com")).toBe(false);
     expect(isFromMe("turel@example.com", "")).toBe(false);
   });
+
+  it("counts the user's other accounts as theirs too", () => {
+    const others = ["t@zvc.net", ""];
+    expect(isFromMe("Turel Ozdil <T@zvc.net>", "me@x.com", others)).toBe(true);
+    expect(isFromMe("Eglė <egle.b@ipxo.com>", "me@x.com", others)).toBe(false);
+    expect(isFromMe("", "", ["", ""])).toBe(false);
+  });
 });
 
 describe("mailContext", () => {
