@@ -4,11 +4,14 @@ import {
   connectionName,
   DEFAULT_MAIL_FOLDER,
   executorAccountsUrl,
+  isDeleteShortcut,
   isFromMe,
   MAIL_FOLDERS,
   mailContext,
   mailQuery,
   needsReconnect,
+  neighbourOf,
+  restoreRow,
   senderName,
 } from "./mail";
 
@@ -116,5 +119,37 @@ describe("expired Gmail accounts", () => {
         "google_gmail.user.personalGmail.",
       ),
     ).toBe("https://executor.zvc.net/integrations/google_gmail?tab=accounts");
+  });
+});
+
+describe("deleting a thread", () => {
+  const same = (a: string, b: string) => a === b;
+
+  it("opens the next mail, or the previous one at the end", () => {
+    expect(neighbourOf(["a", "b", "c"], 0)).toBe("b");
+    expect(neighbourOf(["a", "b", "c"], 2)).toBe("b");
+    expect(neighbourOf(["a"], 0)).toBeNull();
+    expect(neighbourOf(["a", "b"], -1)).toBeNull();
+  });
+
+  it("puts an undone delete back where it was", () => {
+    expect(restoreRow(["a", "c"], "b", 1, same)).toEqual(["a", "b", "c"]);
+    expect(restoreRow(["a"], "b", 5, same)).toEqual(["a", "b"]);
+    expect(restoreRow(["a", "b"], "b", 0, same)).toEqual(["a", "b"]);
+  });
+
+  it("deletes on ⌫ or ⌦, alone or with ⌘", () => {
+    const key = (k: string, mods: Partial<Record<string, boolean>> = {}) => ({
+      key: k,
+      altKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      ...mods,
+    });
+    expect(isDeleteShortcut(key("Backspace"))).toBe(true);
+    expect(isDeleteShortcut(key("Delete"))).toBe(true);
+    expect(isDeleteShortcut(key("Backspace", { metaKey: true }))).toBe(true);
+    expect(isDeleteShortcut(key("Backspace", { altKey: true }))).toBe(false);
+    expect(isDeleteShortcut(key("a"))).toBe(false);
   });
 });

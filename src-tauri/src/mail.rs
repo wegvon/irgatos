@@ -362,7 +362,21 @@ pub async fn mail_send_draft(
     .await
 }
 
-/// `action`: "read" marks the thread read, "archive" takes it out of Inbox.
+/// The script and its input for a `mail_modify` action.
+fn modify_script(action: &str, thread_id: &str) -> Result<(&'static str, Value), String> {
+    let remove = |label: &str| json!({ "threadId": thread_id, "remove": [label] });
+    match action {
+        "read" => Ok((executor::MODIFY, remove("UNREAD"))),
+        "archive" => Ok((executor::MODIFY, remove("INBOX"))),
+        "trash" => Ok((executor::TRASH, json!({ "threadId": thread_id }))),
+        "untrash" => Ok((executor::UNTRASH, json!({ "threadId": thread_id }))),
+        _ => Err("Unknown mail action".into()),
+    }
+}
+
+/// `action`: "read" marks the thread read, "archive" takes it out of Inbox,
+/// "trash" moves it to Trash and "untrash" brings it back. Only the Mail
+/// page calls this; agents have no way to reach it.
 #[tauri::command]
 pub async fn mail_modify(
     app: AppHandle,
@@ -371,19 +385,11 @@ pub async fn mail_modify(
     action: String,
 ) -> Result<(), String> {
     let thread_id = valid_id(&thread_id)?;
-    let remove = match action.as_str() {
-        "read" => "UNREAD",
-        "archive" => "INBOX",
-        _ => return Err("Unknown mail action".into()),
-    };
+    let (script, input) = modify_script(&action, &thread_id)?;
     blocking(app, move |dir| {
         let executor = connect(dir)?;
         let account = executor.account(&account)?;
-        executor.run(
-            executor::MODIFY,
-            &account,
-            json!({ "threadId": thread_id, "remove": [remove] }),
-        )?;
+        executor.run(script, &account, input)?;
         Ok(())
     })
     .await
@@ -536,6 +542,20 @@ fn agent_view(thread: &Thread) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modify_actions_pick_their_script() {
+        let (script, input) = modify_script("trash", "t1").unwrap();
+        assert!(script.contains("users.threads.trash"));
+        assert_eq!(input, json!({ "threadId": "t1" }));
+        let (script, _) = modify_script("untrash", "t1").unwrap();
+        assert!(script.contains("users.threads.untrash"));
+        let (script, input) = modify_script("archive", "t1").unwrap();
+        assert!(script.contains("users.threads.modify"));
+        assert_eq!(input["remove"], json!(["INBOX"]));
+        // Never a permanent delete.
+        assert!(modify_script("delete", "t1").is_err());
+    }
 
     #[test]
     fn validates_gmail_ids() {
