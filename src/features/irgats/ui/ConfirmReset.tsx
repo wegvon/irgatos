@@ -90,3 +90,30 @@ export function ConfirmReset({
     </>
   );
 }
+
+/** Clearing an Irgat's conversation, asked the same way wherever it is offered. */
+export function ConfirmConversationReset({
+  name,
+  onConfirm,
+  children,
+}: {
+  name: string;
+  onConfirm: () => Promise<void>;
+  children: (
+    open: () => void,
+    ref: RefObject<HTMLButtonElement | null>,
+  ) => ReactNode;
+}) {
+  return (
+    <ConfirmReset
+      label="Reset conversation"
+      title={`Reset ${name}'s conversation?`}
+      body="All messages in this Irgat's conversation will be deleted and any active reply will be stopped. This can't be undone."
+      kept="Its soul, memory and habits will be kept."
+      failure="Could not reset the conversation."
+      onConfirm={onConfirm}
+    >
+      {children}
+    </ConfirmReset>
+  );
+}

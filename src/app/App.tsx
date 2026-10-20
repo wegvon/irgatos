@@ -15593,6 +15593,11 @@ function Workspace({
       onNewIrgatChatBeside={
         irgatCovers && irgatViewIrgat ? onNewChatBeside : undefined
       }
+      onResetIrgatConversation={
+        irgatCovers && irgatViewIrgat && irgatViewSession
+          ? () => onResetIrgat(irgatViewSession.id)
+          : undefined
+      }
       hideWindowControls={irgatCovers && irgatSidebarOpen && !!irgatOverviewPanel}
       activeId={irgatViewSession ? "" : activeTabId}
       cwd={sidebarCwd}

@@ -24,7 +24,7 @@ import {
 } from "../model/irgat";
 import type { IrgatFiles } from "../model/irgatFiles";
 import { memoryLines } from "../model/irgatMemory";
-import { ConfirmReset } from "./ConfirmReset";
+import { ConfirmConversationReset } from "./ConfirmReset";
 import { IrgatProjects } from "./IrgatProjects";
 import { ColorPicker, MascotPicker, SwitchRow } from "./irgatPanelParts";
 
@@ -193,14 +193,7 @@ export function IrgatSettings({
       {onReset ? (
         <>
           <GroupHeading title="Conversation" />
-          <ConfirmReset
-            label="Reset conversation"
-            title={`Reset ${agent.name}'s conversation?`}
-            body="All messages in this Irgat's conversation will be deleted and any active reply will be stopped. This can't be undone."
-            kept="Its soul, memory and habits will be kept."
-            failure="Could not reset the conversation."
-            onConfirm={onReset}
-          >
+          <ConfirmConversationReset name={agent.name} onConfirm={onReset}>
             {(open, ref) => (
               <SettingGroup>
                 <SettingRow
@@ -218,7 +211,7 @@ export function IrgatSettings({
                 </SettingRow>
               </SettingGroup>
             )}
-          </ConfirmReset>
+          </ConfirmConversationReset>
         </>
       ) : null}
     </div>
