@@ -30,6 +30,24 @@ const STATE_LABEL: Record<Service["state"], string> = {
   offline: "Offline",
 };
 
+/** The Mac's icon with a dot in its worst service color. */
+export function MacIcon({
+  tone,
+  small = false,
+}: {
+  tone: Tone;
+  small?: boolean;
+}) {
+  return (
+    <span className="relative">
+      <Monitor className={small ? "size-5" : "size-[22px]"} />
+      <span
+        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 rounded-full ring-2 ring-(--color-background-base) ${small ? "size-2" : "size-2.5"}`}
+      />
+    </span>
+  );
+}
+
 /** The worst state at a glance. */
 export function macTone(
   services: Service[] | undefined,

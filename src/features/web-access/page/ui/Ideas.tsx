@@ -301,9 +301,7 @@ function Column({
       ) : null}
       <div
         className={`web-scroll flex min-h-0 flex-1 flex-col gap-2.5 ${
-          wide
-            ? "px-2.5 pb-3"
-            : "px-4 pb-[calc(var(--tab-height)+var(--safe-bottom)+40px)] pt-3"
+          wide ? "px-2.5 pb-3" : "px-4 pb-[calc(var(--safe-bottom)+24px)] pt-3"
         }`}
       >
         {cards.map((card) => (

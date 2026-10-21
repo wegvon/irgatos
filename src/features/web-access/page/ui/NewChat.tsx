@@ -8,7 +8,7 @@ import {
 import type { HarnessId } from "../../../sessions/model/session";
 import type { WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
-import { leaveSheetFor } from "../route";
+import { leaveSheetFor, navigate } from "../route";
 import { Harness, BrandMark, Spinner, useAction } from "./parts";
 import {
   ArrowUp,
@@ -51,16 +51,25 @@ const draft: { text: string; cwd: string; harness: HarnessId | null } = {
   harness: null,
 };
 
+/** The composer's field, so a "New chat" button elsewhere can focus it. */
+export const NEW_CHAT_FIELD = "new-chat-field";
+
 /**
  * Start a chat on the Mac, laid out like an assistant: say what to do (or
- * tap a suggestion), pick where it works and which agent, send.
+ * tap a suggestion), pick where it works and which agent, send. `children`
+ * takes the greeting's place above the composer, e.g. the phone's inbox.
  */
 export function NewChat({
   owner,
   header,
+  inline = false,
+  children,
 }: {
   owner?: string;
   header?: ReactNode;
+  /** A screen of its own rather than a sheet over one. */
+  inline?: boolean;
+  children?: ReactNode;
 }) {
   const [projects, setProjects] = useState<WebProjects | null>(null);
   const [error, setError] = useState("");
@@ -109,40 +118,52 @@ export function NewChat({
     );
     if (!result) return;
     Object.assign(draft, { text: "", cwd: "", harness: null });
-    leaveSheetFor({ name: "chat", id: result.sessionId });
+    const chat = { name: "chat", id: result.sessionId } as const;
+    if (inline) {
+      // The phone's start screen stays mounted under the chat: clear it,
+      // and keep it in the history so Back returns to it.
+      setText("");
+      setCwd("");
+      setHarness(null);
+      navigate(chat);
+    } else leaveSheetFor(chat);
   };
 
   return (
     <div className="flex h-full flex-col">
       {header}
-      <div className="web-scroll flex min-h-0 flex-1 flex-col items-center px-6">
-        <div className="my-auto flex w-full max-w-[420px] flex-col items-center py-8 text-center">
-          <BrandMark className="size-16 rounded-2xl" />
-          <h2 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-(--ink)">
-            Hey{owner ? ` ${owner}` : ""}, I'm Irgatos
-          </h2>
-          <p className="mt-2 max-w-[30ch] text-[15px] leading-snug text-(--ink-2)">
-            Start an agent on your Mac. Say what to do, pick where it works.
-          </p>
-          <div className="mt-6 flex flex-col items-center gap-2.5">
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion.text}
-                onClick={() => {
-                  setText(suggestion.text);
-                  field.current?.focus();
-                }}
-                className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
-              >
-                <span className="flex size-6 items-center justify-center text-(--ink-2)">
-                  {suggestion.icon}
-                </span>
-                {suggestion.text}
-              </button>
-            ))}
+      {children ? (
+        <div className="web-scroll min-h-0 flex-1">{children}</div>
+      ) : (
+        <div className="web-scroll flex min-h-0 flex-1 flex-col items-center px-6">
+          <div className="my-auto flex w-full max-w-[420px] flex-col items-center py-8 text-center">
+            <BrandMark className="size-16 rounded-2xl" />
+            <h2 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.02em] text-(--ink)">
+              Hey{owner ? ` ${owner}` : ""}, I'm Irgatos
+            </h2>
+            <p className="mt-2 max-w-[30ch] text-[15px] leading-snug text-(--ink-2)">
+              Start an agent on your Mac. Say what to do, pick where it works.
+            </p>
+            <div className="mt-6 flex flex-col items-center gap-2.5">
+              {SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion.text}
+                  onClick={() => {
+                    setText(suggestion.text);
+                    field.current?.focus();
+                  }}
+                  className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
+                >
+                  <span className="flex size-6 items-center justify-center text-(--ink-2)">
+                    {suggestion.icon}
+                  </span>
+                  {suggestion.text}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="shrink-0 px-3 pb-[max(var(--safe-bottom),12px)]">
         <div className="mx-auto w-full max-w-[640px]">
@@ -209,6 +230,7 @@ export function NewChat({
             <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
               <textarea
                 ref={field}
+                id={NEW_CHAT_FIELD}
                 rows={1}
                 value={text}
                 onChange={(event) => setText(event.target.value)}
