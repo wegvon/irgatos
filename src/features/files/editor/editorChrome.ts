@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { cspStyleNonce } from "../../../shared/lib/csp";
 import type { ColorScheme } from "../../settings/model/appearance";
 import { editorHighlightStyleFor } from "./editorLanguage";
+import { bumpedFontSize } from "../../../shared/ui/uiFontBump";
 
 export {
   editorHighlightStyleFor,
@@ -17,7 +18,7 @@ function editorThemeStyles(dark: boolean) {
       height: "100%",
       backgroundColor: "transparent",
       color: "var(--color-content)",
-      fontSize: "13px",
+      fontSize: bumpedFontSize(13),
       userSelect: "text",
     },
     "&.cm-focused": {
@@ -102,7 +103,7 @@ function editorThemeStyles(dark: boolean) {
     },
     ".cm-tooltip-autocomplete > ul": {
       fontFamily: "var(--font-mono)",
-      fontSize: "12px",
+      fontSize: bumpedFontSize(12),
       maxHeight: "240px",
     },
     ".cm-tooltip-autocomplete > ul > li": {

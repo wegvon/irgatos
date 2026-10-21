@@ -25,6 +25,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import type { UnifiedLine } from "../../source-control/model/unifiedDiff";
+import { bumpedFontSize } from "../../../shared/ui/uiFontBump";
 
 const DIFF_CONFIG = { scanLimit: 5_000, timeout: 100 };
 
@@ -1167,7 +1168,7 @@ const gitTheme = EditorView.theme({
     height: "100%",
     boxSizing: "border-box",
     fontFamily: "var(--font-mono)",
-    fontSize: "11px",
+    fontSize: bumpedFontSize(11),
     fontWeight: "600",
     lineHeight: `${LINE_HEIGHT}px`,
     textAlign: "center",

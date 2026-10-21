@@ -32,6 +32,7 @@ import {
   handleFilePreviewFindKey,
   openFindInActiveFilePreview,
 } from "../ui/FilePreviewSearch";
+import { bumpedFontSize } from "../../../shared/ui/uiFontBump";
 
 const MATCH_CAP = 999;
 const panels = new WeakMap<EditorView, FindPanel>();
@@ -776,7 +777,7 @@ const findTheme = EditorView.theme(
       background: "transparent",
       color: "var(--color-content)",
       fontFamily: "var(--font-mono)",
-      fontSize: "12px",
+      fontSize: bumpedFontSize(12),
       userSelect: "text",
     },
     ".cm-find-count": {
@@ -787,7 +788,7 @@ const findTheme = EditorView.theme(
       overflow: "hidden",
       color: "color-mix(in srgb, var(--color-content) 45%, transparent)",
       fontFamily: "var(--font-mono)",
-      fontSize: "11px",
+      fontSize: bumpedFontSize(11),
       fontVariantNumeric: "tabular-nums",
       textAlign: "right",
       textOverflow: "ellipsis",
@@ -805,7 +806,7 @@ const findTheme = EditorView.theme(
       width: "24px",
       height: "24px",
       fontFamily: "var(--font-mono)",
-      fontSize: "11px",
+      fontSize: bumpedFontSize(11),
       fontWeight: "600",
     },
     ".cm-find-toggle.is-active": {
@@ -820,7 +821,7 @@ const findTheme = EditorView.theme(
     ".cm-find-text": {
       height: "24px",
       padding: "0 8px",
-      fontSize: "11px",
+      fontSize: bumpedFontSize(11),
     },
     ".cm-searchMatch": {
       backgroundColor: "color-mix(in srgb, #e2c08d 46%, transparent)",

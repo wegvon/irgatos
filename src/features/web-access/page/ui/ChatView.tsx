@@ -315,7 +315,7 @@ function Transcript({
     <div className="relative min-h-0 flex-1">
       <div
         ref={scroller}
-        className="web-scroll web-selectable h-full"
+        className="chat-text web-scroll web-selectable h-full"
         onScroll={(event) => {
           const element = event.currentTarget;
           const near =
