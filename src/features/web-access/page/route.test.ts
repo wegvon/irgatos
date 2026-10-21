@@ -3,7 +3,8 @@ import { href, isSheet, parseRoute } from "./route";
 
 describe("browser page routes", () => {
   it("reads every screen and sheet from the hash", () => {
-    expect(parseRoute("")).toEqual({ name: "today" });
+    expect(parseRoute("")).toEqual({ name: "home" });
+    expect(parseRoute("#/today")).toEqual({ name: "today" });
     expect(parseRoute("#/chats")).toEqual({ name: "chats" });
     expect(parseRoute("#/chats/running")).toEqual({
       name: "chats",
@@ -21,7 +22,7 @@ describe("browser page routes", () => {
     expect(parseRoute("#/chat/")).toEqual({ name: "chats" });
     expect(parseRoute("#/idea")).toEqual({ name: "ideas" });
     expect(parseRoute("#/chats/everything")).toEqual({ name: "chats" });
-    expect(parseRoute("#/nowhere")).toEqual({ name: "today" });
+    expect(parseRoute("#/nowhere")).toEqual({ name: "home" });
   });
 
   it("round-trips through href", () => {

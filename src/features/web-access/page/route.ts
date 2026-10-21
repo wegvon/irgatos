@@ -7,6 +7,8 @@ import { FLEET_BUCKETS, type FleetBucket } from "../../fleet/model/fleet";
  * idea) open over the screen underneath, which stays mounted.
  */
 export type Route =
+  /** The phone's start: what waits on you, then a new chat. */
+  | { name: "home" }
   | { name: "today" }
   /** `filter` keeps the list to one Fleet bucket. */
   | { name: "chats"; filter?: FleetBucket }
@@ -19,7 +21,7 @@ export type Route =
 
 export type Screen = Extract<
   Route,
-  { name: "today" | "chats" | "chat" | "irgats" | "ideas" }
+  { name: "home" | "today" | "chats" | "chat" | "irgats" | "ideas" }
 >;
 export type Sheet = Exclude<Route, Screen>;
 
@@ -33,6 +35,7 @@ export function parseRoute(hash: string): Route {
         : { name };
     case "chat":
       return value ? { name, id: value } : { name: "chats" };
+    case "today":
     case "irgats":
     case "ideas":
       return { name };
@@ -42,7 +45,7 @@ export function parseRoute(hash: string): Route {
     case "services":
       return { name };
     default:
-      return { name: "today" };
+      return { name: "home" };
   }
 }
 
@@ -60,7 +63,7 @@ export function isSheet(route: Route): route is Sheet {
 
 /** The screen a sheet opens over when the page is opened straight onto it. */
 function screenUnder(route: Sheet): Screen {
-  return route.name === "idea" ? { name: "ideas" } : { name: "today" };
+  return route.name === "idea" ? { name: "ideas" } : { name: "home" };
 }
 
 let openedSheetHere = false;

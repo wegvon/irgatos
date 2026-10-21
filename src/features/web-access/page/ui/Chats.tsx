@@ -14,7 +14,7 @@ export function allEntries(overview: WebOverview): FleetEntry[] {
   return FLEET_BUCKETS.flatMap((bucket) => overview[bucket]);
 }
 
-function matches(entry: FleetEntry, query: string) {
+export function matches(entry: FleetEntry, query: string) {
   const text =
     `${entry.title} ${place(entry)} ${entry.branch ?? ""}`.toLowerCase();
   return query

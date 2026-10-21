@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
@@ -7,6 +7,8 @@ import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
 import { ChatRow } from "./ui/ChatRow";
+import { Drawer, startNewChat } from "./ui/Drawer";
+import { Home } from "./ui/Home";
 import { Chats, allEntries } from "./ui/Chats";
 import { IdeaDetail } from "./ui/IdeaDetail";
 import { Ideas } from "./ui/Ideas";
@@ -14,6 +16,7 @@ import { Irgats } from "./ui/Irgats";
 import { Login } from "./ui/Login";
 import { NewChat } from "./ui/NewChat";
 import {
+  MacIcon,
   ServicesChip,
   ServicesSheet,
   macSummary,
@@ -27,17 +30,16 @@ import {
   IconBadge,
   NeedsYouButton,
   RoundButton,
-  TONE,
   primaryButton,
   useNow,
-  type Tone,
 } from "./ui/parts";
 import {
   Bot,
   Idea,
+  Menu,
   MessageSquare,
-  Monitor,
   PanelLeft,
+  PenLine,
   Plus,
   Radar,
   WifiOff,
@@ -58,9 +60,9 @@ function storedSidebar(): boolean {
   }
 }
 
-/** Today, then the open approvals and questions on it. */
-function showNeedsYou() {
-  navigate({ name: "today" });
+/** The open approvals and questions: on Today, or the phone's start. */
+function showNeedsYou(wide: boolean) {
+  navigate({ name: wide ? "today" : "home" });
   window.setTimeout(
     () =>
       document
@@ -71,16 +73,21 @@ function showNeedsYou() {
 }
 
 /**
- * The browser page: on the phone a floating tab bar under 768px, on the iPad
- * a floating sidebar next to the open screen. Both read the same live data.
+ * The browser page: on the phone, chat first under 768px (what waits on you
+ * above a composer, everything else in a menu from the left); on the iPad a
+ * sidebar next to the open screen. Both read the same live data.
  */
 export function WebApp({ triedToken }: { triedToken: boolean }) {
   const [signedOut, setSignedOut] = useState(false);
   const wide = useMediaQuery("(min-width: 768px)");
-  const { screen, sheet, closeSheet } = useRoute();
+  const { route, screen, sheet, closeSheet } = useRoute();
   const [last, setLast] = useState<Tab>(() =>
-    screen.name === "chat" ? { name: "today" } : screen,
+    screen.name === "chat" ? { name: "home" } : screen,
   );
+  const [menu, setMenu] = useState(false);
+  const edge = useRef<number | null>(null);
+  // Any move, from the menu or a link, closes it.
+  useEffect(() => setMenu(false), [route]);
   const tab = last.name;
   const [sidebar, setSidebar] = useState(storedSidebar);
   const toggleSidebar = () =>
@@ -153,7 +160,28 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   if (signedOut || overview.error instanceof SignedOut)
     return <Login invalid={triedToken} />;
 
-  const bell = <NeedsYouButton count={needsYou} onClick={showNeedsYou} />;
+  const bell = (
+    <NeedsYouButton count={needsYou} onClick={() => showNeedsYou(wide)} />
+  );
+  const menuButton = (
+    <button
+      aria-label={needsYou ? `Menu, ${needsYou} waiting on you` : "Menu"}
+      onClick={() => setMenu(true)}
+      className="web-press relative flex size-10 shrink-0 items-center justify-center rounded-full text-(--ink) active:bg-content/8"
+    >
+      <Menu className="size-6" />
+      {needsYou ? <Badge>{needsYou}</Badge> : null}
+    </button>
+  );
+  const newChatButton = (
+    <button
+      aria-label="New chat"
+      onClick={startNewChat}
+      className="web-press flex size-10 shrink-0 items-center justify-center rounded-full text-(--ink) active:bg-content/8"
+    >
+      <PenLine className="size-[22px]" />
+    </button>
+  );
   const header = wide ? (
     <>
       <span />
@@ -167,16 +195,11 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     </>
   ) : (
     <>
-      <Brand />
-      <span className="flex items-center gap-2">
-        <RoundButton
-          label="Your Mac"
-          onClick={() => openSheet({ name: "services" })}
-        >
-          <MacIcon tone={mac} small />
-        </RoundButton>
-        {bell}
+      <span className="-ml-2 flex items-center gap-1">
+        {menuButton}
+        <Brand />
       </span>
+      <span className="-mr-2">{newChatButton}</span>
     </>
   );
 
@@ -213,7 +236,19 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     ) : null;
 
   const tabView = (name: Tab["name"]) =>
-    name === "ideas" ? (
+    name === "home" && !wide ? (
+      <Home
+        overview={overview.data}
+        now={now}
+        header={
+          <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center px-1.5 pt-(--safe-top) [box-sizing:content-box]">
+            <span className="flex">{menuButton}</span>
+            <Brand />
+            <span className="flex justify-end">{newChatButton}</span>
+          </header>
+        }
+      />
+    ) : name === "ideas" ? (
       <Ideas
         ideas={ideas.data}
         mutate={ideas.mutate}
@@ -222,10 +257,8 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
         header={header}
       />
     ) : (
-      <div
-        className={`web-scroll h-full ${wide ? "" : "pb-[calc(var(--tab-height)+max(var(--safe-bottom),14px)+20px)]"}`}
-      >
-        {name === "today" ? (
+      <div className={`web-scroll h-full ${wide ? "" : "pb-(--safe-bottom)"}`}>
+        {name === "today" || name === "home" ? (
           <Today
             overview={overview.data}
             ideas={ideas.data}
@@ -300,7 +333,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 <NavItem
                   icon={<Radar className="size-5" />}
                   label="Today"
-                  on={screen.name === "today"}
+                  on={screen.name === "today" || screen.name === "home"}
                   count={needsYou}
                   onClick={() => navigate({ name: "today" })}
                 />
@@ -385,7 +418,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               </button>
               <RailItem
                 label="Today"
-                on={screen.name === "today"}
+                on={screen.name === "today" || screen.name === "home"}
                 badge={needsYou}
                 onClick={() => navigate({ name: "today" })}
               >
@@ -449,50 +482,31 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   const chatOpen = screen.name === "chat";
   return (
     <div className="relative h-full overflow-hidden pl-(--safe-left) pr-(--safe-right)">
-      <div className="h-full" inert={chatOpen || !!sheet}>
+      <div
+        className="h-full"
+        inert={chatOpen || !!sheet}
+        // A swipe in from the left edge opens the menu, as in ChatGPT.
+        onTouchStart={(event) => {
+          const x = event.touches[0]?.clientX ?? 99;
+          edge.current = !menu && x < 24 ? x : null;
+        }}
+        onTouchMove={(event) => {
+          if (edge.current === null) return;
+          if ((event.touches[0]?.clientX ?? 0) - edge.current > 50) {
+            edge.current = null;
+            setMenu(true);
+          }
+        }}
+      >
         {tabView(tab)}
-        <nav className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-5 pb-[max(var(--safe-bottom),14px)]">
-          {/* Content fades out under the bar instead of running into it. */}
-          <div className="absolute inset-x-0 bottom-0 h-[calc(var(--tab-height)+max(var(--safe-bottom),14px)+28px)] bg-[linear-gradient(to_top,var(--color-background-base)_35%,transparent)]" />
-          <div className="relative glass-float pointer-events-auto flex h-(--tab-height) items-center gap-1 rounded-full px-2">
-            <TabButton
-              label="Today"
-              on={tab === "today"}
-              badge={needsYou}
-              onClick={() => navigate({ name: "today" })}
-            >
-              <Radar className="size-[22px]" />
-            </TabButton>
-            <TabButton
-              label="Chats"
-              on={tab === "chats"}
-              onClick={() => navigate({ name: "chats" })}
-            >
-              <MessageSquare className="size-[22px]" />
-            </TabButton>
-            <button
-              aria-label="New chat"
-              onClick={() => openSheet({ name: "new" })}
-              className="primary-action web-press mx-1.5 flex size-[48px] items-center justify-center rounded-full"
-            >
-              <Plus className="size-6" strokeWidth={2.2} />
-            </button>
-            <TabButton
-              label="Irgats"
-              on={tab === "irgats"}
-              onClick={() => navigate({ name: "irgats" })}
-            >
-              <Bot className="size-[22px]" />
-            </TabButton>
-            <TabButton
-              label="Ideas"
-              on={tab === "ideas"}
-              onClick={() => navigate({ name: "ideas" })}
-            >
-              <Idea className="size-[22px]" />
-            </TabButton>
-          </div>
-        </nav>
+        <Drawer
+          open={menu}
+          onClose={() => setMenu(false)}
+          overview={overview.data}
+          now={now}
+          mac={mac}
+          macLabel={macSummary(services.data?.services, connected)}
+        />
       </div>
       {chatOpen ? (
         <SwipeBack onBack={() => navigate(last)}>
@@ -525,46 +539,6 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       {banner}
       {sheetView}
     </div>
-  );
-}
-
-/** The Mac's icon with a dot in its worst service color. */
-function MacIcon({ tone, small = false }: { tone: Tone; small?: boolean }) {
-  return (
-    <span className="relative">
-      <Monitor className={small ? "size-5" : "size-[22px]"} />
-      <span
-        className={`${TONE[tone]} tone-dot absolute -right-0.5 -top-0.5 rounded-full ring-2 ring-(--color-background-base) ${small ? "size-2" : "size-2.5"}`}
-      />
-    </span>
-  );
-}
-
-function TabButton({
-  label,
-  on,
-  badge = 0,
-  onClick,
-  children,
-}: {
-  label: string;
-  on: boolean;
-  badge?: number;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      aria-label={label}
-      onClick={onClick}
-      aria-current={on ? "page" : undefined}
-      className={`web-press relative flex size-12 items-center justify-center rounded-full ${
-        on ? "bg-selection text-(--ink)" : "text-(--ink-2)"
-      }`}
-    >
-      {children}
-      {badge ? <Badge>{badge}</Badge> : null}
-    </button>
   );
 }
 
