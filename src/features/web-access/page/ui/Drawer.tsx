@@ -81,7 +81,9 @@ export function Drawer({
       <nav
         aria-label="Menu"
         onTouchStart={(event) => {
-          start.current = event.touches[0]?.clientX ?? null;
+          // The filter strip scrolls sideways itself.
+          const inStrip = (event.target as Element).closest("[data-scroll-x]");
+          start.current = inStrip ? null : (event.touches[0]?.clientX ?? null);
         }}
         onTouchMove={(event) => {
           if (start.current === null) return;
@@ -150,7 +152,10 @@ export function Drawer({
             <PenLine className="size-5" />
             New chat
           </button>
-          <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none]">
+          <div
+            data-scroll-x
+            className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none]"
+          >
             <Chip on={filter === null} onClick={() => setFilter(null)}>
               All
             </Chip>

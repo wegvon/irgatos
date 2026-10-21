@@ -8,7 +8,7 @@ import {
 import type { HarnessId } from "../../../sessions/model/session";
 import type { WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
-import { leaveSheetFor } from "../route";
+import { leaveSheetFor, navigate } from "../route";
 import { Harness, BrandMark, Spinner, useAction } from "./parts";
 import {
   ArrowUp,
@@ -62,10 +62,13 @@ export const NEW_CHAT_FIELD = "new-chat-field";
 export function NewChat({
   owner,
   header,
+  inline = false,
   children,
 }: {
   owner?: string;
   header?: ReactNode;
+  /** A screen of its own rather than a sheet over one. */
+  inline?: boolean;
   children?: ReactNode;
 }) {
   const [projects, setProjects] = useState<WebProjects | null>(null);
@@ -115,7 +118,15 @@ export function NewChat({
     );
     if (!result) return;
     Object.assign(draft, { text: "", cwd: "", harness: null });
-    leaveSheetFor({ name: "chat", id: result.sessionId });
+    const chat = { name: "chat", id: result.sessionId } as const;
+    if (inline) {
+      // The phone's start screen stays mounted under the chat: clear it,
+      // and keep it in the history so Back returns to it.
+      setText("");
+      setCwd("");
+      setHarness(null);
+      navigate(chat);
+    } else leaveSheetFor(chat);
   };
 
   return (

@@ -23,15 +23,15 @@ export function Home({
   now: number;
   header: ReactNode;
 }) {
-  const running = overview
-    ? [...overview.interrupted, ...overview.running]
-    : [];
+  const stopped = overview?.interrupted ?? [];
+  const running = overview?.running ?? [];
   const review = overview?.review ?? [];
   const needsYou = overview?.needsYou ?? [];
-  const busy = needsYou.length + running.length + review.length > 0;
+  const busy =
+    needsYou.length + stopped.length + running.length + review.length > 0;
 
   return (
-    <NewChat owner={overview?.owner} header={header}>
+    <NewChat owner={overview?.owner} header={header} inline>
       {busy ? (
         <div className="flex flex-col gap-1 px-3 pb-4 pt-1">
           {needsYou.length ? (
@@ -49,6 +49,14 @@ export function Home({
                   />
                 )),
               )}
+            </section>
+          ) : null}
+          {stopped.length ? (
+            <section>
+              <Group count={stopped.length}>Stopped</Group>
+              {stopped.map((entry) => (
+                <ChatRow key={entry.sessionId} entry={entry} now={now} />
+              ))}
             </section>
           ) : null}
           {running.length ? (
