@@ -3,6 +3,7 @@ import { diagnosticCount, linter, type Diagnostic } from "@codemirror/lint";
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { basename } from "../../../platform/tauri/fs";
+import { bumpedFontSize } from "../../../shared/ui/uiFontBump";
 
 /**
  * Syntax diagnostics straight off the Lezer parse tree.
@@ -228,7 +229,7 @@ const lintTheme = EditorView.theme({
   },
   ".cm-tooltip-lint .cm-diagnostic": {
     fontFamily: "var(--font-mono)",
-    fontSize: "12px",
+    fontSize: bumpedFontSize(12),
     padding: "4px 8px",
     marginLeft: "0",
   },
