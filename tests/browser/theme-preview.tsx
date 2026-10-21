@@ -8,9 +8,13 @@ import {
 import "../../src/styles/index.css";
 
 // A short chat with markdown, code and tool calls, for judging a theme.
-// Add ?scheme=light for the light theme.
-if (new URLSearchParams(location.search).get("scheme") === "light") {
+// Add ?scheme=light for the light theme and ?palette=sage for a palette.
+const params = new URLSearchParams(location.search);
+if (params.get("scheme") === "light") {
   document.documentElement.classList.add("theme-light");
+}
+if (params.get("palette")) {
+  document.documentElement.classList.add(`palette-${params.get("palette")}`);
 }
 saveTranscriptAnchor(false);
 saveTranscriptLayout("chat");

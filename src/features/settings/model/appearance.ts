@@ -18,6 +18,7 @@ const PROJECT_RAIL_OPEN_KEY = "irgat.projectRailOpen";
 const SESSION_SIDEBAR_OPEN_KEY = "irgat.sessionSidebarOpen";
 const BODY_KEY = "irgat.bodyGlass";
 const SCHEME_KEY = "irgat.colorScheme";
+const PALETTE_KEY = "irgat.palette";
 const SIDEBAR_TAB_ORDER_KEY = "irgat.sidebarTabOrder";
 const PROJECT_RAIL_WIDTH_KEY = "irgat.projectRailWidth";
 const TRANSCRIPT_LAYOUT_KEY = "irgat.transcriptLayout";
@@ -48,6 +49,65 @@ export type NewThreadBackgroundEffect =
   "none" | "dither" | "ascii" | "halftone" | "scanlines" | "gradient-blur";
 export type ChangesView = "list" | "tree";
 export type DiffPalette = "default" | "colorblind" | "high-contrast";
+export type ThemePalette =
+  | "paper"
+  | "sage"
+  | "sea"
+  | "lavender"
+  | "rose"
+  | "claude";
+
+/** Colour palettes for both themes; index.css holds their tokens. */
+export const THEME_PALETTES: readonly ThemePalette[] = [
+  "paper",
+  "sage",
+  "sea",
+  "lavender",
+  "rose",
+  "claude",
+];
+
+export const THEME_PALETTE_DEFAULT: ThemePalette = "paper";
+
+export const THEME_PALETTE_LABELS: Record<ThemePalette, string> = {
+  paper: "Paper",
+  sage: "Sage",
+  sea: "Sea",
+  lavender: "Lavender",
+  rose: "Rose",
+  claude: "Claude",
+};
+
+/** Swatch colours for the picker, per scheme. Mirrors index.css. */
+export const THEME_PALETTE_SWATCHES: Record<
+  ThemePalette,
+  Record<ColorScheme, { background: string; accent: string }>
+> = {
+  paper: {
+    light: { background: "#f6f3ef", accent: "#4280bd" },
+    dark: { background: "#171717", accent: "#459bf7" },
+  },
+  sage: {
+    light: { background: "#f1f5f0", accent: "#46815e" },
+    dark: { background: "#161915", accent: "#6db084" },
+  },
+  sea: {
+    light: { background: "#eff4f5", accent: "#377e86" },
+    dark: { background: "#14191a", accent: "#54afb6" },
+  },
+  lavender: {
+    light: { background: "#f1eff5", accent: "#8068b1" },
+    dark: { background: "#16141a", accent: "#ac95da" },
+  },
+  rose: {
+    light: { background: "#f6eff0", accent: "#b15972" },
+    dark: { background: "#191416", accent: "#d5869a" },
+  },
+  claude: {
+    light: { background: "#faf9f5", accent: "#c86341" },
+    dark: { background: "#181816", accent: "#d97959" },
+  },
+};
 
 export const NEW_THREAD_BACKGROUND_EFFECTS: readonly NewThreadBackgroundEffect[] =
   ["none", "dither", "ascii", "halftone", "scanlines", "gradient-blur"];
@@ -85,6 +145,10 @@ export const ACCENT_COLOR_DEFAULT = null;
 
 /** Fired on `window` whenever the color scheme flips (detail: ColorScheme). */
 export const SCHEME_CHANGE_EVENT = "irgat:schemechange";
+
+/** Fired on `window` when the palette or tint changes colours within the
+ *  same scheme, so views that copy colours out of CSS can read them again. */
+export const THEME_COLORS_CHANGE_EVENT = "irgat:themecolorschange";
 
 export const TRANSCRIPT_LAYOUT_DEFAULT: TranscriptLayout = "chat";
 
@@ -312,6 +376,7 @@ export function applyThemeTint(hue: number, saturation: number) {
     nextSaturation > 0,
   );
   refreshNativeTint();
+  window.dispatchEvent(new Event(THEME_COLORS_CHANGE_EVENT));
   return { hue: nextHue, saturation: nextSaturation };
 }
 
@@ -321,9 +386,11 @@ const THEME_KEYS = new Set([
   THEME_SATURATION_KEY,
   THEME_DARK_LIGHTNESS_KEY,
   SCHEME_KEY,
+  PALETTE_KEY,
 ]);
 
 function applyStoredTheme() {
+  applyThemePalette(loadThemePalette());
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());
@@ -817,6 +884,40 @@ export function applyDiffPalette(value: DiffPalette) {
   const root = document.documentElement.classList;
   root.toggle("diff-palette-colorblind", value === "colorblind");
   root.toggle("diff-palette-high-contrast", value === "high-contrast");
+  return value;
+}
+
+function isThemePalette(value: unknown): value is ThemePalette {
+  return THEME_PALETTES.includes(value as ThemePalette);
+}
+
+export function loadThemePalette(): ThemePalette {
+  try {
+    const raw = localStorage.getItem(PALETTE_KEY);
+    return isThemePalette(raw) ? raw : THEME_PALETTE_DEFAULT;
+  } catch {
+    return THEME_PALETTE_DEFAULT;
+  }
+}
+
+export function saveThemePalette(value: ThemePalette) {
+  try {
+    localStorage.setItem(PALETTE_KEY, value);
+  } catch {
+    // private mode / quota
+  }
+}
+
+/** Swaps the palette tokens in index.css via a `palette-*` class on html.
+ *  A class rather than a data attribute, so the MutationObservers that
+ *  watch html's class pick it up. */
+export function applyThemePalette(value: ThemePalette) {
+  const root = document.documentElement.classList;
+  for (const palette of THEME_PALETTES) {
+    root.toggle(`palette-${palette}`, palette === value && value !== "paper");
+  }
+  refreshNativeTint();
+  window.dispatchEvent(new Event(THEME_COLORS_CHANGE_EVENT));
   return value;
 }
 

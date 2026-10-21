@@ -3,9 +3,12 @@ import { PREVIEW_DATA } from "./app-preview-data";
 import { dismissIrgatIntro } from "../../src/features/irgats/model/irgat";
 
 // The whole app over an IPC mock: sample data for Mail, Ideas and Feed, an
-// empty value for everything else. For theme checks; add ?scheme=light.
+// empty value for everything else. For theme checks; add ?scheme=light
+// and ?palette=sage.
 const scheme = new URLSearchParams(location.search).get("scheme");
 if (scheme) localStorage.setItem("irgat.colorScheme", scheme);
+const palette = new URLSearchParams(location.search).get("palette");
+if (palette) localStorage.setItem("irgat.palette", palette);
 if (scheme === "light") document.documentElement.classList.add("theme-light");
 
 const LISTS: Record<string, true> = { service_status_check: true };

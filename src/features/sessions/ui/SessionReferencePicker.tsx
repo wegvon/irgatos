@@ -480,7 +480,7 @@ function MessageList({
                   aria-hidden
                   className={`mt-0.5 grid size-3.5 shrink-0 place-items-center rounded-[4px] border ${
                     checked
-                      ? "border-accent bg-accent text-white"
+                      ? "border-accent bg-accent text-on-accent"
                       : "border-content/25"
                   }`}
                 >

@@ -403,12 +403,12 @@ function ProjectSelection({
       />
       {mixed ? (
         <Minus
-          className="pointer-events-none absolute size-3 text-white"
+          className="pointer-events-none absolute size-3 text-on-accent"
           aria-hidden="true"
         />
       ) : (
         <Check
-          className="pointer-events-none absolute hidden size-3 text-white peer-checked:block"
+          className="pointer-events-none absolute hidden size-3 text-on-accent peer-checked:block"
           aria-hidden="true"
         />
       )}

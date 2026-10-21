@@ -207,7 +207,7 @@ export function UpdateDialogBody({
               <button
                 type="button"
                 onClick={onAction}
-                className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-1 text-[12px] font-medium text-white hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-3 py-1 text-[12px] font-medium text-on-accent hover:bg-accent/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 {action}
               </button>

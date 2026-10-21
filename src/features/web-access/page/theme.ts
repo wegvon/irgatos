@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { applyAccentColor } from "../../settings/model/appearance";
+import {
+  applyAccentColor,
+  applyThemePalette,
+  THEME_PALETTE_DEFAULT,
+  THEME_PALETTES,
+} from "../../settings/model/appearance";
 import type { WebAppearance } from "../model/protocol";
 
 const STORED = "irgatos.web.appearance";
@@ -12,6 +17,11 @@ export function applyAppearance(appearance: WebAppearance) {
     (appearance.preference === "system" &&
       window.matchMedia("(prefers-color-scheme: light)").matches);
   root.classList.toggle("theme-light", light);
+  applyThemePalette(
+    appearance.palette && THEME_PALETTES.includes(appearance.palette)
+      ? appearance.palette
+      : THEME_PALETTE_DEFAULT,
+  );
   root.style.setProperty("--theme-hue", String(appearance.hue));
   root.style.setProperty("--theme-saturation", `${appearance.saturation}%`);
   root.classList.toggle("has-theme-tint", appearance.saturation > 0);
