@@ -14,6 +14,7 @@ import {
   Pin,
   PinOff,
   File,
+  Pencil,
   Plus,
   Search,
   Settings,
@@ -36,7 +37,7 @@ import {
   basename,
   type GitDiffStats,
 } from "../../platform/tauri/fs";
-import { IS_MAC, MOD } from "../../platform/tauri/platform";
+import { IS_MAC, MOD, SHIFT } from "../../platform/tauri/platform";
 import { formatInteger } from "../../shared/lib/numbers";
 import { pathKey, projectKey, projectName } from "../../shared/lib/paths";
 import {
@@ -82,6 +83,7 @@ import {
   type ChatIndicator,
 } from "./RailAction";
 import { DevModeSlot, TabVisitNav } from "./TitleBar";
+import { CompactRailAction } from "./CompactRailAction";
 import { AppVersionBadge, SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import { SettingsNav } from "./SettingsRail";
@@ -409,7 +411,6 @@ export function ProjectRail({
   return (
     <ProjectAlertsContext.Provider value={projectAlerts}>
     <nav
-      ref={resize.setPaneRef}
       aria-label="Projects"
       className={`sidebar-glass relative shrink-0 flex-col border-r border-stroke ${visible ? "flex" : "hidden"}`}
     >
@@ -429,6 +430,105 @@ export function ProjectRail({
         />
       </div>
 
+      <div className="flex min-h-0 flex-1">
+      <div
+        role="navigation"
+        aria-label="Views"
+        data-view-rail
+        className="flex w-12 shrink-0 flex-col items-center border-r border-stroke"
+      >
+        <div className="flex w-full flex-col items-center gap-1.5 py-1.5">
+          <CompactRailAction
+            label={inboxUnseen ? "Inbox, new items" : "Inbox"}
+            icon={Inbox}
+            active={inboxActive}
+            dot={inboxUnseen}
+            onClick={onOpenInbox}
+            onOpenContextMenu={(x, y) => {
+              menuTrigger.current =
+                document.activeElement instanceof HTMLElement
+                  ? document.activeElement
+                  : null;
+              projectMenu.close();
+              setInboxMenu({ x, y });
+            }}
+          />
+          {onOpenMail ? (
+            <CompactRailAction
+              label="Mail"
+              icon={Mail}
+              active={mailActive}
+              onClick={onOpenMail}
+            />
+          ) : null}
+          {onOpenIdeas ? (
+            <CompactRailAction
+              label="Ideas"
+              icon={Idea}
+              active={ideasActive}
+              onClick={onOpenIdeas}
+            />
+          ) : null}
+          {onOpenFeed ? (
+            <CompactRailAction
+              label="Feed"
+              icon={Feed}
+              active={feedActive}
+              onClick={onOpenFeed}
+            />
+          ) : null}
+          {notesEnabled ? (
+            <CompactRailAction
+              label="Notes"
+              icon={File}
+              active={notesActive}
+              onClick={onOpenNotes}
+            />
+          ) : null}
+          <CompactRailAction
+            label="Automations"
+            icon={Zap}
+            active={automationsActive}
+            onClick={onOpenAutomations}
+          />
+          {onOpenKanban ? (
+            <CompactRailAction
+              label="Board"
+              icon={Kanban}
+              active={kanbanActive}
+              onClick={onOpenKanban}
+            />
+          ) : null}
+          <CompactRailAction
+            label={artifactsLabel(artifactCount)}
+            icon={Artifacts}
+            active={artifactsActive}
+            onClick={onOpenArtifacts}
+            badge={
+              <ArtifactCount
+                count={artifactCount}
+                className="absolute -right-0.5 -top-0.5 h-3.5 min-w-3.5 px-0.5 text-[9px]"
+              />
+            }
+          />
+        </div>
+        <div className="min-h-2 flex-1" />
+        <div className="flex w-full flex-col items-center gap-1 py-2">
+          <CompactRailAction
+            label={`Settings (${MOD},)`}
+            icon={Settings}
+            active={settingsOpen}
+            onClick={settingsOpen ? onCloseSettings : onOpenSettings}
+          />
+          <AppVersionBadge />
+        </div>
+      </div>
+
+      <div
+        ref={resize.setPaneRef}
+        data-project-panel
+        className="flex min-w-0 flex-col"
+      >
       {settingsOpen ? (
         <SettingsNav
           section={settingsSection}
@@ -446,86 +546,19 @@ export function ProjectRail({
               shortcut={`${MOD}K`}
               ariaLabel={`Search (${MOD}K)`}
             />
-            <div className="mt-0.5" />
-            <RailAction
-              label="Inbox"
-              icon={Inbox}
-              onClick={onOpenInbox}
-              onOpenContextMenu={(x, y) => {
-                menuTrigger.current =
-                  document.activeElement instanceof HTMLElement
-                    ? document.activeElement
-                    : null;
-                projectMenu.close();
-                setInboxMenu({ x, y });
-              }}
-              active={inboxActive}
-              dot={inboxUnseen}
-              ariaLabel={inboxUnseen ? "Inbox, new items" : "Inbox"}
-            />
-            {onOpenMail ? (
-              <RailAction
-                label="Mail"
-                icon={Mail}
-                onClick={onOpenMail}
-                active={mailActive}
-                ariaLabel="Mail"
-              />
+            {chats ? (
+              <>
+                <div className="mt-0.5" />
+                <RailAction
+                  label="New chat"
+                  icon={Pencil}
+                  onClick={chats.onNew}
+                  shortcut={`${MOD}${SHIFT}H`}
+                  ariaLabel={`New chat (${MOD}${SHIFT}H)`}
+                />
+              </>
             ) : null}
-            {onOpenIdeas ? (
-              <RailAction
-                label="Ideas"
-                icon={Idea}
-                onClick={onOpenIdeas}
-                active={ideasActive}
-                ariaLabel="Ideas"
-              />
-            ) : null}
-            {onOpenFeed ? (
-              <RailAction
-                label="Feed"
-                icon={Feed}
-                onClick={onOpenFeed}
-                active={feedActive}
-                ariaLabel="Feed"
-              />
-            ) : null}
-            {notesEnabled ? (
-              <RailAction
-                label="Notes"
-                icon={File}
-                onClick={onOpenNotes}
-                active={notesActive}
-                ariaLabel="Notes"
-              />
-            ) : null}
-            <RailAction
-              label="Automations"
-              icon={Zap}
-              onClick={onOpenAutomations}
-              active={automationsActive}
-              ariaLabel="Automations"
-            />
-            {onOpenKanban ? (
-              <RailAction
-                label="Board"
-                icon={Kanban}
-                onClick={onOpenKanban}
-                active={kanbanActive}
-                ariaLabel="Board"
-              />
-            ) : null}
-
-            <RailAction
-              label="Artifacts"
-              icon={Artifacts}
-              onClick={onOpenArtifacts}
-              active={artifactsActive}
-              ariaLabel={artifactsLabel(artifactCount)}
-              meta={<ArtifactCount count={artifactCount} />}
-            />
           </div>
-
           <div
             ref={(el) => {
               lockOverscroll(el);
@@ -650,19 +683,13 @@ export function ProjectRail({
             onOpenWhatsNew={onOpenWhatsNew}
             onDismissUpdate={onDismissUpdate}
           />
-          <div className="flex shrink-0 flex-col gap-px p-2">
+          <div className="flex shrink-0 flex-col gap-px px-2 pb-2 empty:hidden">
             <GithubStarPrompt />
-            <RailAction
-              label="Settings"
-              icon={Settings}
-              onClick={onOpenSettings}
-              shortcut={`${MOD},`}
-              ariaLabel={`Settings (${MOD},)`}
-              meta={<AppVersionBadge />}
-            />
           </div>
         </>
       )}
+      </div>
+      </div>
       {visible ? projectMenu.element : null}
       {visible && inboxMenu ? (
         <InboxNotificationMenu
