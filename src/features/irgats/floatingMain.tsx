@@ -19,6 +19,8 @@ import {
   loadThemePreference,
   loadThemeSaturation,
   watchSystemColorScheme,
+  applyThemePalette,
+  loadThemePalette,
 } from "../settings/model/appearance";
 import { FloatingIrgatChat } from "./ui/FloatingIrgatChat";
 import { homeDir } from "../../platform/tauri/fs";
@@ -28,6 +30,7 @@ import "../../styles/index.css";
 let appearanceKey = "";
 function applyFloatingAppearance() {
   const nextKey = JSON.stringify([
+    loadThemePalette(),
     loadAccentColor(),
     loadThemeHue(),
     loadThemeSaturation(),
@@ -40,6 +43,7 @@ function applyFloatingAppearance() {
   if (nextKey === appearanceKey) return;
   appearanceKey = nextKey;
   document.documentElement.classList.add("is-mac");
+  applyThemePalette(loadThemePalette());
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());

@@ -334,7 +334,7 @@ function Checklist({
               }
               className={`flex size-6 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-colors ${
                 task.done
-                  ? "border-(--accent) bg-(--accent) text-white"
+                  ? "border-(--accent) bg-(--accent) text-on-accent"
                   : "border-(--ink-3)"
               }`}
             >

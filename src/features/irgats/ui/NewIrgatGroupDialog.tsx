@@ -88,7 +88,7 @@ export function NewIrgatGroupDialog({
                   />
                   <span
                     aria-hidden
-                    className={`grid size-4 shrink-0 place-items-center rounded border ${on ? "border-accent bg-accent text-white" : "border-content/25"}`}
+                    className={`grid size-4 shrink-0 place-items-center rounded border ${on ? "border-accent bg-accent text-on-accent" : "border-content/25"}`}
                   >
                     {on ? <Check className="size-3" strokeWidth={2.5} /> : null}
                   </span>

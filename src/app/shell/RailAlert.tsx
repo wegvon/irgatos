@@ -68,7 +68,7 @@ export function RailAlertBadge({
       {counts.unread > 0 ? (
         <span
           data-rail-unread={counts.unread}
-          className="grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-white tabular-nums"
+          className="grid h-4 min-w-4 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-on-accent tabular-nums"
         >
           {badgeText(counts.unread)}
         </span>

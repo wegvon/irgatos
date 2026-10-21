@@ -909,6 +909,48 @@ describe("settings pages", () => {
     expect(hidden?.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("switches the colour palette and clears a custom tint", async () => {
+    localStorage.setItem("irgat.themeHue", "30");
+    localStorage.setItem("irgat.themeSaturation", "40");
+    await render("appearance");
+    const sage = container.querySelector<HTMLButtonElement>(
+      '[role="radiogroup"][aria-label="Palette"] [aria-label="Sage"]',
+    )!;
+    expect(sage.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => sage.click());
+
+    expect(sage.getAttribute("aria-checked")).toBe("true");
+    expect(localStorage.getItem("irgat.palette")).toBe("sage");
+    expect(document.documentElement.classList.contains("palette-sage")).toBe(
+      true,
+    );
+    // The palette shows at once; the hue is kept for a later tint.
+    expect(localStorage.getItem("irgat.themeSaturation")).toBe("0");
+    expect(localStorage.getItem("irgat.themeHue")).toBe("30");
+  });
+
+  it("restores the default palette and hue together", async () => {
+    localStorage.setItem("irgat.palette", "rose");
+    localStorage.setItem("irgat.themeHue", "200");
+    localStorage.setItem("irgat.themeSaturation", "30");
+    await render("appearance");
+    const restore = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Restore defaults"),
+    )!;
+
+    await act(async () => restore.click());
+
+    expect(localStorage.getItem("irgat.palette")).toBe("paper");
+    expect(localStorage.getItem("irgat.themeHue")).toBe("240");
+    expect(localStorage.getItem("irgat.themeSaturation")).toBe("0");
+    expect(
+      [...document.documentElement.classList].filter((name) =>
+        name.startsWith("palette-"),
+      ),
+    ).toEqual([]);
+  });
+
   it("sets interface scale from a menu instead of a live slider", async () => {
     await render("appearance");
     const row = container.querySelector('[data-setting-id="interface-scale"]')!;

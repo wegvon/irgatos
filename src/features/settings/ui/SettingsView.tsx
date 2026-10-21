@@ -97,6 +97,13 @@ import {
   CHAT_BACKGROUND_SESSION_OPACITY_DEFAULT,
   CHAT_BACKGROUND_SCOPE_DEFAULT,
   THEME_PREFERENCE_DEFAULT,
+  THEME_PALETTE_DEFAULT,
+  THEME_PALETTE_LABELS,
+  THEME_PALETTE_SWATCHES,
+  THEME_PALETTES,
+  applyThemePalette,
+  loadThemePalette,
+  saveThemePalette,
   chatBackgroundSrc,
   loadBodyGlass,
   loadAccentColor,
@@ -155,6 +162,7 @@ import {
   type ChatBackgroundScope,
   DIFF_PALETTE_DEFAULT,
   type DiffPalette,
+  type ThemePalette,
   NEW_THREAD_BACKGROUND_EFFECTS,
   NEW_THREAD_BACKGROUND_EFFECT_LABELS,
   NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS,
@@ -2706,6 +2714,7 @@ function useAppearanceSettings(
   const [chatBackgroundScope, setChatBackgroundScope] =
     useState<ChatBackgroundScope>(loadChatBackgroundScope);
   const [diffPalette, setDiffPalette] = useState<DiffPalette>(loadDiffPalette);
+  const [palette, setPalette] = useState<ThemePalette>(loadThemePalette);
   const [newThreadBackgroundEffect, setBackgroundEffect] =
     useState<NewThreadBackgroundEffect>(loadNewThreadBackgroundEffect);
   const [chatBackgroundBusy, setChatBackgroundBusy] = useState(false);
@@ -2829,6 +2838,19 @@ function useAppearanceSettings(
     setDiffPalette(next);
   }, []);
 
+  // A custom tint replaces palette surfaces, so picking a palette clears it
+  // and the choice shows right away. The hue is kept for later. Reads the
+  // stored tint, not render state, so Restore defaults' own reset stands.
+  const onPalette = useCallback(
+    (next: ThemePalette) => {
+      applyThemePalette(next);
+      saveThemePalette(next);
+      setPalette(next);
+      if (loadThemeSaturation() > 0) onTint(loadThemeHue(), 0);
+    },
+    [onTint],
+  );
+
   const onNewThreadBackgroundEffect = useCallback(
     (next: NewThreadBackgroundEffect) => {
       setNewThreadBackgroundEffect(next);
@@ -2869,6 +2891,7 @@ function useAppearanceSettings(
     );
     onChatBackgroundScope(CHAT_BACKGROUND_SCOPE_DEFAULT);
     onDiffPalette(DIFF_PALETTE_DEFAULT);
+    onPalette(THEME_PALETTE_DEFAULT);
     onNewThreadBackgroundEffect(NEW_THREAD_BACKGROUND_EFFECT_DEFAULT);
     if (chatBackgroundPath) void onClearChatBackground();
     onUiScale(Math.round(UI_SCALE_DEFAULT * 100));
@@ -2881,6 +2904,7 @@ function useAppearanceSettings(
     onChatBackgroundSessionOpacity,
     onChatBackgroundScope,
     onDiffPalette,
+    onPalette,
     onNewThreadBackgroundEffect,
     onClearChatBackground,
     onAccentColor,
@@ -2908,6 +2932,7 @@ function useAppearanceSettings(
     chatBackgroundSessionOpacity,
     chatBackgroundScope,
     diffPalette,
+    palette,
     newThreadBackgroundEffect,
     chatBackgroundBusy,
     chatBackgroundError,
@@ -2927,6 +2952,7 @@ function useAppearanceSettings(
     onChatBackgroundSessionOpacity,
     onChatBackgroundScope,
     onDiffPalette,
+    onPalette,
     onNewThreadBackgroundEffect,
     onUiScale,
     onCollapsedProjectRailMode,
@@ -2942,7 +2968,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
     <>
       <Group
         title="Theme"
-        description="Dark and light share the same tint, so the color settings below apply to both."
+        description="Dark and light share the same palette and tint, so the color settings below apply to both."
       >
         <Row
           id="theme"
@@ -2958,6 +2984,16 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
               { value: "light", label: "Light" },
             ]}
             onChange={appearance.onThemePreference}
+          />
+        </Row>
+        <Row
+          id="palette"
+          label="Palette"
+          description="Background, text and accent colors, with a light and a dark version of each."
+        >
+          <PalettePicker
+            value={appearance.palette}
+            onChange={appearance.onPalette}
           />
         </Row>
         <Row
@@ -2990,7 +3026,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
 
       <Group
         title="Color"
-        description="Hue and saturation tint every surface. Lightness only moves the dark theme."
+        description="A custom tint for every surface instead of the palette's. Lightness only moves the dark theme."
       >
         <Row
           id="hue"
@@ -3011,7 +3047,7 @@ function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
         <Row
           id="saturation"
           label="Saturation"
-          description="How strongly the hue tints the interface. At zero, dark mode stays neutral and light mode uses a soft warm paper tone."
+          description="How strongly the hue tints the interface. At zero the palette sets the tone; above zero your hue replaces it."
         >
           <Slider
             label="Saturation"
@@ -5485,6 +5521,78 @@ const ACCENT_COLOR_PRESETS = [
   "#f59e0b",
   "#10b981",
 ] as const;
+
+function PalettePicker({
+  value,
+  onChange,
+}: {
+  value: ThemePalette;
+  onChange: (value: ThemePalette) => void;
+}) {
+  const scheme = useColorScheme();
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const pick = (index: number) => {
+    const count = THEME_PALETTES.length;
+    const next = THEME_PALETTES[(index + count) % count];
+    onChange(next);
+    buttons.current[(index + count) % count]?.focus();
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[12px] text-content/55">
+        {THEME_PALETTE_LABELS[value]}
+      </span>
+      <div role="radiogroup" aria-label="Palette" className="flex gap-0.5">
+        {THEME_PALETTES.map((palette, index) => {
+          const swatch = THEME_PALETTE_SWATCHES[palette][scheme];
+          const selected = palette === value;
+          return (
+            <button
+              key={palette}
+              ref={(button) => {
+                buttons.current[index] = button;
+              }}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-label={THEME_PALETTE_LABELS[palette]}
+              title={THEME_PALETTE_LABELS[palette]}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => onChange(palette)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  pick(index + 1);
+                } else if (
+                  event.key === "ArrowLeft" ||
+                  event.key === "ArrowUp"
+                ) {
+                  event.preventDefault();
+                  pick(index - 1);
+                }
+              }}
+              className="grid size-6 place-items-center rounded-full"
+            >
+              <span
+                className={`grid size-[18px] place-items-center rounded-full border border-content/15 ${
+                  selected
+                    ? "ring-2 ring-content/80 ring-offset-1 ring-offset-transparent"
+                    : ""
+                }`}
+                style={{ background: swatch.background }}
+              >
+                <span
+                  className="size-2 rounded-full"
+                  style={{ background: swatch.accent }}
+                />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function AccentColorPicker({
   value,

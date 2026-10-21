@@ -67,7 +67,7 @@ export function RailAction({
       {badge != null ? (
         <span
           aria-hidden
-          className="absolute left-1 top-1/2 grid min-w-4 -translate-y-1/2 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-white tabular-nums"
+          className="absolute left-1 top-1/2 grid min-w-4 -translate-y-1/2 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-on-accent tabular-nums"
         >
           {badge > 99 ? "99+" : badge}
         </span>
@@ -138,7 +138,7 @@ export function ChatCount({
   const tone =
     indicator.tone === "attention"
       ? "bg-amber-500 text-black"
-      : "bg-accent text-white";
+      : "bg-accent text-on-accent";
   return (
     <span
       aria-hidden
@@ -168,7 +168,7 @@ export function ArtifactCount({
     <span
       aria-hidden
       data-artifact-count={count}
-      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-medium leading-none text-white tabular-nums ${className}`}
+      className={`grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-medium leading-none text-on-accent tabular-nums ${className}`}
     >
       {count > 99 ? "99+" : count}
     </span>

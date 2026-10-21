@@ -713,7 +713,7 @@ function OverviewTabs({
               <span className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap">
                 <span className="pl-1.5">{label}</span>
                 {count ? (
-                  <span className="min-w-4 rounded bg-accent px-1 text-center text-[10px] font-medium leading-4 tabular-nums text-white">
+                  <span className="min-w-4 rounded bg-accent px-1 text-center text-[10px] font-medium leading-4 tabular-nums text-on-accent">
                     {count}
                   </span>
                 ) : null}
