@@ -48,6 +48,13 @@ import {
   type FleetRequest,
 } from "../model/fleet";
 import {
+  FLEET_CARD,
+  FLEET_CARD_CALM,
+  FLEET_CARD_HEAD,
+  FLEET_CARD_WAITING,
+  FLEET_ICON_TILE,
+} from "./cardStyles";
+import {
   AgentTreeView,
   type AgentRetryRequest,
 } from "../../agent-tree/ui/AgentTreeView";
@@ -265,7 +272,7 @@ export function FleetView({
       data-app-fleet
       className={
         sidebar
-          ? "flex min-h-0 max-h-[40vh] shrink-0 flex-col border-t border-stroke text-content [&_[data-fleet-request]]:flex-col [&_[data-fleet-request]]:items-stretch [&_article>button]:flex-wrap [&_article>button]:gap-1.5 [&_article>button]:px-2"
+          ? "flex min-h-0 max-h-[40vh] shrink-0 flex-col border-t border-stroke text-content [&_[data-fleet-request]]:flex-col [&_[data-fleet-request]]:items-stretch [&_article>button]:px-2.5"
           : "flex min-h-0 min-w-0 flex-1 flex-col text-content"
       }
     >
@@ -421,7 +428,7 @@ export function FleetView({
                         {EMPTY_COPY[bucket]}
                       </p>
                     ) : (
-                      <ul className="flex flex-col gap-2">
+                      <ul className="flex flex-col gap-1.5">
                         {habits.map((approval) => (
                           <li
                             key={`habit:${approval.irgatId}:${approval.habit.id}`}
@@ -528,6 +535,16 @@ function FleetRow({
   onQuestionInteraction?: (requestId: number) => void;
 }) {
   const waiting = entry.bucket === "needsYou";
+  const status =
+    entry.bucket === "running" && entry.activity ? (
+      <span
+        className="flex min-w-0 max-w-[60%] shrink items-center gap-1 text-content/65"
+        title={entry.activity}
+      >
+        <LoaderCircle className="size-3 shrink-0 animate-spin opacity-70" />
+        <span className="truncate">{entry.activity}</span>
+      </span>
+    ) : null;
   return (
     <article
       data-fleet-session={entry.sessionId}
@@ -539,22 +556,23 @@ function FleetRow({
             }
           : undefined
       }
-      className={`group relative overflow-hidden rounded-xl border ${
-        waiting
-          ? "border-amber-400/30 bg-amber-400/[0.04]"
-          : "border-content/10 bg-content/[0.02]"
-      }`}
+      className={`${FLEET_CARD} ${waiting ? FLEET_CARD_WAITING : FLEET_CARD_CALM}`}
     >
       <button
         type="button"
         onClick={onOpen}
         aria-label={`Open ${entry.title}`}
-        className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2.5 text-left hover:bg-content/5"
+        className={`${FLEET_CARD_HEAD} hover:bg-content/[0.03]`}
       >
-        <HarnessIcon harness={entry.harness} className="size-4 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-[13px] font-medium text-content">
+        <span className={FLEET_ICON_TILE}>
+          <HarnessIcon harness={entry.harness} className="size-4 shrink-0" />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-px">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span
+              title={entry.title}
+              className="min-w-0 truncate text-[13px] font-medium leading-5 tracking-[-0.005em] text-content"
+            >
               {entry.title}
             </span>
             {entry.unseen ? (
@@ -563,35 +581,42 @@ function FleetRow({
                 className="size-1.5 shrink-0 rounded-full bg-accent"
               />
             ) : null}
+            {entry.at > 0 ? (
+              <span
+                className={`ml-auto shrink-0 pl-1 text-[11px] tabular-nums text-content/35 ${actions ? "group-hover:invisible" : ""}`}
+              >
+                {formatLiveElapsed(entry.at, now)} ago
+              </span>
+            ) : null}
           </span>
-          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-content/45">
-            <span className="truncate">{entry.projectLabel}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-content/45">
+            {status}
+            {status ? (
+              <span aria-hidden className="shrink-0 text-content/25">
+                ·
+              </span>
+            ) : null}
+            <span className="min-w-0 shrink truncate">{entry.projectLabel}</span>
             {entry.branch ? (
-              <span className="flex min-w-0 items-center gap-1">
+              <span className="flex min-w-0 shrink items-center gap-1">
                 <GitBranch className="size-3 shrink-0 opacity-70" />
                 <span className="truncate">{entry.branch}</span>
               </span>
             ) : null}
-            {entry.worktree ? (
-              <span className="rounded bg-content/8 px-1 py-px text-[10px] text-content/55">
-                worktree
-              </span>
-            ) : null}
-            {entry.leadId ? (
-              <span className="rounded bg-content/8 px-1 py-px text-[10px] text-content/55">
-                worker
-              </span>
-            ) : null}
+            {entry.worktree ? <FleetChip>worktree</FleetChip> : null}
+            {entry.leadId ? <FleetChip>worker</FleetChip> : null}
           </span>
+          {entry.bucket === "interrupted" ? (
+            <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
+              <RotateCcw className="size-3 shrink-0" />
+              <span className="truncate">
+                The agent stopped mid-turn. Open it to resume.
+              </span>
+            </span>
+          ) : null}
+          {entry.bucket === "review" ? <ReviewDetail entry={entry} /> : null}
         </span>
-        {entry.at > 0 ? (
-          <span
-            className={`shrink-0 text-[11px] tabular-nums text-content/35 ${actions ? "group-hover:invisible" : ""}`}
-          >
-            {formatLiveElapsed(entry.at, now)} ago
-          </span>
-        ) : null}
-        <ChevronRight className="size-3.5 shrink-0 text-content/35" />
+        <ChevronRight className="size-3.5 shrink-0 text-content/25 transition-colors group-hover:text-content/50" />
       </button>
       {actions ? (
         <button
@@ -601,26 +626,11 @@ function FleetRow({
             const rect = event.currentTarget.getBoundingClientRect();
             onMenu(rect.left, rect.bottom);
           }}
-          className="absolute right-9 top-2 grid size-6 place-items-center rounded text-content/45 opacity-0 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
+          className="absolute right-7 top-1.5 grid size-6 place-items-center rounded text-content/45 opacity-0 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover:opacity-100"
         >
           <MoreHorizontal className="size-3.5" />
         </button>
       ) : null}
-      {entry.bucket === "interrupted" ? (
-        <RowDetail>
-          <RotateCcw className="size-3 shrink-0 text-rose-400/80" />
-          <span className="min-w-0 truncate">
-            The agent stopped mid-turn. Open it to resume.
-          </span>
-        </RowDetail>
-      ) : null}
-      {entry.bucket === "running" && entry.activity ? (
-        <RowDetail>
-          <LoaderCircle className="size-3 shrink-0 animate-spin text-content/45" />
-          <span className="min-w-0 truncate">{entry.activity}</span>
-        </RowDetail>
-      ) : null}
-      {entry.bucket === "review" ? <ReviewDetail entry={entry} /> : null}
       {entry.requests.map((request) => (
         <RequestCard
           key={`${request.kind}-${request.requestId}`}
@@ -667,38 +677,42 @@ function HabitApprovalCard({
   return (
     <article
       data-fleet-habit={habit.id}
-      className="overflow-hidden rounded-xl border border-amber-400/30 bg-amber-400/[0.04]"
+      className={`${FLEET_CARD} ${FLEET_CARD_WAITING}`}
     >
       <button
         type="button"
         disabled={!onOpen}
         onClick={onOpen}
         aria-label={`Open ${entry.irgatName}`}
-        className="flex w-full min-w-0 items-center gap-2.5 px-3.5 py-2.5 text-left enabled:hover:bg-content/5"
+        className={`${FLEET_CARD_HEAD} enabled:hover:bg-content/[0.03]`}
       >
-        <Clock
-          className="size-4 shrink-0"
-          style={{ color: entry.color }}
-          strokeWidth={1.75}
-        />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="min-w-0 truncate text-[13px] font-medium text-content">
-            {habit.name}
+        <span className={FLEET_ICON_TILE}>
+          <Clock
+            className="size-4 shrink-0"
+            style={{ color: entry.color }}
+            strokeWidth={1.75}
+          />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-px">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="min-w-0 truncate text-[13px] font-medium leading-5 tracking-[-0.005em] text-content">
+              {habit.name}
+            </span>
+            <span className="ml-auto shrink-0 pl-1 text-[11px] tabular-nums text-content/35">
+              {formatLiveElapsed(entry.requestedAt, now)} ago
+            </span>
           </span>
-          <span className="truncate text-[11px] text-content/45">
+          <span className="truncate text-[11px] leading-4 text-content/45">
             {entry.irgatName} · habit · {trigger}
           </span>
         </span>
-        <span className="shrink-0 text-[11px] tabular-nums text-content/35">
-          {formatLiveElapsed(entry.requestedAt, now)} ago
-        </span>
         {onOpen ? (
-          <ChevronRight className="size-3.5 shrink-0 text-content/35" />
+          <ChevronRight className="size-3.5 shrink-0 text-content/25 transition-colors group-hover:text-content/50" />
         ) : null}
       </button>
       <div
         data-fleet-request="habit-approval"
-        className="flex flex-col gap-2 border-t border-stroke px-3.5 py-2.5 sm:flex-row sm:items-center"
+        className="flex flex-col gap-2 border-t border-stroke px-3 py-2 sm:flex-row sm:items-center"
       >
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
@@ -730,14 +744,15 @@ function HabitApprovalCard({
   );
 }
 
-function RowDetail({ children }: { children: ReactNode }) {
+function FleetChip({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 border-t border-stroke px-3.5 py-2 text-[12px] text-content/60">
+    <span className="shrink-0 rounded bg-content/[0.07] px-1 py-px text-[10px] leading-3 text-content/55">
       {children}
-    </div>
+    </span>
   );
 }
 
+/** What a finished agent left to review, as the card's third line. */
 function ReviewDetail({ entry }: { entry: FleetEntry }) {
   const files = entry.editedPaths.length;
   const parts = [
@@ -748,16 +763,16 @@ function ReviewDetail({ entry }: { entry: FleetEntry }) {
   ].filter(Boolean);
   const names = entry.editedPaths.slice(0, 3).map((path) => basename(path));
   return (
-    <RowDetail>
+    <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-content/60">
       <FileDiff className="size-3 shrink-0 text-accent" />
       <span className="shrink-0">{parts.join(" · ")}</span>
       {names.length ? (
-        <span className="min-w-0 truncate font-mono text-[11px] text-content/40">
+        <span className="min-w-0 truncate font-mono text-[10.5px] text-content/40">
           {names.join(", ")}
           {files > names.length ? `, +${files - names.length}` : ""}
         </span>
       ) : null}
-    </RowDetail>
+    </span>
   );
 }
 
@@ -776,7 +791,7 @@ function RequestCard({
     return (
       <div
         data-fleet-request="question"
-        className="border-t border-stroke px-3.5 py-3"
+        className="border-t border-stroke px-3 py-2.5"
       >
         <QuestionForm
           prompt={request.prompt}
@@ -789,7 +804,7 @@ function RequestCard({
   return (
     <div
       data-fleet-request="approval"
-      className="flex flex-col gap-2 border-t border-stroke px-3.5 py-2.5 sm:flex-row sm:items-center"
+      className="flex flex-col gap-2 border-t border-stroke px-3 py-2 sm:flex-row sm:items-center"
     >
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
