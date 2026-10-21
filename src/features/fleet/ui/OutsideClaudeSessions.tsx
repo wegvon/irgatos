@@ -6,6 +6,13 @@ import {
   type ExternalClaudeSession,
 } from "../../irgats/model/externalClaude";
 import { formatLiveElapsed } from "../../sessions/model/liveAgents";
+import {
+  FLEET_CARD,
+  FLEET_CARD_CALM,
+  FLEET_CARD_HEAD,
+  FLEET_CARD_WAITING,
+  FLEET_ICON_TILE,
+} from "./cardStyles";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 
 const REFRESH_MS = 10_000;
@@ -91,7 +98,7 @@ export function OutsideClaudeSessions({
         <span className="tabular-nums text-content/40">{sessions.length}</span>
       </button>
       {open ? (
-        <ul className="flex flex-col gap-2">
+        <ul className="flex flex-col gap-1.5">
           {sessions.map((session) => {
             const name = externalClaudeName(session);
             const busy = session.status === "busy";
@@ -101,14 +108,16 @@ export function OutsideClaudeSessions({
               <li key={session.sessionId}>
                 <article
                   data-fleet-outside={session.sessionId}
-                  className="group flex min-w-0 items-center gap-2.5 rounded-xl border border-content/10 bg-content/[0.02] px-3.5 py-2.5"
+                  className={`${FLEET_CARD} ${waiting ? FLEET_CARD_WAITING : FLEET_CARD_CALM} ${FLEET_CARD_HEAD}`}
                 >
-                  <HarnessIcon harness="claude" className="size-4 shrink-0" />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="min-w-0 truncate text-[13px] font-medium text-content">
+                  <span className={FLEET_ICON_TILE}>
+                    <HarnessIcon harness="claude" className="size-4 shrink-0" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-px">
+                    <span className="min-w-0 truncate text-[13px] font-medium leading-5 tracking-[-0.005em] text-content">
                       {name}
                     </span>
-                    <span className="flex min-w-0 items-center gap-2 text-[11px] text-content/45">
+                    <span className="flex min-w-0 items-center gap-2 text-[11px] leading-4 text-content/45">
                       <span className="truncate" title={session.cwd}>
                         {session.cwd}
                       </span>

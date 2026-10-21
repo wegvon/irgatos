@@ -30,6 +30,7 @@ import {
   type TerminalFitMode,
 } from "../model/terminalLayout";
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { uiFontBump } from "../../../shared/ui/uiFontBump";
 import { terminalAgentStore } from "../model/agentDetection/terminalAgentStore";
 import {
   createTerminalAgentWatcher,
@@ -195,7 +196,7 @@ export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
       cursorBlink: true,
       cursorStyle: "bar",
       fontFamily: terminalFont(),
-      fontSize: 13,
+      fontSize: 13 + uiFontBump(),
       lineHeight: 1,
       letterSpacing: 0,
       scrollback: 5000,

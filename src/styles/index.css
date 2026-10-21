@@ -118,6 +118,8 @@
 }
 
 :root {
+  /* Added to every fixed UI font size at build time (vite.config.ts). */
+  --ui-font-bump: 1.5px;
   --motion-reorder-duration: 160ms;
   --motion-tab-close-duration: 200ms;
   --motion-feedback-duration: 120ms;
@@ -150,6 +152,14 @@
 
 html {
   color-scheme: dark;
+}
+
+/* Chat text keeps its own size: transcripts and the composer, in the app,
+   the floating Irgat chat, the quick composer and the browser page. */
+.agent-transcript,
+[data-composer],
+.chat-text {
+  --ui-font-bump: 0px;
 }
 
 /* Soft light theme: warm paper instead of white, warm charcoal instead of
