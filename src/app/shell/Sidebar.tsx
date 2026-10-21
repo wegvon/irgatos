@@ -187,6 +187,7 @@ import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
 import { Popover } from "../../shared/ui/Popover";
+import { uiFontBump } from "../../shared/ui/uiFontBump";
 import { SearchableProjectPicker } from "../../features/projects/ui/SearchableProjectPicker";
 import { useProjectMenu } from "./useProjectMenu";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
@@ -4416,7 +4417,7 @@ function DiffStat({
       if (availableWidth <= 0) return;
 
       // Measure at the normal size so the text can grow again after resizing.
-      let maxFontSize = 11;
+      let maxFontSize = 11 + uiFontBump();
       content.style.fontSize = `${maxFontSize}px`;
       if (content.getBoundingClientRect().width <= availableWidth) return;
 
