@@ -26,6 +26,7 @@ import { sessionEditPaths } from "../model/checkpointEdits";
 import { PromptOutline } from "./PromptOutline";
 import {
   canCompactHarnessContext,
+  generateHarnessTitle,
   type ApprovalDecision,
   type UserQuestionReply,
 } from "../../../integrations/harness";
@@ -73,6 +74,15 @@ import {
   subscribeTranscriptJump,
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
+import { ChatNamePrompt } from "../../irgats/ui/ChatNamePrompt";
+import {
+  chatNamePromptDismissed,
+  dismissChatNamePrompt,
+  isPlaceholderChatTitle,
+  shouldPromptChatName,
+  suggestChatName,
+  userTurnTexts,
+} from "../../irgats/model/chatNamePrompt";
 import {
   irgatForSession,
   irgatLook,
@@ -231,6 +241,8 @@ export type SessionPaneProps = {
     target: SessionFolderTarget,
   ) => void;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
+  /** Names a Irgat chat from the prompt it shows after its first turns. */
+  onRenameChat?: (sessionId: string, title: string) => void;
   onEditQueuedMessage: (
     sessionId: string,
     messageId: string,
@@ -378,6 +390,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onCompactContext,
   onPlaceSessionInFolder,
   onDeleteQueuedMessage,
+  onRenameChat,
   onEditQueuedMessage,
   onQueuedMessageEditingChange,
   onSteerQueuedMessage,
@@ -484,6 +497,25 @@ const LocalSessionPane = memo(function LocalSessionPane({
   useSyncExternalStore(subscribeIrgats, irgatsSnapshot);
   const irgat = irgatForSession(session.id);
   const agent = irgat ? irgatLook(irgat) : undefined;
+  // A new chat under a Irgat asks for a name once its first turns are in,
+  // and keeps asking until named or put off, even while a reply runs.
+  const namingChat =
+    !!onRenameChat && !!irgat?.childSessionIds?.includes(session.id);
+  const namePromptReady =
+    namingChat &&
+    shouldPromptChatName({
+      displayTitle: title,
+      blocks: session.blocks,
+      busy: !!session.busy,
+      dismissed: () => chatNamePromptDismissed(session.id),
+    });
+  const [namePromptFor, setNamePromptFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (namePromptReady) setNamePromptFor(session.id);
+  }, [namePromptReady, session.id]);
+  const showNamePrompt =
+    namingChat && namePromptFor === session.id && isPlaceholderChatTitle(title);
+  const closeNamePrompt = () => setNamePromptFor(null);
   // A Irgat shows only its own background, never the project's or the app's.
   const projectBackground = irgat
     ? irgatChatBackground(irgat.id)
@@ -1371,6 +1403,34 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   )}
                   {interruptionBanner("irgat")}
                   {reviewTray}
+                  {showNamePrompt ? (
+                    <ChatNamePrompt
+                      // The composer below is keyed by the bare session id.
+                      key={`name:${session.id}`}
+                      suggestion={suggestChatName(session.blocks)}
+                      generate={
+                        remote
+                          ? undefined
+                          : () =>
+                              generateHarnessTitle(session.harness, {
+                                sessionId: session.id,
+                                cwd: session.cwd,
+                                message: userTurnTexts(session.blocks)
+                                  .slice(0, 2)
+                                  .join("\n\n"),
+                                providerAccountId: session.providerAccountId,
+                              }).then((generated) => generated?.title ?? null)
+                      }
+                      onSave={(name) => {
+                        closeNamePrompt();
+                        onRenameChat?.(session.id, name);
+                      }}
+                      onDismiss={() => {
+                        closeNamePrompt();
+                        dismissChatNamePrompt(session.id);
+                      }}
+                    />
+                  ) : null}
                   <IrgatComposer
                     key={session.id}
                     sessionId={session.id}

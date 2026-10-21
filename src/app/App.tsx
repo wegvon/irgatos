@@ -14876,6 +14876,7 @@ function Workspace({
     onCompactContext,
     onPlaceSessionInFolder,
     onDeleteQueuedMessage,
+    onRenameChat: onRenameHistorySession,
     onEditQueuedMessage,
     onQueuedMessageEditingChange,
     onSteerQueuedMessage,
