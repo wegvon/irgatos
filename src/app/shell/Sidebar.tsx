@@ -3232,7 +3232,7 @@ function CompactRailIrgat({
           className={`absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full px-0.5 text-[9px] font-semibold tabular-nums leading-none ${
             alert.needsYou > 0
               ? "bg-amber-500 text-black"
-              : "bg-accent text-white"
+              : "bg-accent text-on-accent"
           }`}
         >
           {badgeCount > 99 ? "99+" : badgeCount}

@@ -706,7 +706,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             type="button"
             onClick={() => void submit(false)}
             disabled={!canSubmit}
-            className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-40"
+            className="rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-on-accent disabled:opacity-40"
           >
             {leadingMode?.name === DRAFT_COMMAND.name ? "Save draft" : "Start"}
           </button>

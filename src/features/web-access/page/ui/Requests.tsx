@@ -142,7 +142,7 @@ function QuestionForm({
                 <span
                   className={`mt-0.5 flex size-5 shrink-0 items-center justify-center border-[1.5px] ${
                     question.multiSelect ? "rounded-md" : "rounded-full"
-                  } ${on ? "border-(--accent) bg-(--accent) text-white" : "border-(--ink-3)"}`}
+                  } ${on ? "border-(--accent) bg-(--accent) text-on-accent" : "border-(--ink-3)"}`}
                 >
                   {on ? <Check className="size-3.5" strokeWidth={2.5} /> : null}
                 </span>

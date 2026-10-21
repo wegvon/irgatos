@@ -18,7 +18,11 @@ import {
   scanOscCwd,
   type TerminalMetaPatch,
 } from "../model/terminalTab";
-import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
+import {
+  isLightScheme,
+  SCHEME_CHANGE_EVENT,
+  THEME_COLORS_CHANGE_EVENT,
+} from "../../settings/model/appearance";
 import {
   applyTerminalChrome,
   fitTerminal,
@@ -108,13 +112,27 @@ const ANSI_LIGHT = {
   brightWhite: "#c9c2b6",
 };
 
+/** The palette's ink at `alpha`, as rgba() that xterm can parse. */
+function contentTint(alpha: number, fallback: string): string {
+  const channels = cssHexColor("var(--color-content)", "")
+    .match(/[\da-f]{2}/gi)
+    ?.map((pair) => parseInt(pair, 16));
+  return channels?.length === 3
+    ? `rgba(${channels.join(",")},${alpha})`
+    : fallback;
+}
+
 function terminalTheme(light: boolean) {
   return {
     background: "#00000000",
     foreground: cssColor("var(--color-content)", light ? "#3b3631" : "#e8eef2"),
     cursor: cssColor("var(--color-accent)", light ? "#4078f2" : "#4da3f5"),
-    cursorAccent: light ? "#f4f1ec" : "#000000",
-    selectionBackground: light ? "rgba(74,60,40,0.16)" : "rgba(255,255,255,0.18)",
+    cursorAccent: light
+      ? cssColor("var(--color-background-base)", "#f4f1ec")
+      : "#000000",
+    selectionBackground: light
+      ? contentTint(0.16, "rgba(74,60,40,0.16)")
+      : "rgba(255,255,255,0.18)",
     selectionInactiveBackground: light
       ? "rgba(0,0,0,0.08)"
       : "rgba(255,255,255,0.08)",
@@ -343,6 +361,7 @@ export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
       term.options.theme = terminalTheme(isLightScheme());
     };
     window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+    window.addEventListener(THEME_COLORS_CHANGE_EVENT, onSchemeChange);
 
     term.attachCustomWheelEventHandler(() => {
       if (term.element?.classList.contains("enable-mouse-events")) return true;
@@ -412,6 +431,7 @@ export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
       host.removeEventListener("copy", onCopy);
       host.removeEventListener("paste", onPaste);
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
+      window.removeEventListener(THEME_COLORS_CHANGE_EVENT, onSchemeChange);
       dataSub.dispose();
       oscFg.dispose();
       oscBg.dispose();

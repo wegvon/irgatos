@@ -253,7 +253,7 @@ export function SendToSessionDialog({
             onClick={() => send("run")}
             data-session-message-action="run"
             title={`${MOD}Enter`}
-            className="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-white hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-[12px] font-medium text-on-accent hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
           >
             <Share className="size-3.5" strokeWidth={1.75} />
             Send &amp; run

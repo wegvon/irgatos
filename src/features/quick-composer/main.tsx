@@ -5,11 +5,13 @@ import { IS_MAC } from "../../platform/tauri/platform";
 import {
   applyAccentColor,
   applyThemeDarkLightness,
+  applyThemePalette,
   applyThemePreference,
   applyThemeTint,
   loadAccentColor,
   loadThemeDarkLightness,
   loadThemeHue,
+  loadThemePalette,
   loadThemePreference,
   loadThemeSaturation,
 } from "../settings/model/appearance";
@@ -24,6 +26,7 @@ import "../../styles/index.css";
  */
 function applyAppearance() {
   document.documentElement.classList.toggle("is-mac", IS_MAC);
+  applyThemePalette(loadThemePalette());
   applyAccentColor(loadAccentColor());
   applyThemeTint(loadThemeHue(), loadThemeSaturation());
   applyThemeDarkLightness(loadThemeDarkLightness());

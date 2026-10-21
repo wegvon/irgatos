@@ -89,7 +89,7 @@ export function LinkSessionWorkItemDialog({
           </button>
           <button
             type="submit"
-            className="rounded-md bg-accent px-3 py-1.5 font-medium text-white hover:brightness-110 active:scale-[0.97]"
+            className="rounded-md bg-accent px-3 py-1.5 font-medium text-on-accent hover:brightness-110 active:scale-[0.97]"
           >
             {initial ? "Update link" : "Link"}
           </button>
