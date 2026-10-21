@@ -71,7 +71,7 @@ export function ChatNamePrompt({
       <button
         type="submit"
         disabled={!trimmed}
-        className="flex h-6.5 shrink-0 items-center rounded-md bg-accent px-2.5 text-[12px] font-medium text-white hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
+        className="flex h-6.5 shrink-0 items-center rounded-md bg-accent px-2.5 text-[12px] font-medium text-on-accent hover:brightness-110 active:scale-[0.97] disabled:opacity-40"
       >
         Save
       </button>
