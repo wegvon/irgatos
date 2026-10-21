@@ -105,10 +105,19 @@ const seed: Session[] = [
       },
     ],
   }),
+  chat("migrate", "codex", "/Users/demo/src/api", "Migrate the billing schema", {
+    blocks: [sent(40 * MIN, "Migrate")],
+  }),
   chat("docs", "claude", "/Users/demo/src/web", "Explain the deploy script", {
     blocks: [sent(26 * 60 * MIN), { id: "r", role: "assistant", text: "It runs three steps." }],
   }),
 ];
+
+// ?scheme=light shows the light theme; ?sidebar=1 the narrow sidebar Fleet.
+const params = new URLSearchParams(location.search);
+if (params.get("scheme") === "light")
+  document.documentElement.classList.add("theme-light");
+const asSidebar = params.get("sidebar") === "1";
 
 mockWindows("main");
 mockIPC(() => null);
@@ -148,10 +157,13 @@ function Fixture() {
           meta={<FleetNeedsYouCount count={count} />}
         />
       </nav>
+      <div className={asSidebar ? "flex w-80 shrink-0 flex-col border-r border-stroke" : "contents"}>
       <FleetView
-        besideRail
+        besideRail={!asSidebar}
+        sidebar={asSidebar}
         sessions={sessions}
         unseenFinishedIds={new Set(["limiter"])}
+        interruptedSessionIds={new Set(["migrate"])}
         onClose={() => {}}
         onOpenSession={(id) => events.push(`open:${id}`)}
         onApproval={(id, requestId, decision) => {
@@ -163,6 +175,7 @@ function Fixture() {
           setSessions((current) => settle(current, id, requestId));
         }}
       />
+      </div>
     </div>
   );
 }
