@@ -38,6 +38,14 @@ import {
   NEW_THREAD_BACKGROUND_EFFECT_DEFAULT,
   DIFF_PALETTE_DEFAULT,
   applyDiffPalette,
+  THEME_COLORS_CHANGE_EVENT,
+  THEME_PALETTE_DEFAULT,
+  THEME_PALETTE_SWATCHES,
+  THEME_PALETTES,
+  applyThemePalette,
+  applyThemeTint,
+  loadThemePalette,
+  saveThemePalette,
   loadDiffPalette,
   saveDiffPalette,
   initAppearance,
@@ -58,6 +66,7 @@ const CHAT_BACKGROUND_SCOPE_KEY = "irgat.chatBackgroundScope";
 const NEW_THREAD_BACKGROUND_EFFECT_KEY = "irgat.newThreadBackgroundEffect";
 const THEME_DARK_LIGHTNESS_KEY = "irgat.themeDarkLightness";
 const DIFF_PALETTE_KEY = "irgat.diffPalette";
+const PALETTE_KEY = "irgat.palette";
 
 function mockLocalStorage() {
   const data = new Map<string, string>();
@@ -242,6 +251,75 @@ describe("diff palette classes", () => {
   });
 });
 
+describe("colour palette setting", () => {
+  beforeEach(mockLocalStorage);
+  afterEach(() => {
+    localStorage.removeItem(PALETTE_KEY);
+  });
+
+  it("defaults, persists, and validates the palette", () => {
+    expect(THEME_PALETTE_DEFAULT).toBe("paper");
+    expect(loadThemePalette()).toBe("paper");
+    saveThemePalette("sage");
+    expect(loadThemePalette()).toBe("sage");
+    saveThemePalette("claude");
+    expect(localStorage.getItem(PALETTE_KEY)).toBe("claude");
+    localStorage.setItem(PALETTE_KEY, "neon");
+    expect(loadThemePalette()).toBe(THEME_PALETTE_DEFAULT);
+  });
+
+  it("has a light and a dark swatch for every palette", () => {
+    for (const palette of THEME_PALETTES) {
+      for (const scheme of ["light", "dark"] as const) {
+        const swatch = THEME_PALETTE_SWATCHES[palette][scheme];
+        expect(swatch.background).toMatch(/^#[\da-f]{6}$/);
+        expect(swatch.accent).toMatch(/^#[\da-f]{6}$/);
+      }
+    }
+  });
+});
+
+describe("colour palette classes", () => {
+  const classes = () => document.documentElement.classList;
+
+  beforeEach(() => {
+    document.documentElement.className = "";
+  });
+
+  it("sets one palette class and leaves the theme classes alone", () => {
+    classes().add("theme-light", "has-theme-tint", "palette-rose");
+    applyThemePalette("sea");
+    expect(classes().contains("palette-sea")).toBe(true);
+    expect(classes().contains("palette-rose")).toBe(false);
+    expect(classes().contains("theme-light")).toBe(true);
+    expect(classes().contains("has-theme-tint")).toBe(true);
+  });
+
+  it("uses no class for the default paper palette", () => {
+    classes().add("palette-lavender");
+    applyThemePalette("paper");
+    expect(
+      [...classes()].filter((name) => name.startsWith("palette-")),
+    ).toEqual([]);
+  });
+
+  it("does not touch the diff palette classes", () => {
+    classes().add("diff-palette-colorblind");
+    applyThemePalette("sage");
+    applyThemePalette("paper");
+    expect(classes().contains("diff-palette-colorblind")).toBe(true);
+  });
+
+  it("tells colour readers when the palette or tint changes", () => {
+    const heard = vi.fn();
+    window.addEventListener(THEME_COLORS_CHANGE_EVENT, heard);
+    applyThemePalette("rose");
+    applyThemeTint(200, 30);
+    window.removeEventListener(THEME_COLORS_CHANGE_EVENT, heard);
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("chat background setting", () => {
   beforeEach(mockLocalStorage);
   afterEach(() => {
@@ -322,6 +400,19 @@ describe("theme changes from another window", () => {
     changeInOtherWindow(SCHEME_KEY, "dark");
 
     expect(isLightScheme()).toBe(false);
+  });
+
+  it("applies a palette change saved by another window", () => {
+    initAppearance();
+    expect(document.documentElement.classList.contains("palette-sage")).toBe(
+      false,
+    );
+
+    changeInOtherWindow(PALETTE_KEY, "sage");
+
+    expect(document.documentElement.classList.contains("palette-sage")).toBe(
+      true,
+    );
   });
 
   it("applies an accent change saved by another window", () => {

@@ -33,6 +33,12 @@
             var o = Math.max(0.15, Math.min(1, Number(opacity) || 0.85));
             root.style.setProperty("--sidebar-opacity", String(o));
           }
+          var palette = read("palette");
+          if (
+            ["sage", "sea", "lavender", "rose", "claude"].indexOf(palette) >= 0
+          ) {
+            root.classList.add("palette-" + palette);
+          }
           var scheme = read("colorScheme");
           if (scheme === "system") {
             scheme = window.matchMedia("(prefers-color-scheme: light)").matches
@@ -76,6 +82,58 @@
       html.theme-light:not(.has-theme-tint) {
         --surface-hue: 40;
         --surface-saturation: 26%;
+      }
+
+      /* Palette surfaces from index.css, so the splash matches. */
+      html.palette-sage:not(.theme-light):not(.has-theme-tint) {
+        --surface-hue: 110;
+        --surface-saturation: 9%;
+      }
+
+      html.theme-light.palette-sage:not(.has-theme-tint) {
+        --surface-hue: 105;
+        --surface-saturation: 18%;
+      }
+
+      html.palette-sea:not(.theme-light):not(.has-theme-tint) {
+        --surface-hue: 195;
+        --surface-saturation: 15%;
+      }
+
+      html.theme-light.palette-sea:not(.has-theme-tint) {
+        --surface-hue: 192;
+        --surface-saturation: 24%;
+      }
+
+      html.palette-lavender:not(.theme-light):not(.has-theme-tint) {
+        --surface-hue: 260;
+        --surface-saturation: 14%;
+      }
+
+      html.theme-light.palette-lavender:not(.has-theme-tint) {
+        --surface-hue: 262;
+        --surface-saturation: 24%;
+      }
+
+      html.palette-rose:not(.theme-light):not(.has-theme-tint) {
+        --surface-hue: 344;
+        --surface-saturation: 11%;
+      }
+
+      html.theme-light.palette-rose:not(.has-theme-tint) {
+        --surface-hue: 346;
+        --surface-saturation: 26%;
+      }
+
+      html.palette-claude:not(.theme-light):not(.has-theme-tint) {
+        --surface-hue: 48;
+        --surface-saturation: 6%;
+      }
+
+      html.theme-light.palette-claude:not(.has-theme-tint) {
+        --surface-hue: 48;
+        --surface-saturation: 33%;
+        --background-lightness: 97%;
       }
 
       html,

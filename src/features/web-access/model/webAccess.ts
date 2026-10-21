@@ -55,6 +55,7 @@ import {
   loadThemeHue,
   loadThemePreference,
   loadThemeSaturation,
+  loadThemePalette,
 } from "../../settings/model/appearance";
 import {
   hasProbedHarnessAvailability,
@@ -191,6 +192,7 @@ export const webAccessDefaults: Omit<
     saturation: loadThemeSaturation(),
     darkLightness: loadThemeDarkLightness(),
     accent: loadAccentColor(),
+    palette: loadThemePalette(),
   }),
   owner: () => (owner ??= homeDir().then(ownerName, () => "")),
   ideas: {

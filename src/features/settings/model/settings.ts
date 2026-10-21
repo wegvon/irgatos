@@ -74,9 +74,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "app",
     label: "Appearance",
     description:
-      "Theme, tint, translucency, workspace layout, and conversation backgrounds.",
+      "Theme, palette, tint, translucency, workspace layout, and conversation backgrounds.",
     keywords:
-      "theme dark light color accent glass blur zoom scale wallpaper rail sidebar",
+      "theme dark light color palette accent glass blur zoom scale wallpaper rail sidebar",
   },
   {
     id: "keybindings",
@@ -379,6 +379,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "appearance",
     label: "Theme",
     keywords: "dark light system appearance mode",
+  },
+  {
+    id: "palette",
+    section: "appearance",
+    label: "Palette",
+    keywords:
+      "color colour scheme preset paper sage sea lavender rose claude green blue purple pink orange",
   },
   {
     id: "accent-color",

@@ -428,7 +428,7 @@ export function ProjectPickerPopover({
             {irgat.unseen ? (
               <span
                 aria-label={`${irgat.unseen} unread`}
-                className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular-nums text-white"
+                className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full bg-accent px-1 text-[10px] font-semibold tabular-nums text-on-accent"
               >
                 {irgat.unseen > 99 ? "99+" : irgat.unseen}
               </span>

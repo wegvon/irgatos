@@ -1,17 +1,30 @@
-/* Agent tree palette: dark by default, light under html.theme-light. */
+/* Agent tree palette: dark by default, light under html.theme-light.
+   Surfaces derive from the page tokens so they follow the colour palette. */
 .agent-tree {
-  --at-bg: #0e0e10;
-  --at-card: #1c1c1e;
-  --at-text: #ffffff;
-  --at-muted: #a1a1aa;
-  --at-faint: #71717a;
-  --at-line: #3f3f46;
+  --at-bg: color-mix(in srgb, var(--color-background-base) 60%, black);
+  --at-card: color-mix(
+    in srgb,
+    var(--color-content) 3%,
+    var(--color-background-base)
+  );
+  --at-text: var(--color-content);
+  --at-muted: color-mix(in srgb, var(--color-content) 68%, transparent);
+  --at-faint: color-mix(in srgb, var(--color-content) 48%, transparent);
+  --at-line: color-mix(
+    in srgb,
+    var(--color-content) 18%,
+    var(--color-background-base)
+  );
   --at-running: #3b82f6;
   --at-done: #22c55e;
   --at-needs: #f59e0b;
   --at-failed: #ef4444;
   --at-stopped: #8e8e93;
-  --at-popover: #26262a;
+  --at-popover: color-mix(
+    in srgb,
+    var(--color-content) 7%,
+    var(--color-background-base)
+  );
   --at-shadow: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
   --at-solid: #ffffff;
   --at-solid-text: #0e0e10;
@@ -21,7 +34,7 @@
 
 html.theme-light .agent-tree {
   --at-bg: var(--color-background-base);
-  --at-card: color-mix(in srgb, var(--color-background-base) 45%, #fffdf8);
+  --at-card: color-mix(in oklab, var(--color-background-base) 45%, white);
   --at-text: var(--color-content);
   --at-muted: color-mix(in srgb, var(--color-content) 72%, transparent);
   --at-faint: color-mix(in srgb, var(--color-content) 52%, transparent);
@@ -31,7 +44,7 @@ html.theme-light .agent-tree {
   --at-needs: #c48a2c;
   --at-failed: #c75a55;
   --at-stopped: #8f877c;
-  --at-popover: color-mix(in srgb, var(--color-background-base) 45%, #fffdf8);
+  --at-popover: color-mix(in oklab, var(--color-background-base) 45%, white);
   --at-shadow:
     0 12px 32px color-mix(in srgb, var(--color-content) 12%, transparent),
     0 2px 6px color-mix(in srgb, var(--color-content) 7%, transparent);

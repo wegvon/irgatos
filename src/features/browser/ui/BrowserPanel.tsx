@@ -1057,7 +1057,7 @@ export function BrowserPanel({
                   type="button"
                   disabled={!selectedProfile || importing}
                   onClick={() => void importSelectedProfile()}
-                  className="h-8 rounded bg-accent px-3 text-xs font-medium text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-8 rounded bg-accent px-3 text-xs font-medium text-on-accent hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {importing ? "Importing…" : "Import profile"}
                 </button>

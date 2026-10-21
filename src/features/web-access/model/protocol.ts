@@ -8,6 +8,7 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { IrgatStatus } from "../../irgats/model/irgat";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
 import type { BlockRole, HarnessId } from "../../sessions/model/session";
+import type { ThemePalette } from "../../settings/model/appearance";
 
 export type WebAppearance = {
   preference: "system" | "dark" | "light";
@@ -15,6 +16,8 @@ export type WebAppearance = {
   saturation: number;
   darkLightness: number;
   accent: string | null;
+  /** Missing in appearances cached by an older page. */
+  palette?: ThemePalette;
 };
 
 export type WebOverview = {
