@@ -12059,7 +12059,12 @@ function Workspace({
   webAccessDeps.current = {
     ...webAccessDefaults,
     sessions: () => sessionsRef.current,
-    submit: (sessionId, text) => onSubmit(sessionId, text, []),
+    submit: (sessionId, text, options) =>
+      onSubmit(sessionId, text, [], options),
+    openStored: ensureOpenSession,
+    setModel: onModelChange,
+    setModelSettings: onModelSettingsChange,
+    setRuntimeMode: onRuntimeModeChange,
     approve: onApproval,
     answer: onQuestionReply,
     stop: onStop,

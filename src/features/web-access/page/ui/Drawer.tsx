@@ -4,6 +4,7 @@ import type { WebOverview } from "../../model/protocol";
 import { navigate, openSheet } from "../route";
 import { allEntries, matches } from "./Chats";
 import { ChatRow } from "./ChatRow";
+import { History } from "./History";
 import { NEW_CHAT_FIELD } from "./NewChat";
 import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
@@ -201,6 +202,14 @@ export function Drawer({
                 : "No chats are open on your Mac."}
             </div>
           )}
+          {filter === null ? (
+            <History
+              active={open}
+              query={query}
+              now={now}
+              selected={selected}
+            />
+          ) : null}
         </div>
       </nav>
     </div>

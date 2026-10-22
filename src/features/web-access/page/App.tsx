@@ -7,6 +7,7 @@ import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
 import { ChatRow } from "./ui/ChatRow";
+import { History } from "./ui/History";
 import { Drawer, startNewChat } from "./ui/Drawer";
 import { Home } from "./ui/Home";
 import { Chats, allEntries } from "./ui/Chats";
@@ -393,6 +394,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                     No chats are open on your Mac.
                   </div>
                 ) : null}
+                <History
+                  active
+                  query=""
+                  now={now}
+                  selected={screen.name === "chat" ? screen.id : undefined}
+                />
               </div>
               <div className="shrink-0 border-t border-(--hairline) p-2">
                 <button

@@ -5,16 +5,23 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { HarnessId } from "../../../sessions/model/session";
-import type { WebProjects } from "../../model/protocol";
+import type { HarnessId, RuntimeMode } from "../../../sessions/model/session";
+import type { WebBranches, WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
 import { leaveSheetFor, navigate } from "../route";
-import { Harness, BrandMark, Spinner, useAction } from "./parts";
+import {
+  AccessSelect,
+  ModelSelect,
+  PickerPill,
+  PlanToggle,
+  useModels,
+} from "./ModelControls";
+import { BrandMark, Spinner, useAction } from "./parts";
 import {
   ArrowUp,
-  ChevronDown,
   FileDiff,
   Folder,
+  GitBranch,
   GitPullRequest,
   Idea,
   MessageSquare,
@@ -45,11 +52,27 @@ const SUGGESTIONS: { text: string; icon: ReactNode }[] = [
  * past the iPad width swaps the full-screen page for a sheet, which mounts a
  * fresh NewChat. Cleared once the chat starts.
  */
-const draft: { text: string; cwd: string; harness: HarnessId | null } = {
+type Draft = {
+  text: string;
+  cwd: string;
+  /** Null keeps the project's own provider and model. */
+  pick: { harness: HarnessId; model: string } | null;
+  mode: RuntimeMode;
+  /** The branch a new worktree starts from; empty works in the folder. */
+  worktree: string;
+  plan: boolean;
+};
+
+const EMPTY: Draft = {
   text: "",
   cwd: "",
-  harness: null,
+  pick: null,
+  mode: "supervised",
+  worktree: "",
+  plan: false,
 };
+
+const draft: Draft = { ...EMPTY };
 
 /** The composer's field, so a "New chat" button elsewhere can focus it. */
 export const NEW_CHAT_FIELD = "new-chat-field";
@@ -75,7 +98,12 @@ export function NewChat({
   const [error, setError] = useState("");
   const [text, setText] = useState(draft.text);
   const [cwd, setCwd] = useState(draft.cwd);
-  const [harness, setHarness] = useState(draft.harness);
+  const [pick, setPick] = useState(draft.pick);
+  const [mode, setMode] = useState(draft.mode);
+  const [worktree, setWorktree] = useState(draft.worktree);
+  const [plan, setPlan] = useState(draft.plan);
+  const [branches, setBranches] = useState<WebBranches | null>(null);
+  const catalog = useModels();
   const { busy, run } = useAction();
   const field = useRef<HTMLTextAreaElement>(null);
 
@@ -88,8 +116,21 @@ export function NewChat({
   }, []);
 
   useEffect(() => {
-    Object.assign(draft, { text, cwd, harness });
-  }, [text, cwd, harness]);
+    Object.assign(draft, { text, cwd, pick, mode, worktree, plan });
+  }, [text, cwd, pick, mode, worktree, plan]);
+
+  useEffect(() => {
+    setBranches(null);
+    if (!cwd) return;
+    let alive = true;
+    read<WebBranches>("branches", { cwd }).then(
+      (result) => alive && setBranches(result),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [cwd]);
 
   useLayoutEffect(() => {
     const element = field.current;
@@ -99,12 +140,7 @@ export function NewChat({
   }, [text]);
 
   const project = projects?.projects.find((entry) => entry.path === cwd);
-  const chosen = harness ?? project?.choice.harness ?? null;
-  const choice = projects?.harnesses.find((entry) => entry.harness === chosen);
-  const model =
-    project && project.choice.harness === chosen
-      ? project.choice.modelName
-      : choice?.modelName;
+  const choice = pick ?? project?.choice ?? null;
   const ready = !!text.trim() && !!projects && busy === null;
 
   const start = async () => {
@@ -113,18 +149,24 @@ export function NewChat({
       write<{ sessionId: string }>("newChat", {
         cwd,
         text: text.trim(),
-        ...(chosen ? { harness: chosen } : {}),
+        ...(pick ? { harness: pick.harness, model: pick.model } : {}),
+        mode,
+        ...(cwd && worktree ? { worktree } : {}),
+        ...(plan ? { plan: true } : {}),
       }),
     );
     if (!result) return;
-    Object.assign(draft, { text: "", cwd: "", harness: null });
+    Object.assign(draft, EMPTY);
     const chat = { name: "chat", id: result.sessionId } as const;
     if (inline) {
       // The phone's start screen stays mounted under the chat: clear it,
       // and keep it in the history so Back returns to it.
-      setText("");
-      setCwd("");
-      setHarness(null);
+      setText(EMPTY.text);
+      setCwd(EMPTY.cwd);
+      setPick(EMPTY.pick);
+      setMode(EMPTY.mode);
+      setWorktree(EMPTY.worktree);
+      setPlan(EMPTY.plan);
       navigate(chat);
     } else leaveSheetFor(chat);
   };
@@ -167,8 +209,9 @@ export function NewChat({
 
       <div className="shrink-0 px-3 pb-[max(var(--safe-bottom),12px)]">
         <div className="mx-auto w-full max-w-[640px]">
-          <div className="mb-2 flex gap-2 px-1">
-            <Picker
+          <div className="mb-2 flex flex-wrap gap-2 px-1">
+            <PickerPill
+              label="Where"
               icon={
                 cwd ? (
                   <Folder className="size-4 text-(--ink-2)" />
@@ -184,7 +227,8 @@ export function NewChat({
                 disabled={!projects}
                 onChange={(event) => {
                   setCwd(event.target.value);
-                  setHarness(null);
+                  setPick(null);
+                  setWorktree("");
                 }}
                 className="absolute inset-0 size-full cursor-pointer opacity-0"
               >
@@ -194,32 +238,50 @@ export function NewChat({
                   </option>
                 ))}
               </select>
-            </Picker>
-            {projects?.harnesses.length ? (
-              <Picker
-                icon={
-                  chosen ? (
-                    <Harness harness={chosen} className="size-4" />
-                  ) : null
-                }
-                value={model || choice?.title || ""}
+            </PickerPill>
+            {cwd && branches?.branches.length ? (
+              <PickerPill
+                label="Workspace"
+                icon={<GitBranch className="size-4 text-(--ink-2)" />}
+                value={worktree ? `New worktree · ${worktree}` : "This folder"}
               >
                 <select
-                  aria-label="Agent"
-                  value={chosen ?? ""}
-                  onChange={(event) =>
-                    setHarness(event.target.value as HarnessId)
-                  }
+                  aria-label="Workspace"
+                  value={worktree}
+                  onChange={(event) => setWorktree(event.target.value)}
                   className="absolute inset-0 size-full cursor-pointer opacity-0"
                 >
-                  {projects.harnesses.map((entry) => (
-                    <option key={entry.harness} value={entry.harness}>
-                      {entry.title} · {entry.modelName}
-                    </option>
-                  ))}
+                  <option value="">
+                    This folder
+                    {branches.current ? ` (${branches.current})` : ""}
+                  </option>
+                  <optgroup label="New worktree from">
+                    {branches.branches.map((branch) => (
+                      <option key={branch} value={branch}>
+                        {branch}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
-              </Picker>
+              </PickerPill>
             ) : null}
+            {choice ? (
+              <ModelSelect
+                catalog={catalog}
+                harness={choice.harness}
+                model={choice.model}
+                name={
+                  pick
+                    ? pick.model
+                    : (project?.choice.modelName ?? choice.model)
+                }
+                onChange={(harness, model) => setPick({ harness, model })}
+              />
+            ) : null}
+            {choice?.harness === "fx" ? null : (
+              <AccessSelect mode={mode} onChange={setMode} />
+            )}
+            <PlanToggle on={plan} onChange={setPlan} />
           </div>
           {error ? (
             <div className="mb-2 px-2 text-[14px] font-medium text-(--bad)">
@@ -264,27 +326,5 @@ export function NewChat({
         </div>
       </div>
     </div>
-  );
-}
-
-/** A pill that opens the system picker: iOS shows its own wheel for it. */
-function Picker({
-  icon,
-  value,
-  children,
-}: {
-  icon: ReactNode;
-  value: string;
-  children: ReactNode;
-}) {
-  return (
-    <span className="glass relative inline-flex h-10 min-w-0 items-center gap-2 rounded-full pl-3 pr-2.5 text-[14px]">
-      <span className="shrink-0">{icon}</span>
-      <span className="min-w-0 truncate font-semibold text-(--ink)">
-        {value}
-      </span>
-      <ChevronDown className="size-3.5 shrink-0 text-(--ink-3)" />
-      {children}
-    </span>
   );
 }

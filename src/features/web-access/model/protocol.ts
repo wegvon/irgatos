@@ -7,7 +7,11 @@ import type { FleetEntry, FleetRequest } from "../../fleet/model/fleet";
 import type { IdeasState } from "../../ideas/model/ideas";
 import type { IrgatStatus } from "../../irgats/model/irgat";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
-import type { BlockRole, HarnessId } from "../../sessions/model/session";
+import type {
+  BlockRole,
+  HarnessId,
+  RuntimeMode,
+} from "../../sessions/model/session";
 import type { ThemePalette } from "../../settings/model/appearance";
 
 export type WebAppearance = {
@@ -38,10 +42,19 @@ export type WebBlock = {
   role: BlockRole;
   text: string;
   streaming?: boolean;
-  tool?: { label: string; status?: string; kind?: string; detail?: string };
+  tool?: {
+    label: string;
+    status?: string;
+    kind?: string;
+    detail?: string;
+    /** What the step printed or found, e.g. a command's output. */
+    output?: string;
+  };
   approval?: { requestId: number; decided?: "allow" | "deny" | "cancelled" };
   /** Attachments on a user turn, by name only. */
   files?: string[];
+  /** Images on this block, loaded one by one with the `image` read. */
+  images?: WebImage[];
   at?: number;
   durationMs?: number;
 };
@@ -65,6 +78,49 @@ export type WebSession = {
   blocks: WebBlock[];
   /** An Irgat's own chat goes with the Irgat, so only the Mac deletes it. */
   deletable: boolean;
+  /** The model's own id, for the model picker. */
+  modelId: string;
+  /** Missing on a provider without access modes. */
+  runtimeMode?: RuntimeMode;
+  /** The model's reasoning effort, when it has one. */
+  effort?: WebEffort;
+};
+
+/** `index` counts the block's images in the order the page got them. */
+export type WebImage = { index: number; name: string };
+
+export type WebImageData = { mimeType: string; data: string };
+
+export type WebEffort = {
+  id: string;
+  value: string;
+  options: { value: string; label: string }[];
+};
+
+export type WebModels = {
+  harnesses: {
+    harness: HarnessId;
+    title: string;
+    models: { id: string; name: string }[];
+  }[];
+};
+
+/** A chat that is not open on the Mac, from its saved history. */
+export type WebHistoryEntry = {
+  sessionId: string;
+  title: string;
+  harness: HarnessId;
+  projectLabel: string;
+  branch?: string;
+  updatedAt: number;
+};
+
+export type WebHistory = { chats: WebHistoryEntry[] };
+
+export type WebBranches = {
+  /** Empty when the folder is not a git repository. */
+  current: string;
+  branches: string[];
 };
 
 export type WebHarnessChoice = {
