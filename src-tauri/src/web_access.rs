@@ -44,7 +44,8 @@ const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 
 const READ_ACTIONS: [&str; 7] = [
     "overview", "session", "projects", "ideas", "services", "irgats", "pushKey",
 ];
-const WRITE_ACTIONS: [&str; 15] = [
+const WRITE_ACTIONS: [&str; 16] = [
+    "upload",
     "send",
     "approval",
     "answer",
