@@ -16,6 +16,9 @@ export type Route =
   | { name: "irgats" }
   | { name: "ideas" }
   | { name: "idea"; id: string }
+  | { name: "mail" }
+  /** `id` is `mailThreadId(account, thread)`: a thread is unique per account. */
+  | { name: "mailThread"; id: string }
   | { name: "new" }
   | { name: "services" }
   /** Fleet's Agent Tree, and Claude Code running outside Irgatos. */
@@ -35,6 +38,8 @@ export type Screen = Extract<
       | "chat"
       | "irgats"
       | "ideas"
+      | "mail"
+      | "mailThread"
       | "agents"
       | "automations";
   }
@@ -57,6 +62,10 @@ export function parseRoute(hash: string): Route {
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };
+    case "mail":
+      return { name };
+    case "mailThread":
+      return value ? { name, id: value } : { name: "mail" };
     case "new":
     case "services":
     case "agents":
@@ -93,6 +102,14 @@ function screenUnder(route: Sheet): Screen {
   if (route.name === "automation") return { name: "automations" };
   if (route.name === "irgat") return { name: "irgats" };
   return { name: "home" };
+}
+
+export const mailThreadId = (account: string, thread: string) =>
+  `${account}\n${thread}`;
+
+export function parseMailThreadId(id: string) {
+  const at = id.lastIndexOf("\n");
+  return { account: id.slice(0, Math.max(0, at)), thread: id.slice(at + 1) };
 }
 
 let openedSheetHere = false;
