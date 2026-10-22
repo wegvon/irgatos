@@ -164,8 +164,10 @@ export function Drawer({
             <Tile label="Agents" onClick={() => navigate({ name: "agents" })}>
               <FolderTree className="size-[21px]" />
             </Tile>
+            {/* "Automations" is wider than a tile on a phone. */}
             <Tile
-              label="Automations"
+              label="Automate"
+              title="Automations"
               onClick={() => navigate({ name: "automations" })}
             >
               <Zap className="size-[21px]" />
