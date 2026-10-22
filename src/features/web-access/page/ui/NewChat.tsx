@@ -20,6 +20,7 @@ import {
   MessageSquare,
   Terminal,
 } from "../../../../shared/ui/icons";
+import { DictateButton } from "./Voice";
 
 const SUGGESTIONS: { text: string; icon: ReactNode }[] = [
   {
@@ -248,6 +249,7 @@ export function NewChat({
                 className="web-field block max-h-40 w-full resize-none bg-transparent outline-none"
               />
             </div>
+            <DictateButton value={text} onChange={setText} />
             <button
               aria-label="Start chat"
               disabled={!ready}

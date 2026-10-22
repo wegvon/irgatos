@@ -59,26 +59,10 @@ fn run(
     cancelled: &AtomicBool,
     partial: impl Fn(String),
 ) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(30))
-        .redirects(0)
-        .build();
-    let start = agent
-        .post(&format!("{endpoint}/api/start"))
-        .call()
-        .map_err(|error| format!("Qwen ASR: {error}"))?;
-    let started: Started = serde_json::from_str(&start.into_string().map_err(|e| e.to_string())?)
-        .map_err(|_| "Qwen ASR returned an invalid session".to_string())?;
-    let mut finish_url =
-        url::Url::parse(&format!("{endpoint}/api/finish")).map_err(|error| error.to_string())?;
-    finish_url
-        .query_pairs_mut()
-        .append_pair("session_id", &started.session_id);
-    let mut chunk_url =
-        url::Url::parse(&format!("{endpoint}/api/chunk")).map_err(|error| error.to_string())?;
-    chunk_url
-        .query_pairs_mut()
-        .append_pair("session_id", &started.session_id);
+    let agent = client();
+    let session = start_session(&agent, endpoint)?;
+    let finish_url = session_url(endpoint, "finish", &session)?;
+    let chunk_url = session_url(endpoint, "chunk", &session)?;
     let samples_per_chunk = sample_rate.round().max(1.0) as usize;
     let result = (|| {
         let mut pending = Vec::new();
@@ -103,21 +87,83 @@ fn run(
         Ok::<_, String>(())
     })();
     // Every started session is closed, including cancellation and chunk errors.
-    let finish = agent
-        .post(finish_url.as_str())
-        .call()
-        .map_err(|error| format!("Qwen ASR: {error}"))
-        .and_then(|response| {
-            response
-                .into_string()
-                .map_err(|e| e.to_string())
-                .and_then(|body| {
-                    serde_json::from_str::<Transcript>(&body).map_err(|e| e.to_string())
-                })
-                .map_err(|_| "Qwen ASR returned an invalid transcript".to_string())
-        });
+    let finish = finish_session(&agent, finish_url.as_str());
     result?;
-    finish.map(|reply| reply.text)
+    finish
+}
+
+fn finish_session(agent: &ureq::Agent, url: &str) -> Result<String, String> {
+    let response = agent
+        .post(url)
+        .call()
+        .map_err(|error| format!("Qwen ASR: {error}"))?;
+    response
+        .into_string()
+        .map_err(|e| e.to_string())
+        .and_then(|body| serde_json::from_str::<Transcript>(&body).map_err(|e| e.to_string()))
+        .map(|reply| reply.text)
+        .map_err(|_| "Qwen ASR returned an invalid transcript".to_string())
+}
+
+fn client() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(30))
+        .redirects(0)
+        .build()
+}
+
+fn start_session(agent: &ureq::Agent, endpoint: &str) -> Result<String, String> {
+    let start = agent
+        .post(&format!("{endpoint}/api/start"))
+        .call()
+        .map_err(|error| format!("Qwen ASR: {error}"))?;
+    let started: Started = serde_json::from_str(&start.into_string().map_err(|e| e.to_string())?)
+        .map_err(|_| "Qwen ASR returned an invalid session".to_string())?;
+    Ok(started.session_id)
+}
+
+fn session_url(endpoint: &str, step: &str, session: &str) -> Result<url::Url, String> {
+    let mut url =
+        url::Url::parse(&format!("{endpoint}/api/{step}")).map_err(|error| error.to_string())?;
+    url.query_pairs_mut().append_pair("session_id", session);
+    Ok(url)
+}
+
+/// Dictation from the browser companion: the phone records and sends 16 kHz
+/// pieces through the Mac, so the Qwen session lives between calls.
+pub struct Relay {
+    endpoint: String,
+}
+
+impl Relay {
+    pub fn new() -> Self {
+        Self::at(ENDPOINT)
+    }
+
+    fn at(endpoint: &str) -> Self {
+        Self {
+            endpoint: endpoint.trim_end_matches('/').to_string(),
+        }
+    }
+
+    pub fn start(&self) -> Result<String, String> {
+        start_session(&client(), &self.endpoint)
+    }
+
+    /// The transcript so far, after this piece.
+    pub fn chunk(&self, session: &str, samples: &[f32]) -> Result<String, String> {
+        let url = session_url(&self.endpoint, "chunk", session)?;
+        let text = std::cell::RefCell::new(String::new());
+        send_chunk(&client(), url.as_str(), samples, 16_000.0, &|partial| {
+            *text.borrow_mut() = partial;
+        })?;
+        Ok(text.into_inner())
+    }
+
+    pub fn finish(&self, session: &str) -> Result<String, String> {
+        let url = session_url(&self.endpoint, "finish", session)?;
+        finish_session(&client(), url.as_str())
+    }
 }
 
 fn send_chunk(
@@ -230,5 +276,67 @@ mod tests {
         assert_eq!(result, "Merhaba dünya.");
         assert_eq!(*partials.lock().unwrap(), ["Merhaba", "Merhaba dünya"]);
         server.join().unwrap();
+    }
+
+    /// Answers each expected request in turn and reports the chunk sizes.
+    fn scripted(
+        replies: Vec<(&'static str, &'static str)>,
+    ) -> (String, std::thread::JoinHandle<Vec<usize>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut sizes = Vec::new();
+            for (path, reply) in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut received = Vec::new();
+                let mut buffer = [0u8; 8192];
+                let header_end = loop {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    received.extend_from_slice(&buffer[..count]);
+                    if let Some(index) = received.windows(4).position(|part| part == b"\r\n\r\n") {
+                        break index + 4;
+                    }
+                };
+                let headers = String::from_utf8_lossy(&received[..header_end]).into_owned();
+                assert!(headers.starts_with(&format!("POST {path} ")), "{headers}");
+                let length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|s| s.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                while received.len() - header_end < length {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    received.extend_from_slice(&buffer[..count]);
+                }
+                sizes.push(length);
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", reply.len(), reply).unwrap();
+            }
+            sizes
+        });
+        (endpoint, server)
+    }
+
+    #[test]
+    fn the_relay_keeps_the_session_between_calls() {
+        let (endpoint, server) = scripted(vec![
+            ("/api/start", r#"{"session_id":"phone"}"#),
+            ("/api/chunk?session_id=phone", r#"{"text":"Merhaba"}"#),
+            ("/api/finish?session_id=phone", r#"{"text":"Merhaba."}"#),
+        ]);
+        let relay = Relay::at(&endpoint);
+        let session = relay.start().unwrap();
+        assert_eq!(session, "phone");
+        assert_eq!(relay.chunk(&session, &[0.5; 16_000]).unwrap(), "Merhaba");
+        assert_eq!(relay.finish(&session).unwrap(), "Merhaba.");
+        // 16 kHz float32 goes on as it came.
+        assert_eq!(server.join().unwrap(), [0, 64_000, 0]);
     }
 }

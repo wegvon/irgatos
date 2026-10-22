@@ -25,6 +25,9 @@ import {
 import { Sheet } from "./ui/Sheet";
 import { SwipeBack } from "./ui/SwipeBack";
 import { Today } from "./ui/Today";
+import { Agents } from "./ui/Agents";
+import { AutomationDetail, Automations } from "./ui/Automations";
+import { IrgatDetail } from "./ui/IrgatDetail";
 import {
   Brand,
   IconBadge,
@@ -35,6 +38,7 @@ import {
 } from "./ui/parts";
 import {
   Bot,
+  FolderTree,
   Idea,
   Menu,
   MessageSquare,
@@ -44,6 +48,7 @@ import {
   Radar,
   WifiOff,
   X,
+  Zap,
 } from "../../../shared/ui/icons";
 import { FLEET_BUCKET_LABEL, FLEET_BUCKETS } from "../../fleet/model/fleet";
 
@@ -209,7 +214,11 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       ? "New chat"
       : sheet?.name === "services"
         ? "Your Mac"
-        : "Idea";
+        : sheet?.name === "automation"
+          ? "Automation"
+          : sheet?.name === "irgat"
+            ? "Irgat"
+            : "Idea";
   const sheetView =
     sheet && !newChatHere ? (
       <Sheet title={sheetTitle} wide={wide} onClose={closeSheet}>
@@ -217,6 +226,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           <div className="h-[min(640px,calc(var(--app-height,100dvh)-200px))]">
             <NewChat owner={overview.data?.owner} />
           </div>
+        ) : sheet.name === "automation" ? (
+          <AutomationDetail id={sheet.id} now={now} onClose={closeSheet} />
+        ) : sheet.name === "irgat" ? (
+          <IrgatDetail id={sheet.id} onClose={closeSheet} />
         ) : sheet.name === "services" ? (
           <ServicesSheet
             services={services.data?.services}
@@ -268,6 +281,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           />
         ) : name === "irgats" ? (
           <Irgats irgats={irgats.data} header={header} wide={wide} />
+        ) : name === "agents" ? (
+          <Agents header={header} wide={wide} now={now} />
+        ) : name === "automations" ? (
+          <Automations header={header} wide={wide} now={now} />
         ) : (
           <Chats
             overview={overview.data}
@@ -354,6 +371,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Ideas"
                   on={screen.name === "ideas"}
                   onClick={() => navigate({ name: "ideas" })}
+                />
+                <NavItem
+                  icon={<FolderTree className="size-5" />}
+                  label="Agents"
+                  on={screen.name === "agents"}
+                  onClick={() => navigate({ name: "agents" })}
+                />
+                <NavItem
+                  icon={<Zap className="size-5" />}
+                  label="Automations"
+                  on={screen.name === "automations"}
+                  onClick={() => navigate({ name: "automations" })}
                 />
               </nav>
               <div className="shrink-0 px-3 pb-2 pt-4">
@@ -444,6 +473,20 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 onClick={() => navigate({ name: "ideas" })}
               >
                 <Idea className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Agents"
+                on={screen.name === "agents"}
+                onClick={() => navigate({ name: "agents" })}
+              >
+                <FolderTree className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Automations"
+                on={screen.name === "automations"}
+                onClick={() => navigate({ name: "automations" })}
+              >
+                <Zap className="size-[22px]" />
               </RailItem>
               <button
                 aria-label="New chat"

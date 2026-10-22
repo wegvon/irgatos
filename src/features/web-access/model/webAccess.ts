@@ -81,6 +81,11 @@ import {
   type UserQuestionReply,
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
+import {
+  handleWebAgents,
+  isWebAgentsAction,
+  type WebAgentsDeps,
+} from "./webAccessAgents";
 import type {
   WebAppearance,
   WebBlock,
@@ -145,6 +150,8 @@ export type WebAccessDeps = {
   };
   services: () => Promise<ServiceStatus[]>;
   newId: () => string;
+  /** Fleet agents, automations, Irgat settings and voice. */
+  agents?: WebAgentsDeps;
 };
 
 type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
@@ -731,6 +738,12 @@ export async function handleWebAccess(
       return result;
     }
     default:
+      if (isWebAgentsAction(action))
+        return handleWebAgents(
+          { ...deps, findSession: (given) => findSession(deps, given) },
+          action,
+          input,
+        );
       throw new Error("Unknown action");
   }
 }

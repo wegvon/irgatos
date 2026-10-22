@@ -6,13 +6,14 @@ import {
 import { PixelMascot } from "../../../projects/ui/PixelMascot";
 import type { WebIrgat, WebIrgats, WebMascot } from "../../model/protocol";
 import { write } from "../client";
-import { navigate } from "../route";
+import { navigate, openSheet } from "../route";
 import { Empty, Pill, Spinner, TONE, plainButton, useAction } from "./parts";
 import {
   Bot,
   ChevronRight,
   LoaderCircle,
   Plus,
+  Settings,
 } from "../../../../shared/ui/icons";
 
 /** An Irgat's pixel mascot, moving as it does on the desktop rail. */
@@ -75,6 +76,11 @@ export function Irgats({
       });
       navigate({ name: "chat", id: opened.sessionId });
     });
+  const create = () =>
+    void run("create", async () => {
+      const created = await write<{ irgatId: string }>("irgatCreate", {});
+      openSheet({ name: "irgat", id: created.irgatId });
+    });
   const newChat = (irgat: WebIrgat) =>
     void run(`${irgat.id}:new`, async () => {
       const created = await write<{ sessionId: string }>("irgatNewChat", {
@@ -91,9 +97,25 @@ export function Irgats({
         <div className="flex h-10 items-center justify-between gap-3">
           {header}
         </div>
-        <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.025em] text-(--ink)">
-          Irgats
-        </h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-[32px] font-semibold leading-tight tracking-[-0.025em] text-(--ink)">
+            Irgats
+          </h1>
+          {irgats?.enabled ? (
+            <button
+              className={`${plainButton} gap-1.5`}
+              disabled={busy !== null}
+              onClick={create}
+            >
+              {busy === "create" ? (
+                <Spinner className="size-4" />
+              ) : (
+                <Plus className="size-4" strokeWidth={2.4} />
+              )}
+              New Irgat
+            </button>
+          ) : null}
+        </div>
       </header>
 
       {!irgats ? (
@@ -111,7 +133,7 @@ export function Irgats({
             title={irgats.enabled ? "No Irgats yet" : "Irgats are turned off"}
           >
             {irgats.enabled
-              ? "Add one on your Mac from the Irgats section of the sidebar, then talk to it from here."
+              ? "Tap New Irgat to add one, then tell it what to work on."
               : "Turn them on in Irgatos settings on your Mac."}
           </Empty>
         </div>
@@ -231,6 +253,13 @@ function IrgatCard({
             <Plus className="size-4" strokeWidth={2.4} />
           )}
           New chat
+        </button>
+        <button
+          className={`${plainButton} ml-auto h-10 gap-2 px-3 text-[14px] text-(--ink-2)`}
+          onClick={() => openSheet({ name: "irgat", id: irgat.id })}
+        >
+          <Settings className="size-4" />
+          Settings
         </button>
       </div>
     </article>

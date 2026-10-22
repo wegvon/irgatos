@@ -17,11 +17,27 @@ export type Route =
   | { name: "ideas" }
   | { name: "idea"; id: string }
   | { name: "new" }
-  | { name: "services" };
+  | { name: "services" }
+  /** Fleet's Agent Tree, and Claude Code running outside Irgatos. */
+  | { name: "agents" }
+  | { name: "automations" }
+  | { name: "automation"; id: string }
+  /** An Irgat's settings, agents and memory, over the Irgats screen. */
+  | { name: "irgat"; id: string };
 
 export type Screen = Extract<
   Route,
-  { name: "home" | "today" | "chats" | "chat" | "irgats" | "ideas" }
+  {
+    name:
+      | "home"
+      | "today"
+      | "chats"
+      | "chat"
+      | "irgats"
+      | "ideas"
+      | "agents"
+      | "automations";
+  }
 >;
 export type Sheet = Exclude<Route, Screen>;
 
@@ -43,7 +59,13 @@ export function parseRoute(hash: string): Route {
       return value ? { name, id: value } : { name: "ideas" };
     case "new":
     case "services":
+    case "agents":
+    case "automations":
       return { name };
+    case "automation":
+      return value ? { name, id: value } : { name: "automations" };
+    case "irgat":
+      return value ? { name, id: value } : { name: "irgats" };
     default:
       return { name: "home" };
   }
@@ -57,13 +79,20 @@ export function href(route: Route): string {
 
 export function isSheet(route: Route): route is Sheet {
   return (
-    route.name === "new" || route.name === "services" || route.name === "idea"
+    route.name === "new" ||
+    route.name === "services" ||
+    route.name === "idea" ||
+    route.name === "automation" ||
+    route.name === "irgat"
   );
 }
 
 /** The screen a sheet opens over when the page is opened straight onto it. */
 function screenUnder(route: Sheet): Screen {
-  return route.name === "idea" ? { name: "ideas" } : { name: "home" };
+  if (route.name === "idea") return { name: "ideas" };
+  if (route.name === "automation") return { name: "automations" };
+  if (route.name === "irgat") return { name: "irgats" };
+  return { name: "home" };
 }
 
 let openedSheetHere = false;

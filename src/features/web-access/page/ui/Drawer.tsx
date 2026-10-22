@@ -9,11 +9,13 @@ import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
 import {
   Bot,
+  FolderTree,
   Idea,
   PenLine,
   Radar,
   Search,
   X,
+  Zap,
 } from "../../../../shared/ui/icons";
 
 /** Short names, so the status filters fit the panel's width. */
@@ -120,7 +122,7 @@ export function Drawer({
               </button>
             ) : null}
           </label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <Tile
               label="Today"
               badge={needsYou}
@@ -133,6 +135,15 @@ export function Drawer({
             </Tile>
             <Tile label="Ideas" onClick={() => navigate({ name: "ideas" })}>
               <Idea className="size-[21px]" />
+            </Tile>
+            <Tile label="Agents" onClick={() => navigate({ name: "agents" })}>
+              <FolderTree className="size-[21px]" />
+            </Tile>
+            <Tile
+              label="Automations"
+              onClick={() => navigate({ name: "automations" })}
+            >
+              <Zap className="size-[21px]" />
             </Tile>
             <Tile
               label="Your Mac"
