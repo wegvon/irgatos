@@ -16,12 +16,25 @@ export type Route =
   | { name: "irgats" }
   | { name: "ideas" }
   | { name: "idea"; id: string }
+  | { name: "mail" }
+  /** `id` is `mailThreadId(account, thread)`: a thread is unique per account. */
+  | { name: "mailThread"; id: string }
   | { name: "new" }
   | { name: "services" };
 
 export type Screen = Extract<
   Route,
-  { name: "home" | "today" | "chats" | "chat" | "irgats" | "ideas" }
+  {
+    name:
+      | "home"
+      | "today"
+      | "chats"
+      | "chat"
+      | "irgats"
+      | "ideas"
+      | "mail"
+      | "mailThread";
+  }
 >;
 export type Sheet = Exclude<Route, Screen>;
 
@@ -41,6 +54,10 @@ export function parseRoute(hash: string): Route {
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };
+    case "mail":
+      return { name };
+    case "mailThread":
+      return value ? { name, id: value } : { name: "mail" };
     case "new":
     case "services":
       return { name };
@@ -64,6 +81,14 @@ export function isSheet(route: Route): route is Sheet {
 /** The screen a sheet opens over when the page is opened straight onto it. */
 function screenUnder(route: Sheet): Screen {
   return route.name === "idea" ? { name: "ideas" } : { name: "home" };
+}
+
+export const mailThreadId = (account: string, thread: string) =>
+  `${account}\n${thread}`;
+
+export function parseMailThreadId(id: string) {
+  const at = id.lastIndexOf("\n");
+  return { account: id.slice(0, Math.max(0, at)), thread: id.slice(at + 1) };
 }
 
 let openedSheetHere = false;
