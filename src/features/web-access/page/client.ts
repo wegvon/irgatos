@@ -53,9 +53,11 @@ export function read<T>(
   return call<T>(`/api/${action}${search ? `?${search}` : ""}`, {});
 }
 
+/** `refresh: false` skips reloading every view, e.g. for each upload piece. */
 export async function write<T = unknown>(
   action: string,
   body: Record<string, unknown>,
+  refresh = true,
 ): Promise<T> {
   try {
     return await call<T>(`/api/${action}`, {
@@ -67,7 +69,7 @@ export async function write<T = unknown>(
       body: JSON.stringify(body),
     });
   } finally {
-    refreshAll();
+    if (refresh) refreshAll();
   }
 }
 

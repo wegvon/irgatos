@@ -48,6 +48,11 @@ import {
   type ServiceStatus,
 } from "../../service-status/model/serviceStatus";
 import { upsertSession } from "../../sessions/data/sessionStore";
+import {
+  MAX_ATTACHMENTS,
+  MAX_EMBED_BYTES,
+  attachmentsFromFiles,
+} from "../../sessions/model/attachments";
 import { loadIrgatsEnabled } from "../../settings/model/settings";
 import {
   loadAccentColor,
@@ -71,6 +76,7 @@ import {
   HARNESS_TITLE,
   sessionDisplayTitle,
   sessionWorkCwd,
+  type Attachment,
   type Block,
   type HarnessId,
   type Session,
@@ -104,7 +110,13 @@ import type {
  */
 export type WebAccessDeps = {
   sessions: () => readonly Session[];
-  submit: (sessionId: string, text: string) => boolean;
+  submit: (
+    sessionId: string,
+    text: string,
+    attachments: Attachment[],
+  ) => boolean;
+  /** Turns a file the page uploaded into an attachment, as a paste does. */
+  attach: (file: File) => Promise<Attachment | null>;
   approve: (
     sessionId: string,
     requestId: number,
@@ -180,6 +192,7 @@ export const webAccessDefaults: Omit<
   | "rename"
   | "remove"
 > = {
+  attach: async (file) => (await attachmentsFromFiles([file]))[0] ?? null,
   projects: () => loadRecents().map((project) => project.path),
   freeChatDir: resolveFreeChatDir,
   choice: (cwd) => defaultSessionChoice(cwd),
@@ -235,6 +248,86 @@ function text(input: Input, key: string, max = 100_000): string {
   if (typeof value !== "string") throw new Error(`Missing ${key}`);
   if (value.length > max) throw new Error(`${key} is too long`);
   return value;
+}
+
+/**
+ * Files the page sends in pieces, each under the relay's body limit, then
+ * names in its next message. Kept in memory for an hour; a message takes
+ * the ones it names.
+ */
+type Upload = {
+  name: string;
+  type: string;
+  parts: string[];
+  length: number;
+  at: number;
+  file?: Attachment;
+};
+const uploads = new Map<string, Upload>();
+const UPLOAD_TTL = 60 * 60 * 1000;
+/** Base64 of the largest file a chat embeds. */
+const MAX_UPLOAD_CHARS = Math.ceil(MAX_EMBED_BYTES / 3) * 4;
+
+async function receiveUpload(deps: WebAccessDeps, input: Input) {
+  const now = Date.now();
+  for (const [id, upload] of uploads)
+    if (now - upload.at > UPLOAD_TTL) uploads.delete(id);
+  const chunk = text(input, "chunk", 400_000);
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(chunk))
+    throw new Error("The file arrived damaged. Try again.");
+  let id = typeof input.uploadId === "string" ? input.uploadId : "";
+  let upload = id ? uploads.get(id) : undefined;
+  if (id && !upload) throw new Error("The upload expired. Attach it again.");
+  if (!upload) {
+    if (uploads.size >= 50) throw new Error("Too many files at once.");
+    id = crypto.randomUUID();
+    upload = {
+      name: text(input, "name", 200).trim() || "file",
+      type: typeof input.type === "string" ? input.type.slice(0, 100) : "",
+      parts: [],
+      length: 0,
+      at: now,
+    };
+    uploads.set(id, upload);
+  }
+  upload.parts.push(chunk);
+  upload.length += chunk.length;
+  upload.at = now;
+  if (upload.length > MAX_UPLOAD_CHARS) {
+    uploads.delete(id);
+    throw new Error(
+      `Files up to ${MAX_EMBED_BYTES / 1024 / 1024} MB can be attached.`,
+    );
+  }
+  if (input.last !== true) return { uploadId: id };
+  const data = upload.parts.join("");
+  upload.parts = [];
+  const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  const file = await deps.attach(
+    new File([bytes], upload.name, { type: upload.type }),
+  );
+  if (!file) {
+    uploads.delete(id);
+    throw new Error(`Irgatos could not attach ${upload.name}.`);
+  }
+  upload.file = file;
+  return { uploadId: id, name: file.name, size: file.size, kind: file.kind };
+}
+
+/** The finished uploads a message names, taken out of the store. */
+function takeUploads(input: Input): Attachment[] {
+  const ids = Array.isArray(input.files)
+    ? input.files.filter((id): id is string => typeof id === "string")
+    : [];
+  if (ids.length > MAX_ATTACHMENTS)
+    throw new Error(`Attach up to ${MAX_ATTACHMENTS} files at a time.`);
+  const files = ids.map((id) => {
+    const file = uploads.get(id)?.file;
+    if (!file) throw new Error("A file is missing. Attach it again.");
+    return file;
+  });
+  for (const id of ids) uploads.delete(id);
+  return files;
 }
 
 function requestId(input: Input): number {
@@ -520,11 +613,14 @@ export async function handleWebAccess(
         throw new Error("Irgatos could not delete this chat right now.");
       return { deleted: true };
     }
+    case "upload":
+      return receiveUpload(deps, input);
     case "send": {
       const session = await findSession(deps, input);
       const message = text(input, "text").trim();
-      if (!message) throw new Error("Write a message first.");
-      if (!deps.submit(session.id, message))
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0;
+      if (!message && !hasFiles) throw new Error("Write a message first.");
+      if (!deps.submit(session.id, message, takeUploads(input)))
         throw new Error("Irgatos could not send this message right now.");
       return { sent: true };
     }
@@ -597,7 +693,9 @@ export async function handleWebAccess(
     }
     case "newChat": {
       const prompt = text(input, "text").trim();
-      if (!prompt) throw new Error("Write what the chat should do.");
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0;
+      if (!prompt && !hasFiles)
+        throw new Error("Write what the chat should do.");
       const path = typeof input.cwd === "string" ? input.cwd : "";
       if (path && !deps.projects().includes(path))
         throw new Error("Pick one of your projects.");
@@ -612,10 +710,12 @@ export async function handleWebAccess(
         harness === fallback.harness
           ? fallback.model
           : resolveModel(harness).id;
+      const attachments = takeUploads(input);
       const sessionId = deps.newId();
       await deps.launch(
         {
           prompt,
+          ...(attachments.length ? { attachments } : {}),
           cwd,
           harness,
           model,
