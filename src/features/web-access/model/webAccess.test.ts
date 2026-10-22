@@ -6,7 +6,12 @@ import {
   type Session,
 } from "../../sessions/model/session";
 import type { UserQuestionPrompt } from "../../sessions/model/userQuestion";
+import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type {
+  WebBranches,
+  WebHistory,
+  WebImageData,
+  WebModels,
   WebMail,
   WebMailThread,
   WebOverview,
@@ -224,8 +229,60 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
       markRead: vi.fn(async () => {}),
     },
     newId: () => `id-${++id}`,
+    openStored: vi.fn(async () => null),
+    setModel: vi.fn(),
+    setModelSettings: vi.fn(),
+    setRuntimeMode: vi.fn(),
+    history: vi.fn(async () => []),
+    models: (harness) =>
+      harness === "claude"
+        ? [
+            { id: "opus", harness, name: "Opus" },
+            {
+              id: "sonnet",
+              harness,
+              name: "Sonnet",
+              settings: [
+                {
+                  id: "effort",
+                  label: "Effort",
+                  kind: "select" as const,
+                  value: "medium",
+                  options: [
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                  ],
+                },
+              ],
+            },
+          ]
+        : [{ id: "gpt-5", harness, name: "GPT-5" }],
+    branches: vi.fn(async () => ({
+      current: "main",
+      detached: false,
+      branches: [
+        { name: "main", current: true, remote: null },
+        { name: "feature/x", current: false, remote: null },
+        { name: "origin/main", current: false, remote: "origin" },
+      ],
+    })),
+    readFile: vi.fn(async () => "AAAA"),
   };
   return value;
+}
+
+function summary(id: string, patch: Partial<SessionSummary> = {}) {
+  return {
+    id,
+    cwd: "/Users/me/code/shop",
+    harness: "claude" as const,
+    model: "opus",
+    runtimeMode: "supervised" as const,
+    title: `Chat ${id}`,
+    createdAt: 1,
+    updatedAt: 2,
+    ...patch,
+  };
 }
 
 beforeEach(() => resetWebAccessCacheForTest());
@@ -247,7 +304,7 @@ describe("handleWebAccess", () => {
     expect(overview.owner).toBe("Turel");
   });
 
-  it("returns the newest messages without internal turns or reasoning", async () => {
+  it("returns the newest messages without internal turns", async () => {
     const blocks: Block[] = Array.from(
       { length: WEB_TRANSCRIPT_LIMIT + 5 },
       (_, index) => ({
@@ -264,10 +321,265 @@ describe("handleWebAccess", () => {
       { id: "a" },
     )) as WebSession;
     expect(result.blocks).toHaveLength(WEB_TRANSCRIPT_LIMIT);
-    expect(result.omitted).toBe(5);
-    expect(result.blocks.at(-1)?.id).toBe(`m${WEB_TRANSCRIPT_LIMIT + 4}`);
+    expect(result.omitted).toBe(6);
+    expect(result.blocks.at(-2)?.id).toBe(`m${WEB_TRANSCRIPT_LIMIT + 4}`);
+    expect(result.blocks.at(-1)).toMatchObject({
+      id: "think",
+      role: "reasoning",
+      text: "hmm",
+    });
+    expect(result.blocks.some((block) => block.id === "hidden")).toBe(false);
     expect(result.projectLabel).toBe("shop");
     expect(result.branch).toBe("main");
+  });
+
+  it("reaches back further when the page asks for earlier messages", async () => {
+    const blocks: Block[] = Array.from({ length: 3_000 }, (_, index) => ({
+      id: `m${index}`,
+      role: "assistant",
+      text: `reply ${index}`,
+    }));
+    const d = deps([chat("a", { blocks })]);
+    const more = (await handleWebAccess(d, "session", {
+      id: "a",
+      limit: "200",
+    })) as WebSession;
+    expect(more.blocks).toHaveLength(200);
+    expect(more.omitted).toBe(2_800);
+    const most = (await handleWebAccess(d, "session", {
+      id: "a",
+      limit: "999999",
+    })) as WebSession;
+    expect(most.blocks).toHaveLength(2_000);
+    const junk = (await handleWebAccess(d, "session", {
+      id: "a",
+      limit: "lots",
+    })) as WebSession;
+    expect(junk.blocks).toHaveLength(WEB_TRANSCRIPT_LIMIT);
+  });
+
+  it("gives the chat's model, effort and access for the pickers", async () => {
+    const view = (await handleWebAccess(
+      deps([chat("a", { runtimeMode: "auto" })]),
+      "session",
+      { id: "a" },
+    )) as WebSession;
+    expect(view.modelId).toBe(chat("a").model);
+    expect(view.runtimeMode).toBe("auto");
+    const fx = (await handleWebAccess(
+      deps([{ ...newSession("fx", "/Users/me/code/shop"), id: "f" }]),
+      "session",
+      { id: "f" },
+    )) as WebSession;
+    expect(fx.runtimeMode).toBeUndefined();
+  });
+
+  it("shows what a step printed", async () => {
+    const ran: Block = {
+      id: "run",
+      role: "tool",
+      text: "",
+      tool: {
+        kind: "execute",
+        status: "completed",
+        preview: { kind: "shell", query: "npm test", output: "  4 passed \n" },
+      },
+    };
+    const view = (await handleWebAccess(
+      deps([chat("a", { blocks: [sent, ran] })]),
+      "session",
+      { id: "a" },
+    )) as WebSession;
+    expect(view.blocks[1]?.tool).toMatchObject({
+      detail: "npm test",
+      output: "4 passed",
+    });
+  });
+
+  it("serves only the images a chat holds", async () => {
+    const pasted: Block = {
+      id: "u2",
+      role: "user",
+      text: "Look",
+      attachments: [
+        {
+          id: "f1",
+          name: "notes.pdf",
+          mimeType: "application/pdf",
+          kind: "file",
+          size: 3,
+          path: "/tmp/notes.pdf",
+        },
+        {
+          id: "f2",
+          name: "shot.png",
+          mimeType: "image/png",
+          kind: "image",
+          size: 3,
+          data: "iVBO",
+        },
+        {
+          id: "f3",
+          name: "disk.jpg",
+          mimeType: "image/jpeg",
+          kind: "image",
+          size: 3,
+          path: "/Users/me/disk.jpg",
+        },
+      ],
+    };
+    const d = deps([chat("a", { blocks: [pasted] })]);
+    const view = (await handleWebAccess(d, "session", {
+      id: "a",
+    })) as WebSession;
+    expect(view.blocks[0]?.files).toEqual(["notes.pdf"]);
+    expect(view.blocks[0]?.images).toEqual([
+      { index: 0, name: "shot.png" },
+      { index: 1, name: "disk.jpg" },
+    ]);
+    expect(
+      (await handleWebAccess(d, "image", {
+        id: "a",
+        blockId: "u2",
+        index: "0",
+      })) as WebImageData,
+    ).toEqual({ mimeType: "image/png", data: "iVBO" });
+    expect(
+      (await handleWebAccess(d, "image", {
+        id: "a",
+        blockId: "u2",
+        index: "1",
+      })) as WebImageData,
+    ).toEqual({ mimeType: "image/jpeg", data: "AAAA" });
+    expect(d.readFile).toHaveBeenCalledWith("/Users/me/disk.jpg");
+    await expect(
+      handleWebAccess(d, "image", { id: "a", blockId: "u2", index: "2" }),
+    ).rejects.toThrow("no longer in the chat");
+    await expect(
+      handleWebAccess(d, "image", { id: "a", blockId: "u1", index: "0" }),
+    ).rejects.toThrow("no longer in the chat");
+  });
+
+  it("opens a saved chat that is not open on the Mac", async () => {
+    const d = deps([]);
+    d.openStored = vi.fn(async (id: string) =>
+      id === "old" ? chat("old", { blocks: [sent] }) : null,
+    );
+    const view = (await handleWebAccess(d, "session", {
+      id: "old",
+    })) as WebSession;
+    expect(view.blocks[0]?.text).toBe("Run the tests");
+    await expect(handleWebAccess(d, "session", { id: "gone" })).rejects.toThrow(
+      "not open",
+    );
+  });
+
+  it("lists saved chats that are not open, without hidden ones", async () => {
+    const d = deps([chat("open")]);
+    d.history = vi.fn(async () => [
+      summary("open"),
+      summary("old", { branch: "fix/login", updatedAt: 50 }),
+      summary("archived", { archived: true }),
+      summary("draft", { draft: true }),
+      summary("worker", { orchestrationLeadId: "lead" }),
+      summary("free", { cwd: "/Users/me/.irgatos/scratch/x" }),
+    ]);
+    const result = (await handleWebAccess(d, "history", {})) as WebHistory;
+    expect(result.chats.map((entry) => entry.sessionId)).toEqual([
+      "old",
+      "free",
+    ]);
+    expect(result.chats[0]).toMatchObject({
+      title: "Chat old",
+      projectLabel: "shop",
+      branch: "fix/login",
+      updatedAt: 50,
+    });
+  });
+
+  it("switches the model, effort and access the way the composer does", async () => {
+    const d = deps([chat("a")]);
+    await handleWebAccess(d, "setModel", {
+      sessionId: "a",
+      harness: "codex",
+      model: "gpt-5",
+    });
+    expect(d.setModel).toHaveBeenCalledWith("a", "codex", "gpt-5");
+    await expect(
+      handleWebAccess(d, "setModel", {
+        sessionId: "a",
+        harness: "codex",
+        model: "nope",
+      }),
+    ).rejects.toThrow("not available");
+    await expect(
+      handleWebAccess(d, "setModel", {
+        sessionId: "a",
+        harness: "grok",
+        model: "x",
+      }),
+    ).rejects.toThrow("not available");
+    await expect(
+      handleWebAccess(d, "setEffort", { sessionId: "a", value: "high" }),
+    ).rejects.toThrow("no such effort");
+    const sonnet = chat("s", { model: "sonnet", modelSettings: { fast: "1" } });
+    const withEffort = deps([sonnet]);
+    expect(
+      (
+        (await handleWebAccess(withEffort, "session", {
+          id: "s",
+        })) as WebSession
+      ).effort,
+    ).toEqual({
+      id: "effort",
+      value: "medium",
+      options: [
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+      ],
+    });
+    await handleWebAccess(withEffort, "setEffort", {
+      sessionId: "s",
+      value: "high",
+    });
+    expect(withEffort.setModelSettings).toHaveBeenCalledWith("s", {
+      fast: "1",
+      effort: "high",
+    });
+    await handleWebAccess(d, "setMode", { sessionId: "a", mode: "auto" });
+    expect(d.setRuntimeMode).toHaveBeenCalledWith("a", "auto");
+    await expect(
+      handleWebAccess(d, "setMode", { sessionId: "a", mode: "root" }),
+    ).rejects.toThrow("access modes");
+  });
+
+  it("lists every provider's models", async () => {
+    const result = (await handleWebAccess(deps([]), "models", {})) as WebModels;
+    expect(
+      result.harnesses.map(({ harness, models }) => ({ harness, models })),
+    ).toEqual([
+      {
+        harness: "claude",
+        models: [
+          { id: "opus", name: "Opus" },
+          { id: "sonnet", name: "Sonnet" },
+        ],
+      },
+      { harness: "codex", models: [{ id: "gpt-5", name: "GPT-5" }] },
+    ]);
+    expect(result.harnesses[1]?.title).toBe("Codex");
+  });
+
+  it("lists a project's local branches for a new worktree", async () => {
+    const d = deps([]);
+    expect(
+      (await handleWebAccess(d, "branches", {
+        cwd: "/Users/me/code/shop",
+      })) as WebBranches,
+    ).toEqual({ current: "main", branches: ["main", "feature/x"] });
+    await expect(
+      handleWebAccess(d, "branches", { cwd: "/etc" }),
+    ).rejects.toThrow("Pick one of your projects.");
   });
 
   it("shows a shell approval's command", async () => {
@@ -289,6 +601,14 @@ describe("handleWebAccess", () => {
       await handleWebAccess(d, "send", { sessionId: "a", text: "  hello  " }),
     ).toEqual({ sent: true });
     expect(d.submit).toHaveBeenCalledWith("a", "hello", []);
+    await handleWebAccess(d, "send", {
+      sessionId: "a",
+      text: "Make a plan",
+      plan: true,
+    });
+    expect(d.submit).toHaveBeenLastCalledWith("a", "Make a plan", [], {
+      intent: "plan",
+    });
     await expect(
       handleWebAccess(d, "send", { sessionId: "a", text: "   " }),
     ).rejects.toThrow("Write a message first.");
@@ -499,6 +819,57 @@ describe("handleWebAccess", () => {
     await expect(
       handleWebAccess(d, "newChat", { cwd: "/etc", text: "hi" }),
     ).rejects.toThrow("Pick one of your projects.");
+  });
+
+  it("starts a new chat with a model, access, plan and worktree", async () => {
+    const d = deps([]);
+    await handleWebAccess(d, "newChat", {
+      cwd: "/Users/me/code/shop",
+      text: "Add search",
+      harness: "claude",
+      model: "sonnet",
+      mode: "full-access",
+      plan: true,
+      worktree: "feature/x",
+    });
+    expect(d.launch).toHaveBeenCalledWith(
+      {
+        prompt: "Add search",
+        cwd: "/Users/me/code/shop",
+        harness: "claude",
+        model: "sonnet",
+        reveal: false,
+        runtimeMode: "full-access",
+        intent: "plan",
+        workspaceMode: "worktree",
+        worktreeBase: "feature/x",
+      },
+      "id-1",
+    );
+    await expect(
+      handleWebAccess(d, "newChat", {
+        cwd: "/Users/me/code/shop",
+        text: "x",
+        worktree: "gone",
+      }),
+    ).rejects.toThrow("no longer in the project");
+    await expect(
+      handleWebAccess(d, "newChat", { cwd: "", text: "x", worktree: "main" }),
+    ).rejects.toThrow("needs a project");
+    await handleWebAccess(d, "newChat", {
+      cwd: "/Users/me/code/shop",
+      text: "y",
+      model: "made-up",
+      mode: "root",
+    });
+    expect(d.launch).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ runtimeMode: expect.anything() }),
+      "id-2",
+    );
+    expect(d.launch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ model: "opus" }),
+      "id-2",
+    );
   });
 
   it("captures an idea with its #labels at the top of a list", async () => {

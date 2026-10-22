@@ -6,12 +6,24 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { WebBlock, WebSession } from "../../model/protocol";
+import type {
+  WebBlock,
+  WebImage,
+  WebImageData,
+  WebSession,
+} from "../../model/protocol";
 import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { AttachButton, UploadChips, pastedFiles, useUploads } from "./Attach";
 import { Markdown } from "./Markdown";
 import { ChatOptions } from "./ChatOptions";
+import {
+  AccessSelect,
+  EffortSelect,
+  ModelSelect,
+  PlanToggle,
+  useModels,
+} from "./ModelControls";
 import { Mascot } from "./Irgats";
 import { RequestBody } from "./Requests";
 import { DictateButton, ReadAloud } from "./Voice";
@@ -28,11 +40,13 @@ import {
 import {
   ArrowDownCircle,
   ArrowUp,
+  Brain,
   ChevronDown,
   ChevronLeft,
   CircleX,
   File,
   Globe,
+  ImageIcon,
   MessageSquare,
   Pencil,
   LoaderCircle,
@@ -46,6 +60,8 @@ import {
 
 /** A chat that only just started may take a moment to show up on the Mac. */
 const STARTING_GRACE_MS = 20_000;
+/** Matches the Mac's WEB_TRANSCRIPT_LIMIT: one more page per tap. */
+const PAGE_BLOCKS = 80;
 
 export function ChatView({
   id,
@@ -57,9 +73,17 @@ export function ChatView({
   onBack: () => void;
 }) {
   const opened = useRef(Date.now());
-  const { data, error } = usePoll(
+  // How many blocks to read; grows with "Show earlier messages".
+  const limit = useRef(PAGE_BLOCKS);
+  const { data, error, reload } = usePoll(
     `session:${id}`,
-    () => read<WebSession>("session", { id }),
+    () =>
+      read<WebSession>("session", {
+        id,
+        ...(limit.current > PAGE_BLOCKS
+          ? { limit: String(limit.current) }
+          : {}),
+      }),
     (session) =>
       !session || session.busy || session.requests.length ? 1500 : 4000,
   );
@@ -68,6 +92,7 @@ export function ChatView({
 
   useEffect(() => {
     opened.current = Date.now();
+    limit.current = PAGE_BLOCKS;
     setPending([]);
     setOptions(false);
   }, [id]);
@@ -137,7 +162,15 @@ export function ChatView({
           }}
         />
       ) : null}
-      <Transcript session={data} pending={pending} wide={wide} />
+      <Transcript
+        session={data}
+        pending={pending}
+        wide={wide}
+        onEarlier={() => {
+          limit.current = data.blocks.length + PAGE_BLOCKS;
+          reload();
+        }}
+      />
       <div className="pb-[max(var(--safe-bottom),12px)]">
         <div
           className={`mx-auto w-full ${wide ? "max-w-[820px] px-6" : "px-3"}`}
@@ -263,13 +296,18 @@ function Transcript({
   session,
   pending,
   wide,
+  onEarlier,
 }: {
   session: WebSession;
   pending: string[];
   wide: boolean;
+  onEarlier: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  // Earlier messages land above; keep the one being read where it was.
+  const anchor = useRef<number | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [away, setAway] = useState(false);
   const items = useMemo(
     () => transcriptItems(session.blocks),
@@ -295,11 +333,18 @@ function Transcript({
 
   useLayoutEffect(() => {
     stick.current = true;
+    anchor.current = null;
+    setLoadingEarlier(false);
     toBottom();
   }, [session.id]);
 
   useLayoutEffect(() => {
-    if (stick.current) toBottom();
+    const element = scroller.current;
+    if (anchor.current !== null && element) {
+      element.scrollTop += element.scrollHeight - anchor.current;
+      anchor.current = null;
+      setLoadingEarlier(false);
+    } else if (stick.current) toBottom();
   }, [session.blocks, pending, session.busy]);
 
   // The keyboard or the request dock changes the height; keep the end in view.
@@ -331,9 +376,19 @@ function Transcript({
           className={`mx-auto flex w-full flex-col gap-4 py-5 ${wide ? "max-w-[820px] px-6" : "px-4"}`}
         >
           {session.omitted ? (
-            <div className="self-center rounded-full bg-content/6 px-3.5 py-1.5 text-[12.5px] font-medium text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)]">
-              {session.omitted} earlier messages stay on your Mac
-            </div>
+            <button
+              disabled={loadingEarlier}
+              onClick={() => {
+                anchor.current = scroller.current?.scrollHeight ?? null;
+                stick.current = false;
+                setLoadingEarlier(true);
+                onEarlier();
+              }}
+              className="web-press inline-flex items-center gap-2 self-center rounded-full bg-content/6 px-3.5 py-1.5 text-[12.5px] font-medium text-(--ink-2) shadow-[inset_0_0_0_1px_var(--hairline)] disabled:opacity-60"
+            >
+              {loadingEarlier ? <Spinner className="size-3.5" /> : null}
+              Show earlier messages ({session.omitted})
+            </button>
           ) : null}
           {items.length === 0 && !pending.length ? (
             <div className="flex flex-col items-center gap-4 py-16 text-[15px] font-medium text-(--ink-2)">
@@ -360,7 +415,11 @@ function Transcript({
                 live={session.busy && item === lastItem}
               />
             ) : (
-              <BlockView key={item.block.id} block={item.block} />
+              <BlockView
+                key={item.block.id}
+                block={item.block}
+                sessionId={session.id}
+              />
             ),
           )}
           {pending.map((text, index) => (
@@ -401,16 +460,19 @@ function Transcript({
 function UserBubble({
   text,
   files,
+  images,
   sending = false,
 }: {
   text: string;
   files?: string[];
+  images?: ReactNode;
   sending?: boolean;
 }) {
   return (
     <div
       className={`flex flex-col items-end gap-1.5 ${sending ? "opacity-60" : ""}`}
     >
+      {images}
       {text ? (
         <div className="user-message-bubble max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-content/10 px-4 py-2.5 text-[16px] leading-snug text-(--ink)">
           {text}
@@ -436,10 +498,23 @@ function UserBubble({
   );
 }
 
-function BlockView({ block }: { block: WebBlock }) {
+function BlockView({
+  block,
+  sessionId,
+}: {
+  block: WebBlock;
+  sessionId: string;
+}) {
+  const images = block.images?.length ? (
+    <Images sessionId={sessionId} block={block} />
+  ) : null;
   switch (block.role) {
     case "user":
-      return <UserBubble text={block.text} files={block.files} />;
+      return (
+        <UserBubble text={block.text} files={block.files} images={images} />
+      );
+    case "reasoning":
+      return block.text.trim() ? <Thought block={block} /> : null;
     case "assistant":
       return (
         <div className="flex min-w-0 flex-col items-start gap-1.5">
@@ -479,7 +554,9 @@ function BlockView({ block }: { block: WebBlock }) {
         </div>
       );
     case "image":
-      return (
+      return images ? (
+        <div className="flex">{images}</div>
+      ) : (
         <div className="self-end rounded-full bg-content/6 px-3.5 py-2 text-[13px] text-(--ink-2)">
           Image (open on your Mac)
         </div>
@@ -491,6 +568,137 @@ function BlockView({ block }: { block: WebBlock }) {
         </div>
       ) : null;
   }
+}
+
+/** The agent's thinking, folded like the desktop's "Thought" row. */
+function Thought({ block }: { block: WebBlock }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex min-w-0 flex-col items-start">
+      <button
+        className="web-press flex min-h-9 items-center gap-2 rounded-full px-1 text-[14px] text-(--ink-2)"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <Brain className="size-4 shrink-0 text-(--ink-3)" />
+        <span className={block.streaming ? "web-shimmer" : ""}>
+          {block.streaming
+            ? "Thinking…"
+            : block.durationMs
+              ? `Thought for ${duration(block.durationMs)}`
+              : "Thought"}
+        </span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-(--ink-3) transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open ? (
+        <div className="mt-1 min-w-0 max-w-full border-l-2 border-(--hairline) pl-3 text-[14.5px] text-(--ink-2)">
+          <Markdown text={block.text} streaming={block.streaming} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const imageCache = new Map<string, Promise<string>>();
+
+function imageUrl(sessionId: string, blockId: string, image: WebImage) {
+  const key = `${sessionId}/${blockId}/${image.index}`;
+  let url = imageCache.get(key);
+  if (!url) {
+    url = read<WebImageData>("image", {
+      id: sessionId,
+      blockId,
+      index: String(image.index),
+    }).then((result) => `data:${result.mimeType};base64,${result.data}`);
+    imageCache.set(key, url);
+    url.catch(() => imageCache.delete(key));
+  }
+  return url;
+}
+
+function Images({ sessionId, block }: { sessionId: string; block: WebBlock }) {
+  return (
+    <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+      {block.images!.map((image) => (
+        <ChatImage
+          key={image.index}
+          sessionId={sessionId}
+          blockId={block.id}
+          image={image}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Loads when shown; a tap opens it full screen. */
+function ChatImage({
+  sessionId,
+  blockId,
+  image,
+}: {
+  sessionId: string;
+  blockId: string;
+  image: WebImage;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState("");
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    imageUrl(sessionId, blockId, image).then(
+      (value) => alive && setUrl(value),
+      (error: unknown) =>
+        alive &&
+        setFailed(error instanceof Error ? error.message : String(error)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, blockId, image]);
+
+  if (!url)
+    return (
+      <span
+        title={failed || image.name}
+        className="flex h-28 w-36 flex-col items-center justify-center gap-1.5 rounded-[16px] bg-content/6 px-2 text-center text-[12px] text-(--ink-3) shadow-[inset_0_0_0_1px_var(--hairline)]"
+      >
+        {failed ? <ImageIcon className="size-5" /> : <Spinner />}
+        <span className="line-clamp-2 break-all">
+          {failed ? image.name : ""}
+        </span>
+      </span>
+    );
+  return (
+    <>
+      <button
+        onClick={() => setFull(true)}
+        aria-label={`Open ${image.name}`}
+        className="web-press overflow-hidden rounded-[16px] shadow-[inset_0_0_0_1px_var(--hairline)]"
+      >
+        <img
+          src={url}
+          alt={image.name}
+          className="block max-h-60 max-w-full object-contain"
+        />
+      </button>
+      {full ? (
+        <button
+          aria-label="Close image"
+          onClick={() => setFull(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 pb-(--safe-bottom) pt-(--safe-top)"
+        >
+          <img
+            src={url}
+            alt={image.name}
+            className="max-h-full max-w-full object-contain"
+          />
+        </button>
+      ) : null}
+    </>
+  );
 }
 
 function ToolIcon({ block }: { block: WebBlock }) {
@@ -569,11 +777,12 @@ function ToolGroup({ blocks, live }: { blocks: WebBlock[]; live: boolean }) {
 function ToolRow({ block }: { block: WebBlock }) {
   const [open, setOpen] = useState(false);
   const detail = block.tool?.detail;
+  const output = block.tool?.output;
   return (
     <div>
       <button
         className="flex min-h-10 w-full items-center gap-2.5 px-3 py-1.5 text-left disabled:cursor-default"
-        disabled={!detail}
+        disabled={!detail && !output}
         onClick={() => setOpen((value) => !value)}
       >
         <ToolIcon block={block} />
@@ -584,6 +793,14 @@ function ToolRow({ block }: { block: WebBlock }) {
       {open && detail ? (
         <pre className="mx-3 mb-2 max-h-56 overflow-auto whitespace-pre-wrap break-all rounded-[12px] bg-content/6 px-3 py-2 font-mono text-[12px] leading-relaxed text-(--ink)">
           {detail}
+        </pre>
+      ) : null}
+      {open && output ? (
+        <pre
+          aria-label="Output"
+          className="mx-3 mb-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-[12px] bg-black/80 px-3 py-2 font-mono text-[12px] leading-relaxed text-white/90"
+        >
+          {output}
         </pre>
       ) : null}
     </div>
@@ -609,6 +826,8 @@ function Composer({
   });
   const field = useRef<HTMLTextAreaElement>(null);
   const { busy, run } = useAction();
+  const [plan, setPlan] = useState(false);
+  const catalog = useModels();
   const files = useUploads();
 
   useEffect(() => {
@@ -638,78 +857,110 @@ function Composer({
         sessionId: session.id,
         text: message,
         ...(ids.length ? { files: ids } : {}),
+        ...(plan ? { plan: true } : {}),
       }),
     );
-    if (sent) files.clear();
-    else setText(message);
+    if (sent) {
+      files.clear();
+      setPlan(false);
+    } else setText(message);
   };
+  const change = (action: string, body: Record<string, unknown>) =>
+    void run(action, () => write(action, { sessionId: session.id, ...body }));
 
   const stop = () =>
     run("stop", () => write("stop", { sessionId: session.id }), "Stopped");
 
   const empty = !text.trim() && !files.uploads.length;
   return (
-    <div className="glass-float mt-2 rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
-      <UploadChips uploads={files.uploads} onRemove={files.remove} />
-      <div className="flex items-end gap-1">
-        <AttachButton onFiles={files.add} disabled={busy !== null} />
-        <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
-          <textarea
-            ref={field}
-            rows={1}
-            value={text}
-            enterKeyHint={wide ? "send" : "enter"}
-            placeholder={
-              session.irgat
-                ? `Message ${session.irgat}…`
-                : `Ask anything about ${session.projectLabel}…`
-            }
-            className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
-            onChange={(event) => setText(event.target.value)}
-            onPaste={(event) => {
-              const pasted = pastedFiles(event);
-              if (pasted.length) {
-                event.preventDefault();
-                files.add(pasted);
-              }
-            }}
-            onKeyDown={(event) => {
-              const submit =
-                event.key === "Enter" &&
-                !event.nativeEvent.isComposing &&
-                (event.metaKey || event.ctrlKey || (wide && !event.shiftKey));
-              if (submit) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-        </div>
-        <DictateButton value={text} onChange={setText} />
-        {session.busy && empty ? (
-          <button
-            aria-label="Stop"
-            onClick={() => void stop()}
+    <>
+      <div className="mt-2 flex flex-wrap gap-1.5 px-1">
+        <ModelSelect
+          catalog={catalog}
+          harness={session.harness}
+          model={session.modelId}
+          name={session.model}
+          disabled={busy !== null}
+          onChange={(harness, model) => change("setModel", { harness, model })}
+        />
+        {session.effort ? (
+          <EffortSelect
+            effort={session.effort}
             disabled={busy !== null}
-            className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-(--color-background-base) disabled:opacity-50"
-          >
-            {busy === "stop" ? (
-              <Spinner />
-            ) : (
-              <Square className="size-4 fill-current" strokeWidth={0} />
-            )}
-          </button>
-        ) : (
-          <button
-            aria-label="Send"
-            onClick={() => void send()}
-            disabled={empty || files.blocked || busy !== null}
-            className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
-          >
-            <ArrowUp className="size-5" strokeWidth={2.25} />
-          </button>
-        )}
+            onChange={(value) => change("setEffort", { value })}
+          />
+        ) : null}
+        {session.runtimeMode ? (
+          <AccessSelect
+            mode={session.runtimeMode}
+            disabled={busy !== null}
+            onChange={(mode) => change("setMode", { mode })}
+          />
+        ) : null}
+        {session.irgat ? null : <PlanToggle on={plan} onChange={setPlan} />}
       </div>
-    </div>
+      <div className="glass-float mt-2 rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
+        <UploadChips uploads={files.uploads} onRemove={files.remove} />
+        <div className="flex items-end gap-1">
+          <AttachButton onFiles={files.add} disabled={busy !== null} />
+          <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
+            <textarea
+              ref={field}
+              rows={1}
+              value={text}
+              enterKeyHint={wide ? "send" : "enter"}
+              placeholder={
+                session.irgat
+                  ? `Message ${session.irgat}…`
+                  : `Ask anything about ${session.projectLabel}…`
+              }
+              className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
+              onChange={(event) => setText(event.target.value)}
+              onPaste={(event) => {
+                const pasted = pastedFiles(event);
+                if (pasted.length) {
+                  event.preventDefault();
+                  files.add(pasted);
+                }
+              }}
+              onKeyDown={(event) => {
+                const submit =
+                  event.key === "Enter" &&
+                  !event.nativeEvent.isComposing &&
+                  (event.metaKey || event.ctrlKey || (wide && !event.shiftKey));
+                if (submit) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
+            />
+          </div>
+          <DictateButton value={text} onChange={setText} />
+          {session.busy && empty ? (
+            <button
+              aria-label="Stop"
+              onClick={() => void stop()}
+              disabled={busy !== null}
+              className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-(--color-background-base) disabled:opacity-50"
+            >
+              {busy === "stop" ? (
+                <Spinner />
+              ) : (
+                <Square className="size-4 fill-current" strokeWidth={0} />
+              )}
+            </button>
+          ) : (
+            <button
+              aria-label="Send"
+              onClick={() => void send()}
+              disabled={empty || files.blocked || busy !== null}
+              className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
+            >
+              <ArrowUp className="size-5" strokeWidth={2.25} />
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

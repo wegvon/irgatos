@@ -41,7 +41,7 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 19] = [
+const READ_ACTIONS: [&str; 23] = [
     "overview",
     "session",
     "projects",
@@ -61,8 +61,13 @@ const READ_ACTIONS: [&str; 19] = [
     "irgat",
     "irgatOptions",
     "voice",
+    // A chat's model and access pickers, its images and saved history.
+    "image",
+    "history",
+    "models",
+    "branches",
 ];
-const WRITE_ACTIONS: [&str; 29] = [
+const WRITE_ACTIONS: [&str; 32] = [
     "upload",
     "send",
     "approval",
@@ -92,6 +97,9 @@ const WRITE_ACTIONS: [&str; 29] = [
     "dictateChunk",
     "dictateFinish",
     "inboxStart",
+    "setModel",
+    "setEffort",
+    "setMode",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.

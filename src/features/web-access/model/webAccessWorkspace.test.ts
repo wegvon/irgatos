@@ -156,6 +156,7 @@ function setup(sessions: Session[] = [], linked?: string) {
     launch: vi.fn(async () => {}),
     choice: () => ({ harness: "claude", model: "opus" }),
     harnesses: () => ["claude"],
+    models: () => [],
     irgatHost: {
       home: async () => "/Users/me",
       load: vi.fn(async (sessionId: string) =>

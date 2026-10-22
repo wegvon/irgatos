@@ -63,7 +63,12 @@ import {
   serviceLabel,
   type ServiceStatus,
 } from "../../service-status/model/serviceStatus";
-import { upsertSession } from "../../sessions/data/sessionStore";
+import {
+  listRecentSessions,
+  upsertSession,
+  type SessionSummary,
+} from "../../sessions/data/sessionStore";
+import { gitBranches, type GitBranches } from "../../../platform/tauri/fs";
 import {
   MAX_ATTACHMENTS,
   MAX_EMBED_BYTES,
@@ -84,17 +89,22 @@ import {
 } from "../../../integrations/harness/core/availabilityState";
 import {
   defaultSessionChoice,
+  modelEffortSetting,
+  modelsFor,
   resolveModel,
   showProviderInModelPicker,
+  type AgentModel,
 } from "../../sessions/model/models";
 import {
   HARNESSES,
   HARNESS_TITLE,
+  RUNTIME_MODES,
   sessionDisplayTitle,
   sessionWorkCwd,
   type Attachment,
   type Block,
   type HarnessId,
+  type RuntimeMode,
   type Session,
 } from "../../sessions/model/session";
 import { toolCallLabel } from "../../sessions/model/transcriptActivity";
@@ -115,7 +125,12 @@ import {
 import type {
   WebAppearance,
   WebBlock,
+  WebBranches,
+  WebEffort,
   WebHarnessChoice,
+  WebHistory,
+  WebImageData,
+  WebModels,
   WebIrgat,
   WebIrgats,
   WebMail,
@@ -142,11 +157,28 @@ import {
  */
 export type WebAccessDeps = {
   sessions: () => readonly Session[];
+  /** A `plan` turn asks the agent for a plan first, as the composer's Plan does. */
   submit: (
     sessionId: string,
     text: string,
     attachments: Attachment[],
+    options?: { intent?: "plan" },
   ) => boolean;
+  /** Loads a saved chat into this window without showing it on the Mac. */
+  openStored: (sessionId: string) => Promise<Session | null>;
+  /** The composer's model picker, effort and access pickers. */
+  setModel: (sessionId: string, harness: HarnessId, model: string) => void;
+  setModelSettings: (
+    sessionId: string,
+    settings: Record<string, string>,
+  ) => void;
+  setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void;
+  /** Saved chats across every project, newest first. */
+  history: () => Promise<SessionSummary[]>;
+  models: (harness: HarnessId) => AgentModel[];
+  branches: (cwd: string) => Promise<GitBranches>;
+  /** A file on the Mac as base64, for an image a chat shows. */
+  readFile: (path: string) => Promise<string>;
   /** Turns a file the page uploaded into an attachment, as a paste does. */
   attach: (file: File) => Promise<Attachment | null>;
   approve: (
@@ -239,6 +271,10 @@ export const webAccessDefaults: Omit<
   | "irgatHost"
   | "rename"
   | "remove"
+  | "openStored"
+  | "setModel"
+  | "setModelSettings"
+  | "setRuntimeMode"
 > = {
   attach: async (file) => (await attachmentsFromFiles([file]))[0] ?? null,
   projects: () => loadRecents().map((project) => project.path),
@@ -284,6 +320,10 @@ export const webAccessDefaults: Omit<
   irgatsEnabled: loadIrgatsEnabled,
   saveSession: upsertSession,
   newId: () => crypto.randomUUID(),
+  history: () => listRecentSessions(HISTORY_LIMIT),
+  models: modelsFor,
+  branches: gitBranches,
+  readFile: (path) => invoke<string>("read_file_base64", { path }),
   lookups: webLookupDefaults,
 };
 
@@ -299,7 +339,17 @@ export type WebAccessStatus = {
 
 /** Newest blocks a browser gets per session; older ones stay on the Mac. */
 export const WEB_TRANSCRIPT_LIMIT = 80;
+/** How far "Show earlier messages" can reach back in one read. */
+export const WEB_TRANSCRIPT_MAX = 2_000;
 const TEXT_MAX = 20_000;
+const STEP_TEXT_MAX = 4_000;
+/** Saved chats the history list offers; search reaches the rest. */
+const HISTORY_LIMIT = 200;
+const PROJECTS_LIMIT = 200;
+/** Base64 of an 8 MB image; bigger ones stay on the Mac. */
+const IMAGE_MAX = 11_200_000;
+/** The Fx provider has no access modes; its composer hides the picker. */
+const NO_ACCESS_MODES: readonly HarnessId[] = ["fx"];
 
 type Input = Record<string, unknown>;
 
@@ -416,6 +466,9 @@ async function findSession(
     const loaded = await deps.irgatHost.load(id);
     if (loaded) return loaded;
   }
+  // A chat from the history opens on the page the way it opens on the Mac.
+  const stored = await deps.openStored(id);
+  if (stored) return stored;
   throw new Error("This chat is not open in Irgatos.");
 }
 
@@ -471,12 +524,7 @@ function clip(value: string, max = TEXT_MAX): string {
 }
 
 function shownBlock(block: Block): boolean {
-  return (
-    !block.internal &&
-    !block.draft &&
-    !block.irgatSessionCompletion &&
-    block.role !== "reasoning"
-  );
+  return !block.internal && !block.draft && !block.irgatSessionCompletion;
 }
 
 function toolDetail(block: Block): string | undefined {
@@ -486,11 +534,38 @@ function toolDetail(block: Block): string | undefined {
     block.tool?.detail ??
     "";
   const detail = raw.trim();
-  return detail ? clip(detail, 600) : undefined;
+  return detail ? clip(detail, STEP_TEXT_MAX) : undefined;
+}
+
+function toolOutput(block: Block): string | undefined {
+  const output = block.tool?.preview?.output?.trim();
+  return output ? clip(output, STEP_TEXT_MAX) : undefined;
+}
+
+type ImageSource = {
+  name: string;
+  mimeType: string;
+  path?: string;
+  data?: string;
+};
+
+/** The block's images in a fixed order, so `index` names one across reads. */
+function imageSources(block: Block): ImageSource[] {
+  return [
+    ...(block.image ? [block.image] : []),
+    ...(block.attachments ?? []).filter(
+      (file) => file.kind === "image" && (file.data || file.path),
+    ),
+  ];
 }
 
 export function webBlock(block: Block, cwd: string): WebBlock {
   const detail = block.tool ? toolDetail(block) : undefined;
+  const output = block.tool ? toolOutput(block) : undefined;
+  const images = imageSources(block);
+  const files = (block.attachments ?? []).filter(
+    (file) => !images.includes(file),
+  );
   const at = block.sentAt ?? block.startedAt;
   return {
     id: block.id,
@@ -504,6 +579,7 @@ export function webBlock(block: Block, cwd: string): WebBlock {
             ...(block.tool.status ? { status: block.tool.status } : {}),
             ...(block.tool.kind ? { kind: block.tool.kind } : {}),
             ...(detail ? { detail } : {}),
+            ...(output ? { output } : {}),
           },
         }
       : {}),
@@ -517,8 +593,9 @@ export function webBlock(block: Block, cwd: string): WebBlock {
           },
         }
       : {}),
-    ...(block.attachments?.length
-      ? { files: block.attachments.map((file) => file.name) }
+    ...(files.length ? { files: files.map((file) => file.name) } : {}),
+    ...(images.length
+      ? { images: images.map((image, index) => ({ index, name: image.name })) }
       : {}),
     ...(at ? { at } : {}),
     ...(block.durationMs ? { durationMs: block.durationMs } : {}),
@@ -622,6 +699,7 @@ export async function handleWebAccess(
       const irgat = irgatForSession(session.id);
       const look = irgat ? irgatLook(irgat) : undefined;
       const blocks = session.blocks.filter(shownBlock);
+      const limit = transcriptLimit(input.limit);
       const view: WebSession = {
         id: session.id,
         title: sessionDisplayTitle(session.title, session.harness),
@@ -641,13 +719,117 @@ export async function handleWebAccess(
         busy: !!session.busy,
         ...(session.busy ? { activity: fleetActivity(session) } : {}),
         requests: fleetRequests(session),
-        omitted: Math.max(0, blocks.length - WEB_TRANSCRIPT_LIMIT),
-        blocks: blocks
-          .slice(-WEB_TRANSCRIPT_LIMIT)
-          .map((block) => webBlock(block, cwd)),
+        omitted: Math.max(0, blocks.length - limit),
+        blocks: blocks.slice(-limit).map((block) => webBlock(block, cwd)),
         deletable: irgat?.sessionId !== session.id,
+        modelId: session.model,
+        ...(NO_ACCESS_MODES.includes(session.harness)
+          ? {}
+          : { runtimeMode: session.runtimeMode }),
+        ...effortOf(deps, session),
       };
       return view;
+    }
+    case "image": {
+      const session = await findSession(deps, input);
+      const block = session.blocks.find(
+        (entry) => entry.id === text(input, "blockId", 200),
+      );
+      const image = block
+        ? imageSources(block)[Number(input.index)]
+        : undefined;
+      if (!image) throw new Error("That image is no longer in the chat.");
+      const data = image.data ?? (await deps.readFile(image.path!));
+      if (data.length > IMAGE_MAX)
+        throw new Error("This image is too large to show here.");
+      const result: WebImageData = { mimeType: image.mimeType, data };
+      return result;
+    }
+    case "history": {
+      const open = new Set(deps.sessions().map((entry) => entry.id));
+      const rows = await deps.history();
+      const result: WebHistory = {
+        chats: rows
+          .filter(
+            (row) =>
+              !open.has(row.id) &&
+              !row.archived &&
+              !row.draft &&
+              !row.sidebarHidden &&
+              !row.orchestrationLeadId &&
+              !irgatForSession(row.id),
+          )
+          .map((row) => ({
+            sessionId: row.id,
+            title: sessionDisplayTitle(row.title, row.harness),
+            harness: row.harness,
+            projectLabel: isFreeChatCwd(row.cwd)
+              ? "Chat"
+              : projectName(row.cwd),
+            ...(row.branch && !isFreeChatCwd(row.cwd)
+              ? { branch: row.branch }
+              : {}),
+            updatedAt: row.updatedAt,
+          })),
+      };
+      return result;
+    }
+    case "models": {
+      const result: WebModels = {
+        harnesses: deps.harnesses().map((harness) => ({
+          harness,
+          title: HARNESS_TITLE[harness] ?? harness,
+          models: deps
+            .models(harness)
+            .map((model) => ({ id: model.id, name: model.name })),
+        })),
+      };
+      return result;
+    }
+    case "branches": {
+      const cwd = typeof input.cwd === "string" ? input.cwd : "";
+      if (!deps.projects().includes(cwd))
+        throw new Error("Pick one of your projects.");
+      const found = await deps.branches(cwd).catch(() => null);
+      const result: WebBranches = {
+        current: found?.current ?? "",
+        branches: (found?.branches ?? [])
+          .filter((branch) => !branch.remote)
+          .map((branch) => branch.name),
+      };
+      return result;
+    }
+    case "setModel": {
+      const session = await findSession(deps, input);
+      const harness = text(input, "harness", 100) as HarnessId;
+      const model = text(input, "model", 300);
+      if (!deps.harnesses().includes(harness))
+        throw new Error("That provider is not available on your Mac.");
+      const known = deps.models(harness);
+      if (known.length && !known.some((entry) => entry.id === model))
+        throw new Error("That model is not available on your Mac.");
+      deps.setModel(session.id, harness, model);
+      return { model };
+    }
+    case "setEffort": {
+      const session = await findSession(deps, input);
+      const effort = effortOf(deps, session).effort;
+      const value = text(input, "value", 100);
+      if (!effort || !effort.options.some((option) => option.value === value))
+        throw new Error("This model has no such effort level.");
+      deps.setModelSettings(session.id, {
+        ...session.modelSettings,
+        [effort.id]: value,
+      });
+      return { effort: value };
+    }
+    case "setMode": {
+      const session = await findSession(deps, input);
+      const mode = runtimeMode(input.mode);
+      if (!mode || NO_ACCESS_MODES.includes(session.harness))
+        throw new Error("Pick one of the access modes.");
+      deps.setRuntimeMode(session.id, mode);
+      return { mode };
     }
     case "renameChat": {
       const session = await findSession(deps, input);
@@ -680,7 +862,12 @@ export async function handleWebAccess(
       const message = text(input, "text").trim();
       const hasFiles = Array.isArray(input.files) && input.files.length > 0;
       if (!message && !hasFiles) throw new Error("Write a message first.");
-      if (!deps.submit(session.id, message, takeUploads(input)))
+      const attachments = takeUploads(input);
+      const sent =
+        input.plan === true
+          ? deps.submit(session.id, message, attachments, { intent: "plan" })
+          : deps.submit(session.id, message, attachments);
+      if (!sent)
         throw new Error("Irgatos could not send this message right now.");
       return { sent: true };
     }
@@ -727,7 +914,7 @@ export async function handleWebAccess(
           },
           ...deps
             .projects()
-            .slice(0, 30)
+            .slice(0, PROJECTS_LIMIT)
             .map((path) => {
               const choice = deps.choice(path);
               return {
@@ -766,10 +953,20 @@ export async function handleWebAccess(
         deps.harnesses().includes(input.harness as HarnessId)
           ? (input.harness as HarnessId)
           : fallback.harness;
-      const model =
-        harness === fallback.harness
+      const picked = typeof input.model === "string" ? input.model : "";
+      const model = deps.models(harness).some((entry) => entry.id === picked)
+        ? picked
+        : harness === fallback.harness
           ? fallback.model
           : resolveModel(harness).id;
+      const mode = runtimeMode(input.mode);
+      const base = typeof input.worktree === "string" ? input.worktree : "";
+      if (base) {
+        if (!path) throw new Error("A worktree needs a project.");
+        const found = await deps.branches(path).catch(() => null);
+        if (!found?.branches.some((branch) => branch.name === base))
+          throw new Error("That branch is no longer in the project.");
+      }
       const attachments = takeUploads(input);
       const sessionId = deps.newId();
       await deps.launch(
@@ -780,7 +977,15 @@ export async function handleWebAccess(
           harness,
           model,
           reveal: false,
-          ...(path ? {} : { workspaceMode: "current" as const }),
+          ...(mode && !NO_ACCESS_MODES.includes(harness)
+            ? { runtimeMode: mode }
+            : {}),
+          ...(input.plan === true ? { intent: "plan" as const } : {}),
+          ...(base
+            ? { workspaceMode: "worktree" as const, worktreeBase: base }
+            : path
+              ? {}
+              : { workspaceMode: "current" as const }),
         },
         sessionId,
       );
@@ -1051,6 +1256,35 @@ function strings(value: unknown): Record<string, string> {
   for (const [key, entry] of Object.entries(value))
     if (typeof entry === "string") out[key] = entry;
   return out;
+}
+
+function transcriptLimit(value: unknown): number {
+  const asked = Math.floor(Number(value));
+  return Number.isFinite(asked) && asked > WEB_TRANSCRIPT_LIMIT
+    ? Math.min(asked, WEB_TRANSCRIPT_MAX)
+    : WEB_TRANSCRIPT_LIMIT;
+}
+
+function runtimeMode(value: unknown): RuntimeMode | undefined {
+  return RUNTIME_MODES.find((mode) => mode === value);
+}
+
+function effortOf(
+  deps: WebAccessDeps,
+  session: Session,
+): { effort?: WebEffort } {
+  const model =
+    deps.models(session.harness).find((entry) => entry.id === session.model) ??
+    resolveModel(session.harness, session.model);
+  const setting = modelEffortSetting(model);
+  if (!setting) return {};
+  return {
+    effort: {
+      id: setting.id,
+      value: session.modelSettings?.[setting.id] ?? setting.value,
+      options: setting.options.map(({ value, label }) => ({ value, label })),
+    },
+  };
 }
 
 function stringLists(value: unknown): Record<string, string[]> {
