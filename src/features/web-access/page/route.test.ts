@@ -22,6 +22,10 @@ describe("browser page routes", () => {
     expect(parseRoute("#/idea/c1")).toEqual({ name: "idea", id: "c1" });
     expect(parseRoute("#/new")).toEqual({ name: "new" });
     expect(parseRoute("#/services")).toEqual({ name: "services" });
+    for (const name of ["feed", "notes", "board", "artifacts"] as const) {
+      expect(parseRoute(`#/${name}`)).toEqual({ name });
+      expect(isSheet({ name })).toBe(false);
+    }
   });
 
   it("falls back instead of opening an empty chat or idea", () => {
@@ -58,5 +62,25 @@ describe("browser page routes", () => {
     expect(isSheet({ name: "new" })).toBe(true);
     expect(isSheet({ name: "idea", id: "c1" })).toBe(true);
     expect(isSheet({ name: "chat", id: "a" })).toBe(false);
+  });
+});
+
+describe("Inbox and search routes", () => {
+  it("reads the Inbox, an item over it, and search", () => {
+    expect(parseRoute("#/inbox")).toEqual({ name: "inbox" });
+    expect(parseRoute("#/search")).toEqual({ name: "search" });
+    expect(parseRoute("#/inboxItem/github%3Aa%2Fb%23pr%2312")).toEqual({
+      name: "inboxItem",
+      id: "github:a/b#pr#12",
+    });
+    expect(parseRoute("#/inboxItem")).toEqual({ name: "inbox" });
+  });
+
+  it("opens an item as a sheet", () => {
+    expect(isSheet({ name: "inboxItem", id: "k" })).toBe(true);
+    expect(isSheet({ name: "inbox" })).toBe(false);
+    expect(isSheet({ name: "search" })).toBe(false);
+    const route = { name: "inboxItem", id: "linear:APP-7" } as const;
+    expect(parseRoute(href(route))).toEqual(route);
   });
 });

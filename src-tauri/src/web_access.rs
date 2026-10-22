@@ -41,7 +41,7 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 13] = [
+const READ_ACTIONS: [&str; 17] = [
     "overview",
     "session",
     "projects",
@@ -51,13 +51,17 @@ const READ_ACTIONS: [&str; 13] = [
     "pushKey",
     "mail",
     "mailThread",
+    "search",
+    "inbox",
+    "inboxItem",
+    "usage",
     // A chat's model and access pickers, its images and saved history.
     "image",
     "history",
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 20] = [
+const WRITE_ACTIONS: [&str; 21] = [
     "upload",
     "send",
     "approval",
@@ -75,10 +79,46 @@ const WRITE_ACTIONS: [&str; 20] = [
     "pushSubscribe",
     "pushUnsubscribe",
     "mailMarkRead",
+    "inboxStart",
     "setModel",
     "setEffort",
     "setMode",
 ];
+
+/// Feed, Notes, Board and Artifacts, as the desktop rail shows them.
+const WORKSPACE_READ_ACTIONS: [&str; 7] = [
+    "feed",
+    "feedTrending",
+    "notes",
+    "note",
+    "board",
+    "artifacts",
+    "artifact",
+];
+const WORKSPACE_WRITE_ACTIONS: [&str; 13] = [
+    "feedMark",
+    "feedMarkAll",
+    "feedInterest",
+    "feedInterestDelete",
+    "feedCollect",
+    "noteSave",
+    "noteDelete",
+    "noteChat",
+    "boardAdd",
+    "boardUpdate",
+    "boardMove",
+    "boardDelete",
+    "boardOpenChat",
+];
+/// An HTML artifact's own page, which the page shows in a sandboxed frame.
+const ARTIFACT_FRAME: &str = "artifactFrame";
+/// The artifact runs with the desktop viewer's limits, and only this page
+/// may frame it.
+const ARTIFACT_FRAME_CSP: &str = "sandbox allow-scripts; default-src 'none'; \
+    script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; \
+    img-src data: blob: https:; font-src data: https:; media-src data: blob: https:; \
+    worker-src blob:; connect-src 'none'; frame-src 'none'; form-action 'none'; \
+    base-uri 'none'; frame-ancestors 'self'";
 
 #[derive(Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -277,7 +317,10 @@ fn route(
     if !presented.is_some_and(|given| same_token(given, token)) {
         return Route::Reject(401, "Sign in with the access token from Irgatos Settings.");
     }
-    if READ_ACTIONS.contains(&action) {
+    if READ_ACTIONS.contains(&action)
+        || WORKSPACE_READ_ACTIONS.contains(&action)
+        || action == ARTIFACT_FRAME
+    {
         return if get {
             Route::Api {
                 action: action.into(),
@@ -287,7 +330,7 @@ fn route(
             Route::Reject(405, "Use GET")
         };
     }
-    if WRITE_ACTIONS.contains(&action) {
+    if WRITE_ACTIONS.contains(&action) || WORKSPACE_WRITE_ACTIONS.contains(&action) {
         if !method.eq_ignore_ascii_case("POST") {
             return Route::Reject(405, "Use POST");
         }
@@ -314,24 +357,19 @@ fn respond_bytes(
     extra: &[(&str, &str)],
 ) {
     let mut response = tiny_http::Response::from_data(body).with_status_code(status);
-    let cache = extra
-        .iter()
-        .find(|(name, _)| *name == "Cache-Control")
-        .map_or("no-store", |(_, value)| *value);
-    for (name, value) in [
+    // `extra` replaces a default of the same name, e.g. a longer cache.
+    let defaults = [
         ("Content-Type", content_type),
-        ("Cache-Control", cache),
+        ("Cache-Control", "no-store"),
         ("X-Content-Type-Options", "nosniff"),
         ("X-Frame-Options", "DENY"),
         ("Referrer-Policy", "no-referrer"),
-    ]
-    .into_iter()
-    .chain(
-        extra
-            .iter()
-            .copied()
-            .filter(|(name, _)| *name != "Cache-Control"),
-    ) {
+    ];
+    for (name, value) in defaults
+        .into_iter()
+        .filter(|(name, _)| !extra.iter().any(|(given, _)| given == name))
+        .chain(extra.iter().copied())
+    {
         if let Ok(header) = tiny_http::Header::from_bytes(name.as_bytes(), value.as_bytes()) {
             response = response.with_header(header);
         }
@@ -467,6 +505,7 @@ fn serve(mut request: tiny_http::Request, app: &AppHandle, inner: &Arc<Mutex<Inn
             respond_json(request, status, json!({"ok": false, "error": error}))
         }
         Route::Api { action, write } => {
+            let action_is_frame = action == ARTIFACT_FRAME;
             let input = if write {
                 let mut bytes = Vec::new();
                 let read = request
@@ -496,14 +535,50 @@ fn serve(mut request: tiny_http::Request, app: &AppHandle, inner: &Arc<Mutex<Inn
             // Push subscriptions live in the app's data folder, not the window.
             let reply = crate::web_push::handle_web_action(app, &action, &input)
                 .unwrap_or_else(|| relay(app, inner, action, input));
-            let status = if reply.get("ok").and_then(Value::as_bool) == Some(true) {
-                200
-            } else {
-                422
-            };
-            respond_json(request, status, reply);
+            let ok = reply.get("ok").and_then(Value::as_bool) == Some(true);
+            if action_is_frame {
+                return respond_frame(request, ok, &reply);
+            }
+            respond_json(request, if ok { 200 } else { 422 }, reply);
         }
     }
+}
+
+/// An artifact's HTML as its own page, or a short note in its place.
+fn respond_frame(request: tiny_http::Request, ok: bool, reply: &Value) {
+    let page = reply.get("result").and_then(Value::as_str).filter(|_| ok);
+    let (status, body) = match page {
+        Some(html) => (200, html.to_string()),
+        None => (
+            422,
+            format!(
+                "<!doctype html><meta charset=utf-8><p style=\"font:15px system-ui;color:#888;padding:16px\">{}</p>",
+                escape_html(
+                    reply
+                        .get("error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("This preview is not available.")
+                )
+            ),
+        ),
+    };
+    respond_bytes(
+        request,
+        status,
+        "text/html; charset=utf-8",
+        body.into_bytes(),
+        &[
+            ("Content-Security-Policy", ARTIFACT_FRAME_CSP),
+            ("X-Frame-Options", "SAMEORIGIN"),
+        ],
+    );
+}
+
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn start(app: &AppHandle, inner: &Arc<Mutex<Inner>>) -> Result<Running, String> {
@@ -888,6 +963,38 @@ mod tests {
     }
 
     #[test]
+    fn search_inbox_and_usage_are_reads_and_starting_from_inbox_a_write() {
+        let peer = ip("127.0.0.1");
+        for action in ["search", "inbox", "inboxItem", "usage"] {
+            assert_eq!(
+                route(
+                    "GET",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    false
+                ),
+                Route::Api {
+                    action: action.into(),
+                    write: false
+                }
+            );
+        }
+        assert!(matches!(
+            route("GET", "/api/inboxStart", peer, TOKEN, Some(TOKEN), true),
+            Route::Reject(405, _)
+        ));
+        assert_eq!(
+            route("POST", "/api/inboxStart", peer, TOKEN, Some(TOKEN), true),
+            Route::Api {
+                action: "inboxStart".into(),
+                write: true
+            }
+        );
+    }
+
+    #[test]
     fn finds_the_tailscale_serve_address_for_this_page() {
         let status = r#"{"TCP":{"443":{"HTTPS":true}},"Web":{
             "mac48.sole-shiner.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8787"}}},
@@ -898,6 +1005,42 @@ mod tests {
         );
         assert_eq!(serve_url_in("{}"), None);
         assert_eq!(serve_url_in("not json"), None);
+    }
+
+    #[test]
+    fn workspace_calls_are_routed_like_the_others() {
+        let peer = ip("100.64.0.9");
+        for action in WORKSPACE_READ_ACTIONS.iter().chain([&ARTIFACT_FRAME]) {
+            assert_eq!(
+                route("GET", &format!("/api/{action}"), peer, TOKEN, Some(TOKEN), false),
+                Route::Api {
+                    action: action.to_string(),
+                    write: false
+                }
+            );
+            assert_eq!(
+                route("GET", &format!("/api/{action}"), peer, TOKEN, None, false),
+                Route::Reject(401, "Sign in with the access token from Irgatos Settings.")
+            );
+        }
+        for action in WORKSPACE_WRITE_ACTIONS {
+            assert_eq!(
+                route("POST", &format!("/api/{action}"), peer, TOKEN, Some(TOKEN), true),
+                Route::Api {
+                    action: action.to_string(),
+                    write: true
+                }
+            );
+            assert_eq!(
+                route("POST", &format!("/api/{action}"), peer, TOKEN, Some(TOKEN), false),
+                Route::Reject(403, "Missing X-Irgatos-Web header")
+            );
+        }
+    }
+
+    #[test]
+    fn frame_errors_are_escaped() {
+        assert_eq!(escape_html("<b>\"x\" & y</b>"), "&lt;b&gt;&quot;x&quot; &amp; y&lt;/b&gt;");
     }
 
     #[test]

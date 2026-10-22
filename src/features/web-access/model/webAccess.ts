@@ -113,6 +113,10 @@ import {
   type UserQuestionReply,
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
+import {
+  handleWorkspaceAction,
+  type WorkspaceDeps,
+} from "./webAccessWorkspace";
 import type {
   WebAppearance,
   WebBlock,
@@ -131,6 +135,15 @@ import type {
   WebServices,
   WebSession,
 } from "./protocol";
+import {
+  inboxChatPrompt,
+  webInbox,
+  webInboxDetail,
+  webLookupDefaults,
+  webSearch,
+  webUsage,
+  type WebLookupDeps,
+} from "./webLookups";
 
 /**
  * Browser access: the Rust side serves a small page to the user's other
@@ -219,6 +232,10 @@ export type WebAccessDeps = {
     markRead: (account: string, threadId: string) => Promise<void>;
   };
   newId: () => string;
+  /** Search, Inbox and usage limits; missing where a test leaves them out. */
+  lookups?: WebLookupDeps;
+  /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
+  workspace?: WorkspaceDeps;
 };
 
 type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
@@ -300,6 +317,7 @@ export const webAccessDefaults: Omit<
   models: modelsFor,
   branches: gitBranches,
   readFile: (path) => invoke<string>("read_file_base64", { path }),
+  lookups: webLookupDefaults,
 };
 
 export type WebAccessStatus = {
@@ -1076,6 +1094,40 @@ export async function handleWebAccess(
       };
       return result;
     }
+    case "search":
+      return webSearch(lookups(deps), deps.sessions(), text(input, "q", 500));
+    case "inbox":
+      return webInbox(lookups(deps), deps.sessions(), input.fresh === "1");
+    case "inboxItem":
+      return webInboxDetail(
+        lookups(deps),
+        deps.sessions(),
+        text(input, "key", 500),
+      );
+    case "inboxStart": {
+      const { prompt, cwd: path } = await inboxChatPrompt(
+        lookups(deps),
+        text(input, "key", 500),
+        typeof input.text === "string" ? input.text.slice(0, 100_000) : "",
+      );
+      const cwd = path || (await deps.freeChatDir());
+      const { harness, model } = deps.choice(path || undefined);
+      const sessionId = deps.newId();
+      await deps.launch(
+        {
+          prompt,
+          cwd,
+          harness,
+          model,
+          reveal: false,
+          ...(path ? {} : { workspaceMode: "current" as const }),
+        },
+        sessionId,
+      );
+      return { sessionId };
+    }
+    case "usage":
+      return webUsage(lookups(deps), deps.harnesses(), input.fresh === "1");
     case "mail": {
       const configured = await deps.mail.configured();
       if (!configured) {
@@ -1164,9 +1216,25 @@ export async function handleWebAccess(
       );
       return { read: true };
     }
-    default:
+    default: {
+      const workspace = handleWorkspaceAction(
+        {
+          ...deps,
+          open: deps.irgatHost.load,
+          newChat: (next) => handleWebAccess(deps, "newChat", next),
+        },
+        action,
+        input,
+      );
+      if (workspace) return workspace;
       throw new Error("Unknown action");
+    }
   }
+}
+
+function lookups(deps: WebAccessDeps): WebLookupDeps {
+  if (!deps.lookups) throw new Error("Not available on this Mac.");
+  return deps.lookups;
 }
 
 function strings(value: unknown): Record<string, string> {

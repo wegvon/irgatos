@@ -5,6 +5,12 @@
  */
 import type { FleetEntry, FleetRequest } from "../../fleet/model/fleet";
 import type { IdeasState } from "../../ideas/model/ideas";
+import type {
+  InboxKind,
+  InboxProvider,
+} from "../../inbox/model/githubTasks";
+import type { AccountStatusTone } from "../../providers/model/accountUsage";
+import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import type { IrgatStatus } from "../../irgats/model/irgat";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
 import type {
@@ -173,6 +179,236 @@ export type WebIrgats = {
   /** Irgats can be turned off in the Mac's settings. */
   enabled: boolean;
   irgats: WebIrgat[];
+};
+
+/** One chat found by the page's search; the Mac opens closed ones on demand. */
+export type WebSearchHit = {
+  sessionId: string;
+  /** By title, by a message's words, or by meaning when no word matched. */
+  kind: "chat" | "message" | "meaning";
+  title: string;
+  place: string;
+  harness: HarnessId;
+  updatedAt: number;
+  preview?: string;
+};
+
+export type WebSearch = {
+  query: string;
+  hits: WebSearchHit[];
+  /** How meaning search stands, when it is not simply on. */
+  note: string | null;
+};
+
+export type WebInboxItem = {
+  key: string;
+  provider: InboxProvider;
+  kind: InboxKind;
+  /** "#12" or a tracker id like "APP-7". */
+  ref: string;
+  title: string;
+  /** The repository, or the tracker team. */
+  source: string;
+  place: string;
+  url: string;
+  status: string;
+  updatedAt: number;
+  labels: { name: string; color: string }[];
+  /** Updated since it was last opened, on the Mac or here. */
+  unseen: boolean;
+  needsAction: boolean;
+  snoozedUntil?: number;
+  /** Why GitLab or Azure DevOps put it on the user's to-do list. */
+  attention?: string;
+  agentChats: number;
+};
+
+export type WebInbox = {
+  items: WebInboxItem[];
+  /** Per-source fetch problems, e.g. a GitHub rate limit. */
+  errors: string[];
+  at: number;
+};
+
+export type WebInboxDetail = {
+  item: WebInboxItem;
+  body: string;
+  author?: string;
+};
+
+export type WebUsageWindow = {
+  title: string;
+  usedPercent: number;
+  resetsAt: number | null;
+};
+
+export type WebUsageAccount = {
+  provider: RateLimitProvider;
+  title: string;
+  /** Set only when the provider has more than one account. */
+  account?: string;
+  tone: AccountStatusTone;
+  status: string;
+  detail?: string;
+  windows: WebUsageWindow[];
+  /** Devin's extra usage balance in dollars. */
+  extra?: number;
+};
+
+export type WebUsage = {
+  accounts: WebUsageAccount[];
+  /** The Mac's "show remaining" setting, so both read the same way. */
+  showRemaining: boolean;
+  at: number;
+};
+
+// ---- Feed, Notes, Board and Artifacts, as the desktop rail shows them ----
+
+export type WebFeedTab = "feed" | "filtered" | "saved";
+
+export type WebFeedInterest = {
+  id: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+};
+
+export type WebFeedItem = {
+  id: string;
+  source: string;
+  url: string;
+  author: string;
+  authorName: string;
+  text: string;
+  summary: string;
+  at: number;
+  /** "1.2K likes · 30 reposts". */
+  metrics: string;
+  /** Pictures stay on the post: the page loads nothing from other sites. */
+  media: number;
+  interest: string;
+  /** Match with the interest, in percent. */
+  score: number | null;
+  read: boolean;
+  saved: boolean;
+  similar: number;
+};
+
+export type WebFeed = {
+  interests: WebFeedInterest[];
+  counts: { unread: number; filtered: number; saved: number };
+  /** Smart Search is on, so posts are matched by meaning. */
+  scoring: boolean;
+  /** An Irgat collects the feed, so Collect now can run it. */
+  collector: string | null;
+  lastCollected: number | null;
+  items: WebFeedItem[];
+  total: number;
+};
+
+export type WebTrendingRepo = {
+  fullName: string;
+  url: string;
+  description: string;
+  language: string;
+  languageColor: string;
+  stars: number;
+  forks: number;
+  periodStars: number;
+};
+
+export type WebTrending = { repos: WebTrendingRepo[]; fetchedAt: number };
+
+export type WebNoteRow = {
+  id: string;
+  title: string;
+  preview: string;
+  tags: string[];
+  /** The project it was saved from, when there is one. */
+  project: string | null;
+  updatedAt: number;
+};
+
+export type WebNotes = { notes: WebNoteRow[] };
+
+export type WebNote = WebNoteRow & { body: string };
+
+export type WebBoardProject = { path: string; label: string };
+
+export type WebBoardSession = {
+  sessionId: string;
+  /** "Running", "Need approval", "Finished"… */
+  label: string;
+  tone: "amber" | "accent" | "emerald" | "rose" | "muted";
+  /** Open in this window, so the chat opens right away. */
+  live: boolean;
+  /** Stored on the Mac, so it can still be opened. */
+  saved: boolean;
+};
+
+export type WebBoardCard = {
+  id: string;
+  title: string;
+  notes: string;
+  labels: string[];
+  updatedAt: number;
+  session: WebBoardSession | null;
+};
+
+export type WebBoardColumn = {
+  id: string;
+  title: string;
+  cards: WebBoardCard[];
+};
+
+export type WebBoard = {
+  project: string;
+  label: string;
+  projects: WebBoardProject[];
+  columns: WebBoardColumn[];
+};
+
+export type WebArtifactFormat =
+  | "html"
+  | "svg"
+  | "mermaid"
+  | "markdown"
+  | "code"
+  | "image";
+
+export type WebArtifactRow = {
+  id: string;
+  title: string;
+  format: WebArtifactFormat;
+  /** "HTML", "Doc", "TypeScript"… */
+  kind: string;
+  /** "Files", "Docs"… as the desktop's filter chips. */
+  filters: string[];
+  path?: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  pinned: boolean;
+  createdAt: number;
+};
+
+export type WebArtifacts = {
+  project: string;
+  label: string;
+  projects: WebBoardProject[];
+  artifacts: WebArtifactRow[];
+  /** Saved chats that could not be read. */
+  failed: number;
+};
+
+export type WebArtifact = WebArtifactRow & {
+  /** Text for documents, code and sources; empty for images. */
+  text: string;
+  /** Markdown that shows it: the document itself, or the code in a fence. */
+  markdown: string;
+  /** A data URL for an image. */
+  image?: string;
+  /** The file is gone, so this is what the chat last showed of it. */
+  stale?: string;
 };
 
 /** One Gmail account on the Mac; `id` is its Executor connection. */

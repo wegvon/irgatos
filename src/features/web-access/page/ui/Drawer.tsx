@@ -8,9 +8,12 @@ import { History } from "./History";
 import { NEW_CHAT_FIELD } from "./NewChat";
 import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
+import { SearchResults } from "./Search";
+import { WORKSPACE_SCREENS } from "./Workspace";
 import {
   Bot,
   Idea,
+  Inbox,
   Mail,
   PenLine,
   Radar,
@@ -47,6 +50,7 @@ export function Drawer({
   mac,
   macLabel,
   selected,
+  inbox = 0,
 }: {
   open: boolean;
   onClose: () => void;
@@ -55,6 +59,8 @@ export function Drawer({
   mac: Tone;
   macLabel: string;
   selected?: string;
+  /** Inbox items that need action. */
+  inbox?: number;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FleetBucket | null>(null);
@@ -128,7 +134,7 @@ export function Drawer({
             <Search className="size-[18px] shrink-0" />
             <input
               className="web-field min-w-0 flex-1 bg-transparent text-(--ink) outline-none"
-              placeholder="Search chats"
+              placeholder="Search all chats"
               value={query}
               enterKeyHint="search"
               onChange={(event) => setQuery(event.target.value)}
@@ -160,6 +166,22 @@ export function Drawer({
             <Tile label="Mail" onClick={() => navigate({ name: "mail" })}>
               <Mail className="size-[21px]" />
             </Tile>
+            <Tile
+              label="Inbox"
+              badge={inbox}
+              onClick={() => navigate({ name: "inbox" })}
+            >
+              <Inbox className="size-[21px]" />
+            </Tile>
+            {WORKSPACE_SCREENS.map((entry) => (
+              <Tile
+                key={entry.name}
+                label={entry.label}
+                onClick={() => navigate({ name: entry.name })}
+              >
+                <entry.Icon className="size-[21px]" />
+              </Tile>
+            ))}
             <Tile
               label="Mac"
               title={macLabel}
@@ -223,14 +245,14 @@ export function Drawer({
                 selected={entry.sessionId === selected}
               />
             ))
-          ) : (
+          ) : query.trim().length >= 2 ? null : (
             <div className="px-3 py-6 text-[15px] text-(--ink-3)">
               {query || filter
                 ? "No chats match."
                 : "No chats are open on your Mac."}
             </div>
           )}
-          {filter === null ? (
+          {filter === null && !query.trim() ? (
             <History
               active={open}
               query={query}
@@ -238,6 +260,11 @@ export function Drawer({
               selected={selected}
             />
           ) : null}
+          <SearchResults
+            query={query}
+            now={now}
+            skip={new Set(entries.map((entry) => entry.sessionId))}
+          />
         </div>
       </nav>
     </div>

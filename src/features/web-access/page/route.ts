@@ -20,7 +20,18 @@ export type Route =
   /** `id` is `mailThreadId(account, thread)`: a thread is unique per account. */
   | { name: "mailThread"; id: string }
   | { name: "new" }
-  | { name: "services" };
+  | { name: "services" }
+  /** The Mac's Inbox: pull requests, issues and tracker tickets. */
+  | { name: "inbox" }
+  /** `id` is the item's key; it opens over the Inbox. */
+  | { name: "inboxItem"; id: string }
+  /** Every chat by words or meaning; the phone searches in its menu. */
+  | { name: "search" }
+  /** The desktop rail's Feed, Notes, Board and Artifacts. */
+  | { name: "feed" }
+  | { name: "notes" }
+  | { name: "board" }
+  | { name: "artifacts" };
 
 export type Screen = Extract<
   Route,
@@ -33,7 +44,13 @@ export type Screen = Extract<
       | "irgats"
       | "ideas"
       | "mail"
-      | "mailThread";
+      | "mailThread"
+      | "inbox"
+      | "search"
+      | "feed"
+      | "notes"
+      | "board"
+      | "artifacts";
   }
 >;
 export type Sheet = Exclude<Route, Screen>;
@@ -51,6 +68,10 @@ export function parseRoute(hash: string): Route {
     case "today":
     case "irgats":
     case "ideas":
+    case "feed":
+    case "notes":
+    case "board":
+    case "artifacts":
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };
@@ -61,6 +82,11 @@ export function parseRoute(hash: string): Route {
     case "new":
     case "services":
       return { name };
+    case "inbox":
+    case "search":
+      return { name };
+    case "inboxItem":
+      return value ? { name, id: value } : { name: "inbox" };
     default:
       return { name: "home" };
   }
@@ -74,12 +100,16 @@ export function href(route: Route): string {
 
 export function isSheet(route: Route): route is Sheet {
   return (
-    route.name === "new" || route.name === "services" || route.name === "idea"
+    route.name === "new" ||
+    route.name === "services" ||
+    route.name === "idea" ||
+    route.name === "inboxItem"
   );
 }
 
 /** The screen a sheet opens over when the page is opened straight onto it. */
 function screenUnder(route: Sheet): Screen {
+  if (route.name === "inboxItem") return { name: "inbox" };
   return route.name === "idea" ? { name: "ideas" } : { name: "home" };
 }
 
