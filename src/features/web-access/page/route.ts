@@ -26,7 +26,12 @@ export type Route =
   | { name: "automations" }
   | { name: "automation"; id: string }
   /** An Irgat's settings, agents and memory, over the Irgats screen. */
-  | { name: "irgat"; id: string };
+  | { name: "irgat"; id: string }
+  /** The desktop rail's Feed, Notes, Board and Artifacts. */
+  | { name: "feed" }
+  | { name: "notes" }
+  | { name: "board" }
+  | { name: "artifacts" };
 
 export type Screen = Extract<
   Route,
@@ -41,7 +46,11 @@ export type Screen = Extract<
       | "mail"
       | "mailThread"
       | "agents"
-      | "automations";
+      | "automations"
+      | "feed"
+      | "notes"
+      | "board"
+      | "artifacts";
   }
 >;
 export type Sheet = Exclude<Route, Screen>;
@@ -59,6 +68,10 @@ export function parseRoute(hash: string): Route {
     case "today":
     case "irgats":
     case "ideas":
+    case "feed":
+    case "notes":
+    case "board":
+    case "artifacts":
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };

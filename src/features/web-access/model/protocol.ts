@@ -250,6 +250,155 @@ export type WebSpokenReply = {
   summarized: boolean;
 };
 
+// ---- Feed, Notes, Board and Artifacts, as the desktop rail shows them ----
+
+export type WebFeedTab = "feed" | "filtered" | "saved";
+
+export type WebFeedInterest = {
+  id: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+};
+
+export type WebFeedItem = {
+  id: string;
+  source: string;
+  url: string;
+  author: string;
+  authorName: string;
+  text: string;
+  summary: string;
+  at: number;
+  /** "1.2K likes · 30 reposts". */
+  metrics: string;
+  /** Pictures stay on the post: the page loads nothing from other sites. */
+  media: number;
+  interest: string;
+  /** Match with the interest, in percent. */
+  score: number | null;
+  read: boolean;
+  saved: boolean;
+  similar: number;
+};
+
+export type WebFeed = {
+  interests: WebFeedInterest[];
+  counts: { unread: number; filtered: number; saved: number };
+  /** Smart Search is on, so posts are matched by meaning. */
+  scoring: boolean;
+  /** An Irgat collects the feed, so Collect now can run it. */
+  collector: string | null;
+  lastCollected: number | null;
+  items: WebFeedItem[];
+  total: number;
+};
+
+export type WebTrendingRepo = {
+  fullName: string;
+  url: string;
+  description: string;
+  language: string;
+  languageColor: string;
+  stars: number;
+  forks: number;
+  periodStars: number;
+};
+
+export type WebTrending = { repos: WebTrendingRepo[]; fetchedAt: number };
+
+export type WebNoteRow = {
+  id: string;
+  title: string;
+  preview: string;
+  tags: string[];
+  /** The project it was saved from, when there is one. */
+  project: string | null;
+  updatedAt: number;
+};
+
+export type WebNotes = { notes: WebNoteRow[] };
+
+export type WebNote = WebNoteRow & { body: string };
+
+export type WebBoardProject = { path: string; label: string };
+
+export type WebBoardSession = {
+  sessionId: string;
+  /** "Running", "Need approval", "Finished"… */
+  label: string;
+  tone: "amber" | "accent" | "emerald" | "rose" | "muted";
+  /** Open in this window, so the chat opens right away. */
+  live: boolean;
+  /** Stored on the Mac, so it can still be opened. */
+  saved: boolean;
+};
+
+export type WebBoardCard = {
+  id: string;
+  title: string;
+  notes: string;
+  labels: string[];
+  updatedAt: number;
+  session: WebBoardSession | null;
+};
+
+export type WebBoardColumn = {
+  id: string;
+  title: string;
+  cards: WebBoardCard[];
+};
+
+export type WebBoard = {
+  project: string;
+  label: string;
+  projects: WebBoardProject[];
+  columns: WebBoardColumn[];
+};
+
+export type WebArtifactFormat =
+  | "html"
+  | "svg"
+  | "mermaid"
+  | "markdown"
+  | "code"
+  | "image";
+
+export type WebArtifactRow = {
+  id: string;
+  title: string;
+  format: WebArtifactFormat;
+  /** "HTML", "Doc", "TypeScript"… */
+  kind: string;
+  /** "Files", "Docs"… as the desktop's filter chips. */
+  filters: string[];
+  path?: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  pinned: boolean;
+  createdAt: number;
+};
+
+export type WebArtifacts = {
+  project: string;
+  label: string;
+  projects: WebBoardProject[];
+  artifacts: WebArtifactRow[];
+  /** Saved chats that could not be read. */
+  failed: number;
+};
+
+export type WebArtifact = WebArtifactRow & {
+  /** Text for documents, code and sources; empty for images. */
+  text: string;
+  /** Markdown that shows it: the document itself, or the code in a fence. */
+  markdown: string;
+  /** A data URL for an image. */
+  image?: string;
+  /** The file is gone, so this is what the chat last showed of it. */
+  stale?: string;
+};
+
 /** One Gmail account on the Mac; `id` is its Executor connection. */
 export type WebMailAccount = { id: string; email: string };
 

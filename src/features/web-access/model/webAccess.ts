@@ -108,6 +108,10 @@ import {
   isWebAgentsAction,
   type WebAgentsDeps,
 } from "./webAccessAgents";
+import {
+  handleWorkspaceAction,
+  type WorkspaceDeps,
+} from "./webAccessWorkspace";
 import type {
   WebAppearance,
   WebBlock,
@@ -194,6 +198,8 @@ export type WebAccessDeps = {
   newId: () => string;
   /** Fleet agents, automations, Irgat settings and voice. */
   agents?: WebAgentsDeps;
+  /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
+  workspace?: WorkspaceDeps;
 };
 
 type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
@@ -966,14 +972,25 @@ export async function handleWebAccess(
       );
       return { read: true };
     }
-    default:
+    default: {
       if (isWebAgentsAction(action))
         return handleWebAgents(
           { ...deps, findSession: (given) => findSession(deps, given) },
           action,
           input,
         );
+      const workspace = handleWorkspaceAction(
+        {
+          ...deps,
+          open: deps.irgatHost.load,
+          newChat: (next) => handleWebAccess(deps, "newChat", next),
+        },
+        action,
+        input,
+      );
+      if (workspace) return workspace;
       throw new Error("Unknown action");
+    }
   }
 }
 

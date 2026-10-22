@@ -31,6 +31,10 @@ describe("browser page routes", () => {
     expect(parseRoute("#/irgat/i1")).toEqual({ name: "irgat", id: "i1" });
     expect(parseRoute("#/automation")).toEqual({ name: "automations" });
     expect(parseRoute("#/irgat")).toEqual({ name: "irgats" });
+    for (const name of ["feed", "notes", "board", "artifacts"] as const) {
+      expect(parseRoute(`#/${name}`)).toEqual({ name });
+      expect(isSheet({ name })).toBe(false);
+    }
   });
 
   it("falls back instead of opening an empty chat or idea", () => {
