@@ -52,7 +52,8 @@ const READ_ACTIONS: [&str; 9] = [
     "mail",
     "mailThread",
 ];
-const WRITE_ACTIONS: [&str; 16] = [
+const WRITE_ACTIONS: [&str; 17] = [
+    "upload",
     "send",
     "approval",
     "answer",

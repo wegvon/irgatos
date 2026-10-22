@@ -100,6 +100,15 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
   const value: WebAccessDeps = {
     sessions: () => sessions,
     submit: vi.fn(() => true),
+    attach: vi.fn(async (file: File) => ({
+      id: `att-${file.name}`,
+      name: file.name,
+      mimeType: file.type,
+      kind: "file" as const,
+      size: file.size,
+      path: `/tmp/${file.name}`,
+      text: await file.text(),
+    })),
     approve: vi.fn(),
     answer: vi.fn(),
     stop: vi.fn(),
@@ -279,7 +288,7 @@ describe("handleWebAccess", () => {
     expect(
       await handleWebAccess(d, "send", { sessionId: "a", text: "  hello  " }),
     ).toEqual({ sent: true });
-    expect(d.submit).toHaveBeenCalledWith("a", "hello");
+    expect(d.submit).toHaveBeenCalledWith("a", "hello", []);
     await expect(
       handleWebAccess(d, "send", { sessionId: "a", text: "   " }),
     ).rejects.toThrow("Write a message first.");
@@ -399,6 +408,66 @@ describe("handleWebAccess", () => {
       "claude",
       "codex",
     ]);
+  });
+
+  it("takes a file in pieces and sends it with the next message", async () => {
+    const d = deps([chat("a")]);
+    const first = (await handleWebAccess(d, "upload", {
+      name: "notes.txt",
+      type: "text/plain",
+      chunk: btoa("hel"),
+    })) as { uploadId: string };
+    expect(d.attach).not.toHaveBeenCalled();
+    expect(
+      await handleWebAccess(d, "upload", {
+        uploadId: first.uploadId,
+        chunk: btoa("lo!"),
+        last: true,
+      }),
+    ).toMatchObject({ uploadId: first.uploadId, name: "notes.txt" });
+    expect(
+      await handleWebAccess(d, "send", {
+        sessionId: "a",
+        text: "",
+        files: [first.uploadId],
+      }),
+    ).toEqual({ sent: true });
+    expect(d.submit).toHaveBeenCalledWith("a", "", [
+      expect.objectContaining({ name: "notes.txt", text: "hello!" }),
+    ]);
+    // A message takes its files: they cannot be sent twice.
+    await expect(
+      handleWebAccess(d, "send", {
+        sessionId: "a",
+        text: "again",
+        files: [first.uploadId],
+      }),
+    ).rejects.toThrow("Attach it again.");
+    await expect(
+      handleWebAccess(d, "upload", { name: "x", chunk: "not base64!" }),
+    ).rejects.toThrow("damaged");
+  });
+
+  it("starts a new chat with attached files", async () => {
+    const d = deps([]);
+    const { uploadId } = (await handleWebAccess(d, "upload", {
+      name: "plan.md",
+      type: "text/markdown",
+      chunk: btoa("# Plan"),
+      last: true,
+    })) as { uploadId: string };
+    await handleWebAccess(d, "newChat", {
+      cwd: "",
+      text: "",
+      files: [uploadId],
+    });
+    expect(d.launch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: "",
+        attachments: [expect.objectContaining({ name: "plan.md" })],
+      }),
+      "id-1",
+    );
   });
 
   it("starts a new chat in a project or as a free chat", async () => {
