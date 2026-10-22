@@ -19,6 +19,7 @@ import {
 } from "./ui/Workspace";
 import { Irgats } from "./ui/Irgats";
 import { Login } from "./ui/Login";
+import { MailList, MailThreadView } from "./ui/Mail";
 import { NewChat } from "./ui/NewChat";
 import {
   MacIcon,
@@ -41,6 +42,7 @@ import {
 import {
   Bot,
   Idea,
+  Mail,
   Menu,
   MessageSquare,
   PanelLeft,
@@ -52,8 +54,12 @@ import {
 } from "../../../shared/ui/icons";
 import { FLEET_BUCKET_LABEL, FLEET_BUCKETS } from "../../fleet/model/fleet";
 
-/** The last screen under an open chat, filter included, to go back to. */
-type Tab = Exclude<Screen, { name: "chat" }>;
+/** The last screen under an open chat or mail, filter included, to go back to. */
+type Tab = Exclude<Screen, { name: "chat" | "mailThread" }>;
+
+/** A chat or a mail thread opens over the list it came from. */
+const isTab = (screen: Screen): screen is Tab =>
+  screen.name !== "chat" && screen.name !== "mailThread";
 
 const SIDEBAR_KEY = "irgatos.web.sidebar";
 
@@ -87,7 +93,11 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   const wide = useMediaQuery("(min-width: 768px)");
   const { route, screen, sheet, closeSheet } = useRoute();
   const [last, setLast] = useState<Tab>(() =>
-    screen.name === "chat" ? { name: "home" } : screen,
+    isTab(screen)
+      ? screen
+      : screen.name === "mailThread"
+        ? { name: "mail" }
+        : { name: "home" },
   );
   const [menu, setMenu] = useState(false);
   const edge = useRef<number | null>(null);
@@ -107,7 +117,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
 
   useEffect(() => onSignedOut(() => setSignedOut(true)), []);
   useEffect(() => {
-    if (screen.name !== "chat") setLast(screen);
+    if (isTab(screen)) setLast(screen);
   }, [screen]);
 
   const live = !signedOut;
@@ -281,6 +291,8 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           />
         ) : name === "irgats" ? (
           <Irgats irgats={irgats.data} header={header} wide={wide} />
+        ) : name === "mail" ? (
+          <MailList header={header} wide={wide} now={now} />
         ) : (
           <Chats
             overview={overview.data}
@@ -367,6 +379,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Ideas"
                   on={screen.name === "ideas"}
                   onClick={() => navigate({ name: "ideas" })}
+                />
+                <NavItem
+                  icon={<Mail className="size-5" />}
+                  label="Mail"
+                  on={screen.name === "mail" || screen.name === "mailThread"}
+                  onClick={() => navigate({ name: "mail" })}
                 />
                 {WORKSPACE_SCREENS.map((entry) => (
                   <NavItem
@@ -467,6 +485,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               >
                 <Idea className="size-[22px]" />
               </RailItem>
+              <RailItem
+                label="Mail"
+                on={screen.name === "mail" || screen.name === "mailThread"}
+                onClick={() => navigate({ name: "mail" })}
+              >
+                <Mail className="size-[22px]" />
+              </RailItem>
               {WORKSPACE_SCREENS.map((entry) => (
                 <RailItem
                   key={entry.name}
@@ -501,6 +526,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 wide
                 onBack={() => navigate(last)}
               />
+            ) : screen.name === "mailThread" ? (
+              <MailThreadView
+                key={screen.id}
+                id={screen.id}
+                wide
+                onBack={() => navigate(last)}
+              />
             ) : (
               tabView(screen.name)
             )}
@@ -511,7 +543,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       </div>
     );
 
-  const chatOpen = screen.name === "chat";
+  const chatOpen = screen.name === "chat" || screen.name === "mailThread";
   return (
     <div className="relative h-full overflow-hidden pl-(--safe-left) pr-(--safe-right)">
       <div
@@ -542,12 +574,21 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       </div>
       {chatOpen ? (
         <SwipeBack onBack={() => navigate(last)}>
-          <ChatView
-            key={screen.id}
-            id={screen.id}
-            wide={false}
-            onBack={() => navigate(last)}
-          />
+          {screen.name === "chat" ? (
+            <ChatView
+              key={screen.id}
+              id={screen.id}
+              wide={false}
+              onBack={() => navigate(last)}
+            />
+          ) : (
+            <MailThreadView
+              key={screen.id}
+              id={screen.id}
+              wide={false}
+              onBack={() => navigate(last)}
+            />
+          )}
         </SwipeBack>
       ) : null}
       {newChatHere ? (

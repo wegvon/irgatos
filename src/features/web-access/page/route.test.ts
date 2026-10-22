@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { href, isSheet, parseRoute } from "./route";
+import {
+  href,
+  isSheet,
+  mailThreadId,
+  parseMailThreadId,
+  parseRoute,
+} from "./route";
 
 describe("browser page routes", () => {
   it("reads every screen and sheet from the hash", () => {
@@ -37,6 +43,19 @@ describe("browser page routes", () => {
       { name: "idea", id: "c-1" },
     ] as const)
       expect(parseRoute(href(route))).toEqual(route);
+  });
+
+  it("opens a mail thread by its account and id", () => {
+    const id = mailThreadId("google_gmail.user.work.", "18f2a");
+    const route = { name: "mailThread", id } as const;
+    expect(parseRoute(href(route))).toEqual(route);
+    expect(parseMailThreadId(id)).toEqual({
+      account: "google_gmail.user.work.",
+      thread: "18f2a",
+    });
+    expect(parseRoute("#/mail")).toEqual({ name: "mail" });
+    expect(parseRoute("#/mailThread")).toEqual({ name: "mail" });
+    expect(isSheet(route)).toBe(false);
   });
 
   it("tells sheets from screens", () => {

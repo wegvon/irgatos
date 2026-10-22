@@ -39,6 +39,22 @@ import {
   deleteIrgatChildSession,
   ensureIrgatSession,
 } from "../../irgats/model/irgatWorkspace";
+import { hiddenTextNotice } from "../../mail/model/hiddenText";
+import {
+  MAIL_FOLDERS,
+  isFromMe,
+  listMail,
+  loadMailAccounts,
+  loadMailSettings,
+  loadMailThread,
+  mailQuery,
+  modifyMailThread,
+  senderName,
+  type MailAccount,
+  type MailFolderId,
+  type MailPage,
+  type MailThread,
+} from "../../mail/model/mail";
 import { loadRecents } from "../../projects/model/recents";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import {
@@ -97,6 +113,8 @@ import type {
   WebHarnessChoice,
   WebIrgat,
   WebIrgats,
+  WebMail,
+  WebMailThread,
   WebOverview,
   WebProjects,
   WebServices,
@@ -160,6 +178,18 @@ export type WebAccessDeps = {
     remove: (id: string) => Promise<unknown>;
   };
   services: () => Promise<ServiceStatus[]>;
+  /** Gmail through Executor, read only: nothing here sends or deletes. */
+  mail: {
+    configured: () => Promise<boolean>;
+    accounts: () => Promise<MailAccount[]>;
+    list: (
+      query: string,
+      accounts: string[],
+      pageTokens: Record<string, string> | null,
+    ) => Promise<MailPage>;
+    thread: (account: string, threadId: string) => Promise<MailThread>;
+    markRead: (account: string, threadId: string) => Promise<void>;
+  };
   newId: () => string;
   /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
   workspace?: WorkspaceDeps;
@@ -222,6 +252,17 @@ export const webAccessDefaults: Omit<
     remove: deleteCard,
   },
   services: () => checkServices(serviceIds(loadVoiceSettings())),
+  mail: {
+    configured: () =>
+      loadMailSettings().then(
+        (settings) => !!settings.endpoint && settings.hasKey,
+      ),
+    accounts: () => loadMailAccounts(),
+    list: listMail,
+    thread: loadMailThread,
+    markRead: (account, threadId) =>
+      modifyMailThread(account, threadId, "read"),
+  },
   irgatsEnabled: loadIrgatsEnabled,
   saveSession: upsertSession,
   newId: () => crypto.randomUUID(),
@@ -835,6 +876,94 @@ export async function handleWebAccess(
         })),
       };
       return result;
+    }
+    case "mail": {
+      const configured = await deps.mail.configured();
+      if (!configured) {
+        const result: WebMail = {
+          configured,
+          accounts: [],
+          threads: [],
+          more: "",
+          errors: [],
+        };
+        return result;
+      }
+      const accounts = await deps.mail.accounts();
+      const folder = MAIL_FOLDERS.some((f) => f.id === input.folder)
+        ? (input.folder as MailFolderId)
+        : MAIL_FOLDERS[0].id;
+      const search = typeof input.search === "string" ? input.search : "";
+      const account = typeof input.account === "string" ? input.account : "";
+      const ids = accounts.some((a) => a.id === account)
+        ? [account]
+        : accounts.map((a) => a.id);
+      const more = typeof input.more === "string" ? input.more : "";
+      const page = await deps.mail.list(
+        mailQuery(folder, search.slice(0, 500)),
+        ids,
+        more ? strings(JSON.parse(more)) : null,
+      );
+      const result: WebMail = {
+        configured,
+        accounts: accounts.map(({ id, email }) => ({ id, email })),
+        threads: page.threads.map((row) => ({
+          account: row.account,
+          id: row.id,
+          subject: row.subject,
+          from: row.from,
+          sender: senderName(row.from),
+          snippet: row.snippet,
+          date: row.date,
+          unread: row.unread,
+          messageCount: row.messageCount,
+        })),
+        more: Object.keys(page.nextPageTokens).length
+          ? JSON.stringify(page.nextPageTokens)
+          : "",
+        errors: page.errors,
+      };
+      return result;
+    }
+    case "mailThread": {
+      const account = text(input, "account", 500);
+      const id = text(input, "id", 500);
+      const [thread, accounts] = await Promise.all([
+        deps.mail.thread(account, id),
+        deps.mail.accounts().catch(() => [] as MailAccount[]),
+      ]);
+      const others = accounts.map((a) => a.email).filter(Boolean);
+      const result: WebMailThread = {
+        account,
+        id: thread.id,
+        subject: thread.subject,
+        unread: thread.unread,
+        messages: thread.messages.map((m) => {
+          const hidden = hiddenTextNotice(m.hidden);
+          return {
+            id: m.id,
+            from: m.from,
+            sender: senderName(m.from),
+            to: m.to,
+            cc: m.cc,
+            date: m.date,
+            body: m.body,
+            quoted: m.quoted ?? "",
+            attachments: m.attachments,
+            mine: isFromMe(m.from, thread.me, others),
+            ...(hidden ? { hidden } : {}),
+          };
+        }),
+        draft: thread.drafts[thread.drafts.length - 1]?.body || undefined,
+      };
+      return result;
+    }
+    case "mailMarkRead": {
+      await deps.mail.markRead(
+        text(input, "account", 500),
+        text(input, "id", 500),
+      );
+      return { read: true };
     }
     default: {
       const workspace = handleWorkspaceAction(

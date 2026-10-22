@@ -267,3 +267,57 @@ export type WebArtifact = WebArtifactRow & {
   /** The file is gone, so this is what the chat last showed of it. */
   stale?: string;
 };
+
+/** One Gmail account on the Mac; `id` is its Executor connection. */
+export type WebMailAccount = { id: string; email: string };
+
+export type WebMailRow = {
+  account: string;
+  id: string;
+  subject: string;
+  from: string;
+  /** The sender's name, or the address when it has none. */
+  sender: string;
+  snippet: string;
+  date: number;
+  unread: boolean;
+  messageCount: number;
+};
+
+export type WebMail = {
+  /** False until Mail is set up in the Mac's settings. */
+  configured: boolean;
+  accounts: WebMailAccount[];
+  /** Newest first across the accounts asked for. */
+  threads: WebMailRow[];
+  /** Hand back as `more` to load the next page; empty at the end. */
+  more: string;
+  errors: { account: string; message: string }[];
+};
+
+export type WebMailMessage = {
+  id: string;
+  from: string;
+  sender: string;
+  to: string;
+  cc: string;
+  date: number;
+  body: string;
+  quoted: string;
+  attachments: string[];
+  /** Sent by the account itself, or another of the user's accounts. */
+  mine: boolean;
+  /** Why some of the sender's text is not shown; the text stays on the Mac. */
+  hidden?: { warning: boolean; text: string };
+};
+
+/** A thread to read; replying and sending stay on the Mac. */
+export type WebMailThread = {
+  account: string;
+  id: string;
+  subject: string;
+  unread: boolean;
+  messages: WebMailMessage[];
+  /** The latest reply draft, e.g. one an agent saved. */
+  draft?: string;
+};
