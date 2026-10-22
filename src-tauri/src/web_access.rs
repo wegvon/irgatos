@@ -41,11 +41,23 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 11] = [
-    "overview", "session", "projects", "ideas", "services", "irgats", "pushKey",
-    "search", "inbox", "inboxItem", "usage",
+const READ_ACTIONS: [&str; 13] = [
+    "overview",
+    "session",
+    "projects",
+    "ideas",
+    "services",
+    "irgats",
+    "pushKey",
+    "mail",
+    "mailThread",
+    "search",
+    "inbox",
+    "inboxItem",
+    "usage",
 ];
-const WRITE_ACTIONS: [&str; 16] = [
+const WRITE_ACTIONS: [&str; 18] = [
+    "upload",
     "send",
     "approval",
     "answer",
@@ -61,6 +73,7 @@ const WRITE_ACTIONS: [&str; 16] = [
     "ideaDelete",
     "pushSubscribe",
     "pushUnsubscribe",
+    "mailMarkRead",
     "inboxStart",
 ];
 
@@ -831,11 +844,59 @@ mod tests {
     }
 
     #[test]
+    fn mail_can_be_read_but_never_sent_or_deleted() {
+        let peer = ip("127.0.0.1");
+        for action in ["mail", "mailThread"] {
+            assert_eq!(
+                route(
+                    "GET",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    false
+                ),
+                Route::Api {
+                    action: action.into(),
+                    write: false
+                }
+            );
+        }
+        assert_eq!(
+            route("POST", "/api/mailMarkRead", peer, TOKEN, Some(TOKEN), true),
+            Route::Api {
+                action: "mailMarkRead".into(),
+                write: true
+            }
+        );
+        for action in ["mailSend", "mailTrash", "mailDraft", "mailModify"] {
+            assert!(matches!(
+                route(
+                    "POST",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    true
+                ),
+                Route::Reject(404, _)
+            ));
+        }
+    }
+
+    #[test]
     fn search_inbox_and_usage_are_reads_and_starting_from_inbox_a_write() {
         let peer = ip("127.0.0.1");
         for action in ["search", "inbox", "inboxItem", "usage"] {
             assert_eq!(
-                route("GET", &format!("/api/{action}"), peer, TOKEN, Some(TOKEN), false),
+                route(
+                    "GET",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    false
+                ),
                 Route::Api {
                     action: action.into(),
                     write: false

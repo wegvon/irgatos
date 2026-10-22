@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FLEET_BUCKETS, type FleetBucket } from "../../../fleet/model/fleet";
 import type { WebOverview } from "../../model/protocol";
 import { navigate, openSheet } from "../route";
@@ -12,6 +12,7 @@ import {
   Bot,
   Idea,
   Inbox,
+  Mail,
   PenLine,
   Radar,
   Search,
@@ -61,8 +62,13 @@ export function Drawer({
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FleetBucket | null>(null);
-  const start = useRef<number | null>(null);
+  const start = useRef<{ x: number; y: number; side?: boolean } | null>(null);
   const [drag, setDrag] = useState(0);
+  const list = useRef<HTMLDivElement>(null);
+  // Each opening starts at the top of the list.
+  useEffect(() => {
+    if (open) list.current?.scrollTo({ top: 0 });
+  }, [open]);
 
   const entries = useMemo(() => {
     if (!overview) return [];
@@ -88,12 +94,24 @@ export function Drawer({
         onTouchStart={(event) => {
           // The filter strip scrolls sideways itself.
           const inStrip = (event.target as Element).closest("[data-scroll-x]");
-          start.current = inStrip ? null : (event.touches[0]?.clientX ?? null);
+          const touch = event.touches[0];
+          start.current =
+            inStrip || !touch ? null : { x: touch.clientX, y: touch.clientY };
         }}
         onTouchMove={(event) => {
-          if (start.current === null) return;
-          const dx = (event.touches[0]?.clientX ?? 0) - start.current;
-          setDrag(Math.min(0, dx));
+          const from = start.current;
+          const touch = event.touches[0];
+          if (!from || !touch) return;
+          const dx = touch.clientX - from.x;
+          const dy = touch.clientY - from.y;
+          // Decide once whether this is a swipe to close or a scroll of the
+          // list. Moving the panel while the list scrolls makes WebKit lose
+          // rows of it.
+          if (from.side === undefined) {
+            if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+            from.side = dx < 0 && Math.abs(dx) > Math.abs(dy);
+          }
+          if (from.side) setDrag(Math.min(0, dx));
         }}
         onTouchEnd={() => {
           if (drag < -70) onClose();
@@ -101,9 +119,13 @@ export function Drawer({
           setDrag(0);
         }}
         style={
-          drag ? { transform: `translateX(${drag}px)`, transition: "none" } : {}
+          drag
+            ? { transform: `translateX(${drag}px)`, transition: "none" }
+            : // No transform once open: a scroller inside a transformed
+              // panel paints unreliably on iOS.
+              { transform: open ? "none" : "translateX(-100%)" }
         }
-        className={`web-page absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col pl-(--safe-left) shadow-[8px_0_30px_rgba(0,0,0,0.18)] transition-transform duration-300 ease-out ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className={`web-page absolute inset-y-0 left-0 flex w-[min(86vw,340px)] flex-col pl-(--safe-left) shadow-[8px_0_30px_rgba(0,0,0,0.18)] transition-transform duration-300 ease-out`}
       >
         <div className="flex shrink-0 flex-col gap-3 px-3 pt-[calc(var(--safe-top)+12px)]">
           <label className="flex h-11 items-center gap-2.5 rounded-[14px] bg-content/6 px-3.5 text-(--ink-3) focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
@@ -125,7 +147,7 @@ export function Drawer({
               </button>
             ) : null}
           </label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-1.5">
             <Tile
               label="Today"
               badge={needsYou}
@@ -139,6 +161,9 @@ export function Drawer({
             <Tile label="Ideas" onClick={() => navigate({ name: "ideas" })}>
               <Idea className="size-[21px]" />
             </Tile>
+            <Tile label="Mail" onClick={() => navigate({ name: "mail" })}>
+              <Mail className="size-[21px]" />
+            </Tile>
             <Tile
               label="Inbox"
               badge={inbox}
@@ -147,7 +172,7 @@ export function Drawer({
               <Inbox className="size-[21px]" />
             </Tile>
             <Tile
-              label="Your Mac"
+              label="Mac"
               title={macLabel}
               onClick={() => openSheet({ name: "services" })}
             >
@@ -192,7 +217,10 @@ export function Drawer({
               : null}
           </div>
         </div>
-        <div className="web-scroll min-h-0 flex-1 px-1.5 pb-[calc(var(--safe-bottom)+12px)] pt-1">
+        <div
+          ref={list}
+          className="web-scroll min-h-0 flex-1 px-1.5 pb-[calc(var(--safe-bottom)+12px)] pt-1"
+        >
           {!overview ? (
             <div className="flex justify-center py-10 text-(--ink-3)">
               <Spinner className="size-5" />
@@ -241,7 +269,7 @@ function Tile({
     <button
       onClick={onClick}
       title={title}
-      className="glass web-press relative flex h-[64px] flex-col items-center justify-center gap-1.5 rounded-[14px] text-[12.5px] font-medium text-(--ink)"
+      className="glass web-press relative flex h-[64px] flex-col items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] text-[12px] font-medium text-(--ink)"
     >
       <span className="text-(--ink-2)">{children}</span>
       {label}
