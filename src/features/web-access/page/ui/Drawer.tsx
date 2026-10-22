@@ -11,6 +11,7 @@ import { SearchResults } from "./Search";
 import { WORKSPACE_SCREENS } from "./Workspace";
 import {
   Bot,
+  FolderTree,
   Idea,
   Inbox,
   Mail,
@@ -18,6 +19,7 @@ import {
   Radar,
   Search,
   X,
+  Zap,
 } from "../../../../shared/ui/icons";
 
 /** Short names, so the status filters fit the panel's width. */
@@ -148,7 +150,7 @@ export function Drawer({
               </button>
             ) : null}
           </label>
-          <div className="grid grid-cols-5 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             <Tile
               label="Today"
               badge={needsYou}
@@ -164,6 +166,17 @@ export function Drawer({
             </Tile>
             <Tile label="Mail" onClick={() => navigate({ name: "mail" })}>
               <Mail className="size-[21px]" />
+            </Tile>
+            <Tile label="Agents" onClick={() => navigate({ name: "agents" })}>
+              <FolderTree className="size-[21px]" />
+            </Tile>
+            {/* "Automations" is wider than a tile on a phone. */}
+            <Tile
+              label="Automate"
+              title="Automations"
+              onClick={() => navigate({ name: "automations" })}
+            >
+              <Zap className="size-[21px]" />
             </Tile>
             <Tile
               label="Inbox"

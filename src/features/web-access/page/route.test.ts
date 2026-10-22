@@ -22,6 +22,15 @@ describe("browser page routes", () => {
     expect(parseRoute("#/idea/c1")).toEqual({ name: "idea", id: "c1" });
     expect(parseRoute("#/new")).toEqual({ name: "new" });
     expect(parseRoute("#/services")).toEqual({ name: "services" });
+    expect(parseRoute("#/agents")).toEqual({ name: "agents" });
+    expect(parseRoute("#/automations")).toEqual({ name: "automations" });
+    expect(parseRoute("#/automation/a1")).toEqual({
+      name: "automation",
+      id: "a1",
+    });
+    expect(parseRoute("#/irgat/i1")).toEqual({ name: "irgat", id: "i1" });
+    expect(parseRoute("#/automation")).toEqual({ name: "automations" });
+    expect(parseRoute("#/irgat")).toEqual({ name: "irgats" });
     for (const name of ["feed", "notes", "board", "artifacts"] as const) {
       expect(parseRoute(`#/${name}`)).toEqual({ name });
       expect(isSheet({ name })).toBe(false);
@@ -61,6 +70,9 @@ describe("browser page routes", () => {
   it("tells sheets from screens", () => {
     expect(isSheet({ name: "new" })).toBe(true);
     expect(isSheet({ name: "idea", id: "c1" })).toBe(true);
+    expect(isSheet({ name: "automation", id: "a1" })).toBe(true);
+    expect(isSheet({ name: "irgat", id: "i1" })).toBe(true);
+    expect(isSheet({ name: "agents" })).toBe(false);
     expect(isSheet({ name: "chat", id: "a" })).toBe(false);
   });
 });

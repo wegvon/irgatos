@@ -287,7 +287,13 @@ async function feed(ws: WorkspaceDeps, input: Input): Promise<WebFeed> {
   const offset = Math.max(0, Math.min(10_000, Number(input.offset) || 0));
   const [overview, page] = await Promise.all([
     ws.feed.overview(),
-    ws.feed.items(view, interestId, input.unread === "1", 0, offset + FEED_PAGE),
+    ws.feed.items(
+      view,
+      interestId,
+      input.unread === "1",
+      0,
+      offset + FEED_PAGE,
+    ),
   ]);
   const titles = new Map(
     overview.interests.map((interest) => [interest.id, interest.title]),
@@ -349,12 +355,17 @@ const PICTURE_TOKEN = /\*\(📷 Picture (\d+), on your Mac\)\*/g;
  */
 export function phoneNoteBody(body: string): string {
   let count = 0;
-  return body.replace(NOTE_PICTURE, () => `*(📷 Picture ${++count}, on your Mac)*`);
+  return body.replace(
+    NOTE_PICTURE,
+    () => `*(📷 Picture ${++count}, on your Mac)*`,
+  );
 }
 
 /** Puts the pictures back where the phone kept their placeholders. */
 export function restoreNotePictures(edited: string, original: string): string {
-  const pictures = [...original.matchAll(NOTE_PICTURE)].map((match) => match[0]);
+  const pictures = [...original.matchAll(NOTE_PICTURE)].map(
+    (match) => match[0],
+  );
   return edited.replace(
     PICTURE_TOKEN,
     (token, index: string) => pictures[Number(index) - 1] ?? token,
@@ -400,7 +411,12 @@ async function requestedProject(
   const project = wanted
     ? projects.find((entry) => entry.path === wanted)
     : projects[0];
-  if (!project) throw new Error(wanted ? "Pick one of your projects." : "Open a project on your Mac first.");
+  if (!project)
+    throw new Error(
+      wanted
+        ? "Pick one of your projects."
+        : "Open a project on your Mac first.",
+    );
   return { project, projects };
 }
 
@@ -423,7 +439,10 @@ function boardCard(
   let session: WebBoardSession | null = null;
   if (link) {
     const loaded = open.get(link.id);
-    const view = cardSessionView(link, loaded ? liveCardSession(loaded) : undefined);
+    const view = cardSessionView(
+      link,
+      loaded ? liveCardSession(loaded) : undefined,
+    );
     session = {
       sessionId: link.id,
       label: view.attention
@@ -444,7 +463,11 @@ function boardCard(
   };
 }
 
-async function board(host: WorkspaceHost, ws: WorkspaceDeps, input: Input): Promise<WebBoard> {
+async function board(
+  host: WorkspaceHost,
+  ws: WorkspaceDeps,
+  input: Input,
+): Promise<WebBoard> {
   const { project, projects } = await requestedProject(host, input);
   const loaded = await ws.board.load(project.path);
   const open = new Map(host.sessions().map((session) => [session.id, session]));
@@ -461,7 +484,11 @@ async function board(host: WorkspaceHost, ws: WorkspaceDeps, input: Input): Prom
 }
 
 /** The card and its board, found on the project the page names. */
-async function boardCardOf(host: WorkspaceHost, ws: WorkspaceDeps, input: Input) {
+async function boardCardOf(
+  host: WorkspaceHost,
+  ws: WorkspaceDeps,
+  input: Input,
+) {
   const { project } = await requestedProject(host, input);
   const loaded = await ws.board.load(project.path);
   const id = text(input, "id", 200);
@@ -472,7 +499,11 @@ async function boardCardOf(host: WorkspaceHost, ws: WorkspaceDeps, input: Input)
   throw new Error("This card was moved or deleted on your Mac.");
 }
 
-async function boardColumn(host: WorkspaceHost, ws: WorkspaceDeps, input: Input) {
+async function boardColumn(
+  host: WorkspaceHost,
+  ws: WorkspaceDeps,
+  input: Input,
+) {
   const { project } = await requestedProject(host, input);
   const loaded = await ws.board.load(project.path);
   const id = text(input, "columnId", 200);
@@ -520,7 +551,9 @@ async function projectArtifacts(
     );
   const open = new Set(live.map((session) => session.id));
   const summaries = (await ws.artifacts.saved(cwd).catch(() => []))
-    .filter((summary) => !summary.archived && !summary.draft && !open.has(summary.id))
+    .filter(
+      (summary) => !summary.archived && !summary.draft && !open.has(summary.id),
+    )
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, SAVED_LIMIT);
   let failed = 0;
@@ -531,7 +564,9 @@ async function projectArtifacts(
       batch.map(async (summary) => {
         const known = stored.get(summary.id);
         if (known?.updatedAt === summary.updatedAt) return known.artifacts;
-        const session = await ws.artifacts.session(summary.id).catch(() => null);
+        const session = await ws.artifacts
+          .session(summary.id)
+          .catch(() => null);
         if (!session) {
           failed += 1;
           return [];
@@ -562,7 +597,8 @@ function artifactRow(artifact: WorkspaceArtifact): WebArtifactRow {
     format: artifact.format,
     kind: artifactKindLabel(artifact),
     filters: ARTIFACT_FILTERS.filter(
-      (filter) => filter.id !== "all" && artifactMatchesFilter(artifact, filter.id),
+      (filter) =>
+        filter.id !== "all" && artifactMatchesFilter(artifact, filter.id),
     ).map((filter) => filter.id),
     ...(artifact.path ? { path: artifact.path } : {}),
     ...(artifact.sessionId ? { sessionId: artifact.sessionId } : {}),
@@ -620,7 +656,8 @@ async function artifactText(
   artifact: WorkspaceArtifact,
 ): Promise<{ text: string; stale?: string }> {
   try {
-    if (artifact.path) return { text: await ws.artifacts.readText(artifact.path) };
+    if (artifact.path)
+      return { text: await ws.artifacts.readText(artifact.path) };
     if (artifact.documentId) {
       const saved = await ws.artifacts.document(artifact.documentId);
       if (!saved) throw new Error("This document is no longer available.");
@@ -629,7 +666,8 @@ async function artifactText(
     return { text: artifact.content ?? "" };
   } catch (cause) {
     const fallback =
-      artifact.content ?? (artifact.excerpt?.length ? artifact.excerpt.join("\n") : undefined);
+      artifact.content ??
+      (artifact.excerpt?.length ? artifact.excerpt.join("\n") : undefined);
     if (fallback == null) throw cause;
     return { text: fallback, stale: errorText(cause) };
   }
@@ -650,10 +688,12 @@ async function artifact(
   const found = await findArtifact(host, ws, input);
   const row = artifactRow(found);
   if (found.format === "image") {
-    if (found.imageData) return { ...row, text: "", markdown: "", image: found.imageData };
+    if (found.imageData)
+      return { ...row, text: "", markdown: "", image: found.imageData };
     if (!found.path) throw new Error("This image is not on disk.");
     const bytes = await ws.artifacts.readBytes(found.path);
-    if (bytes.length > IMAGE_MAX) throw new Error("This image is too big for the phone.");
+    if (bytes.length > IMAGE_MAX)
+      throw new Error("This image is too big for the phone.");
     const mime = sniffImageMime(bytes);
     if (!mime) throw new Error("This file is not an image the page can show.");
     return {
@@ -710,9 +750,11 @@ export function handleWorkspaceAction(
       return (async () => {
         const ids = stringList(input.ids, 500);
         if (!ids.length) throw new Error("Missing ids");
-        const change: { read?: boolean; saved?: boolean; hidden?: boolean } = {};
+        const change: { read?: boolean; saved?: boolean; hidden?: boolean } =
+          {};
         for (const key of ["read", "saved", "hidden"] as const)
-          if (typeof input[key] === "boolean") change[key] = input[key] as boolean;
+          if (typeof input[key] === "boolean")
+            change[key] = input[key] as boolean;
         await ws.feed.mark(ids, change);
         return { marked: ids.length };
       })();
@@ -729,7 +771,10 @@ export function handleWorkspaceAction(
         await ws.feed.saveInterest({
           ...(id ? { id } : {}),
           title,
-          description: typeof input.description === "string" ? input.description.slice(0, 2_000) : "",
+          description:
+            typeof input.description === "string"
+              ? input.description.slice(0, 2_000)
+              : "",
           enabled: input.enabled !== false,
         });
         return { saved: true };
@@ -743,7 +788,9 @@ export function handleWorkspaceAction(
       return (async () => {
         const overview = await ws.feed.overview();
         if (!overview.collector)
-          throw new Error("Pick an Irgat to collect the Feed on your Mac first.");
+          throw new Error(
+            "Pick an Irgat to collect the Feed on your Mac first.",
+          );
         await ws.feed.collect(overview.collector);
         return { collecting: true };
       })();
@@ -752,7 +799,9 @@ export function handleWorkspaceAction(
       return (async (): Promise<WebNotes> => {
         const notes = await ws.notes.list();
         return {
-          notes: [...notes].sort((a, b) => b.updatedAt - a.updatedAt).map(noteRow),
+          notes: [...notes]
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map(noteRow),
         };
       })();
     case "note":
@@ -798,7 +847,8 @@ export function handleWorkspaceAction(
       return (async () => {
         const note = await findNote(ws, input);
         if (!note.body.trim()) throw new Error("This note is empty.");
-        const ask = typeof input.text === "string" ? input.text.slice(0, 20_000) : "";
+        const ask =
+          typeof input.text === "string" ? input.text.slice(0, 20_000) : "";
         return host.newChat({
           text: composeNoteMessage(noteComposerCard(note), ask),
           ...(typeof input.cwd === "string" ? { cwd: input.cwd } : {}),
@@ -825,7 +875,9 @@ export function handleWorkspaceAction(
         const { card } = await boardCardOf(host, ws, input);
         const title =
           "title" in input
-            ? text(input, "title", MAX_CARD_TITLE * 2).trim().slice(0, MAX_CARD_TITLE)
+            ? text(input, "title", MAX_CARD_TITLE * 2)
+                .trim()
+                .slice(0, MAX_CARD_TITLE)
             : card.title;
         if (!title) throw new Error("A card needs a title.");
         await ws.board.update({
@@ -845,7 +897,9 @@ export function handleWorkspaceAction(
         const columnId = text(input, "columnId", 200);
         if (!loaded.columns.some((column) => column.id === columnId))
           throw new Error("That column no longer exists.");
-        const index = Number.isSafeInteger(input.index) ? Number(input.index) : 0;
+        const index = Number.isSafeInteger(input.index)
+          ? Number(input.index)
+          : 0;
         await ws.board.move(card.id, columnId, Math.max(0, index));
         return { moved: true };
       })();

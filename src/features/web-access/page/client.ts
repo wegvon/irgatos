@@ -60,17 +60,25 @@ export async function write<T = unknown>(
   refresh = true,
 ): Promise<T> {
   try {
-    return await call<T>(`/api/${action}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Irgatos-Web": "1",
-      },
-      body: JSON.stringify(body),
-    });
+    return await quietWrite<T>(action, body);
   } finally {
     if (refresh) refreshAll();
   }
+}
+
+/** A write that changes nothing on screen, such as a piece of dictation. */
+export function quietWrite<T = unknown>(
+  action: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  return call<T>(`/api/${action}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Irgatos-Web": "1",
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 export function signIn(token: string) {

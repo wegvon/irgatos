@@ -41,7 +41,7 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 13] = [
+const READ_ACTIONS: [&str; 19] = [
     "overview",
     "session",
     "projects",
@@ -55,8 +55,14 @@ const READ_ACTIONS: [&str; 13] = [
     "inbox",
     "inboxItem",
     "usage",
+    "agents",
+    "automations",
+    "automationRuns",
+    "irgat",
+    "irgatOptions",
+    "voice",
 ];
-const WRITE_ACTIONS: [&str; 18] = [
+const WRITE_ACTIONS: [&str; 29] = [
     "upload",
     "send",
     "approval",
@@ -74,6 +80,17 @@ const WRITE_ACTIONS: [&str; 18] = [
     "pushSubscribe",
     "pushUnsubscribe",
     "mailMarkRead",
+    "automationRun",
+    "automationEnabled",
+    "irgatCreate",
+    "irgatUpdate",
+    "irgatSoul",
+    "irgatForget",
+    "voiceReply",
+    "voiceAudio",
+    "dictateStart",
+    "dictateChunk",
+    "dictateFinish",
     "inboxStart",
 ];
 
