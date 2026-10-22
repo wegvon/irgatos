@@ -7,6 +7,7 @@ import { ChatRow } from "./ChatRow";
 import { NEW_CHAT_FIELD } from "./NewChat";
 import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
+import { WORKSPACE_SCREENS } from "./Workspace";
 import {
   Bot,
   Idea,
@@ -166,6 +167,15 @@ export function Drawer({
             >
               <MacIcon tone={mac} small />
             </Tile>
+            {WORKSPACE_SCREENS.map((entry) => (
+              <Tile
+                key={entry.name}
+                label={entry.label}
+                onClick={() => navigate({ name: entry.name })}
+              >
+                <entry.Icon className="size-[21px]" />
+              </Tile>
+            ))}
           </div>
           <button
             onClick={() => {

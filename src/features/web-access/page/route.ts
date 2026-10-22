@@ -20,7 +20,12 @@ export type Route =
   /** `id` is `mailThreadId(account, thread)`: a thread is unique per account. */
   | { name: "mailThread"; id: string }
   | { name: "new" }
-  | { name: "services" };
+  | { name: "services" }
+  /** The desktop rail's Feed, Notes, Board and Artifacts. */
+  | { name: "feed" }
+  | { name: "notes" }
+  | { name: "board" }
+  | { name: "artifacts" };
 
 export type Screen = Extract<
   Route,
@@ -33,7 +38,11 @@ export type Screen = Extract<
       | "irgats"
       | "ideas"
       | "mail"
-      | "mailThread";
+      | "mailThread"
+      | "feed"
+      | "notes"
+      | "board"
+      | "artifacts";
   }
 >;
 export type Sheet = Exclude<Route, Screen>;
@@ -51,6 +60,10 @@ export function parseRoute(hash: string): Route {
     case "today":
     case "irgats":
     case "ideas":
+    case "feed":
+    case "notes":
+    case "board":
+    case "artifacts":
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };

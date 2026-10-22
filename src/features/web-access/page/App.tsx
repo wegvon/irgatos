@@ -12,6 +12,11 @@ import { Home } from "./ui/Home";
 import { Chats, allEntries } from "./ui/Chats";
 import { IdeaDetail } from "./ui/IdeaDetail";
 import { Ideas } from "./ui/Ideas";
+import {
+  WORKSPACE_SCREENS,
+  WorkspaceScreen,
+  isWorkspaceScreen,
+} from "./ui/Workspace";
 import { Irgats } from "./ui/Irgats";
 import { Login } from "./ui/Login";
 import { MailList, MailThreadView } from "./ui/Mail";
@@ -258,6 +263,14 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           </header>
         }
       />
+    ) : isWorkspaceScreen(name) ? (
+      <WorkspaceScreen
+        name={name}
+        overview={overview.data}
+        now={now}
+        wide={wide}
+        header={header}
+      />
     ) : name === "ideas" ? (
       <Ideas
         ideas={ideas.data}
@@ -373,6 +386,15 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   on={screen.name === "mail" || screen.name === "mailThread"}
                   onClick={() => navigate({ name: "mail" })}
                 />
+                {WORKSPACE_SCREENS.map((entry) => (
+                  <NavItem
+                    key={entry.name}
+                    icon={<entry.Icon className="size-5" />}
+                    label={entry.label}
+                    on={screen.name === entry.name}
+                    onClick={() => navigate({ name: entry.name })}
+                  />
+                ))}
               </nav>
               <div className="shrink-0 px-3 pb-2 pt-4">
                 <button
@@ -470,6 +492,16 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
               >
                 <Mail className="size-[22px]" />
               </RailItem>
+              {WORKSPACE_SCREENS.map((entry) => (
+                <RailItem
+                  key={entry.name}
+                  label={entry.label}
+                  on={screen.name === entry.name}
+                  onClick={() => navigate({ name: entry.name })}
+                >
+                  <entry.Icon className="size-[22px]" />
+                </RailItem>
+              ))}
               <button
                 aria-label="New chat"
                 onClick={() => openSheet({ name: "new" })}
