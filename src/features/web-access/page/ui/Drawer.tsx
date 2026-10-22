@@ -7,9 +7,11 @@ import { ChatRow } from "./ChatRow";
 import { NEW_CHAT_FIELD } from "./NewChat";
 import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
+import { SearchResults } from "./Search";
 import {
   Bot,
   Idea,
+  Inbox,
   PenLine,
   Radar,
   Search,
@@ -45,6 +47,7 @@ export function Drawer({
   mac,
   macLabel,
   selected,
+  inbox = 0,
 }: {
   open: boolean;
   onClose: () => void;
@@ -53,6 +56,8 @@ export function Drawer({
   mac: Tone;
   macLabel: string;
   selected?: string;
+  /** Inbox items that need action. */
+  inbox?: number;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FleetBucket | null>(null);
@@ -105,7 +110,7 @@ export function Drawer({
             <Search className="size-[18px] shrink-0" />
             <input
               className="web-field min-w-0 flex-1 bg-transparent text-(--ink) outline-none"
-              placeholder="Search chats"
+              placeholder="Search all chats"
               value={query}
               enterKeyHint="search"
               onChange={(event) => setQuery(event.target.value)}
@@ -133,6 +138,13 @@ export function Drawer({
             </Tile>
             <Tile label="Ideas" onClick={() => navigate({ name: "ideas" })}>
               <Idea className="size-[21px]" />
+            </Tile>
+            <Tile
+              label="Inbox"
+              badge={inbox}
+              onClick={() => navigate({ name: "inbox" })}
+            >
+              <Inbox className="size-[21px]" />
             </Tile>
             <Tile
               label="Your Mac"
@@ -194,13 +206,18 @@ export function Drawer({
                 selected={entry.sessionId === selected}
               />
             ))
-          ) : (
+          ) : query.trim().length >= 2 ? null : (
             <div className="px-3 py-6 text-[15px] text-(--ink-3)">
               {query || filter
                 ? "No chats match."
                 : "No chats are open on your Mac."}
             </div>
           )}
+          <SearchResults
+            query={query}
+            now={now}
+            skip={new Set(entries.map((entry) => entry.sessionId))}
+          />
         </div>
       </nav>
     </div>
