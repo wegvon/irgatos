@@ -395,7 +395,10 @@ describe("voice on the web page", () => {
       session: "s1",
     });
     expect(
-      await handleWebAccess(deps, "dictateChunk", { session: "s1", pcm: "AA==" }),
+      await handleWebAccess(deps, "dictateChunk", {
+        session: "s1",
+        pcm: "AA==",
+      }),
     ).toEqual({ text: "Merhaba" });
     expect(agents.voice.dictateChunk).toHaveBeenCalledWith("s1", "AA==");
     expect(
@@ -409,8 +412,10 @@ describe("the Mac's server", () => {
     const rust = readFileSync("src-tauri/src/web_access.rs", "utf8");
     const list = (name: string) =>
       [
-        ...(rust.match(new RegExp(`const ${name}[^=]*= \\[([^\\]]*)\\]`))?.[1] ??
-          "").matchAll(/"(\w+)"/g),
+        ...(
+          rust.match(new RegExp(`const ${name}[^=]*= \\[([^\\]]*)\\]`))?.[1] ??
+          ""
+        ).matchAll(/"(\w+)"/g),
       ].map((match) => match[1]);
     expect(list("READ_ACTIONS")).toEqual(
       expect.arrayContaining([...WEB_AGENTS_READS]),

@@ -12,6 +12,9 @@ import type { AgentTreeWindow } from "../../agent-tree/model/agentTreeStore";
 import type { AutomationRunStatus } from "../../automations/model/automations";
 import type { FleetEntry, FleetRequest } from "../../fleet/model/fleet";
 import type { IdeasState } from "../../ideas/model/ideas";
+import type { InboxKind, InboxProvider } from "../../inbox/model/githubTasks";
+import type { AccountStatusTone } from "../../providers/model/accountUsage";
+import type { RateLimitProvider } from "../../providers/model/rateLimits";
 import type { IrgatStatus } from "../../irgats/model/irgat";
 import type { ServiceStatus } from "../../service-status/model/serviceStatus";
 import type {
@@ -250,6 +253,87 @@ export type WebSpokenReply = {
   summarized: boolean;
 };
 
+/** One chat found by the page's search; the Mac opens closed ones on demand. */
+export type WebSearchHit = {
+  sessionId: string;
+  /** By title, by a message's words, or by meaning when no word matched. */
+  kind: "chat" | "message" | "meaning";
+  title: string;
+  place: string;
+  harness: HarnessId;
+  updatedAt: number;
+  preview?: string;
+};
+
+export type WebSearch = {
+  query: string;
+  hits: WebSearchHit[];
+  /** How meaning search stands, when it is not simply on. */
+  note: string | null;
+};
+
+export type WebInboxItem = {
+  key: string;
+  provider: InboxProvider;
+  kind: InboxKind;
+  /** "#12" or a tracker id like "APP-7". */
+  ref: string;
+  title: string;
+  /** The repository, or the tracker team. */
+  source: string;
+  place: string;
+  url: string;
+  status: string;
+  updatedAt: number;
+  labels: { name: string; color: string }[];
+  /** Updated since it was last opened, on the Mac or here. */
+  unseen: boolean;
+  needsAction: boolean;
+  snoozedUntil?: number;
+  /** Why GitLab or Azure DevOps put it on the user's to-do list. */
+  attention?: string;
+  agentChats: number;
+};
+
+export type WebInbox = {
+  items: WebInboxItem[];
+  /** Per-source fetch problems, e.g. a GitHub rate limit. */
+  errors: string[];
+  at: number;
+};
+
+export type WebInboxDetail = {
+  item: WebInboxItem;
+  body: string;
+  author?: string;
+};
+
+export type WebUsageWindow = {
+  title: string;
+  usedPercent: number;
+  resetsAt: number | null;
+};
+
+export type WebUsageAccount = {
+  provider: RateLimitProvider;
+  title: string;
+  /** Set only when the provider has more than one account. */
+  account?: string;
+  tone: AccountStatusTone;
+  status: string;
+  detail?: string;
+  windows: WebUsageWindow[];
+  /** Devin's extra usage balance in dollars. */
+  extra?: number;
+};
+
+export type WebUsage = {
+  accounts: WebUsageAccount[];
+  /** The Mac's "show remaining" setting, so both read the same way. */
+  showRemaining: boolean;
+  at: number;
+};
+
 // ---- Feed, Notes, Board and Artifacts, as the desktop rail shows them ----
 
 export type WebFeedTab = "feed" | "filtered" | "saved";
@@ -357,12 +441,7 @@ export type WebBoard = {
 };
 
 export type WebArtifactFormat =
-  | "html"
-  | "svg"
-  | "mermaid"
-  | "markdown"
-  | "code"
-  | "image";
+  "html" | "svg" | "mermaid" | "markdown" | "code" | "image";
 
 export type WebArtifactRow = {
   id: string;

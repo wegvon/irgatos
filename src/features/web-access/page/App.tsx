@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
+import type { WebInbox } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
 import { resyncPush } from "./push";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
@@ -34,6 +35,9 @@ import { Today } from "./ui/Today";
 import { Agents } from "./ui/Agents";
 import { AutomationDetail, Automations } from "./ui/Automations";
 import { IrgatDetail } from "./ui/IrgatDetail";
+import { Inbox, InboxItemSheet, inboxBadge } from "./ui/Inbox";
+import { SearchScreen } from "./ui/Search";
+import { UsageSection } from "./ui/Usage";
 import {
   Brand,
   IconBadge,
@@ -46,6 +50,7 @@ import {
   Bot,
   FolderTree,
   Idea,
+  Inbox as InboxIcon,
   Mail,
   Menu,
   MessageSquare,
@@ -53,6 +58,7 @@ import {
   PenLine,
   Plus,
   Radar,
+  Search,
   WifiOff,
   X,
   Zap,
@@ -148,6 +154,14 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     () => read<WebIrgats>("irgats"),
     () => (screen.name === "irgats" ? 3000 : 15_000),
   );
+  // The menu badges what needs action; the Mac caches the list for 2 minutes.
+  const inboxOpen = screen.name === "inbox" || sheet?.name === "inboxItem";
+  const inbox = usePoll(
+    live ? "inbox" : null,
+    () => read<WebInbox>("inbox"),
+    () => (inboxOpen ? 30_000 : 120_000),
+  );
+  const inboxCount = inboxBadge(inbox.data);
   // Re-registers the banner worker and reminds the Mac of this device.
   useEffect(() => {
     if (live) void resyncPush().catch(() => {});
@@ -233,7 +247,9 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           ? "Automation"
           : sheet?.name === "irgat"
             ? "Irgat"
-            : "Idea";
+            : sheet?.name === "inboxItem"
+              ? "Inbox"
+              : "Idea";
   const sheetView =
     sheet && !newChatHere ? (
       <Sheet title={sheetTitle} wide={wide} onClose={closeSheet}>
@@ -246,11 +262,16 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
         ) : sheet.name === "irgat" ? (
           <IrgatDetail id={sheet.id} onClose={closeSheet} />
         ) : sheet.name === "services" ? (
-          <ServicesSheet
-            services={services.data?.services}
-            connected={connected}
-            onChecked={(next) => services.mutate(() => ({ services: next }))}
-          />
+          <>
+            <ServicesSheet
+              services={services.data?.services}
+              connected={connected}
+              onChecked={(next) => services.mutate(() => ({ services: next }))}
+            />
+            <UsageSection />
+          </>
+        ) : sheet.name === "inboxItem" ? (
+          <InboxItemSheet id={sheet.id} now={now} onSeen={inbox.reload} />
         ) : (
           <IdeaDetail
             ideas={ideas.data}
@@ -264,7 +285,22 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
     ) : null;
 
   const tabView = (name: Tab["name"]) =>
-    name === "home" && !wide ? (
+    name === "inbox" || name === "search" ? (
+      <div className={`web-scroll h-full ${wide ? "" : "pb-(--safe-bottom)"}`}>
+        {name === "inbox" ? (
+          <Inbox
+            inbox={inbox.data}
+            error={inbox.error}
+            reload={inbox.reload}
+            header={header}
+            wide={wide}
+            now={now}
+          />
+        ) : (
+          <SearchScreen header={header} now={now} wide={wide} />
+        )}
+      </div>
+    ) : name === "home" && !wide ? (
       <Home
         overview={overview.data}
         now={now}
@@ -398,6 +434,19 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   onClick={() => navigate({ name: "ideas" })}
                 />
                 <NavItem
+                  icon={<InboxIcon className="size-5" />}
+                  label="Inbox"
+                  on={screen.name === "inbox"}
+                  count={inboxCount}
+                  onClick={() => navigate({ name: "inbox" })}
+                />
+                <NavItem
+                  icon={<Search className="size-5" />}
+                  label="Search"
+                  on={screen.name === "search"}
+                  onClick={() => navigate({ name: "search" })}
+                />
+                <NavItem
                   icon={<Mail className="size-5" />}
                   label="Mail"
                   on={screen.name === "mail" || screen.name === "mailThread"}
@@ -515,6 +564,21 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 <Idea className="size-[22px]" />
               </RailItem>
               <RailItem
+                label="Inbox"
+                on={screen.name === "inbox"}
+                badge={inboxCount}
+                onClick={() => navigate({ name: "inbox" })}
+              >
+                <InboxIcon className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Search"
+                on={screen.name === "search"}
+                onClick={() => navigate({ name: "search" })}
+              >
+                <Search className="size-[22px]" />
+              </RailItem>
+              <RailItem
                 label="Mail"
                 on={screen.name === "mail" || screen.name === "mailThread"}
                 onClick={() => navigate({ name: "mail" })}
@@ -613,6 +677,7 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           now={now}
           mac={mac}
           macLabel={macSummary(services.data?.services, connected)}
+          inbox={inboxCount}
         />
       </div>
       {chatOpen ? (

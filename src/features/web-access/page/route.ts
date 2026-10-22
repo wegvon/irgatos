@@ -27,6 +27,12 @@ export type Route =
   | { name: "automation"; id: string }
   /** An Irgat's settings, agents and memory, over the Irgats screen. */
   | { name: "irgat"; id: string }
+  /** The Mac's Inbox: pull requests, issues and tracker tickets. */
+  | { name: "inbox" }
+  /** `id` is the item's key; it opens over the Inbox. */
+  | { name: "inboxItem"; id: string }
+  /** Every chat by words or meaning; the phone searches in its menu. */
+  | { name: "search" }
   /** The desktop rail's Feed, Notes, Board and Artifacts. */
   | { name: "feed" }
   | { name: "notes" }
@@ -47,6 +53,8 @@ export type Screen = Extract<
       | "mailThread"
       | "agents"
       | "automations"
+      | "inbox"
+      | "search"
       | "feed"
       | "notes"
       | "board"
@@ -88,6 +96,11 @@ export function parseRoute(hash: string): Route {
       return value ? { name, id: value } : { name: "automations" };
     case "irgat":
       return value ? { name, id: value } : { name: "irgats" };
+    case "inbox":
+    case "search":
+      return { name };
+    case "inboxItem":
+      return value ? { name, id: value } : { name: "inbox" };
     default:
       return { name: "home" };
   }
@@ -105,7 +118,8 @@ export function isSheet(route: Route): route is Sheet {
     route.name === "services" ||
     route.name === "idea" ||
     route.name === "automation" ||
-    route.name === "irgat"
+    route.name === "irgat" ||
+    route.name === "inboxItem"
   );
 }
 
@@ -114,6 +128,7 @@ function screenUnder(route: Sheet): Screen {
   if (route.name === "idea") return { name: "ideas" };
   if (route.name === "automation") return { name: "automations" };
   if (route.name === "irgat") return { name: "irgats" };
+  if (route.name === "inboxItem") return { name: "inbox" };
   return { name: "home" };
 }
 

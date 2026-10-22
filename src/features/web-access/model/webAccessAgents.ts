@@ -102,7 +102,10 @@ export type WebAgentsDeps = {
     create: () => Irgat;
     files: (irgatId: string) => Promise<IrgatFiles>;
     saveSoul: (irgatId: string, text: string, hash: string) => Promise<string>;
-    forget: (irgatId: string, edit: (text: string) => string) => Promise<unknown>;
+    forget: (
+      irgatId: string,
+      edit: (text: string) => string,
+    ) => Promise<unknown>;
     setModel: (sessionId: string, harness: HarnessId, model: string) => void;
     setMode: (sessionId: string, mode: RuntimeMode) => void;
   };
@@ -416,18 +419,16 @@ export async function handleWebAgents(
         .slice()
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, 20)
-        .map(
-          (run): WebAutomationRun => ({
-            id: run.id,
-            trigger: run.trigger,
-            status: run.status,
-            createdAt: run.createdAt,
-            ...(run.startedAt ? { startedAt: run.startedAt } : {}),
-            ...(run.completedAt ? { completedAt: run.completedAt } : {}),
-            ...(run.sessionId ? { sessionId: run.sessionId } : {}),
-            ...(run.error ? { error: run.error } : {}),
-          }),
-        );
+        .map((run): WebAutomationRun => ({
+          id: run.id,
+          trigger: run.trigger,
+          status: run.status,
+          createdAt: run.createdAt,
+          ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+          ...(run.completedAt ? { completedAt: run.completedAt } : {}),
+          ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+          ...(run.error ? { error: run.error } : {}),
+        }));
     }
     case "automationRun": {
       const automation = await findAutomation(deps, input);
