@@ -39,6 +39,22 @@ import {
   deleteIrgatChildSession,
   ensureIrgatSession,
 } from "../../irgats/model/irgatWorkspace";
+import { hiddenTextNotice } from "../../mail/model/hiddenText";
+import {
+  MAIL_FOLDERS,
+  isFromMe,
+  listMail,
+  loadMailAccounts,
+  loadMailSettings,
+  loadMailThread,
+  mailQuery,
+  modifyMailThread,
+  senderName,
+  type MailAccount,
+  type MailFolderId,
+  type MailPage,
+  type MailThread,
+} from "../../mail/model/mail";
 import { loadRecents } from "../../projects/model/recents";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import {
@@ -53,6 +69,11 @@ import {
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
 import { gitBranches, type GitBranches } from "../../../platform/tauri/fs";
+import {
+  MAX_ATTACHMENTS,
+  MAX_EMBED_BYTES,
+  attachmentsFromFiles,
+} from "../../sessions/model/attachments";
 import { loadIrgatsEnabled } from "../../settings/model/settings";
 import {
   loadAccentColor,
@@ -80,6 +101,7 @@ import {
   RUNTIME_MODES,
   sessionDisplayTitle,
   sessionWorkCwd,
+  type Attachment,
   type Block,
   type HarnessId,
   type RuntimeMode,
@@ -102,6 +124,8 @@ import type {
   WebModels,
   WebIrgat,
   WebIrgats,
+  WebMail,
+  WebMailThread,
   WebOverview,
   WebProjects,
   WebServices,
@@ -119,6 +143,7 @@ export type WebAccessDeps = {
   submit: (
     sessionId: string,
     text: string,
+    attachments: Attachment[],
     options?: { intent?: "plan" },
   ) => boolean;
   /** Loads a saved chat into this window without showing it on the Mac. */
@@ -136,6 +161,8 @@ export type WebAccessDeps = {
   branches: (cwd: string) => Promise<GitBranches>;
   /** A file on the Mac as base64, for an image a chat shows. */
   readFile: (path: string) => Promise<string>;
+  /** Turns a file the page uploaded into an attachment, as a paste does. */
+  attach: (file: File) => Promise<Attachment | null>;
   approve: (
     sessionId: string,
     requestId: number,
@@ -179,6 +206,18 @@ export type WebAccessDeps = {
     remove: (id: string) => Promise<unknown>;
   };
   services: () => Promise<ServiceStatus[]>;
+  /** Gmail through Executor, read only: nothing here sends or deletes. */
+  mail: {
+    configured: () => Promise<boolean>;
+    accounts: () => Promise<MailAccount[]>;
+    list: (
+      query: string,
+      accounts: string[],
+      pageTokens: Record<string, string> | null,
+    ) => Promise<MailPage>;
+    thread: (account: string, threadId: string) => Promise<MailThread>;
+    markRead: (account: string, threadId: string) => Promise<void>;
+  };
   newId: () => string;
 };
 
@@ -213,6 +252,7 @@ export const webAccessDefaults: Omit<
   | "setModelSettings"
   | "setRuntimeMode"
 > = {
+  attach: async (file) => (await attachmentsFromFiles([file]))[0] ?? null,
   projects: () => loadRecents().map((project) => project.path),
   freeChatDir: resolveFreeChatDir,
   choice: (cwd) => defaultSessionChoice(cwd),
@@ -242,6 +282,17 @@ export const webAccessDefaults: Omit<
     remove: deleteCard,
   },
   services: () => checkServices(serviceIds(loadVoiceSettings())),
+  mail: {
+    configured: () =>
+      loadMailSettings().then(
+        (settings) => !!settings.endpoint && settings.hasKey,
+      ),
+    accounts: () => loadMailAccounts(),
+    list: listMail,
+    thread: loadMailThread,
+    markRead: (account, threadId) =>
+      modifyMailThread(account, threadId, "read"),
+  },
   irgatsEnabled: loadIrgatsEnabled,
   saveSession: upsertSession,
   newId: () => crypto.randomUUID(),
@@ -282,6 +333,86 @@ function text(input: Input, key: string, max = 100_000): string {
   if (typeof value !== "string") throw new Error(`Missing ${key}`);
   if (value.length > max) throw new Error(`${key} is too long`);
   return value;
+}
+
+/**
+ * Files the page sends in pieces, each under the relay's body limit, then
+ * names in its next message. Kept in memory for an hour; a message takes
+ * the ones it names.
+ */
+type Upload = {
+  name: string;
+  type: string;
+  parts: string[];
+  length: number;
+  at: number;
+  file?: Attachment;
+};
+const uploads = new Map<string, Upload>();
+const UPLOAD_TTL = 60 * 60 * 1000;
+/** Base64 of the largest file a chat embeds. */
+const MAX_UPLOAD_CHARS = Math.ceil(MAX_EMBED_BYTES / 3) * 4;
+
+async function receiveUpload(deps: WebAccessDeps, input: Input) {
+  const now = Date.now();
+  for (const [id, upload] of uploads)
+    if (now - upload.at > UPLOAD_TTL) uploads.delete(id);
+  const chunk = text(input, "chunk", 400_000);
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(chunk))
+    throw new Error("The file arrived damaged. Try again.");
+  let id = typeof input.uploadId === "string" ? input.uploadId : "";
+  let upload = id ? uploads.get(id) : undefined;
+  if (id && !upload) throw new Error("The upload expired. Attach it again.");
+  if (!upload) {
+    if (uploads.size >= 50) throw new Error("Too many files at once.");
+    id = crypto.randomUUID();
+    upload = {
+      name: text(input, "name", 200).trim() || "file",
+      type: typeof input.type === "string" ? input.type.slice(0, 100) : "",
+      parts: [],
+      length: 0,
+      at: now,
+    };
+    uploads.set(id, upload);
+  }
+  upload.parts.push(chunk);
+  upload.length += chunk.length;
+  upload.at = now;
+  if (upload.length > MAX_UPLOAD_CHARS) {
+    uploads.delete(id);
+    throw new Error(
+      `Files up to ${MAX_EMBED_BYTES / 1024 / 1024} MB can be attached.`,
+    );
+  }
+  if (input.last !== true) return { uploadId: id };
+  const data = upload.parts.join("");
+  upload.parts = [];
+  const bytes = Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+  const file = await deps.attach(
+    new File([bytes], upload.name, { type: upload.type }),
+  );
+  if (!file) {
+    uploads.delete(id);
+    throw new Error(`Irgatos could not attach ${upload.name}.`);
+  }
+  upload.file = file;
+  return { uploadId: id, name: file.name, size: file.size, kind: file.kind };
+}
+
+/** The finished uploads a message names, taken out of the store. */
+function takeUploads(input: Input): Attachment[] {
+  const ids = Array.isArray(input.files)
+    ? input.files.filter((id): id is string => typeof id === "string")
+    : [];
+  if (ids.length > MAX_ATTACHMENTS)
+    throw new Error(`Attach up to ${MAX_ATTACHMENTS} files at a time.`);
+  const files = ids.map((id) => {
+    const file = uploads.get(id)?.file;
+    if (!file) throw new Error("A file is missing. Attach it again.");
+    return file;
+  });
+  for (const id of ids) uploads.delete(id);
+  return files;
 }
 
 function requestId(input: Input): number {
@@ -699,14 +830,18 @@ export async function handleWebAccess(
         throw new Error("Irgatos could not delete this chat right now.");
       return { deleted: true };
     }
+    case "upload":
+      return receiveUpload(deps, input);
     case "send": {
       const session = await findSession(deps, input);
       const message = text(input, "text").trim();
-      if (!message) throw new Error("Write a message first.");
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0;
+      if (!message && !hasFiles) throw new Error("Write a message first.");
+      const attachments = takeUploads(input);
       const sent =
         input.plan === true
-          ? deps.submit(session.id, message, { intent: "plan" })
-          : deps.submit(session.id, message);
+          ? deps.submit(session.id, message, attachments, { intent: "plan" })
+          : deps.submit(session.id, message, attachments);
       if (!sent)
         throw new Error("Irgatos could not send this message right now.");
       return { sent: true };
@@ -780,7 +915,9 @@ export async function handleWebAccess(
     }
     case "newChat": {
       const prompt = text(input, "text").trim();
-      if (!prompt) throw new Error("Write what the chat should do.");
+      const hasFiles = Array.isArray(input.files) && input.files.length > 0;
+      if (!prompt && !hasFiles)
+        throw new Error("Write what the chat should do.");
       const path = typeof input.cwd === "string" ? input.cwd : "";
       if (path && !deps.projects().includes(path))
         throw new Error("Pick one of your projects.");
@@ -805,10 +942,12 @@ export async function handleWebAccess(
         if (!found?.branches.some((branch) => branch.name === base))
           throw new Error("That branch is no longer in the project.");
       }
+      const attachments = takeUploads(input);
       const sessionId = deps.newId();
       await deps.launch(
         {
           prompt,
+          ...(attachments.length ? { attachments } : {}),
           cwd,
           harness,
           model,
@@ -936,6 +1075,94 @@ export async function handleWebAccess(
         })),
       };
       return result;
+    }
+    case "mail": {
+      const configured = await deps.mail.configured();
+      if (!configured) {
+        const result: WebMail = {
+          configured,
+          accounts: [],
+          threads: [],
+          more: "",
+          errors: [],
+        };
+        return result;
+      }
+      const accounts = await deps.mail.accounts();
+      const folder = MAIL_FOLDERS.some((f) => f.id === input.folder)
+        ? (input.folder as MailFolderId)
+        : MAIL_FOLDERS[0].id;
+      const search = typeof input.search === "string" ? input.search : "";
+      const account = typeof input.account === "string" ? input.account : "";
+      const ids = accounts.some((a) => a.id === account)
+        ? [account]
+        : accounts.map((a) => a.id);
+      const more = typeof input.more === "string" ? input.more : "";
+      const page = await deps.mail.list(
+        mailQuery(folder, search.slice(0, 500)),
+        ids,
+        more ? strings(JSON.parse(more)) : null,
+      );
+      const result: WebMail = {
+        configured,
+        accounts: accounts.map(({ id, email }) => ({ id, email })),
+        threads: page.threads.map((row) => ({
+          account: row.account,
+          id: row.id,
+          subject: row.subject,
+          from: row.from,
+          sender: senderName(row.from),
+          snippet: row.snippet,
+          date: row.date,
+          unread: row.unread,
+          messageCount: row.messageCount,
+        })),
+        more: Object.keys(page.nextPageTokens).length
+          ? JSON.stringify(page.nextPageTokens)
+          : "",
+        errors: page.errors,
+      };
+      return result;
+    }
+    case "mailThread": {
+      const account = text(input, "account", 500);
+      const id = text(input, "id", 500);
+      const [thread, accounts] = await Promise.all([
+        deps.mail.thread(account, id),
+        deps.mail.accounts().catch(() => [] as MailAccount[]),
+      ]);
+      const others = accounts.map((a) => a.email).filter(Boolean);
+      const result: WebMailThread = {
+        account,
+        id: thread.id,
+        subject: thread.subject,
+        unread: thread.unread,
+        messages: thread.messages.map((m) => {
+          const hidden = hiddenTextNotice(m.hidden);
+          return {
+            id: m.id,
+            from: m.from,
+            sender: senderName(m.from),
+            to: m.to,
+            cc: m.cc,
+            date: m.date,
+            body: m.body,
+            quoted: m.quoted ?? "",
+            attachments: m.attachments,
+            mine: isFromMe(m.from, thread.me, others),
+            ...(hidden ? { hidden } : {}),
+          };
+        }),
+        draft: thread.drafts[thread.drafts.length - 1]?.body || undefined,
+      };
+      return result;
+    }
+    case "mailMarkRead": {
+      await deps.mail.markRead(
+        text(input, "account", 500),
+        text(input, "id", 500),
+      );
+      return { read: true };
     }
     default:
       throw new Error("Unknown action");

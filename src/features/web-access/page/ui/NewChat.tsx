@@ -16,6 +16,7 @@ import {
   PlanToggle,
   useModels,
 } from "./ModelControls";
+import { AttachButton, UploadChips, pastedFiles, useUploads } from "./Attach";
 import { BrandMark, Spinner, useAction } from "./parts";
 import {
   ArrowUp,
@@ -105,6 +106,7 @@ export function NewChat({
   const [branches, setBranches] = useState<WebBranches | null>(null);
   const catalog = useModels();
   const { busy, run } = useAction();
+  const files = useUploads();
   const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -141,7 +143,11 @@ export function NewChat({
 
   const project = projects?.projects.find((entry) => entry.path === cwd);
   const choice = pick ?? project?.choice ?? null;
-  const ready = !!text.trim() && !!projects && busy === null;
+  const ready =
+    (!!text.trim() || files.ids.length > 0) &&
+    !files.blocked &&
+    !!projects &&
+    busy === null;
 
   const start = async () => {
     if (!ready) return;
@@ -149,6 +155,7 @@ export function NewChat({
       write<{ sessionId: string }>("newChat", {
         cwd,
         text: text.trim(),
+        ...(files.ids.length ? { files: files.ids } : {}),
         ...(pick ? { harness: pick.harness, model: pick.model } : {}),
         mode,
         ...(cwd && worktree ? { worktree } : {}),
@@ -156,6 +163,7 @@ export function NewChat({
       }),
     );
     if (!result) return;
+    files.clear();
     Object.assign(draft, EMPTY);
     const chat = { name: "chat", id: result.sessionId } as const;
     if (inline) {
@@ -288,40 +296,51 @@ export function NewChat({
               {error}
             </div>
           ) : null}
-          <div className="glass-float flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
-            <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
-              <textarea
-                ref={field}
-                id={NEW_CHAT_FIELD}
-                rows={1}
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    !event.nativeEvent.isComposing &&
-                    (event.metaKey || event.ctrlKey)
-                  ) {
-                    event.preventDefault();
-                    void start();
-                  }
-                }}
-                placeholder="What should the agent do?"
-                className="web-field block max-h-40 w-full resize-none bg-transparent outline-none"
-              />
+          <div className="glass-float rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
+            <UploadChips uploads={files.uploads} onRemove={files.remove} />
+            <div className="flex items-end gap-1">
+              <AttachButton onFiles={files.add} disabled={busy !== null} />
+              <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
+                <textarea
+                  ref={field}
+                  id={NEW_CHAT_FIELD}
+                  rows={1}
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.nativeEvent.isComposing &&
+                      (event.metaKey || event.ctrlKey)
+                    ) {
+                      event.preventDefault();
+                      void start();
+                    }
+                  }}
+                  onPaste={(event) => {
+                    const pasted = pastedFiles(event);
+                    if (pasted.length) {
+                      event.preventDefault();
+                      files.add(pasted);
+                    }
+                  }}
+                  placeholder="What should the agent do?"
+                  className="web-field block max-h-40 w-full resize-none bg-transparent outline-none"
+                />
+              </div>
+              <button
+                aria-label="Start chat"
+                disabled={!ready}
+                onClick={() => void start()}
+                className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
+              >
+                {busy ? (
+                  <Spinner className="size-5" />
+                ) : (
+                  <ArrowUp className="size-5" strokeWidth={2.25} />
+                )}
+              </button>
             </div>
-            <button
-              aria-label="Start chat"
-              disabled={!ready}
-              onClick={() => void start()}
-              className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
-            >
-              {busy ? (
-                <Spinner className="size-5" />
-              ) : (
-                <ArrowUp className="size-5" strokeWidth={2.25} />
-              )}
-            </button>
           </div>
         </div>
       </div>

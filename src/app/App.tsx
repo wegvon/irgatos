@@ -12059,8 +12059,8 @@ function Workspace({
   webAccessDeps.current = {
     ...webAccessDefaults,
     sessions: () => sessionsRef.current,
-    submit: (sessionId, text, options) =>
-      onSubmit(sessionId, text, [], options),
+    submit: (sessionId, text, attachments, options) =>
+      onSubmit(sessionId, text, attachments, options),
     openStored: ensureOpenSession,
     setModel: onModelChange,
     setModelSettings: onModelSettingsChange,

@@ -41,12 +41,24 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 11] = [
-    "overview", "session", "projects", "ideas", "services", "irgats", "pushKey",
+const READ_ACTIONS: [&str; 13] = [
+    "overview",
+    "session",
+    "projects",
+    "ideas",
+    "services",
+    "irgats",
+    "pushKey",
+    "mail",
+    "mailThread",
     // A chat's model and access pickers, its images and saved history.
-    "image", "history", "models", "branches",
+    "image",
+    "history",
+    "models",
+    "branches",
 ];
-const WRITE_ACTIONS: [&str; 18] = [
+const WRITE_ACTIONS: [&str; 20] = [
+    "upload",
     "send",
     "approval",
     "answer",
@@ -62,6 +74,7 @@ const WRITE_ACTIONS: [&str; 18] = [
     "ideaDelete",
     "pushSubscribe",
     "pushUnsubscribe",
+    "mailMarkRead",
     "setModel",
     "setEffort",
     "setMode",
@@ -831,6 +844,47 @@ mod tests {
             route("POST", "/api/delete", peer, TOKEN, Some(TOKEN), true),
             Route::Reject(404, _)
         ));
+    }
+
+    #[test]
+    fn mail_can_be_read_but_never_sent_or_deleted() {
+        let peer = ip("127.0.0.1");
+        for action in ["mail", "mailThread"] {
+            assert_eq!(
+                route(
+                    "GET",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    false
+                ),
+                Route::Api {
+                    action: action.into(),
+                    write: false
+                }
+            );
+        }
+        assert_eq!(
+            route("POST", "/api/mailMarkRead", peer, TOKEN, Some(TOKEN), true),
+            Route::Api {
+                action: "mailMarkRead".into(),
+                write: true
+            }
+        );
+        for action in ["mailSend", "mailTrash", "mailDraft", "mailModify"] {
+            assert!(matches!(
+                route(
+                    "POST",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    true
+                ),
+                Route::Reject(404, _)
+            ));
+        }
     }
 
     #[test]
