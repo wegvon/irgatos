@@ -10,6 +10,7 @@ import { Spinner, type Tone } from "./parts";
 import {
   Bot,
   Idea,
+  Mail,
   PenLine,
   Radar,
   Search,
@@ -120,7 +121,7 @@ export function Drawer({
               </button>
             ) : null}
           </label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-5 gap-1.5">
             <Tile
               label="Today"
               badge={needsYou}
@@ -134,8 +135,11 @@ export function Drawer({
             <Tile label="Ideas" onClick={() => navigate({ name: "ideas" })}>
               <Idea className="size-[21px]" />
             </Tile>
+            <Tile label="Mail" onClick={() => navigate({ name: "mail" })}>
+              <Mail className="size-[21px]" />
+            </Tile>
             <Tile
-              label="Your Mac"
+              label="Mac"
               title={macLabel}
               onClick={() => openSheet({ name: "services" })}
             >
@@ -224,7 +228,7 @@ function Tile({
     <button
       onClick={onClick}
       title={title}
-      className="glass web-press relative flex h-[64px] flex-col items-center justify-center gap-1.5 rounded-[14px] text-[12.5px] font-medium text-(--ink)"
+      className="glass web-press relative flex h-[64px] flex-col items-center justify-center gap-1.5 whitespace-nowrap rounded-[14px] text-[12px] font-medium text-(--ink)"
     >
       <span className="text-(--ink-2)">{children}</span>
       {label}
