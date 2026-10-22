@@ -114,6 +114,11 @@ import {
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
 import {
+  handleWebAgents,
+  isWebAgentsAction,
+  type WebAgentsDeps,
+} from "./webAccessAgents";
+import {
   handleWorkspaceAction,
   type WorkspaceDeps,
 } from "./webAccessWorkspace";
@@ -232,6 +237,8 @@ export type WebAccessDeps = {
     markRead: (account: string, threadId: string) => Promise<void>;
   };
   newId: () => string;
+  /** Fleet agents, automations, Irgat settings and voice. */
+  agents?: WebAgentsDeps;
   /** Search, Inbox and usage limits; missing where a test leaves them out. */
   lookups?: WebLookupDeps;
   /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
@@ -1217,6 +1224,12 @@ export async function handleWebAccess(
       return { read: true };
     }
     default: {
+      if (isWebAgentsAction(action))
+        return handleWebAgents(
+          { ...deps, findSession: (given) => findSession(deps, given) },
+          action,
+          input,
+        );
       const workspace = handleWorkspaceAction(
         {
           ...deps,

@@ -33,6 +33,9 @@ import {
 import { Sheet } from "./ui/Sheet";
 import { SwipeBack } from "./ui/SwipeBack";
 import { Today } from "./ui/Today";
+import { Agents } from "./ui/Agents";
+import { AutomationDetail, Automations } from "./ui/Automations";
+import { IrgatDetail } from "./ui/IrgatDetail";
 import { Inbox, InboxItemSheet, inboxBadge } from "./ui/Inbox";
 import { SearchScreen } from "./ui/Search";
 import { UsageSection } from "./ui/Usage";
@@ -46,6 +49,7 @@ import {
 } from "./ui/parts";
 import {
   Bot,
+  FolderTree,
   Idea,
   Inbox as InboxIcon,
   Mail,
@@ -58,6 +62,7 @@ import {
   Search,
   WifiOff,
   X,
+  Zap,
 } from "../../../shared/ui/icons";
 import { FLEET_BUCKET_LABEL, FLEET_BUCKETS } from "../../fleet/model/fleet";
 
@@ -239,9 +244,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
       ? "New chat"
       : sheet?.name === "services"
         ? "Your Mac"
-        : sheet?.name === "inboxItem"
-          ? "Inbox"
-          : "Idea";
+        : sheet?.name === "automation"
+          ? "Automation"
+          : sheet?.name === "irgat"
+            ? "Irgat"
+            : sheet?.name === "inboxItem"
+              ? "Inbox"
+              : "Idea";
   const sheetView =
     sheet && !newChatHere ? (
       <Sheet title={sheetTitle} wide={wide} onClose={closeSheet}>
@@ -249,6 +258,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           <div className="h-[min(640px,calc(var(--app-height,100dvh)-200px))]">
             <NewChat owner={overview.data?.owner} />
           </div>
+        ) : sheet.name === "automation" ? (
+          <AutomationDetail id={sheet.id} now={now} onClose={closeSheet} />
+        ) : sheet.name === "irgat" ? (
+          <IrgatDetail id={sheet.id} onClose={closeSheet} />
         ) : sheet.name === "services" ? (
           <>
             <ServicesSheet
@@ -330,6 +343,10 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           <Irgats irgats={irgats.data} header={header} wide={wide} />
         ) : name === "mail" ? (
           <MailList header={header} wide={wide} now={now} />
+        ) : name === "agents" ? (
+          <Agents header={header} wide={wide} now={now} />
+        ) : name === "automations" ? (
+          <Automations header={header} wide={wide} now={now} />
         ) : (
           <Chats
             overview={overview.data}
@@ -435,6 +452,18 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Mail"
                   on={screen.name === "mail" || screen.name === "mailThread"}
                   onClick={() => navigate({ name: "mail" })}
+                />
+                <NavItem
+                  icon={<FolderTree className="size-5" />}
+                  label="Agents"
+                  on={screen.name === "agents"}
+                  onClick={() => navigate({ name: "agents" })}
+                />
+                <NavItem
+                  icon={<Zap className="size-5" />}
+                  label="Automations"
+                  on={screen.name === "automations"}
+                  onClick={() => navigate({ name: "automations" })}
                 />
                 {WORKSPACE_SCREENS.map((entry) => (
                   <NavItem
@@ -562,6 +591,20 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 onClick={() => navigate({ name: "mail" })}
               >
                 <Mail className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Agents"
+                on={screen.name === "agents"}
+                onClick={() => navigate({ name: "agents" })}
+              >
+                <FolderTree className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Automations"
+                on={screen.name === "automations"}
+                onClick={() => navigate({ name: "automations" })}
+              >
+                <Zap className="size-[22px]" />
               </RailItem>
               {WORKSPACE_SCREENS.map((entry) => (
                 <RailItem

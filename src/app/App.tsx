@@ -887,6 +887,10 @@ import {
   type WebAccessDeps,
 } from "../features/web-access/model/webAccess";
 import {
+  runAutomationNow,
+  webAgentsDefaults,
+} from "../features/web-access/model/webAccessAgents";
+import {
   connectSessionMessageTransport,
   startSessionMessageGuardTimer,
   syncSessionMessages,
@@ -12081,6 +12085,19 @@ function Workspace({
     },
     rename: onRenameHistorySession,
     remove: (sessionId) => onRemoveHistorySession(sessionId, "delete", true),
+    agents: {
+      ...webAgentsDefaults,
+      interruptedIds: () => interruptedSessionIdsRef.current,
+      automations: {
+        ...webAgentsDefaults.automations,
+        run: (automation) => runAutomationNow(automation, launchAutomation),
+      },
+      irgats: {
+        ...webAgentsDefaults.irgats,
+        setModel: onModelChange,
+        setMode: onRuntimeModeChange,
+      },
+    },
   };
   useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);
 

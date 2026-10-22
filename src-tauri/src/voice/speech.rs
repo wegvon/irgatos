@@ -225,11 +225,39 @@ fn speech_chunks(mut text: &str, limit: usize) -> Vec<&str> {
     chunks
 }
 
+/// The pieces a reply is spoken in, each short enough for one request.
+pub fn parts(provider: SpeechProvider, text: &str) -> Vec<String> {
+    speech_chunks(&speakable(text), provider.chunk_limit())
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+/// One piece as WAV audio, for a device that plays it itself.
+pub fn synthesize(provider: SpeechProvider, text: &str) -> Result<Vec<u8>, String> {
+    let text = speakable(text);
+    if text.is_empty() {
+        return Err("Nothing to read aloud".into());
+    }
+    wav_audio(provider, provider.endpoint(), &text)
+}
+
 fn generate(
     provider: SpeechProvider,
     endpoint: &str,
     text: &str,
 ) -> Result<tempfile::NamedTempFile, String> {
+    let bytes = wav_audio(provider, endpoint, text)?;
+    let mut file = tempfile::Builder::new()
+        .prefix("irgat-speech-")
+        .suffix(".wav")
+        .tempfile()
+        .map_err(|error| error.to_string())?;
+    file.write_all(&bytes).map_err(|error| error.to_string())?;
+    Ok(file)
+}
+
+fn wav_audio(provider: SpeechProvider, endpoint: &str, text: &str) -> Result<Vec<u8>, String> {
     let body = provider.body(text);
     let response = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(120))
@@ -276,13 +304,7 @@ fn generate(
     {
         return Err(format!("{} returned invalid WAV audio", provider.name()));
     }
-    let mut file = tempfile::Builder::new()
-        .prefix("irgat-speech-")
-        .suffix(".wav")
-        .tempfile()
-        .map_err(|error| error.to_string())?;
-    file.write_all(&bytes).map_err(|error| error.to_string())?;
-    Ok(file)
+    Ok(bytes)
 }
 
 pub fn speakable(text: &str) -> String {
@@ -601,6 +623,18 @@ mod tests {
             );
             assert_eq!(parts.concat(), text);
         }
+    }
+
+    #[test]
+    fn parts_follow_the_provider_limit_without_control_characters() {
+        let text = "Bugün uygulamadaki sohbetleri düzenledim.\u{7} Artık seçeneklere tıklayarak yanıt verebilirsin.";
+        let drama = parts(SpeechProvider::Drama, text);
+        assert!(drama.len() > 1);
+        assert!(drama
+            .iter()
+            .all(|part| part.chars().count() <= 60 && !part.contains('\u{7}')));
+        assert_eq!(parts(SpeechProvider::Ema, text).len(), 1);
+        assert!(parts(SpeechProvider::Drama, " \n ").is_empty());
     }
 
     #[test]

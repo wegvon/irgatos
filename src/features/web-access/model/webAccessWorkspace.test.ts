@@ -160,7 +160,9 @@ function setup(sessions: Session[] = [], linked?: string) {
     irgatHost: {
       home: async () => "/Users/me",
       load: vi.fn(async (sessionId: string) =>
-        sessionId === "s-saved" ? { ...newSession("claude", SHOP), id: sessionId } : null,
+        sessionId === "s-saved"
+          ? { ...newSession("claude", SHOP), id: sessionId }
+          : null,
       ),
       create: (cwd: string) => newSession("claude", cwd),
       add: vi.fn(),
@@ -180,7 +182,13 @@ describe("Feed on the phone", () => {
       interestId: "i1",
       unread: "1",
     })) as WebFeed;
-    expect(workspace.feed.items).toHaveBeenCalledWith("saved", "i1", true, 0, 30);
+    expect(workspace.feed.items).toHaveBeenCalledWith(
+      "saved",
+      "i1",
+      true,
+      0,
+      30,
+    );
     expect(feed.counts).toEqual({ unread: 3, filtered: 1, saved: 0 });
     expect(feed.lastCollected).toBe(7_000);
     expect(feed.items[0]).toMatchObject({
@@ -196,9 +204,15 @@ describe("Feed on the phone", () => {
 
   it("marks, and needs a collector before Collect now", async () => {
     const { deps, workspace } = setup();
-    await handleWebAccess(deps, "feedMark", { ids: ["p1"], saved: true, junk: 1 });
+    await handleWebAccess(deps, "feedMark", {
+      ids: ["p1"],
+      saved: true,
+      junk: 1,
+    });
     expect(workspace.feed.mark).toHaveBeenCalledWith(["p1"], { saved: true });
-    await expect(handleWebAccess(deps, "feedMark", { ids: [] })).rejects.toThrow();
+    await expect(
+      handleWebAccess(deps, "feedMark", { ids: [] }),
+    ).rejects.toThrow();
     await expect(handleWebAccess(deps, "feedCollect", {})).rejects.toThrow(
       /Pick an Irgat/,
     );
@@ -208,7 +222,9 @@ describe("Feed on the phone", () => {
 describe("Notes on the phone", () => {
   it("shows pictures as placeholders and keeps them on save", async () => {
     const { deps, workspace } = setup();
-    const shown = (await handleWebAccess(deps, "note", { id: "n1" })) as WebNote;
+    const shown = (await handleWebAccess(deps, "note", {
+      id: "n1",
+    })) as WebNote;
     expect(shown.body).toContain("*(📷 Picture 1, on your Mac)*");
     expect(shown.project).toBe("shop");
     await handleWebAccess(deps, "noteSave", {
@@ -244,7 +260,10 @@ describe("Notes on the phone", () => {
 
   it("starts a chat with the note attached", async () => {
     const { deps } = setup();
-    const result = await handleWebAccess(deps, "noteChat", { id: "n1", text: "Sum it up" });
+    const result = await handleWebAccess(deps, "noteChat", {
+      id: "n1",
+      text: "Sum it up",
+    });
     expect(result).toEqual({ sessionId: "id1" });
     const launch = (deps.launch as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(launch.prompt).toContain("Sum it up");
@@ -254,7 +273,9 @@ describe("Notes on the phone", () => {
   it("round-trips placeholders without touching other text", () => {
     const body = "a ![x](/note-assets/1.png) b ![](/note-assets/2.png)";
     expect(restoreNotePictures(phoneNoteBody(body), body)).toBe(body);
-    expect(phoneNoteBody("![web](https://a.b/c.png)")).toBe("![web](https://a.b/c.png)");
+    expect(phoneNoteBody("![web](https://a.b/c.png)")).toBe(
+      "![web](https://a.b/c.png)",
+    );
   });
 });
 
@@ -264,7 +285,10 @@ describe("Board on the phone", () => {
     const { deps } = setup([running], "s1");
     const result = (await handleWebAccess(deps, "board", {})) as WebBoard;
     expect(result.project).toBe(SHOP);
-    expect(result.projects.map((entry) => entry.label)).toEqual(["shop", "Chats"]);
+    expect(result.projects.map((entry) => entry.label)).toEqual([
+      "shop",
+      "Chats",
+    ]);
     expect(result.columns[0]!.cards[0]!.session).toMatchObject({
       sessionId: "s1",
       label: "Running",
@@ -284,10 +308,19 @@ describe("Board on the phone", () => {
       { id: "id1", title: "Dark mode", notes: "", labels: ["ui"] },
       0,
     );
-    await handleWebAccess(deps, "boardMove", { project: SHOP, id: "k1", columnId: "done", index: 0 });
+    await handleWebAccess(deps, "boardMove", {
+      project: SHOP,
+      id: "k1",
+      columnId: "done",
+      index: 0,
+    });
     expect(workspace.board.move).toHaveBeenCalledWith("k1", "done", 0);
     await expect(
-      handleWebAccess(deps, "boardMove", { project: SHOP, id: "k1", columnId: "elsewhere" }),
+      handleWebAccess(deps, "boardMove", {
+        project: SHOP,
+        id: "k1",
+        columnId: "elsewhere",
+      }),
     ).rejects.toThrow(/column/);
     await expect(
       handleWebAccess(deps, "board", { project: "/etc" }),
@@ -326,7 +359,11 @@ describe("Artifacts on the phone", () => {
     const list = (await handleWebAccess(deps, "artifacts", {})) as WebArtifacts;
     expect(list.artifacts).toHaveLength(1);
     const row = list.artifacts[0]!;
-    expect(row).toMatchObject({ format: "html", kind: "HTML", sessionId: "s1" });
+    expect(row).toMatchObject({
+      format: "html",
+      kind: "HTML",
+      sessionId: "s1",
+    });
     expect(row.filters).toContain("previews");
     const opened = (await handleWebAccess(deps, "artifact", {
       project: SHOP,

@@ -316,6 +316,62 @@ pub fn voice_speak(
     })
 }
 
+/// The pieces the browser companion asks audio for, one at a time.
+#[tauri::command]
+pub fn voice_speech_parts(text: String, provider: Option<speech::SpeechProvider>) -> Vec<String> {
+    speech::parts(provider.unwrap_or_default(), &text)
+}
+
+/// One piece as base64 WAV, for the browser companion to play on the phone.
+#[tauri::command]
+pub async fn voice_synthesize(
+    text: String,
+    provider: Option<speech::SpeechProvider>,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let provider = provider.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || speech::synthesize(provider, &text))
+        .await
+        .map_err(|error| error.to_string())?
+        .map(|wav| STANDARD.encode(wav))
+}
+
+/// Dictation from the browser companion opens a Qwen session…
+#[tauri::command]
+pub async fn voice_relay_start() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(|| qwen::Relay::new().start())
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// …sends it the phone's 16 kHz 16-bit PCM, base64, and reads the text so far…
+#[tauri::command]
+pub async fn voice_relay_chunk(session: String, pcm: String) -> Result<String, String> {
+    let samples = relay_samples(&pcm)?;
+    tauri::async_runtime::spawn_blocking(move || qwen::Relay::new().chunk(&session, &samples))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// …and closes it with the final transcript.
+#[tauri::command]
+pub async fn voice_relay_finish(session: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || qwen::Relay::new().finish(&session))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn relay_samples(pcm: &str) -> Result<Vec<f32>, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    let bytes = STANDARD
+        .decode(pcm.trim())
+        .map_err(|_| "The recording could not be read".to_string())?;
+    Ok(bytes
+        .chunks_exact(2)
+        .map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32_768.0)
+        .collect())
+}
+
 /// Stops reading aloud; with an id, only if that utterance is still speaking.
 #[tauri::command]
 pub fn voice_stop_speaking(id: Option<String>) {
@@ -492,6 +548,14 @@ mod platform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relay_audio_is_16_bit_little_endian_pcm() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let pcm = STANDARD.encode([0x00, 0x40, 0x00, 0xc0, 0xff]);
+        assert_eq!(relay_samples(&pcm).unwrap(), [0.5, -0.5]);
+        assert!(relay_samples("not base64!").is_err());
+    }
 
     #[test]
     fn live_key_prefers_gemini_over_google() {

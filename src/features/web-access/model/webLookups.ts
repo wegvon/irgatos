@@ -181,16 +181,14 @@ export const webLookupDefaults: WebLookupDeps = {
       return cached;
     }).then((result) => ({
       ...result,
-      items: applyInboxFilters(
-        result.items,
-        filters,
-        "",
-        Date.now(),
-      ),
+      items: applyInboxFilters(result.items, filters, "", Date.now()),
     }));
   },
   inboxBody: async (item) => {
-    if (item.provider === "github" && (item.kind === "issue" || item.kind === "pr")) {
+    if (
+      item.provider === "github" &&
+      (item.kind === "issue" || item.kind === "pr")
+    ) {
       const details = await githubWorkItemDetails(
         item.projectPath,
         item.repo,
@@ -274,13 +272,15 @@ export async function webSearch(
   if (!trimmed) return { query, hits: [], note: null };
   const [history, words, meaning] = await Promise.all([
     within(deps.history(), () => []).catch(() => []),
-    within<SessionSearchResult | null>(deps.searchWords(trimmed), () => null).catch(
+    within<SessionSearchResult | null>(
+      deps.searchWords(trimmed),
       () => null,
-    ),
+    ).catch(() => null),
     // The embedding service is on another machine and may be slow or away.
-    within<ChatMeaningResult | null>(deps.searchMeaning(trimmed), () => null).catch(
+    within<ChatMeaningResult | null>(
+      deps.searchMeaning(trimmed),
       () => null,
-    ),
+    ).catch(() => null),
   ]);
   const live = sessions.map((session) => ({
     id: session.id,
@@ -382,7 +382,10 @@ export async function webInbox(
   const items = sortInboxItems(result.items);
   // The same bookkeeping the Mac's Inbox does, so its badges agree.
   rememberInboxItems(
-    items.map((item) => ({ ...seenEntry(item), projectPath: item.projectPath })),
+    items.map((item) => ({
+      ...seenEntry(item),
+      projectPath: item.projectPath,
+    })),
   );
   seedInboxSeenIfNeeded(items.map(seenEntry));
   const context = {
@@ -446,7 +449,10 @@ export async function inboxChatPrompt(
     ? await deps.inboxBody(item).catch(() => ({ body: "" }))
     : { body: "" };
   return {
-    prompt: composeInboxMessage(inboxComposerCard(item, body || undefined), note),
+    prompt: composeInboxMessage(
+      inboxComposerCard(item, body || undefined),
+      note,
+    ),
     cwd: item.projectPath,
   };
 }

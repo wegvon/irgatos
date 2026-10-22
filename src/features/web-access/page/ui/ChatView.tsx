@@ -26,6 +26,7 @@ import {
 } from "./ModelControls";
 import { Mascot } from "./Irgats";
 import { RequestBody } from "./Requests";
+import { DictateButton, ReadAloud } from "./Voice";
 import {
   Empty,
   Harness,
@@ -424,6 +425,12 @@ function Transcript({
           {pending.map((text, index) => (
             <UserBubble key={`pending-${index}`} text={text} sending />
           ))}
+          {!session.busy &&
+          !pending.length &&
+          lastItem?.kind === "block" &&
+          lastItem.block.role === "assistant" ? (
+            <ReadAloud sessionId={session.id} />
+          ) : null}
           {showActivity ? (
             <div className="flex items-center gap-2.5 px-1 text-[14px]">
               <LoaderCircle className="size-4 shrink-0 animate-spin text-(--ink-3)" />
@@ -890,6 +897,7 @@ function Composer({
             onChange={(mode) => change("setMode", { mode })}
           />
         ) : null}
+        {session.irgat ? null : <PlanToggle on={plan} onChange={setPlan} />}
       </div>
       <div className="glass-float mt-2 rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
         <UploadChips uploads={files.uploads} onRemove={files.remove} />
@@ -927,11 +935,7 @@ function Composer({
               }}
             />
           </div>
-          {session.irgat ? null : (
-            <span className="mb-1 shrink-0">
-              <PlanToggle on={plan} onChange={setPlan} />
-            </span>
-          )}
+          <DictateButton value={text} onChange={setText} />
           {session.busy && empty ? (
             <button
               aria-label="Stop"

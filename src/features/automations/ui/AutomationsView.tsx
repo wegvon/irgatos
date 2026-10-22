@@ -78,6 +78,14 @@ import {
   type AutomationTriggerKind,
 } from "../model/automations";
 import {
+  TRIGGER_CATEGORIES,
+  TRIGGER_EVENTS,
+  findTriggerEvent,
+  triggerLabel,
+  triggerName,
+  type TriggerEvent,
+} from "../model/automationLabels";
+import {
   AUTOMATION_TEMPLATE_CATEGORIES,
   templatesForCategory,
   type AutomationTemplate,
@@ -1702,47 +1710,6 @@ const TEMPLATE_ICONS: Record<AutomationTemplateIcon, typeof Search> = {
   note: StickyNote,
 };
 
-const TRIGGER_CATEGORIES: readonly {
-  value: AutomationTriggerKind;
-  label: string;
-}[] = [
-  { value: "time", label: "Scheduled" },
-  { value: "github", label: "GitHub" },
-  { value: "linear", label: "Linear" },
-  { value: "jira", label: "Jira" },
-  { value: "gitlab", label: "GitLab" },
-  { value: "azuredevops", label: "Azure DevOps" },
-];
-
-type TriggerEvent = {
-  value: string;
-  label: string;
-};
-
-const TRIGGER_EVENTS: Record<AutomationTriggerKind, readonly TriggerEvent[]> = {
-  time: [
-    { value: "hourly", label: "Hourly" },
-    { value: "daily", label: "Daily" },
-    { value: "weekdays", label: "Weekdays" },
-    { value: "weekly", label: "Weekly" },
-  ],
-  github: [
-    { value: "draft_opened", label: "Draft opened" },
-    { value: "pull_request_opened", label: "Pull request opened" },
-    { value: "issue_opened", label: "Issue opened" },
-  ],
-  linear: [{ value: "issue_created", label: "Issue created" }],
-  jira: [{ value: "issue_created", label: "Issue appeared" }],
-  gitlab: [
-    { value: "merge_request_opened", label: "Merge request opened" },
-    { value: "issue_opened", label: "Issue opened" },
-  ],
-  azuredevops: [
-    { value: "pull_request_appeared", label: "Pull request appeared" },
-    { value: "work_item_appeared", label: "Work item appeared" },
-  ],
-};
-
 function TriggerMark({
   kind,
   className,
@@ -1754,31 +1721,6 @@ function TriggerMark({
     return <Clock className={className} strokeWidth={1.75} />;
   }
   return <InboxProviderMark provider={kind} className={className} />;
-}
-
-function triggerName(kind: AutomationTriggerKind): string {
-  return (
-    TRIGGER_CATEGORIES.find((option) => option.value === kind)?.label ?? kind
-  );
-}
-
-function findTriggerEvent(
-  kind: AutomationTriggerKind,
-  value: string,
-): TriggerEvent | undefined {
-  return TRIGGER_EVENTS[kind].find((event) => event.value === value);
-}
-
-function triggerLabel(automation: Automation): string {
-  const triggers = automationTriggers(automation);
-  if (triggers.length === 0) return "No trigger";
-  const first = triggers[0]!;
-  const label =
-    first.kind === "time"
-      ? automationScheduleLabel(first)
-      : (findTriggerEvent(first.kind, first.event)?.label ??
-        triggerName(first.kind));
-  return triggers.length > 1 ? `${label} +${triggers.length - 1}` : label;
 }
 
 function TriggerRow({
