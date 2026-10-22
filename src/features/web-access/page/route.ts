@@ -17,11 +17,28 @@ export type Route =
   | { name: "ideas" }
   | { name: "idea"; id: string }
   | { name: "new" }
-  | { name: "services" };
+  | { name: "services" }
+  /** The desktop rail's Feed, Notes, Board and Artifacts. */
+  | { name: "feed" }
+  | { name: "notes" }
+  | { name: "board" }
+  | { name: "artifacts" };
 
 export type Screen = Extract<
   Route,
-  { name: "home" | "today" | "chats" | "chat" | "irgats" | "ideas" }
+  {
+    name:
+      | "home"
+      | "today"
+      | "chats"
+      | "chat"
+      | "irgats"
+      | "ideas"
+      | "feed"
+      | "notes"
+      | "board"
+      | "artifacts";
+  }
 >;
 export type Sheet = Exclude<Route, Screen>;
 
@@ -38,6 +55,10 @@ export function parseRoute(hash: string): Route {
     case "today":
     case "irgats":
     case "ideas":
+    case "feed":
+    case "notes":
+    case "board":
+    case "artifacts":
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };

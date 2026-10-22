@@ -16,6 +16,10 @@ describe("browser page routes", () => {
     expect(parseRoute("#/idea/c1")).toEqual({ name: "idea", id: "c1" });
     expect(parseRoute("#/new")).toEqual({ name: "new" });
     expect(parseRoute("#/services")).toEqual({ name: "services" });
+    for (const name of ["feed", "notes", "board", "artifacts"] as const) {
+      expect(parseRoute(`#/${name}`)).toEqual({ name });
+      expect(isSheet({ name })).toBe(false);
+    }
   });
 
   it("falls back instead of opening an empty chat or idea", () => {
