@@ -21,6 +21,12 @@ export type Route =
   | { name: "mailThread"; id: string }
   | { name: "new" }
   | { name: "services" }
+  /** The Mac's Inbox: pull requests, issues and tracker tickets. */
+  | { name: "inbox" }
+  /** `id` is the item's key; it opens over the Inbox. */
+  | { name: "inboxItem"; id: string }
+  /** Every chat by words or meaning; the phone searches in its menu. */
+  | { name: "search" }
   /** The desktop rail's Feed, Notes, Board and Artifacts. */
   | { name: "feed" }
   | { name: "notes" }
@@ -39,6 +45,8 @@ export type Screen = Extract<
       | "ideas"
       | "mail"
       | "mailThread"
+      | "inbox"
+      | "search"
       | "feed"
       | "notes"
       | "board"
@@ -74,6 +82,11 @@ export function parseRoute(hash: string): Route {
     case "new":
     case "services":
       return { name };
+    case "inbox":
+    case "search":
+      return { name };
+    case "inboxItem":
+      return value ? { name, id: value } : { name: "inbox" };
     default:
       return { name: "home" };
   }
@@ -87,12 +100,16 @@ export function href(route: Route): string {
 
 export function isSheet(route: Route): route is Sheet {
   return (
-    route.name === "new" || route.name === "services" || route.name === "idea"
+    route.name === "new" ||
+    route.name === "services" ||
+    route.name === "idea" ||
+    route.name === "inboxItem"
   );
 }
 
 /** The screen a sheet opens over when the page is opened straight onto it. */
 function screenUnder(route: Sheet): Screen {
+  if (route.name === "inboxItem") return { name: "inbox" };
   return route.name === "idea" ? { name: "ideas" } : { name: "home" };
 }
 

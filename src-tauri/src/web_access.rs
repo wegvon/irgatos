@@ -41,7 +41,7 @@ const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 9] = [
+const READ_ACTIONS: [&str; 13] = [
     "overview",
     "session",
     "projects",
@@ -51,8 +51,12 @@ const READ_ACTIONS: [&str; 9] = [
     "pushKey",
     "mail",
     "mailThread",
+    "search",
+    "inbox",
+    "inboxItem",
+    "usage",
 ];
-const WRITE_ACTIONS: [&str; 17] = [
+const WRITE_ACTIONS: [&str; 18] = [
     "upload",
     "send",
     "approval",
@@ -70,6 +74,7 @@ const WRITE_ACTIONS: [&str; 17] = [
     "pushSubscribe",
     "pushUnsubscribe",
     "mailMarkRead",
+    "inboxStart",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.
@@ -947,6 +952,38 @@ mod tests {
                 Route::Reject(404, _)
             ));
         }
+    }
+
+    #[test]
+    fn search_inbox_and_usage_are_reads_and_starting_from_inbox_a_write() {
+        let peer = ip("127.0.0.1");
+        for action in ["search", "inbox", "inboxItem", "usage"] {
+            assert_eq!(
+                route(
+                    "GET",
+                    &format!("/api/{action}"),
+                    peer,
+                    TOKEN,
+                    Some(TOKEN),
+                    false
+                ),
+                Route::Api {
+                    action: action.into(),
+                    write: false
+                }
+            );
+        }
+        assert!(matches!(
+            route("GET", "/api/inboxStart", peer, TOKEN, Some(TOKEN), true),
+            Route::Reject(405, _)
+        ));
+        assert_eq!(
+            route("POST", "/api/inboxStart", peer, TOKEN, Some(TOKEN), true),
+            Route::Api {
+                action: "inboxStart".into(),
+                write: true
+            }
+        );
     }
 
     #[test]
