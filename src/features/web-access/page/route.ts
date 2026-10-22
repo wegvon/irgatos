@@ -26,7 +26,12 @@ export type Route =
   /** `id` is the item's key; it opens over the Inbox. */
   | { name: "inboxItem"; id: string }
   /** Every chat by words or meaning; the phone searches in its menu. */
-  | { name: "search" };
+  | { name: "search" }
+  /** The desktop rail's Feed, Notes, Board and Artifacts. */
+  | { name: "feed" }
+  | { name: "notes" }
+  | { name: "board" }
+  | { name: "artifacts" };
 
 export type Screen = Extract<
   Route,
@@ -41,7 +46,11 @@ export type Screen = Extract<
       | "mail"
       | "mailThread"
       | "inbox"
-      | "search";
+      | "search"
+      | "feed"
+      | "notes"
+      | "board"
+      | "artifacts";
   }
 >;
 export type Sheet = Exclude<Route, Screen>;
@@ -59,6 +68,10 @@ export function parseRoute(hash: string): Route {
     case "today":
     case "irgats":
     case "ideas":
+    case "feed":
+    case "notes":
+    case "board":
+    case "artifacts":
       return { name };
     case "idea":
       return value ? { name, id: value } : { name: "ideas" };

@@ -8,6 +8,7 @@ import { NEW_CHAT_FIELD } from "./NewChat";
 import { MacIcon } from "./Services";
 import { Spinner, type Tone } from "./parts";
 import { SearchResults } from "./Search";
+import { WORKSPACE_SCREENS } from "./Workspace";
 import {
   Bot,
   Idea,
@@ -171,6 +172,15 @@ export function Drawer({
             >
               <Inbox className="size-[21px]" />
             </Tile>
+            {WORKSPACE_SCREENS.map((entry) => (
+              <Tile
+                key={entry.name}
+                label={entry.label}
+                onClick={() => navigate({ name: entry.name })}
+              >
+                <entry.Icon className="size-[21px]" />
+              </Tile>
+            ))}
             <Tile
               label="Mac"
               title={macLabel}

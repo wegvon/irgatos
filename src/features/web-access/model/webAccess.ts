@@ -103,6 +103,10 @@ import {
   type UserQuestionReply,
 } from "../../sessions/model/userQuestion";
 import { loadVoiceSettings } from "../../voice/model/voiceSettings";
+import {
+  handleWorkspaceAction,
+  type WorkspaceDeps,
+} from "./webAccessWorkspace";
 import type {
   WebAppearance,
   WebBlock,
@@ -198,6 +202,8 @@ export type WebAccessDeps = {
   newId: () => string;
   /** Search, Inbox and usage limits; missing where a test leaves them out. */
   lookups?: WebLookupDeps;
+  /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
+  workspace?: WorkspaceDeps;
 };
 
 type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
@@ -1005,8 +1011,19 @@ export async function handleWebAccess(
       );
       return { read: true };
     }
-    default:
+    default: {
+      const workspace = handleWorkspaceAction(
+        {
+          ...deps,
+          open: deps.irgatHost.load,
+          newChat: (next) => handleWebAccess(deps, "newChat", next),
+        },
+        action,
+        input,
+      );
+      if (workspace) return workspace;
       throw new Error("Unknown action");
+    }
   }
 }
 
