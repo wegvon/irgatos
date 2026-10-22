@@ -9,6 +9,7 @@ import {
 import type { WebBlock, WebSession } from "../../model/protocol";
 import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
+import { AttachButton, UploadChips, pastedFiles, useUploads } from "./Attach";
 import { Markdown } from "./Markdown";
 import { ChatOptions } from "./ChatOptions";
 import { Mascot } from "./Irgats";
@@ -403,9 +404,11 @@ function UserBubble({
     <div
       className={`flex flex-col items-end gap-1.5 ${sending ? "opacity-60" : ""}`}
     >
-      <div className="user-message-bubble max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-content/10 px-4 py-2.5 text-[16px] leading-snug text-(--ink)">
-        {text}
-      </div>
+      {text ? (
+        <div className="user-message-bubble max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-content/10 px-4 py-2.5 text-[16px] leading-snug text-(--ink)">
+          {text}
+        </div>
+      ) : null}
       {files?.length ? (
         <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
           {files.map((name) => (
@@ -599,6 +602,7 @@ function Composer({
   });
   const field = useRef<HTMLTextAreaElement>(null);
   const { busy, run } = useAction();
+  const files = useUploads();
 
   useEffect(() => {
     try {
@@ -618,69 +622,86 @@ function Composer({
 
   const send = async () => {
     const message = text.trim();
-    if (!message) return;
+    const ids = files.ids;
+    if ((!message && !ids.length) || files.blocked) return;
     setText("");
-    onSent(message);
+    if (message) onSent(message);
     const sent = await run("send", () =>
-      write("send", { sessionId: session.id, text: message }),
+      write("send", {
+        sessionId: session.id,
+        text: message,
+        ...(ids.length ? { files: ids } : {}),
+      }),
     );
-    if (!sent) setText(message);
+    if (sent) files.clear();
+    else setText(message);
   };
 
   const stop = () =>
     run("stop", () => write("stop", { sessionId: session.id }), "Stopped");
 
-  const empty = !text.trim();
+  const empty = !text.trim() && !files.uploads.length;
   return (
-    <div className="glass-float mt-2 flex items-end gap-2 rounded-[28px] p-1.5 pl-4 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
-      <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
-        <textarea
-          ref={field}
-          rows={1}
-          value={text}
-          enterKeyHint={wide ? "send" : "enter"}
-          placeholder={
-            session.irgat
-              ? `Message ${session.irgat}…`
-              : `Ask anything about ${session.projectLabel}…`
-          }
-          className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            const submit =
-              event.key === "Enter" &&
-              !event.nativeEvent.isComposing &&
-              (event.metaKey || event.ctrlKey || (wide && !event.shiftKey));
-            if (submit) {
-              event.preventDefault();
-              void send();
+    <div className="glass-float mt-2 rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
+      <UploadChips uploads={files.uploads} onRemove={files.remove} />
+      <div className="flex items-end gap-1">
+        <AttachButton onFiles={files.add} disabled={busy !== null} />
+        <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
+          <textarea
+            ref={field}
+            rows={1}
+            value={text}
+            enterKeyHint={wide ? "send" : "enter"}
+            placeholder={
+              session.irgat
+                ? `Message ${session.irgat}…`
+                : `Ask anything about ${session.projectLabel}…`
             }
-          }}
-        />
+            className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
+            onChange={(event) => setText(event.target.value)}
+            onPaste={(event) => {
+              const pasted = pastedFiles(event);
+              if (pasted.length) {
+                event.preventDefault();
+                files.add(pasted);
+              }
+            }}
+            onKeyDown={(event) => {
+              const submit =
+                event.key === "Enter" &&
+                !event.nativeEvent.isComposing &&
+                (event.metaKey || event.ctrlKey || (wide && !event.shiftKey));
+              if (submit) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+          />
+        </div>
+        {session.busy && empty ? (
+          <button
+            aria-label="Stop"
+            onClick={() => void stop()}
+            disabled={busy !== null}
+            className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-(--color-background-base) disabled:opacity-50"
+          >
+            {busy === "stop" ? (
+              <Spinner />
+            ) : (
+              <Square className="size-4 fill-current" strokeWidth={0} />
+            )}
+          </button>
+        ) : (
+          <button
+            aria-label="Send"
+            onClick={() => void send()}
+            disabled={empty || files.blocked || busy !== null}
+            className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
+          >
+            <ArrowUp className="size-5" strokeWidth={2.25} />
+          </button>
+        )}
       </div>
-      {session.busy && empty ? (
-        <button
-          aria-label="Stop"
-          onClick={() => void stop()}
-          disabled={busy !== null}
-          className="web-press flex size-11 shrink-0 items-center justify-center rounded-full bg-(--ink) text-(--color-background-base) disabled:opacity-50"
-        >
-          {busy === "stop" ? (
-            <Spinner />
-          ) : (
-            <Square className="size-4 fill-current" strokeWidth={0} />
-          )}
-        </button>
-      ) : (
-        <button
-          aria-label="Send"
-          onClick={() => void send()}
-          disabled={empty || busy !== null}
-          className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
-        >
-          <ArrowUp className="size-5" strokeWidth={2.25} />
-        </button>
-      )}
     </div>
   );
 }
