@@ -4201,3 +4201,77 @@ html.theme-light .btw-burst {
     var(--color-background-base)
   );
 }
+
+/* Agent status card above a coding chat's composer (AgentRunCard). */
+.agent-run-star--running svg {
+  animation: agent-run-star-spin 2.4s linear infinite;
+}
+.agent-run-star--waiting svg {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-accent) 70%, transparent));
+}
+@keyframes agent-run-star-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.agent-run-progress-fill {
+  width: 100%;
+  background: color-mix(in srgb, var(--color-accent) 45%, var(--color-content) 12%);
+  transition: background-color 300ms var(--motion-ease-out);
+}
+.agent-run-progress[data-state="running"] .agent-run-progress-fill {
+  width: 38%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-accent) 35%,
+    color-mix(in srgb, var(--color-accent) 40%, white) 55%,
+    var(--color-accent) 70%,
+    transparent
+  );
+  animation: agent-run-glide 1.6s var(--motion-ease-out) infinite;
+}
+.agent-run-progress[data-state="waiting_approval"] .agent-run-progress-fill {
+  background: var(--color-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.agent-run-progress[data-state="done"] .agent-run-progress-fill {
+  background: color-mix(in srgb, var(--color-diff-add) 70%, var(--color-content) 10%);
+}
+.agent-run-progress[data-state="failed"] .agent-run-progress-fill {
+  background: rgb(239 68 68 / 0.85);
+}
+.agent-run-progress[data-state="paused"] .agent-run-progress-fill,
+.agent-run-progress[data-state="stopped"] .agent-run-progress-fill {
+  background: color-mix(in srgb, var(--color-content) 22%, transparent);
+}
+@keyframes agent-run-glide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+.agent-run-log-list {
+  transition: transform 320ms var(--motion-ease-out);
+}
+.agent-run-row-enter {
+  animation: agent-run-row-in 320ms var(--motion-ease-out);
+}
+@keyframes agent-run-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-run-star--running svg,
+  .agent-run-progress[data-state="running"] .agent-run-progress-fill,
+  .agent-run-row-enter {
+    animation: none;
+  }
+  .agent-run-log-list {
+    transition: none;
+  }
+}
