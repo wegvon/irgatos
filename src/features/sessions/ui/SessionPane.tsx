@@ -105,6 +105,8 @@ import { IrgatUsageLimitNotice } from "../../irgats/ui/IrgatUsageLimitNotice";
 import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
 import { sessionInterruption } from "../model/sessionInterruption";
 import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
+import { AgentRunCard } from "./AgentRunCard";
+import { CONTINUE_PROMPT } from "../model/inFlight";
 import {
   textQuestion,
   textQuestionAnswer,
@@ -1511,6 +1513,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 </>
               ) : (
                 <>
+                  {!session.inboxAsk && !session.ephemeral ? (
+                    <AgentRunCard
+                      session={session}
+                      onStop={() => onStop(session.id)}
+                      onApproval={(requestId, decision) =>
+                        onApproval(session.id, requestId, decision)
+                      }
+                      onContinue={() => {
+                        if (interruption && onResumeInterrupted) {
+                          onResumeInterrupted(session.id);
+                        } else onSubmit(session.id, CONTINUE_PROMPT, []);
+                      }}
+                      onOpenRun={(turnId) => navigateBlockRef.current?.(turnId)}
+                    />
+                  ) : null}
                   {!remote && !session.inboxAsk ? (
                     <PendingSessionMessages sessionId={session.id} />
                   ) : null}
