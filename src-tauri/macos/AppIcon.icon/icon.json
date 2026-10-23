@@ -1,13 +1,15 @@
 {
   "fill" : {
-    "solid" : "extended-srgb:0.72157,0.25098,0.05882,1.00000"
+    "solid" : "extended-srgb:1.00000,1.00000,1.00000,1.00000"
   },
   "groups" : [
     {
       "layers" : [
         {
           "blend-mode" : "normal",
-          "fill" : "none",
+          "fill" : {
+            "solid" : "extended-srgb:0.06667,0.06667,0.06667,1.00000"
+          },
           "glass" : false,
           "hidden" : false,
           "image-name" : "icon.png",
