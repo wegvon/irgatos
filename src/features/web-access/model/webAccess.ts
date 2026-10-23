@@ -98,6 +98,7 @@ import {
 import {
   HARNESSES,
   HARNESS_TITLE,
+  DEFAULT_RUNTIME_MODE,
   RUNTIME_MODES,
   sessionDisplayTitle,
   sessionWorkCwd,
@@ -173,6 +174,8 @@ export type WebAccessDeps = {
     settings: Record<string, string>,
   ) => void;
   setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void;
+  /** The access a new chat gets on the Mac, so the phone starts the same. */
+  defaultMode?: () => RuntimeMode;
   /** Saved chats across every project, newest first. */
   history: () => Promise<SessionSummary[]>;
   models: (harness: HarnessId) => AgentModel[];
@@ -875,14 +878,23 @@ export async function handleWebAccess(
       const session = await findSession(deps, input);
       const id = requestId(input);
       const decision = input.decision;
-      if (decision !== "allow" && decision !== "deny")
+      if (decision !== "allow" && decision !== "deny" && decision !== "allowAll")
         throw new Error("Decision must be allow or deny");
-      const open = fleetRequests(session).some(
-        (request) => request.kind === "approval" && request.requestId === id,
+      const open = fleetRequests(session).flatMap((request) =>
+        request.kind === "approval" ? [request.requestId] : [],
       );
-      if (!open) throw new Error("This request was already answered.");
-      deps.approve(session.id, id, decision);
-      return { decided: decision };
+      if (!open.includes(id))
+        throw new Error("This request was already answered.");
+      if (decision !== "allowAll") {
+        deps.approve(session.id, id, decision);
+        return { decided: decision };
+      }
+      // Full access stops the asking for the rest of this chat, as the
+      // composer's access picker does; what already waits is allowed too.
+      if (!NO_ACCESS_MODES.includes(session.harness))
+        deps.setRuntimeMode(session.id, "full-access");
+      for (const requestId of open) deps.approve(session.id, requestId, "allow");
+      return { decided: "allow", allowed: open.length };
     }
     case "answer": {
       const session = await findSession(deps, input);
@@ -924,6 +936,7 @@ export async function handleWebAccess(
               };
             }),
         ],
+        mode: deps.defaultMode?.() ?? DEFAULT_RUNTIME_MODE,
         harnesses: deps
           .harnesses()
           .map((harness) =>
