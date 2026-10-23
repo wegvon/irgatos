@@ -104,8 +104,8 @@ export const THEME_PALETTE_SWATCHES: Record<
     dark: { background: "#191416", accent: "#d5869a" },
   },
   claude: {
-    light: { background: "#faf9f5", accent: "#c86341" },
-    dark: { background: "#181816", accent: "#d97959" },
+    light: { background: "#fcfcfb", accent: "#c7603d" },
+    dark: { background: "#262624", accent: "#d97959" },
   },
 };
 
