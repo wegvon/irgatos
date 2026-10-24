@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { adhdEnabledFor } from "../../adhd/model/adhdMode";
+import { standingPromptContext } from "../../sessions/model/standingPrompt";
 import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
 import {
   editIrgatFile,
@@ -31,11 +32,12 @@ import {
 /** SOUL.md, MEMORY.md and the chat so far for an Irgat; the chat alone otherwise. */
 export async function liveInstructionFor(info: LiveSessionInfo): Promise<LiveInstruction> {
   const adhd = adhdEnabledFor(info.id);
+  const standingPrompt = standingPromptContext();
   const recent = recentTurns(info.blocks);
   const irgat = irgatForSession(info.id);
   if (!irgat)
     return {
-      text: liveSystemInstruction({ name: info.title.trim() || "the agent", recent, adhd }),
+      text: liveSystemInstruction({ name: info.title.trim() || "the agent", recent, adhd, standingPrompt }),
       memoryTool: false,
     };
   const look = irgatLook(irgat);
@@ -48,6 +50,7 @@ export async function liveInstructionFor(info: LiveSessionInfo): Promise<LiveIns
       projects: irgatProjectsBrief(look),
       recent,
       adhd,
+      standingPrompt,
       memoryTool: true,
     }),
     memoryTool: true,

@@ -91,9 +91,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Chat",
     description:
-      "How transcripts read, what the composer does with a follow-up, how files save, and how diffs open.",
+      "A standing prompt every chat hears, how transcripts read, what the composer does with a follow-up, how files save, and how diffs open.",
     keywords:
-      "transcript composer prompt message diff review layout format save editor",
+      "transcript composer prompt message diff review layout format save editor standing system instructions",
   },
   {
     id: "voice",
@@ -459,6 +459,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "appearance",
     label: "Chat background",
     keywords: "wallpaper image picture opacity backdrop",
+  },
+  {
+    id: "standing-prompt",
+    section: "chat",
+    label: "Standing prompt",
+    keywords:
+      "system prompt instructions every chat session inject always custom sabit talimat",
   },
   {
     id: "transcript-layout",

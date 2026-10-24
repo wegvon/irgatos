@@ -39,6 +39,8 @@ export type LiveInstructionInput = {
   projects?: string;
   recent?: readonly LiveTurn[];
   adhd?: boolean;
+  /** The standing prompt from Settings > Chat, as its context block. */
+  standingPrompt?: string;
   /** Memory tools are offered; Irgats only. */
   memoryTool?: boolean;
 };
@@ -71,5 +73,6 @@ export function liveSystemInstruction(input: LiveInstructionInput): string {
     parts.push(
       `<adhd_mode>\nThe user turned on ADHD mode. Follow these rules in every answer, out loud too: lead with the one next step, keep it short, and stay on their task.\n\n${ADHD_RULES}\n</adhd_mode>`,
     );
+  if (input.standingPrompt?.trim()) parts.push(input.standingPrompt.trim());
   return parts.join("\n\n");
 }

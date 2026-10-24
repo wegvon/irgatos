@@ -146,6 +146,14 @@ export function parseCommand(input: unknown): HostCommand {
       (v.type !== "send" || v.intent !== "build")
     )
       throw new Error("Invalid plan build");
+    if (
+      v.context !== undefined &&
+      (v.type !== "send" ||
+        typeof v.context !== "string" ||
+        v.context.length > 32_000 ||
+        v.context.includes("\0"))
+    )
+      throw new Error("Invalid turn context");
     return {
       type: v.type,
       commandId,
@@ -160,6 +168,9 @@ export function parseCommand(input: unknown): HostCommand {
         : {}),
       ...(v.type === "send" && v.planBlockId !== undefined
         ? { planBlockId: text(v.planBlockId, "plan block ID") }
+        : {}),
+      ...(v.type === "send" && typeof v.context === "string" && v.context.trim()
+        ? { context: v.context }
         : {}),
     };
   }
@@ -625,7 +636,11 @@ export class HostEngine {
           effect = (saved) => {
             this.run(
               saved,
-              command.type === "compact" ? null : command.text,
+              command.type === "compact"
+                ? null
+                : firstTurn && command.context
+                  ? `${command.text}\n\n${command.context}`
+                  : command.text,
               command.type === "send" ? command.intent : undefined,
               attachments,
             );

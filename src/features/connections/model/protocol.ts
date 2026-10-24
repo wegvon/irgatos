@@ -171,6 +171,8 @@ export type HostCommand =
       intent?: "default" | "plan" | "build";
       draftBlockId?: string;
       planBlockId?: string;
+      /** What the app adds for the provider on a conversation's first turn; never shown as the user's message. */
+      context?: string;
     }
   | {
       type: "draft";
