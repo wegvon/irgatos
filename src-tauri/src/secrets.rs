@@ -722,16 +722,16 @@ pub(crate) fn agent_action(
                 .map_err(|e| format!("secrets.login: {e}"))?;
             let url = crate::browser_agent::page_url(app, window)?;
             let target = page_target(&url)?;
-            let waiting = with_existing(app, Vec::new(), |loaded| {
-                Ok(loaded.awaiting_approval(session_id, std::slice::from_ref(&input.name)))
-            })?;
-            if !waiting.is_empty() {
-                return ask_approval(app, session_id, window, &waiting, "secrets.login", "", &target.host);
-            }
-            let login = with_existing(app, None, |loaded| {
+            let checked = with_existing(app, None, |loaded| {
                 login_prepare(loaded, session_id, &input.name, &target, input.purpose.as_deref(), now()).map(Some)
             })?
             .ok_or("No secrets are saved. The user can add a login in Settings > Vault.")?;
+            let login = match checked {
+                Checked::Ready(login) => login,
+                Checked::Approval { waiting, target, .. } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.login", "", &target)
+                }
+            };
             let filled = crate::browser_agent::fill_login(
                 app,
                 window,
@@ -801,7 +801,7 @@ fn login_prepare(
     target: &http::Target,
     purpose: Option<&str>,
     at: i64,
-) -> Result<Login, String> {
+) -> Result<Checked<Login>, String> {
     let Some((meta, value)) = loaded.visible(session_id, name) else {
         return Err(format!(
             "{name} is not in the vault. The user can add it as a login in Settings > Vault."
@@ -831,19 +831,19 @@ fn login_prepare(
             .audit(&audit(&meta, "blocked", "secrets.login", "", &target.host, &reason));
         return Err(format!("Blocked: {reason}. Nothing was filled."));
     }
-    if !loaded
-        .awaiting_approval(session_id, &[name.to_string()])
-        .is_empty()
-    {
-        return Err(format!(
-            "{name} waits for the user's approval in this chat. Nothing was filled."
-        ));
+    let waiting = loaded.awaiting_approval(session_id, &[name.to_string()]);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method: String::new(),
+            target: target.host.clone(),
+        });
     }
     if loaded.vault.record_use(&meta.id)? {
         loaded.reload(at)?;
     }
     loaded.spend_grants(session_id, std::slice::from_ref(&meta));
-    Ok(Login { meta, password })
+    Ok(Checked::Ready(Login { meta, password }))
 }
 
 /// A checked `secrets.run`, uses counted, ready to start.
@@ -1710,8 +1710,12 @@ mod tests {
             json!({"persistent": true, "name": "API_KEY", "hosts": ["github.com"], "value": "FAKE-key-1234"}),
         );
         let site = |url: &str| page_target(url).unwrap();
-        let ok = login_prepare(&mut loaded, "chat-1", "GITHUB_LOGIN", &site("https://github.com/login"), None, 2_000)
-            .unwrap();
+        let Checked::Ready(ok) =
+            login_prepare(&mut loaded, "chat-1", "GITHUB_LOGIN", &site("https://github.com/login"), None, 2_000)
+                .unwrap()
+        else {
+            panic!("a free login needs no approval")
+        };
         assert_eq!((ok.meta.username.as_str(), ok.password.as_str()), ("wegvon", "FAKE-password-1"));
         for (name, url) in [
             ("GITHUB_LOGIN", "https://github.com.evil.example/login"),
