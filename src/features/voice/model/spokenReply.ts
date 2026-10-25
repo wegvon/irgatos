@@ -1,6 +1,14 @@
 import type { Block, QueuedMessage } from "../../sessions/model/session";
 
-export type Reply = { id: string; text: string };
+export type Reply = {
+  id: string;
+  text: string;
+  /** The user's latest messages before it, oldest first, for next-prompt suggestions. */
+  prompts?: string[];
+};
+
+/** How many of the user's messages a reply carries along. */
+const REPLY_PROMPTS = 3;
 
 /**
  * The agent's closing message for the latest turn, once the turn is over.
@@ -16,9 +24,32 @@ export function latestReply(
     if (queued.some((message) => message.blockId === block.id)) continue;
     if (block.role === "user") return null;
     if (block.role === "assistant" && block.text.trim())
-      return { id: block.id, text: block.text };
+      return {
+        id: block.id,
+        text: block.text,
+        prompts: promptsBefore(blocks, index, queued),
+      };
   }
   return null;
+}
+
+function promptsBefore(
+  blocks: readonly Block[],
+  end: number,
+  queued: readonly QueuedMessage[],
+): string[] {
+  const prompts: string[] = [];
+  for (
+    let index = end - 1;
+    index >= 0 && prompts.length < REPLY_PROMPTS;
+    index -= 1
+  ) {
+    const block = blocks[index];
+    if (block.role !== "user" || !block.text.trim()) continue;
+    if (queued.some((message) => message.blockId === block.id)) continue;
+    prompts.unshift(block.text);
+  }
+  return prompts;
 }
 
 const ON_SCREEN = "The rest is on screen.";

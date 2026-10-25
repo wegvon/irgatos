@@ -15,6 +15,7 @@ import type {
   WebAgents,
   WebAutomations,
   WebIrgatDetail,
+  WebNextPrompt,
   WebSpokenReply,
 } from "./protocol";
 import {
@@ -110,6 +111,9 @@ function mac(open: Session[], automations: Automation[] = [automation()]) {
       dictateStart: vi.fn(async () => "s1"),
       dictateChunk: vi.fn(async () => "Merhaba"),
       dictateFinish: vi.fn(async () => "Merhaba."),
+      nextPrompt: vi.fn(
+        async (): Promise<string | null> => "Testleri çalıştır.",
+      ),
     },
   };
   const deps: WebAccessDeps = {
@@ -388,6 +392,31 @@ describe("voice on the web page", () => {
       parts: ["Bitti. Testler geçti."],
       summarized: false,
     });
+  });
+
+  it("hands the phone the Mac's next-message suggestion for the last reply", async () => {
+    const { deps, agents } = mac([replied("Bitti. Test edeyim mi?")]);
+    const result = (await handleWebAccess(deps, "nextPrompt", {
+      sessionId: "s1",
+    })) as WebNextPrompt;
+    expect(result).toEqual({ replyId: "a", text: "Testleri çalıştır." });
+    expect(agents.voice.nextPrompt).toHaveBeenCalledWith(
+      { id: "a", text: "Bitti. Test edeyim mi?", prompts: ["Ne yaptın?"] },
+      "s1",
+    );
+  });
+
+  it("suggests nothing while the chat is working", async () => {
+    const { deps, agents } = mac([
+      stored("s1", {
+        busy: true,
+        blocks: [{ id: "u", role: "user", text: "Ne yaptın?" }],
+      }),
+    ]);
+    expect(
+      await handleWebAccess(deps, "nextPrompt", { sessionId: "s1" }),
+    ).toEqual({ replyId: null, text: null });
+    expect(agents.voice.nextPrompt).not.toHaveBeenCalled();
   });
 
   it("passes dictation through to the Mac's speech service", async () => {

@@ -10,9 +10,10 @@ import type {
   WebBlock,
   WebImage,
   WebImageData,
+  WebNextPrompt,
   WebSession,
 } from "../../model/protocol";
-import { SignedOut, read, usePoll, write } from "../client";
+import { SignedOut, quietWrite, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { AttachButton, UploadChips, pastedFiles, useUploads } from "./Attach";
 import { Markdown } from "./Markdown";
@@ -44,6 +45,7 @@ import {
   ChevronDown,
   ChevronLeft,
   CircleX,
+  CornerDownRight,
   File,
   Globe,
   ImageIcon,
@@ -874,6 +876,14 @@ function Composer({
     run("stop", () => write("stop", { sessionId: session.id }), "Stopped");
 
   const empty = !text.trim() && !files.uploads.length;
+  const ghost = useNextPrompt(session);
+  const shownGhost = !text && !files.uploads.length ? ghost.text : null;
+  const takeGhost = () => {
+    if (!shownGhost) return;
+    ghost.dismiss();
+    setText(shownGhost);
+    field.current?.focus();
+  };
   return (
     <>
       <div className="mt-2 flex flex-wrap gap-1.5 px-1">
@@ -905,18 +915,19 @@ function Composer({
         <UploadChips uploads={files.uploads} onRemove={files.remove} />
         <div className="flex items-end gap-1">
           <AttachButton onFiles={files.add} disabled={busy !== null} />
-          <div className="flex min-h-11 min-w-0 flex-1 items-center py-2.5">
+          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 py-2.5">
             <textarea
               ref={field}
               rows={1}
               value={text}
               enterKeyHint={wide ? "send" : "enter"}
               placeholder={
-                session.irgat
+                shownGhost ??
+                (session.irgat
                   ? `Message ${session.irgat}…`
-                  : `Ask anything about ${session.projectLabel}…`
+                  : `Ask anything about ${session.projectLabel}…`)
               }
-              className="web-field block max-h-[180px] w-full resize-none bg-transparent outline-none"
+              className={`web-field block max-h-[180px] w-full resize-none bg-transparent outline-none ${shownGhost ? "placeholder:truncate" : ""}`}
               onChange={(event) => setText(event.target.value)}
               onPaste={(event) => {
                 const pasted = pastedFiles(event);
@@ -933,9 +944,26 @@ function Composer({
                 if (submit) {
                   event.preventDefault();
                   void send();
+                  return;
+                }
+                // A keyboard on the iPad takes the suggestion like the Mac.
+                if (event.key === "Tab" && !event.shiftKey && shownGhost) {
+                  event.preventDefault();
+                  takeGhost();
                 }
               }}
             />
+            {shownGhost ? (
+              <button
+                type="button"
+                aria-label="Use suggested message"
+                onClick={takeGhost}
+                className="web-press flex h-7 shrink-0 items-center gap-1 rounded-full bg-(--ink)/8 px-2.5 text-[12px] font-medium text-(--ink-2)"
+              >
+                <CornerDownRight className="size-3.5" />
+                Use
+              </button>
+            ) : null}
           </div>
           <DictateButton value={text} onChange={setText} />
           {session.busy && empty ? (
@@ -965,4 +993,60 @@ function Composer({
       </div>
     </>
   );
+}
+
+/** Suggestions waved off or taken on this phone, by the reply they follow. */
+const usedGhosts = new Set<string>();
+
+/**
+ * The grey next-message suggestion the Mac guesses once a reply is finished,
+ * or null while the chat works, waits on a request, or has nothing to offer.
+ */
+function useNextPrompt(session: WebSession): {
+  text: string | null;
+  dismiss: () => void;
+} {
+  const last = session.blocks[session.blocks.length - 1];
+  // The chat's end once a turn is over; the Mac finds the reply behind it.
+  const turnEnd =
+    !session.busy &&
+    !session.requests.length &&
+    last &&
+    last.role !== "user" &&
+    !last.streaming
+      ? last.id
+      : null;
+  const [guess, setGuess] = useState<{
+    turnEnd: string;
+    next: WebNextPrompt;
+  } | null>(null);
+  const [, setUsed] = useState(0);
+
+  useEffect(() => {
+    if (!turnEnd) return;
+    let cancelled = false;
+    quietWrite<WebNextPrompt>("nextPrompt", { sessionId: session.id })
+      .then((next) => {
+        if (!cancelled) setGuess({ turnEnd, next });
+      })
+      .catch(() => {
+        // No suggestion: the field keeps its usual placeholder.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [turnEnd, session.id]);
+
+  const current = guess?.turnEnd === turnEnd ? guess.next : null;
+  const replyId = current?.replyId ?? null;
+  const text =
+    replyId && !usedGhosts.has(replyId) ? (current?.text ?? null) : null;
+  return {
+    text,
+    dismiss: () => {
+      if (!replyId) return;
+      usedGhosts.add(replyId);
+      setUsed((count) => count + 1);
+    },
+  };
 }

@@ -17,6 +17,7 @@ const voice = vi.hoisted(() => ({
   speak: vi.fn(),
   stopSpeaking: vi.fn(),
   summarize: vi.fn(),
+  suggestNext: vi.fn(async (): Promise<string | null> => null),
 }));
 
 vi.mock("../../../platform/tauri/voice", () => ({
@@ -25,6 +26,7 @@ vi.mock("../../../platform/tauri/voice", () => ({
   startCapture: voice.start,
   speak: voice.speak,
   summarizeReply: voice.summarize,
+  suggestNextPrompt: voice.suggestNext,
   systemVoices: async () => [],
   openVoicePrivacySettings: vi.fn(),
   saveTranscriptionKey: vi.fn(),

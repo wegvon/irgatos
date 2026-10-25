@@ -312,6 +312,13 @@ export type WebSpokenReply = {
   summarized: boolean;
 };
 
+/** The message the user will likely type next, grey in the phone's composer. */
+export type WebNextPrompt = {
+  /** The finished reply it follows, or null while the chat is working. */
+  replyId: string | null;
+  text: string | null;
+};
+
 /** One chat found by the page's search; the Mac opens closed ones on demand. */
 export type WebSearchHit = {
   sessionId: string;

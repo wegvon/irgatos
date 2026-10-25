@@ -72,7 +72,7 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 33] = [
+const WRITE_ACTIONS: [&str; 34] = [
     "upload",
     "send",
     "approval",
@@ -98,6 +98,7 @@ const WRITE_ACTIONS: [&str; 33] = [
     "irgatForget",
     "voiceReply",
     "voiceAudio",
+    "nextPrompt",
     "dictateStart",
     "dictateChunk",
     "dictateFinish",

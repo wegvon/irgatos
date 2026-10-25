@@ -22,6 +22,7 @@ use crate::notifications::Permission;
 mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
+mod next_prompt;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod qwen;
 mod speech;
@@ -239,6 +240,33 @@ pub async fn voice_summarize(
     }
     let locale = locale.unwrap_or_default();
     tauri::async_runtime::spawn_blocking(move || summary::summarize(&key, &text, &locale))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// The message the user will likely type next in a chat, written by Gemini
+/// with the Live voice key. Nothing without a key, and nothing for chats
+/// started from an email, whose text stays off Google's servers.
+#[tauri::command]
+pub async fn next_prompt_suggest(
+    app: AppHandle,
+    prompts: Vec<String>,
+    reply: String,
+    session_id: Option<String>,
+) -> Result<Option<String>, String> {
+    if reply.trim().is_empty() {
+        return Ok(None);
+    }
+    if session_id
+        .as_deref()
+        .is_some_and(|id| crate::mail::is_mail_session(&app, id))
+    {
+        return Ok(None);
+    }
+    let Some(key) = live_key(&app).await? else {
+        return Ok(None);
+    };
+    tauri::async_runtime::spawn_blocking(move || next_prompt::suggest(&key, &prompts, &reply))
         .await
         .map_err(|error| error.to_string())?
 }
