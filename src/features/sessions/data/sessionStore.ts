@@ -625,6 +625,23 @@ export async function getIrgatTranscriptPage(
   };
 }
 
+/**
+ * An Irgat chat keeps only its latest page in memory; this walks back to its
+ * first message. Ordinary sessions already hold their whole transcript.
+ */
+export async function wholeSessionBlocks(session: Session): Promise<Block[]> {
+  let before = session.irgatTranscript?.before ?? null;
+  let blocks = session.blocks;
+  while (before != null) {
+    const page = await getIrgatTranscriptPage(session.id, { before });
+    if (page.blocks.length === 0 || page.before === before) break;
+    const seen = new Set(blocks.map((block) => block.id));
+    blocks = [...page.blocks.filter((block) => !seen.has(block.id)), ...blocks];
+    before = page.before;
+  }
+  return blocks;
+}
+
 export function findIrgatTranscript(
   sessionId: string,
   query: string,
@@ -1085,6 +1102,8 @@ function sanitizeBlock(
   if (block.role === "system") {
     const interjection = sanitizeInterjection(block.interjection);
     if (interjection) next.interjection = interjection;
+    const forkPoint = sanitizeForkPoint(block.forkPoint);
+    if (forkPoint) next.forkPoint = forkPoint;
     if (block.notice === "error" || block.notice === "interrupt") {
       next.notice = block.notice;
     }
@@ -1304,6 +1323,20 @@ function sanitizeTurnModel(value: unknown): TurnModel | undefined {
     return undefined;
   }
   return { harness: harness as HarnessId, id, name };
+}
+
+function sanitizeForkPoint(
+  value: Block["forkPoint"],
+): Block["forkPoint"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const { fromSessionId, fromTitle } = value as Record<string, unknown>;
+  if (typeof fromSessionId !== "string" || !fromSessionId) return undefined;
+  return {
+    fromSessionId,
+    fromTitle: typeof fromTitle === "string" ? fromTitle.slice(0, 200) : "",
+  };
 }
 
 function sanitizeInterjection(

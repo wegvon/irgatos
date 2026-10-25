@@ -178,6 +178,8 @@ export {
   canSteerHarness,
   canRewindHarnessLastTurn,
   rewindHarnessLastTurn,
+  canForkHarnessSession,
+  forkHarnessSession,
   cancelHarnessTurn,
   respondHarnessApproval,
   respondHarnessQuestion,

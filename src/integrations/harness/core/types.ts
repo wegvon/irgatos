@@ -207,6 +207,18 @@ export type RewindLastTurnInput = CompactContextInput & {
   attachments?: Attachment[];
 };
 
+/** Copy a provider conversation into a new one, up to a chosen turn. */
+export type ForkSessionInput = HarnessSessionInput & {
+  /** The source's provider conversation. */
+  providerSessionId: string;
+  /** User turns the fork keeps; absent keeps the whole conversation. */
+  keepTurns?: number;
+  /** The first user message the fork leaves out, to check the cut. */
+  nextPrompt?: string;
+  /** Provider turn id of the last kept turn, when the provider tracks one. */
+  throughProviderTurnId?: string;
+};
+
 export type RewindLastTurnResult = {
   /** True when the harness already ran the replacement turn. */
   submitted: boolean;

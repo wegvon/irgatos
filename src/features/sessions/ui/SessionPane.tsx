@@ -144,6 +144,7 @@ import { AstraWelcome } from "./AstraWelcome";
 import { OpusWelcome } from "./OpusWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { canEditLastTurn, lastTurnRecall } from "../model/editLastTurn";
+import { canForkSession } from "../model/forkSession";
 import { latestReply } from "../../voice/model/spokenReply";
 import {
   loadProjectChatBackgroundSettings,
@@ -300,6 +301,7 @@ export type SessionPaneProps = {
     turn: Block[],
   ) => void;
   onHandoff?: (sessionId: string, target: ModelTarget, turn: Block[]) => void;
+  onFork?: (sessionId: string, turn: Block[]) => void;
   onBtwSubmit?: (
     sessionId: string,
     turn: Block[],
@@ -427,6 +429,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onBuildPlan,
   onSecondOpinion,
   onHandoff,
+  onFork,
   onBtwSubmit,
   onBtwRetry,
   onBtwDelete,
@@ -1265,6 +1268,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                         !session.worktreeRemoved &&
                         onHandoff
                           ? (target, turn) => onHandoff(session.id, target, turn)
+                          : undefined
+                      }
+                      onFork={
+                        onFork && canForkSession(session)
+                          ? (turn) => onFork(session.id, turn)
                           : undefined
                       }
                       onJumpToBottomChange={jumpVisibility.setVisible}

@@ -72,13 +72,14 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 33] = [
+const WRITE_ACTIONS: [&str; 34] = [
     "upload",
     "send",
     "approval",
     "answer",
     "stop",
     "renameChat",
+    "forkChat",
     "deleteChat",
     "newChat",
     "irgatOpen",

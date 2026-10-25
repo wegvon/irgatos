@@ -406,6 +406,8 @@ export type Block = {
   ciContext?: string;
   /** Mid-turn interjection chrome; system blocks only. Body lives in text. */
   interjection?: InterjectionMeta;
+  /** Where a fork's copied turns end; system blocks only. */
+  forkPoint?: import("./forkSession").ForkPointMeta;
   /**
    * A system row the reader must not miss — an error or an interruption —
    * rather than turn chrome like a status ping. Never folds into the trail.

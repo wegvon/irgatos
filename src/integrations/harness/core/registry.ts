@@ -13,6 +13,7 @@ import type { NativeCommandProvider } from "./nativeCommands";
 import type {
   ApprovalDecision,
   CompactContextInput,
+  ForkSessionInput,
   HarnessEvent,
   RewindLastTurnInput,
   RewindLastTurnResult,
@@ -59,6 +60,11 @@ export type HarnessAdapter = {
   sendTurn(input: SendTurnInput): Promise<void>;
   /** Trigger provider-owned compaction outside Irgatos's normal user-turn path. */
   compactContext?(input: CompactContextInput): Promise<void>;
+  /**
+   * Copy the provider conversation into a new one ending after the kept turns.
+   * Resolves the new provider session id, or null when it cannot be placed.
+   */
+  forkSession?(input: ForkSessionInput): Promise<string | null>;
   /** Rewind provider state so the last user turn can be replaced. */
   rewindLastTurn?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
   steerTurn(input: SteerTurnInput): Promise<void>;
@@ -335,6 +341,27 @@ export function canSteerHarness(id: HarnessId): boolean {
 export function canRewindHarnessLastTurn(id: HarnessId): boolean {
   const adapter = adapters.get(id);
   return adapter?.live === true && adapter.rewindLastTurn != null;
+}
+
+export function canForkHarnessSession(id: HarnessId): boolean {
+  const adapter = adapters.get(id);
+  return adapter?.live === true && adapter.forkSession != null;
+}
+
+/** Null when the harness cannot copy this conversation natively. */
+export async function forkHarnessSession(
+  input: ForkSessionInput & { harness: HarnessId },
+): Promise<string | null> {
+  const adapter = adapters.get(input.harness);
+  if (!adapter?.live || !adapter.forkSession) return null;
+  return queueSessionOperation(input.sessionId, async () => {
+    cancelIdlePark(input.sessionId);
+    try {
+      return await adapter.forkSession!(input);
+    } finally {
+      scheduleIdlePark(input.harness, input.sessionId);
+    }
+  });
 }
 
 export function rewindHarnessLastTurn(
