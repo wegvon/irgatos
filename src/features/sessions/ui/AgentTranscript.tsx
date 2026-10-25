@@ -1141,6 +1141,7 @@ function AgentTranscriptComponent({
           const items = turnCache.turnItems(turn, settled, {
             managed,
             inlineWork,
+            waitingForAnswer: !settled && !!pendingQuestion,
             undeliveredMessageIds,
           });
           // Earlier activity groups have already been followed by prose or

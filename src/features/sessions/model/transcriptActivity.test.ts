@@ -207,6 +207,35 @@ describe("groupIrgatTurnItems", () => {
     ]);
   });
 
+  it("keeps the explanation before a question in the chat while it waits", () => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Plan the project" },
+      note("intro", "Checking the database."),
+      shell("research"),
+      note("plan", "Feasibility done. Three layers: resolver, directory, reports."),
+      {
+        id: "ask",
+        role: "tool",
+        text: "AskUserQuestion",
+        tool: { kind: "other", title: "AskUserQuestion", status: "in_progress" },
+      },
+    ];
+    const visibleProse = (items: ReturnType<typeof groupIrgatTurnItems>) =>
+      items.flatMap((item) =>
+        item.type === "block" && item.block.role === "assistant"
+          ? [item.block.id]
+          : [],
+      );
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(blocks, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan"]);
+    expect(visibleProse(groupIrgatTurnItems(blocks, { live: true }))).toEqual(
+      [],
+    );
+  });
+
   it("keeps replies after mid-turn follow-ups visible while tools continue", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Review the PR" },
