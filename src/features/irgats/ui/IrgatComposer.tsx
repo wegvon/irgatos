@@ -45,6 +45,7 @@ import {
 } from "../../sessions/model/draftCache";
 import { useFileDrop } from "../../sessions/hooks/useFileDrop";
 import { resizeComposer } from "../../sessions/model/composerResize";
+import { useNextPrompt } from "../../sessions/model/nextPrompt";
 import { useComposerAutocorrect } from "../../settings/model/displayPrefs";
 import {
   consumeQuoteRequest,
@@ -485,6 +486,24 @@ export function IrgatComposer({
   });
   const inlineColumns = voice.available ? VOICE_INPUT_COLUMNS : INPUT_COLUMNS;
 
+  // The message the user will likely type next, grey in the empty field.
+  const nextPrompt = useNextPrompt({
+    reply: voiceReply,
+    sessionId: sessionId.replace(/^floating:/, ""),
+    active: enabled && !busy && !submitting,
+  });
+  const ghost =
+    nextPrompt.suggestion && !text && attachments.length === 0
+      ? nextPrompt.suggestion
+      : null;
+  /** Tab puts the suggestion in as a draft to edit or send; it never sends. */
+  const takeGhost = () => {
+    if (!ghost) return;
+    nextPrompt.dismiss();
+    writeDraft(ghost, ghost.length);
+    field.current?.focus();
+  };
+
   // `tool` sizes the plus to match the emoji face beside it: its cross fills
   // 14 of the glyph's 24 units against the face's 21, so it is drawn larger,
   // with a thinner stroke so both lines render about 1px wide.
@@ -515,53 +534,89 @@ export function IrgatComposer({
       <FolderPlus className="size-3.5" strokeWidth={1.75} />
     </button>
   );
+  // The wrapper always renders, so the field keeps its focus when the
+  // suggestion's Tab badge comes and goes.
   const input = (className: string) => (
-    <textarea
-      ref={field}
-      rows={1}
-      aria-label={`Message ${name}`}
-      placeholder={placeholder ?? `Message ${name}`}
-      spellCheck={autocorrect}
-      autoCorrect={autocorrect ? "on" : "off"}
-      // Read-only rather than disabled while sending, so the caret stays.
-      disabled={!enabled}
-      readOnly={submitting}
-      value={text}
-      onFocus={onFocus}
-      onBlur={() => setMentionToken(null)}
-      onSelect={(event) =>
-        trackMention(
-          event.currentTarget.value,
-          event.currentTarget.selectionStart,
-        )
-      }
-      onChange={(event) => {
-        // Typing takes over from dictation and keeps what was heard.
-        voice.noteInput();
-        update(event.target.value);
-        trackMention(event.target.value, event.target.selectionStart);
-      }}
-      onKeyDown={(event) => {
-        if (isImeComposition(event.nativeEvent)) return;
-        if (handleMentionKey(event)) return;
-        // While the microphone is open, Escape and Enter belong to dictation,
-        // not to the reply this chat would otherwise stop or send.
-        if (voice.handleKeyDown(event)) {
-          event.stopPropagation();
-          return;
+    <div className={`relative min-w-0 ${className}`}>
+      <textarea
+        ref={field}
+        rows={1}
+        aria-label={`Message ${name}`}
+        placeholder={ghost ?? placeholder ?? `Message ${name}`}
+        spellCheck={autocorrect}
+        autoCorrect={autocorrect ? "on" : "off"}
+        // Read-only rather than disabled while sending, so the caret stays.
+        disabled={!enabled}
+        readOnly={submitting}
+        value={text}
+        onFocus={onFocus}
+        onBlur={() => setMentionToken(null)}
+        onSelect={(event) =>
+          trackMention(
+            event.currentTarget.value,
+            event.currentTarget.selectionStart,
+          )
         }
-        if (event.key !== "Enter" || event.shiftKey) return;
-        event.preventDefault();
-        send();
-      }}
-      onPaste={(event) => {
-        const files = filesFromClipboard(event.clipboardData);
-        if (files.length === 0) return;
-        event.preventDefault();
-        readAttachments(() => attachmentsFromFiles(files));
-      }}
-      className={`${FIELD_CLASSES} ${className}`}
-    />
+        onChange={(event) => {
+          // Typing takes over from dictation and keeps what was heard.
+          voice.noteInput();
+          update(event.target.value);
+          trackMention(event.target.value, event.target.selectionStart);
+        }}
+        onKeyDown={(event) => {
+          if (isImeComposition(event.nativeEvent)) return;
+          if (handleMentionKey(event)) return;
+          if (ghost && !event.currentTarget.value) {
+            if (
+              event.key === "Tab" &&
+              !event.shiftKey &&
+              !event.altKey &&
+              !event.metaKey &&
+              !event.ctrlKey
+            ) {
+              event.preventDefault();
+              takeGhost();
+              return;
+            }
+            // Escape would otherwise stop a reply; here it only hides the guess.
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              nextPrompt.dismiss();
+              return;
+            }
+          }
+          // While the microphone is open, Escape and Enter belong to dictation,
+          // not to the reply this chat would otherwise stop or send.
+          if (voice.handleKeyDown(event)) {
+            event.stopPropagation();
+            return;
+          }
+          if (event.key !== "Enter" || event.shiftKey) return;
+          event.preventDefault();
+          send();
+        }}
+        onPaste={(event) => {
+          const files = filesFromClipboard(event.clipboardData);
+          if (files.length === 0) return;
+          event.preventDefault();
+          readAttachments(() => attachmentsFromFiles(files));
+        }}
+        className={`${FIELD_CLASSES} placeholder:truncate ${ghost ? "pr-10" : ""}`}
+      />
+      {ghost ? (
+        <button
+          type="button"
+          title="Use this suggestion (Tab). Escape hides it."
+          aria-label="Use suggested message"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={takeGhost}
+          className="absolute right-0 top-1/2 -translate-y-1/2 rounded border border-content/15 px-1.5 text-[10px] font-medium leading-4 text-content/45 transition-colors hover:border-content/30 hover:text-content/80"
+        >
+          Tab
+        </button>
+      ) : null}
+    </div>
   );
   const sendButton = (className: string) => (
     <button

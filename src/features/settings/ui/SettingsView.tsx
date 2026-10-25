@@ -286,10 +286,12 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import {
   saveComposerAutocorrect,
+  saveNextPromptSuggestions,
   saveMaskEmails,
   saveRailIrgatsPinned,
   saveShowRemainingUsage,
   useComposerAutocorrect,
+  useNextPromptSuggestions,
   useMaskEmails,
   useRailIrgatsPinned,
   useShowRemainingUsage,
@@ -1134,6 +1136,7 @@ function ChatPage() {
   const [formatOnSave, setFormatOnSave] = useState(loadFormatOnSave);
   const [composerRunner, setComposerRunner] = useState(loadComposerRunner);
   const composerAutocorrect = useComposerAutocorrect();
+  const nextPromptSuggestions = useNextPromptSuggestions();
   const [gridArcadeEnabled, setGridArcadeEnabled] = useState(
     loadGridArcadeEnabled,
   );
@@ -1267,6 +1270,17 @@ function ChatPage() {
             label="Autocorrect"
             on={composerAutocorrect}
             onChange={saveComposerAutocorrect}
+          />
+        </Row>
+        <Row
+          id="next-prompt"
+          label="Suggest next message"
+          description="When a reply finishes, the empty composer shows the message you will likely send next in grey. Press Tab (or tap Use on your phone) to put it in the box, then edit or send it; Escape hides it. Uses the Gemini key from Voice; chats started from an email are left out."
+        >
+          <Toggle
+            label="Suggest next message"
+            on={nextPromptSuggestions}
+            onChange={saveNextPromptSuggestions}
           />
         </Row>
       </Group>

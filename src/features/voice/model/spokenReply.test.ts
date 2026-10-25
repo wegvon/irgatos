@@ -18,6 +18,7 @@ describe("latestReply", () => {
     expect(latestReply(blocks)).toEqual({
       id: "a2",
       text: "Fixed the failing test.",
+      prompts: ["fix it"],
     });
   });
 
@@ -40,7 +41,21 @@ describe("latestReply", () => {
       latestReply(blocks, [
         { id: "q1", blockId: "u2", text: "queued", attachments: [] },
       ]),
-    ).toEqual({ id: "a1", text: "Answer" });
+    ).toEqual({ id: "a1", text: "Answer", prompts: ["first"] });
+  });
+
+  it("carries the user's last three prompts, oldest first", () => {
+    const blocks = [
+      block("u1", "user", "one"),
+      block("a1", "assistant", "1"),
+      block("u2", "user", "two"),
+      block("a2", "assistant", "2"),
+      block("u3", "user", " "),
+      block("u4", "user", "three"),
+      block("u5", "user", "four"),
+      block("a3", "assistant", "Done."),
+    ];
+    expect(latestReply(blocks)?.prompts).toEqual(["two", "three", "four"]);
   });
 });
 

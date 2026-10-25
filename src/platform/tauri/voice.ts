@@ -207,6 +207,29 @@ export async function summarizeReply(
   }
 }
 
+/**
+ * The message the user will likely type next after `reply`, from Gemini, or
+ * null without a Live voice key, outside the app, for chats started from an
+ * email, when nothing is likely to follow, or when the call fails.
+ */
+export async function suggestNextPrompt(
+  reply: string,
+  prompts: readonly string[] = [],
+  sessionId?: string,
+): Promise<string | null> {
+  try {
+    if (!isTauri()) return null;
+    const text = await invoke<string | null>("next_prompt_suggest", {
+      reply,
+      prompts,
+      sessionId: sessionId ?? null,
+    });
+    return text?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /** The chosen service generates speech; macOS plays its WAV. */
 export async function speak(
   text: string,
