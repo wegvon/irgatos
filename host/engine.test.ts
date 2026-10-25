@@ -226,6 +226,34 @@ describe("headless session ownership", () => {
     ).toBe("built");
   });
 
+  it("hands the standing prompt to the provider on the first turn only, outside the user's message", async () => {
+    const { engine, store, turns, id } = setup();
+    const context = "<standing_prompt>\nAnswer in Turkish.\n</standing_prompt>";
+    engine.command({ type: "send", commandId: "first", sessionId: id, text: "Hello", context });
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect(turns[0].input.text).toBe(`Hello\n\n${context}`);
+    turns[0].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    engine.command({ type: "send", commandId: "second", sessionId: id, text: "Again", context });
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.text).toBe("Again");
+    turns[1].finish();
+    await vi.waitFor(() => expect(store.session(id).status).toBe("idle"));
+    expect(
+      store.session(id).session.blocks.filter((block) => block.role === "user").map((block) => block.text),
+    ).toEqual(["Hello", "Again"]);
+  });
+
+  it("rejects a turn context that is not a string or too long", () => {
+    for (const context of [42, "x".repeat(32_001), "a\0b"])
+      expect(() =>
+        parseCommand({ type: "send", commandId: "x", sessionId: "y", text: "Hi", context }),
+      ).toThrow("Invalid turn context");
+    expect(() =>
+      parseCommand({ type: "draft", commandId: "x", sessionId: "y", text: "Hi", context: "c" }),
+    ).toThrow("Invalid turn context");
+  });
+
   it("keeps a manually renamed title when first-turn generation finishes later", async () => {
     const { engine, store, provider, turns, id } = setup();
     let finishTitle: (title: {

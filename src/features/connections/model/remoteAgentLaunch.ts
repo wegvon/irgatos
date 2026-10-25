@@ -1,6 +1,7 @@
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { resolveModel } from "../../sessions/model/models";
 import { DEFAULT_RUNTIME_MODE } from "../../sessions/model/session";
+import { withStandingPrompt } from "../../sessions/model/standingPrompt";
 import { remoteMachineFor, remoteRequest } from "./connections";
 import { isRemoteProvider, type CommandReceipt } from "./protocol";
 import { parseRemotePath, remoteProjectFor } from "./remoteProjects";
@@ -56,6 +57,7 @@ export async function launchRemoteSession(
     sessionId: created.sessionId,
     text: launch.prompt,
     ...(launch.intent === "plan" ? { intent: "plan" } : {}),
+    ...withStandingPrompt(),
   });
   return { machineId: machine.id, sessionId: created.sessionId };
 }

@@ -10,6 +10,7 @@ import { recoverCursorSubagents } from "../../../integrations/harness/providers/
 import { persistableAttachment } from "../model/attachments";
 import { ARTIFACT_KINDS } from "../../artifacts/artifacts";
 import { forgetAdhdChat } from "../../adhd/model/adhdMode";
+import { forgetStandingPrompt } from "../model/standingPrompt";
 import type { ContextUsage } from "../model/contextUsage";
 import {
   isRemoteProjectPath,
@@ -794,6 +795,7 @@ export async function deleteSession(
     );
     irgatSavedBlocks.delete(sessionId);
     forgetAdhdChat(sessionId);
+    forgetStandingPrompt(sessionId);
     const tombstone = setTimeout(
       () => deletedSessionIds.delete(sessionId),
       60_000,

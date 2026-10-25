@@ -701,6 +701,10 @@ import {
   recordAdhdContext,
 } from "../features/adhd/model/adhdMode";
 import {
+  planStandingPrompt,
+  recordStandingPrompt,
+} from "../features/sessions/model/standingPrompt";
+import {
   consumeOperatorCommand,
   operatorEnabledInThread,
 } from "../features/sessions/model/operatorCommand";
@@ -9007,6 +9011,14 @@ function Workspace({
                   { force: !!editedResend },
                 );
           if (adhdPlan.context) appContext.push(adhdPlan.context);
+          // The user's standing prompt from Settings > Chat, once per conversation.
+          const standingPlan =
+            rawCommand || proposalDraft
+              ? {}
+              : planStandingPrompt(sessionId, current.providerSessionId, {
+                  force: !!editedResend,
+                });
+          if (standingPlan.context) appContext.push(standingPlan.context);
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
@@ -9066,6 +9078,14 @@ function Workspace({
               sessionsRef.current.find((session) => session.id === sessionId)
                 ?.providerSessionId ?? current.providerSessionId,
               adhdPlan.state,
+            );
+          }
+          if (standingPlan.version && !providerFailureSeen) {
+            recordStandingPrompt(
+              sessionId,
+              sessionsRef.current.find((session) => session.id === sessionId)
+                ?.providerSessionId ?? current.providerSessionId,
+              standingPlan.version,
             );
           }
           if (agentFiles) {
