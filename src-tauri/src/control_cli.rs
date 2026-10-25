@@ -82,11 +82,13 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 61] = [
+const APP_ACTIONS: [&str; 63] = [
     "code.search",
     "secrets.request",
     "secrets.list",
     "secrets.http",
+    "secrets.run",
+    "secrets.login",
     "browser.state",
     "browser.read",
     "browser.open",
@@ -179,8 +181,11 @@ Actions:
                   Returns pending: end your turn, Irgatos continues once it is
                   saved. Returns ready when it is already saved. Never ask the
                   user to paste a secret into the chat.
-  secrets.list  {} Secrets this chat may use: name, placeholder, hosts, where
-                  it may be placed, purpose, uses left and expiry. No values.
+  secrets.list  {} Secrets this chat may use, from the user's vault and this
+                  chat: name, placeholder, kind (key or login, with its
+                  username), note, hosts, where it may be placed, purpose,
+                  access, uses left and expiry. No values. Check it before
+                  asking: what the user saved is there.
   secrets.http  {"method":"POST","url":"https://api.stripe.com/v1/charges",
                   "headers":{"Authorization":"Bearer {{secret:STRIPE_KEY}}"},
                   "body":"amount=100" | "json":{...},"purpose":"deploy",
@@ -191,7 +196,28 @@ Actions:
                   in the host or outside its allowed places, or the purpose
                   does not match. Redirects are not followed. Returns status,
                   headers and body; secret values and secret-shaped text in
-                  them read [REDACTED]. Placeholders mean nothing anywhere
+                  them read [REDACTED]. A vault value the user set to ask
+                  first returns approval_pending: end your turn, Irgatos
+                  continues you once they answer, then retry the call.
+  secrets.run   {"command":["gh","api","user"],
+                  "env":{"GH_TOKEN":"{{secret:GH_TOKEN}}"},"purpose":"deploy",
+                  "timeoutSeconds":30,"maxChars":20000}  (timeout 1-35 s)
+                  Run one program with a vault value in an environment
+                  variable of that process only. command is the program (a
+                  bare name looked up on the user's PATH, never a path) and
+                  its arguments; placeholders go in env only, never in the
+                  command line. Refused, and nothing runs, unless the user
+                  allowed that program for the secret (secrets.list shows
+                  commands). No shell and no input. Returns exitCode,
+                  timedOut, stdout and stderr, scrubbed like secrets.http.
+  secrets.login {"name":"GITHUB_LOGIN","submit":true,"purpose":"deploy"}
+                  Fill a vault login (username and password) into the login
+                  form of the page open in the Irgatos Browser, and submit it
+                  (submit defaults to true). Only on HTTPS pages of the
+                  login's sites; refused, and nothing is filled, anywhere
+                  else. A username-only step fills the username; call again
+                  on the password step. Returns what was filled, never the
+                  values. browser.eval pauses for 2 minutes afterwards. Placeholders mean nothing anywhere
                   else: your own shell and tools get the literal text.
   browser.state {} The Irgatos Browser the user sees beside this chat: whether
                   it is open and shown, the active page's url, title and

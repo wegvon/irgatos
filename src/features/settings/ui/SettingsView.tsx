@@ -52,6 +52,12 @@ import {
   ADHD_RULE_TITLES,
   ADHD_UPSTREAM,
 } from "../../adhd/model/adhdRules";
+import {
+  loadStandingPrompt,
+  saveStandingPrompt,
+  STANDING_PROMPT_CHANGE_EVENT,
+  STANDING_PROMPT_MAX_CHARS,
+} from "../../sessions/model/standingPrompt";
 import { JiraSettings } from "./JiraSettings";
 import { GradientBlurBackground } from "./GradientBlurBackground";
 import { McpSettings } from "./McpSettings";
@@ -1071,6 +1077,50 @@ function GeneralPage({
   );
 }
 
+function StandingPromptGroup() {
+  const [text, setText] = useState(loadStandingPrompt);
+
+  useEffect(() => {
+    const onChange = (event: Event) => {
+      const next = (event as CustomEvent<string>).detail;
+      if (typeof next === "string") setText(next);
+    };
+    window.addEventListener(STANDING_PROMPT_CHANGE_EVENT, onChange);
+    return () => {
+      window.removeEventListener(STANDING_PROMPT_CHANGE_EVENT, onChange);
+    };
+  }, []);
+
+  return (
+    <Group
+      id="standing-prompt"
+      title="Standing prompt"
+      description="Every chat hears this once when it starts, and again if you change it: coding agents and Irgats, Live voice, on this Mac, on other machines and from your phone. It is not shown in the transcript."
+    >
+      <div className="px-4 py-3.5">
+        <textarea
+          aria-label="Standing prompt"
+          value={text}
+          maxLength={STANDING_PROMPT_MAX_CHARS}
+          onChange={(event) => {
+            setText(event.target.value);
+            saveStandingPrompt(event.target.value);
+          }}
+          rows={5}
+          placeholder="For example: Answer in Turkish. Ask before deleting anything."
+          className="block min-h-[96px] w-full resize-y rounded-md border border-stroke bg-background-base px-2.5 py-2 text-[13px] leading-relaxed text-content placeholder:text-content/35"
+        />
+        <div className="mt-1.5 flex items-center justify-between text-[12px] text-content/45">
+          <span>{text.trim() ? "On for every new chat." : "Empty: chats hear nothing extra."}</span>
+          <span>
+            {text.length.toLocaleString()} / {STANDING_PROMPT_MAX_CHARS.toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </Group>
+  );
+}
+
 function ChatPage() {
   const [transcriptLayout, setTranscriptLayout] =
     useState<TranscriptLayout>(loadTranscriptLayout);
@@ -1140,6 +1190,8 @@ function ChatPage() {
 
   return (
     <>
+      <StandingPromptGroup />
+
       <Group
         title="Transcript"
         description="How a conversation reads as it grows."

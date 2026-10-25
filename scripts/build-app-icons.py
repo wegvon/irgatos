@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Regenerate the Irgatos app icon set from a single geometry definition.
 
-The mark is a capstan drum seen from above: an "irgat" is both a labourer and
-the geared winch drum that does the hauling. Everything below is derived from
-the two SVGs this script writes, so the committed vector art and the shipped
+The mark is the selected "ır" design: the Turkish dotless ı and an r joined
+into one flat geometric ligature, near-black on a white tile. Everything below is derived from the two SVGs this script writes,
+so the committed vector art and the shipped
 rasters can never drift apart.
 
     pip install pillow cairosvg
@@ -16,14 +16,17 @@ Platform framing differs on purpose:
   * Windows (`icon.ico`, `Square*Logo.png`, `StoreLogo.png`) gets the
     edge-to-edge tile with no shadow, which is what Windows draws its own
     treatment around.
-  * `macos/AppIcon.icon` carries the mark alone on transparency; macOS 26's
-    Icon Composer supplies the background fill, and `menu_bar_icon()` in
+  * `public/apple-touch-icon.png` is a full-bleed square, because iOS masks
+    home-screen icons itself and would show the tile's transparent corners.
+  * `macos/AppIcon.icon` carries the mark alone on transparency, drawn white so
+    the menu-bar template keeps it; Icon Composer paints it with MARK_SOLID
+    on the BG_SOLID fill, and `menu_bar_icon()` in
     `src-tauri/src/irgat_chat.rs` turns the same PNG into the menu-bar template.
 """
 
 from __future__ import annotations
 
-import math
+import shutil
 import struct
 import subprocess
 import sys
@@ -44,40 +47,15 @@ PUBLIC = ROOT / "public"
 
 CANVAS = 1024
 
-# Deep copper, so the tile reads as warm metal rather than a greyscale slab.
-BG_STOPS = [(0.0, "#E05D1D"), (0.52, "#B33B0C"), (1.0, "#8A2607")]
-BG_SOLID = "#B8400F"  # flat stand-in for Icon Composer's background fill
-CREAM_STOPS = [(0.0, "#FFFDF9"), (1.0, "#FFE9CE")]
-
-# Capstan geometry, in canvas units on the edge-to-edge 1024 tile. The drum is
-# drawn in profile: two rims around a waisted barrel with the rope wound on it.
-# That profile is also an I, so the mark doubles as the Irgatos initial.
-FLANGE_HALF_W = 252
-FLANGE_H = 118
-GLYPH_HALF_H = 324
-WAIST_HALF_W = 124
-TAPER = 46  # tight fillet, so the barrel stays a drum and never an hourglass
-RIM_RADIUS = 42
-COIL_HALF_W = 98
-COIL_H = 38
-COIL_PITCH = 92
-
-MAC_CONTENT = 824  # Apple's macOS app icon content box inside 1024
+# Colors and geometry of the approved 15 / ır concept.
+BG_STOPS = [(0.0, "#FFFFFF"), (1.0, "#F4F4F6")]
+BG_SOLID = "#FFFFFF"
+MARK_SOLID = "#111111"
+TILE_RADIUS = 98 * CANVAS / 432
+MAC_CONTENT = 824
 SHADOW_BLUR = 22
 SHADOW_OFFSET = 20
-SHADOW_ALPHA = 78
-
-
-def squircle_path(cx: float, cy: float, half: float, n: float = 5.0, steps: int = 720) -> str:
-    """Superellipse |x|^n + |y|^n = 1, the continuous-curvature Apple tile shape."""
-    points = []
-    for i in range(steps):
-        t = 2 * math.pi * i / steps
-        ct, st = math.cos(t), math.sin(t)
-        x = math.copysign(abs(ct) ** (2 / n), ct) * half
-        y = math.copysign(abs(st) ** (2 / n), st) * half
-        points.append(f"{cx + x:.3f},{cy + y:.3f}")
-    return "M" + "L".join(points) + "Z"
+SHADOW_ALPHA = 40
 
 
 def _stops(stops: list[tuple[float, str]]) -> str:
@@ -86,97 +64,30 @@ def _stops(stops: list[tuple[float, str]]) -> str:
     )
 
 
-def _coil_subpath(dy: float) -> str:
-    """A rope turn across the barrel, knocked out of the cream glyph."""
-    radius = COIL_H / 2
-    left, right = 512 - COIL_HALF_W, 512 + COIL_HALF_W
-    top, bottom = 512 + dy - radius, 512 + dy + radius
+def mark_body(color: str = MARK_SOLID) -> str:
+    # Stem and shoulder of "ır", centred on the 1024 canvas at 1.2x the preview.
     return (
-        f"M{left + radius:.0f},{top:.0f}L{right - radius:.0f},{top:.0f}"
-        f"A{radius:.0f},{radius:.0f} 0 0 1 {right - radius:.0f},{bottom:.0f}"
-        f"L{left + radius:.0f},{bottom:.0f}"
-        f"A{radius:.0f},{radius:.0f} 0 0 1 {left + radius:.0f},{top:.0f}Z"
-    )
-
-
-def capstan_path() -> str:
-    cx = cy = 512
-    outer_x = (cx - FLANGE_HALF_W, cx + FLANGE_HALF_W)
-    waist_x = (cx - WAIST_HALF_W, cx + WAIST_HALF_W)
-    top, bottom = cy - GLYPH_HALF_H, cy + GLYPH_HALF_H
-    rim_in_top, rim_in_bottom = top + FLANGE_H, bottom - FLANGE_H
-    waist_top, waist_bottom = rim_in_top + TAPER, rim_in_bottom - TAPER
-    r = RIM_RADIUS
-
-    def taper(x_from: float, y_from: float, x_to: float, y_to: float) -> str:
-        """Quarter-ellipse fillet off a rim and onto the barrel."""
-        k = 0.5523
-        return (
-            f"C{x_from:.1f},{y_from + k * (y_to - y_from):.1f} "
-            f"{x_to + k * (x_from - x_to):.1f},{y_to:.1f} {x_to:.1f},{y_to:.1f}"
-        )
-
-    glyph = (
-        f"M{outer_x[0] + r:.0f},{top:.0f}"
-        f"L{outer_x[1] - r:.0f},{top:.0f}"
-        f"A{r:.0f},{r:.0f} 0 0 1 {outer_x[1]:.0f},{top + r:.0f}"
-        f"L{outer_x[1]:.0f},{rim_in_top:.0f}"
-        f"{taper(outer_x[1], rim_in_top, waist_x[1], waist_top)}"
-        f"L{waist_x[1]:.0f},{waist_bottom:.0f}"
-        f"{taper(waist_x[1], waist_bottom, outer_x[1], rim_in_bottom)}"
-        f"L{outer_x[1]:.0f},{bottom - r:.0f}"
-        f"A{r:.0f},{r:.0f} 0 0 1 {outer_x[1] - r:.0f},{bottom:.0f}"
-        f"L{outer_x[0] + r:.0f},{bottom:.0f}"
-        f"A{r:.0f},{r:.0f} 0 0 1 {outer_x[0]:.0f},{bottom - r:.0f}"
-        f"L{outer_x[0]:.0f},{rim_in_bottom:.0f}"
-        f"{taper(outer_x[0], rim_in_bottom, waist_x[0], waist_bottom)}"
-        f"L{waist_x[0]:.0f},{waist_top:.0f}"
-        f"{taper(waist_x[0], waist_top, outer_x[0], rim_in_top)}"
-        f"L{outer_x[0]:.0f},{top + r:.0f}"
-        f"A{r:.0f},{r:.0f} 0 0 1 {outer_x[0] + r:.0f},{top:.0f}Z"
-    )
-    return glyph + "".join(_coil_subpath(dy * COIL_PITCH) for dy in (-1, 0, 1))
-
-
-def mark_defs() -> str:
-    return (
-        f'<linearGradient id="cream" x1="0" y1="{512 - GLYPH_HALF_H}" x2="0" y2="{512 + GLYPH_HALF_H}" '
-        f'gradientUnits="userSpaceOnUse">{_stops(CREAM_STOPS)}</linearGradient>'
-    )
-
-
-def mark_body() -> str:
-    return f'<path fill="url(#cream)" fill-rule="evenodd" d="{capstan_path()}"/>'
-
-
-def mark_svg() -> str:
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
-        f'viewBox="0 0 {CANVAS} {CANVAS}">'
-        f"<defs>{mark_defs()}</defs>{mark_body()}</svg>\n"
-    )
-
-
-def tile_svg() -> str:
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
-        f'viewBox="0 0 {CANVAS} {CANVAS}">'
-        "<defs>"
-        '<linearGradient id="copper" x1="0" y1="0" x2="1024" y2="1024" '
-        f'gradientUnits="userSpaceOnUse">{_stops(BG_STOPS)}</linearGradient>'
-        '<radialGradient id="sheen" cx="300" cy="226" r="760" gradientUnits="userSpaceOnUse">'
-        '<stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>'
-        '<stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>'
-        "</radialGradient>"
-        f'<clipPath id="tile"><path d="{squircle_path(512, 512, 512)}"/></clipPath>'
-        f"{mark_defs()}"
-        "</defs>"
-        '<g clip-path="url(#tile)">'
-        '<rect width="1024" height="1024" fill="url(#copper)"/>'
-        '<rect width="1024" height="1024" fill="url(#sheen)"/>'
-        f"{mark_body()}"
+        f'<g fill="{color}" transform="translate(512 512) scale(1.2) translate(-518 -590)">'
+        '<rect x="330" y="404" width="118" height="372" rx="8"/>'
+        '<path d="M490 776 L490 620 Q490 404 706 404 L706 520 Q608 520 608 620 L608 776 Z"/>'
         "</g>"
-        "</svg>\n"
+    )
+
+
+def mark_svg(color: str = MARK_SOLID) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
+        f'viewBox="0 0 {CANVAS} {CANVAS}">{mark_body(color)}</svg>\n'
+    )
+
+
+def tile_svg(radius: float = TILE_RADIUS) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{CANVAS}" height="{CANVAS}" '
+        f'viewBox="0 0 {CANVAS} {CANVAS}">'
+        f'<defs><linearGradient id="paper" x2="0" y2="1">{_stops(BG_STOPS)}</linearGradient></defs>'
+        f'<rect width="1024" height="1024" rx="{radius}" fill="url(#paper)"/>'
+        f"{mark_body()}</svg>\n"
     )
 
 
@@ -197,11 +108,10 @@ def mac_master(tile: Image.Image) -> Image.Image:
     offset = (CANVAS - MAC_CONTENT) // 2
     shadow = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     silhouette = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
-    ImageDraw.Draw(silhouette).polygon(
-        [
-            tuple(float(v) for v in point.split(","))
-            for point in squircle_path(512, 512 + SHADOW_OFFSET, MAC_CONTENT / 2)[1:-1].split("L")
-        ],
+    ImageDraw.Draw(silhouette).rounded_rectangle(
+        (offset, offset + SHADOW_OFFSET, offset + MAC_CONTENT - 1,
+         offset + SHADOW_OFFSET + MAC_CONTENT - 1),
+        radius=TILE_RADIUS * MAC_CONTENT / CANVAS,
         fill=(0, 0, 0, SHADOW_ALPHA),
     )
     shadow.alpha_composite(silhouette)
@@ -331,10 +241,10 @@ def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def build_sidebar(tile: Image.Image, path: Path) -> None:
-    """NSIS installer sidebar: copper panel, mark, wordmark."""
+    """NSIS installer sidebar: paper panel, mark, wordmark."""
     width, height = SIDEBAR_SIZE
     panel = Image.new("RGB", (width, height), (0, 0, 0))
-    top, bottom = (222, 93, 29), (122, 33, 8)
+    top, bottom = (255, 255, 255), (244, 244, 246)
     draw = ImageDraw.Draw(panel)
     for y in range(height):
         ratio = y / (height - 1)
@@ -347,7 +257,7 @@ def build_sidebar(tile: Image.Image, path: Path) -> None:
     label = "IRGATOS"
     font = _font(19)
     text_width = draw.textlength(label, font=font)
-    draw.text(((width - text_width) / 2, 192), label, font=font, fill=(255, 244, 232))
+    draw.text(((width - text_width) / 2, 192), label, font=font, fill=(17, 17, 17))
     panel.save(path, "BMP")
     print(f"  {path.relative_to(ROOT)} {width}x{height}")
 
@@ -360,7 +270,6 @@ def main() -> None:
     print("  src-tauri/icons/irgatos-icon.svg\n  src-tauri/icons/irgatos-mark.svg")
 
     tile = render(tile_source, CANVAS)
-    mark = render(mark_source, CANVAS)
     mac = mac_master(tile)
 
     print("macOS / Linux rasters (Apple grid, inset + shadow)")
@@ -380,24 +289,40 @@ def main() -> None:
     build_sidebar(tile, ICONS / "installer-sidebar.bmp")
 
     print("Icon Composer layer + in-app mark")
-    write_png(mark, APPICON / "Assets" / "icon.png")
+    write_png(render(mark_svg("#FFFFFF"), CANVAS), APPICON / "Assets" / "icon.png")
     write_png(downscale(tile, 512), PUBLIC / "irgat.png")
+    write_png(render(tile_svg(radius=0), 180), PUBLIC / "apple-touch-icon.png")
 
     icon_json = APPICON / "icon.json"
-    red, green, blue = (int(BG_SOLID[i : i + 2], 16) / 255 for i in (1, 3, 5))
-    fill = f"extended-srgb:{red:.5f},{green:.5f},{blue:.5f},1.00000"
     text = icon_json.read_text()
+    background, mark_fill = (
+        "extended-srgb:{:.5f},{:.5f},{:.5f},1.00000".format(
+            *(int(color[i : i + 2], 16) / 255 for i in (1, 3, 5))
+        )
+        for color in (BG_SOLID, MARK_SOLID)
+    )
     start = text.index('"solid" : "') + len('"solid" : "')
-    icon_json.write_text(text[:start] + fill + text[text.index('"', start) :])
-    print(f"  src-tauri/macos/AppIcon.icon/icon.json fill {fill}")
+    text = text[:start] + background + text[text.index('"', start) :]
+    layer_fill = text.index('"fill" : ', start)
+    text = (
+        text[:layer_fill]
+        + f'"fill" : {{\n            "solid" : "{mark_fill}"\n          }}'
+        + text[text.index(",", layer_fill) :]
+    )
+    icon_json.write_text(text)
+    print(f"  src-tauri/macos/AppIcon.icon/icon.json fill {background}, mark {mark_fill}")
 
     print(
         "\nreminder: src-tauri/macos/Assets.car is compiled from AppIcon.icon by\n"
         "Icon Composer / actool and can only be rebuilt on macOS:\n"
         "  ./scripts/build-macos-assets-car.sh"
     )
-    if sys.platform == "darwin":
-        subprocess.run([str(ROOT / "scripts" / "build-macos-assets-car.sh")], check=False)
+    if sys.platform == "darwin" and shutil.which("xcrun"):
+        compiler = subprocess.run(["xcrun", "--find", "actool"], capture_output=True)
+        if compiler.returncode == 0:
+            subprocess.run([str(ROOT / "scripts" / "build-macos-assets-car.sh")], check=True)
+        else:
+            print("actool unavailable; macOS release and dev bundles use the generated ICNS.")
 
 
 if __name__ == "__main__":

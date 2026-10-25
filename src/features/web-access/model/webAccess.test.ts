@@ -23,6 +23,7 @@ import {
   handleWebAccess,
   ownerName,
   resetWebAccessCacheForTest,
+  webBlock,
   type WebAccessDeps,
 } from "./webAccess";
 
@@ -115,6 +116,7 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
       text: await file.text(),
     })),
     approve: vi.fn(),
+    answerSecretApproval: vi.fn(async () => undefined),
     answer: vi.fn(),
     stop: vi.fn(),
     launch: vi.fn(async () => {}),
@@ -653,6 +655,39 @@ describe("handleWebAccess", () => {
     expect(d.approve).toHaveBeenCalledWith("a", 7, "allow");
     expect(d.approve).toHaveBeenCalledWith("a", 8, "allow");
     expect(result).toEqual({ decided: "allow", allowed: 2 });
+  });
+
+  it("answers a vault approval like the card on the Mac", async () => {
+    const secretApproval = {
+      requestId: "r1",
+      sessionId: "a",
+      secretId: "s1",
+      name: "GH_TOKEN",
+      label: "GitHub token",
+      kind: "key" as const,
+      action: "secrets.http",
+      method: "GET",
+      target: "api.github.com",
+      state: "pending" as const,
+    };
+    const card: Block = { id: "b-approval", role: "system", text: "", secretApproval };
+    const d = deps([chat("a", { blocks: [sent, card] })]);
+    expect(webBlock(card, "/").secretApproval).toEqual({
+      name: "GH_TOKEN",
+      label: "GitHub token",
+      target: "api.github.com",
+      state: "pending",
+    });
+    expect(
+      await handleWebAccess(d, "secretApproval", { sessionId: "a", blockId: "b-approval", answer: "chat" }),
+    ).toEqual({ answered: "chat" });
+    expect(d.answerSecretApproval).toHaveBeenCalledWith("b-approval", secretApproval, "chat");
+    await expect(
+      handleWebAccess(d, "secretApproval", { sessionId: "a", blockId: "b-approval", answer: "always" }),
+    ).rejects.toThrow("once, chat or deny");
+    await expect(
+      handleWebAccess(d, "secretApproval", { sessionId: "a", blockId: "missing", answer: "once" }),
+    ).rejects.toThrow("already answered");
   });
 
   it("answers the open question", async () => {

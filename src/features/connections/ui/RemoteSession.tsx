@@ -21,6 +21,7 @@ import { notifyGitChanged } from "../../../platform/tauri/fs";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
 import { registerRemoteSessionActions } from "../model/remoteSessionActions";
+import { withStandingPrompt } from "../../sessions/model/standingPrompt";
 import {
   clearPendingRemoteCommand,
   loadRemoteSession,
@@ -838,6 +839,8 @@ function ConnectedRemoteSession({
           intent,
           ...(draftBlockId ? { draftBlockId } : {}),
           ...(planBlockId ? { planBlockId } : {}),
+          // The host hands it over on the conversation's first turn only.
+          ...withStandingPrompt(),
         };
 
   const submit = (

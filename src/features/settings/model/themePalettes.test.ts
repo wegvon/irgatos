@@ -58,7 +58,7 @@ describe("colour palettes", () => {
       hex(
         Number(dark["--surface-hue"]),
         parseFloat(dark["--surface-saturation"]),
-        THEME_DARK_LIGHTNESS_DEFAULT,
+        parseFloat(dark["--background-lightness"] ?? `${THEME_DARK_LIGHTNESS_DEFAULT}`),
       ),
     );
     expect(swatch.dark.accent).toBe(hslHex(darkInk["--color-accent"]));

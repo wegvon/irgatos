@@ -91,9 +91,9 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "agents",
     label: "Chat",
     description:
-      "How transcripts read, what the composer does with a follow-up, how files save, and how diffs open.",
+      "A standing prompt every chat hears, how transcripts read, what the composer does with a follow-up, how files save, and how diffs open.",
     keywords:
-      "transcript composer prompt message diff review layout format save editor",
+      "transcript composer prompt message diff review layout format save editor standing system instructions",
   },
   {
     id: "voice",
@@ -143,11 +143,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: "secrets",
     group: "agents",
-    label: "Secrets",
+    label: "Vault",
     description:
-      "Passwords, API keys and tokens agents use without seeing them: where each may be sent, when it lapses, and where it was used.",
+      "API keys and logins agents use without seeing them: where each may be sent, whether to ask first, and where it was used.",
     keywords:
-      "secret password api key token credential vault keychain redact revoke gizli şifre anahtar",
+      "secret secrets password login username api key token credential vault keychain redact revoke gizli şifre anahtar kasa parola",
   },
   {
     id: "skills",
@@ -228,8 +228,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "secrets",
     section: "secrets",
-    label: "Secrets",
-    keywords: "secret password api key token credential vault keychain revoke audit",
+    label: "Vault",
+    keywords: "secret secrets password login api key token credential vault keychain revoke audit kasa",
   },
   {
     id: "mcp-servers",
@@ -459,6 +459,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     section: "appearance",
     label: "Chat background",
     keywords: "wallpaper image picture opacity backdrop",
+  },
+  {
+    id: "standing-prompt",
+    section: "chat",
+    label: "Standing prompt",
+    keywords:
+      "system prompt instructions every chat session inject always custom sabit talimat",
   },
   {
     id: "transcript-layout",

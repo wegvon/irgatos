@@ -150,6 +150,7 @@ import {
   webUsage,
   type WebLookupDeps,
 } from "./webLookups";
+import { settleSecretApproval, type SecretApproval } from "../../secrets/model/secrets";
 
 /**
  * Browser access: the Rust side serves a small page to the user's other
@@ -189,6 +190,12 @@ export type WebAccessDeps = {
     requestId: number,
     decision: ApprovalDecision,
   ) => void;
+  /** Answers a vault approval card as the card on the Mac would. */
+  answerSecretApproval: (
+    blockId: string,
+    approval: SecretApproval,
+    answer: "once" | "chat" | "deny",
+  ) => Promise<void>;
   answer: (
     sessionId: string,
     requestId: number,
@@ -280,6 +287,7 @@ export const webAccessDefaults: Omit<
   | "setRuntimeMode"
 > = {
   attach: async (file) => (await attachmentsFromFiles([file]))[0] ?? null,
+  answerSecretApproval: settleSecretApproval,
   projects: () => loadRecents().map((project) => project.path),
   freeChatDir: resolveFreeChatDir,
   choice: (cwd) => defaultSessionChoice(cwd),
@@ -596,6 +604,16 @@ export function webBlock(block: Block, cwd: string): WebBlock {
           },
         }
       : {}),
+    ...(block.secretApproval
+      ? {
+          secretApproval: {
+            name: block.secretApproval.name,
+            label: block.secretApproval.label,
+            target: block.secretApproval.target,
+            state: block.secretApproval.state,
+          },
+        }
+      : {}),
     ...(files.length ? { files: files.map((file) => file.name) } : {}),
     ...(images.length
       ? { images: images.map((image, index) => ({ index, name: image.name })) }
@@ -895,6 +913,18 @@ export async function handleWebAccess(
         deps.setRuntimeMode(session.id, "full-access");
       for (const requestId of open) deps.approve(session.id, requestId, "allow");
       return { decided: "allow", allowed: open.length };
+    }
+    case "secretApproval": {
+      const session = await findSession(deps, input);
+      const blockId = typeof input.blockId === "string" ? input.blockId : "";
+      const answer = input.answer;
+      if (answer !== "once" && answer !== "chat" && answer !== "deny")
+        throw new Error("Answer must be once, chat or deny");
+      const approval = session.blocks.find((block) => block.id === blockId)?.secretApproval;
+      if (!approval || approval.state !== "pending")
+        throw new Error("This approval was already answered.");
+      await deps.answerSecretApproval(blockId, approval, answer);
+      return { answered: answer };
     }
     case "answer": {
       const session = await findSession(deps, input);

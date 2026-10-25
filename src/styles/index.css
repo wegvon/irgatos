@@ -350,30 +350,84 @@ html.theme-light.palette-rose {
   --link-color: hsl(336 40% 41%);
 }
 
-/* Claude's ivory and clay. Its light paper sits a little brighter. */
+/* Claude: the Claude desktop app's own colours, sampled from it (light,
+   2026-10) and from claude.ai's dark tokens. Unlike the other palettes it
+   also sets the dark paper's lightness, the sidebar, the user bubble and
+   full-strength reply text, so the two apps match side by side. */
 html.palette-claude:not(.theme-light):not(.has-theme-tint) {
-  --surface-hue: 48;
-  --surface-saturation: 6%;
-  --content-saturation: 12%;
-  --content-lightness: 90%;
+  --surface-hue: 60;
+  --surface-saturation: 3%;
+  --background-lightness: 14.5%;
+  --color-content: #faf9f5;
+  --claude-sidebar: #1f1e1d;
+  --claude-sidebar-ink: #c2c0b6;
+  --claude-panel: #30302e;
 }
 
 html.palette-claude:not(.theme-light) {
-  --color-on-accent: hsl(var(--surface-hue) var(--surface-saturation) 9%);
+  --color-on-accent: #fff;
   --color-accent: hsl(15 63% 60%);
   --link-color: hsl(20 70% 74%);
+  --claude-user-bubble: #141413;
 }
 
 html.theme-light.palette-claude:not(.has-theme-tint) {
-  --surface-hue: 48;
-  --surface-saturation: 33%;
-  --content-saturation: 16%;
-  --background-lightness: 97%;
+  --surface-hue: 60;
+  --surface-saturation: 20%;
+  --content-saturation: 0%;
+  --content-lightness: 4.3%;
+  --background-lightness: 98.6%;
+  --claude-sidebar: #fbfbf9;
+  /* Claude's rows are #52514f and its headers #898782; Irgatos draws
+     headers at half ink, so one ink in between serves both. */
+  --claude-sidebar-ink: #464542;
+  --claude-panel: #fff;
 }
 
 html.theme-light.palette-claude {
-  --color-accent: hsl(15 55% 52%);
-  --link-color: hsl(15 52% 40%);
+  --color-accent: hsl(15 55% 51%);
+  --link-color: hsl(220 50% 38%);
+  --color-mention: #305091;
+  --claude-user-bubble: #f3eaec;
+}
+
+html.palette-claude:not(.has-theme-tint) {
+  --color-stroke: color-mix(in srgb, var(--color-content) 10%, transparent);
+  --selection-subtle-strength: 5%;
+  --selection-strength: 8%;
+  --selection-strong-strength: 9%;
+  --selection-hover-strength: 6%;
+  --selection-emphasis-strength: 14%;
+}
+
+/* Claude's sidebar is a touch greyer than the chat and writes in a softer
+   ink. The derived fills are restated so they mix with that ink. */
+html.palette-claude:not(.has-theme-tint) .sidebar-glass {
+  background: var(--claude-sidebar);
+  --color-content: var(--claude-sidebar-ink);
+  --color-stroke: color-mix(in srgb, var(--color-content) 12%, transparent);
+  --color-selection-subtle: color-mix(in srgb, var(--color-content) 5%, transparent);
+  --color-selection: color-mix(in srgb, var(--color-content) 8%, transparent);
+  --color-selection-strong: color-mix(in srgb, var(--color-content) 9%, transparent);
+  --color-selection-hover: color-mix(in srgb, var(--color-content) 6%, transparent);
+  --color-selection-emphasis: color-mix(in srgb, var(--color-content) 14%, transparent);
+}
+
+html.palette-claude:not(.has-theme-tint) [data-composer-box],
+html.palette-claude:not(.has-theme-tint) .agent-chat-composer {
+  background: var(--claude-panel);
+}
+
+html.palette-claude:not(.has-user-accent)
+  .user-message-bubble:not([data-draft="true"]),
+html.palette-claude:not(.has-user-accent) .agent-chat-user-bubble {
+  background: var(--claude-user-bubble);
+  color: var(--color-content);
+}
+
+html.palette-claude .agent-markdown p,
+html.palette-claude .agent-markdown li {
+  color: var(--color-content);
 }
 
 /* Blue/orange stays distinguishable for protanopia, deuteranopia and
@@ -4200,4 +4254,78 @@ html.theme-light .btw-burst {
     var(--color-content) 10%,
     var(--color-background-base)
   );
+}
+
+/* Agent status card above a coding chat's composer (AgentRunCard). */
+.agent-run-star--running svg {
+  animation: agent-run-star-spin 2.4s linear infinite;
+}
+.agent-run-star--waiting svg {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-accent) 70%, transparent));
+}
+@keyframes agent-run-star-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.agent-run-progress-fill {
+  width: 100%;
+  background: color-mix(in srgb, var(--color-accent) 45%, var(--color-content) 12%);
+  transition: background-color 300ms var(--motion-ease-out);
+}
+.agent-run-progress[data-state="running"] .agent-run-progress-fill {
+  width: 38%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-accent) 35%,
+    color-mix(in srgb, var(--color-accent) 40%, white) 55%,
+    var(--color-accent) 70%,
+    transparent
+  );
+  animation: agent-run-glide 1.6s var(--motion-ease-out) infinite;
+}
+.agent-run-progress[data-state="waiting_approval"] .agent-run-progress-fill {
+  background: var(--color-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+.agent-run-progress[data-state="done"] .agent-run-progress-fill {
+  background: color-mix(in srgb, var(--color-diff-add) 70%, var(--color-content) 10%);
+}
+.agent-run-progress[data-state="failed"] .agent-run-progress-fill {
+  background: rgb(239 68 68 / 0.85);
+}
+.agent-run-progress[data-state="paused"] .agent-run-progress-fill,
+.agent-run-progress[data-state="stopped"] .agent-run-progress-fill {
+  background: color-mix(in srgb, var(--color-content) 22%, transparent);
+}
+@keyframes agent-run-glide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(270%);
+  }
+}
+.agent-run-log-list {
+  transition: transform 320ms var(--motion-ease-out);
+}
+.agent-run-row-enter {
+  animation: agent-run-row-in 320ms var(--motion-ease-out);
+}
+@keyframes agent-run-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-run-star--running svg,
+  .agent-run-progress[data-state="running"] .agent-run-progress-fill,
+  .agent-run-row-enter {
+    animation: none;
+  }
+  .agent-run-log-list {
+    transition: none;
+  }
 }

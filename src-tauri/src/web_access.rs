@@ -37,7 +37,12 @@ const RECV_POLL: Duration = Duration::from_millis(250);
 const PAGE: &str = "web.html";
 /// Files the page loads besides its hashed `/assets/…` bundles; `sw.js` is
 /// the service worker that shows Web Push banners.
-const PUBLIC_FILES: [&str; 3] = ["/web.webmanifest", "/irgat.png", "/sw.js"];
+const PUBLIC_FILES: [&str; 4] = [
+    "/web.webmanifest",
+    "/irgat.png",
+    "/apple-touch-icon.png",
+    "/sw.js",
+];
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
@@ -67,7 +72,7 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 32] = [
+const WRITE_ACTIONS: [&str; 33] = [
     "upload",
     "send",
     "approval",
@@ -100,6 +105,7 @@ const WRITE_ACTIONS: [&str; 32] = [
     "setModel",
     "setEffort",
     "setMode",
+    "secretApproval",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.
@@ -1101,6 +1107,10 @@ mod tests {
         assert_eq!(
             route("GET", "/web.webmanifest", peer, TOKEN, None, false),
             Route::Static("/web.webmanifest".into())
+        );
+        assert_eq!(
+            route("GET", "/apple-touch-icon.png", peer, TOKEN, None, false),
+            Route::Static("/apple-touch-icon.png".into())
         );
         for path in [
             "/assets/../index.html",

@@ -186,13 +186,21 @@ import {
 import { OPEN_BROWSER_URL_EVENT } from "../features/source-control/model/worktreeEnv";
 import {
   claimSecretsHint,
+  pendingSecretApproval,
   pendingSecretRequest,
   SECRET_ANSWERED_EVENT,
+  SECRET_APPROVAL_EVENT,
+  SECRET_APPROVED_EVENT,
   SECRET_REQUEST_EVENT,
   secretAnswerPrompt,
+  secretApprovalBlock,
+  secretApprovalPrompt,
+  settledSecretApprovals,
   secretRequestBlock,
   secretsContext,
   type SecretAnswer,
+  type SecretApprovalAnswer,
+  type SecretApprovalEvent,
   type SecretRequestEvent,
 } from "../features/secrets/model/secrets";
 import { UsageFooter } from "./shell/UsageFooter";
@@ -701,6 +709,10 @@ import {
   planAdhdContext,
   recordAdhdContext,
 } from "../features/adhd/model/adhdMode";
+import {
+  planStandingPrompt,
+  recordStandingPrompt,
+} from "../features/sessions/model/standingPrompt";
 import {
   consumeOperatorCommand,
   operatorEnabledInThread,
@@ -9008,6 +9020,14 @@ function Workspace({
                   { force: !!editedResend },
                 );
           if (adhdPlan.context) appContext.push(adhdPlan.context);
+          // The user's standing prompt from Settings > Chat, once per conversation.
+          const standingPlan =
+            rawCommand || proposalDraft
+              ? {}
+              : planStandingPrompt(sessionId, current.providerSessionId, {
+                  force: !!editedResend,
+                });
+          if (standingPlan.context) appContext.push(standingPlan.context);
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
@@ -9067,6 +9087,14 @@ function Workspace({
               sessionsRef.current.find((session) => session.id === sessionId)
                 ?.providerSessionId ?? current.providerSessionId,
               adhdPlan.state,
+            );
+          }
+          if (standingPlan.version && !providerFailureSeen) {
+            recordStandingPrompt(
+              sessionId,
+              sessionsRef.current.find((session) => session.id === sessionId)
+                ?.providerSessionId ?? current.providerSessionId,
+              standingPlan.version,
             );
           }
           if (agentFiles) {
@@ -12151,9 +12179,38 @@ function Workspace({
       if (updated) continueWith(request.sessionId, secretAnswerPrompt(request));
     };
     window.addEventListener(SECRET_ANSWERED_EVENT, onAnswered);
+    // A vault value set to "ask": the user allows or denies it in the chat,
+    // then the agent hears the answer and retries or carries on without it.
+    const approvals = listen<SecretApprovalEvent>(SECRET_APPROVAL_EVENT, ({ payload }) => {
+      const block = secretApprovalBlock(payload);
+      if (!block) return;
+      replaceBlock(payload.sessionId, (session) =>
+        pendingSecretApproval(session.blocks, block.secretApproval!.secretId)
+          ? session
+          : { ...session, blocks: [...session.blocks, block] },
+      );
+    });
+    const onApproved = (event: Event) => {
+      const { blockId, approval } = (event as CustomEvent<SecretApprovalAnswer>).detail;
+      const updated = replaceBlock(approval.sessionId, (session) => {
+        const current = session.blocks.find((block) => block.id === blockId);
+        if (current?.secretApproval?.state !== "pending") return session;
+        return {
+          ...session,
+          blocks: session.blocks.map((block) =>
+            block.id === blockId ? { ...block, secretApproval: approval } : block,
+          ),
+        };
+      });
+      const settled = updated && settledSecretApprovals(updated.blocks, approval);
+      if (settled) continueWith(approval.sessionId, secretApprovalPrompt(settled));
+    };
+    window.addEventListener(SECRET_APPROVED_EVENT, onApproved);
     return () => {
       window.removeEventListener(SECRET_ANSWERED_EVENT, onAnswered);
+      window.removeEventListener(SECRET_APPROVED_EVENT, onApproved);
       void listening.then((stop) => stop());
+      void approvals.then((stop) => stop());
     };
   }, [persistSession]);
 

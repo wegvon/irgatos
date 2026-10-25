@@ -10,6 +10,7 @@ import { recoverCursorSubagents } from "../../../integrations/harness/providers/
 import { persistableAttachment } from "../model/attachments";
 import { ARTIFACT_KINDS } from "../../artifacts/artifacts";
 import { forgetAdhdChat } from "../../adhd/model/adhdMode";
+import { forgetStandingPrompt } from "../model/standingPrompt";
 import type { ContextUsage } from "../model/contextUsage";
 import {
   isRemoteProjectPath,
@@ -52,7 +53,7 @@ import { HARNESSES, RUNTIME_MODES } from "../model/session";
 import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
-import { sanitizeSecretRequest } from "../../secrets/model/secrets";
+import { sanitizeSecretApproval, sanitizeSecretRequest } from "../../secrets/model/secrets";
 
 export type SessionSummary = {
   sidebarHidden?: boolean;
@@ -794,6 +795,7 @@ export async function deleteSession(
     );
     irgatSavedBlocks.delete(sessionId);
     forgetAdhdChat(sessionId);
+    forgetStandingPrompt(sessionId);
     const tombstone = setTimeout(
       () => deletedSessionIds.delete(sessionId),
       60_000,
@@ -999,6 +1001,9 @@ function sanitizeBlock(
   const secretRequest =
     block.role === "system" ? sanitizeSecretRequest(block.secretRequest) : undefined;
   if (secretRequest) next.secretRequest = secretRequest;
+  const secretApproval =
+    block.role === "system" ? sanitizeSecretApproval(block.secretApproval) : undefined;
+  if (secretApproval) next.secretApproval = secretApproval;
   const projectAccess = block.irgatProjectAccess;
   if (block.role === "approval" &&
       typeof projectAccess?.irgatId === "string" && projectAccess.irgatId.trim() &&
