@@ -130,10 +130,12 @@ describe("vault approvals and search", () => {
       username: "wegvon",
       policy: "ask" as const,
       updatedAt: 0,
+      commands: ["gh"],
     };
     expect(matchesSecret(meta, "")).toBe(true);
     expect(matchesSecret(meta, "github wegvon")).toBe(true);
     expect(matchesSecret(meta, "stripe")).toBe(false);
+    expect(matchesSecret(meta, "gh")).toBe(true);
   });
 });
 

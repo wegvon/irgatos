@@ -82,11 +82,12 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 61] = [
+const APP_ACTIONS: [&str; 62] = [
     "code.search",
     "secrets.request",
     "secrets.list",
     "secrets.http",
+    "secrets.run",
     "browser.state",
     "browser.read",
     "browser.open",
@@ -196,7 +197,18 @@ Actions:
                   headers and body; secret values and secret-shaped text in
                   them read [REDACTED]. A vault value the user set to ask
                   first returns approval_pending: end your turn, Irgatos
-                  continues you once they answer, then retry the call. Placeholders mean nothing anywhere
+                  continues you once they answer, then retry the call.
+  secrets.run   {"command":["gh","api","user"],
+                  "env":{"GH_TOKEN":"{{secret:GH_TOKEN}}"},"purpose":"deploy",
+                  "timeoutSeconds":30,"maxChars":20000}  (timeout 1-35 s)
+                  Run one program with a vault value in an environment
+                  variable of that process only. command is the program (a
+                  bare name looked up on the user's PATH, never a path) and
+                  its arguments; placeholders go in env only, never in the
+                  command line. Refused, and nothing runs, unless the user
+                  allowed that program for the secret (secrets.list shows
+                  commands). No shell and no input. Returns exitCode,
+                  timedOut, stdout and stderr, scrubbed like secrets.http. Placeholders mean nothing anywhere
                   else: your own shell and tools get the literal text.
   browser.state {} The Irgatos Browser the user sees beside this chat: whether
                   it is open and shown, the active page's url, title and

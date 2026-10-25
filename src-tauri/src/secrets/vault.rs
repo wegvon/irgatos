@@ -48,6 +48,9 @@ pub struct SecretMeta {
     /// user's approval in the chat.
     pub policy: String,
     pub updated_at: i64,
+    /// Programs `secrets.run` may hand it to as an environment variable;
+    /// empty for none.
+    pub commands: Vec<String>,
 }
 
 impl SecretMeta {
@@ -73,6 +76,7 @@ pub struct NewSecret {
     pub kind: String,
     pub username: String,
     pub policy: String,
+    pub commands: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -136,8 +140,8 @@ impl Vault {
             .execute(
                 "INSERT INTO secrets (id, name, label, description, session_id, hosts, allow_in,
                    purpose, max_uses, uses, created_at, expires_at, nonce, ciphertext,
-                   kind, username, policy, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?10)",
+                   kind, username, policy, updated_at, commands)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?10, ?17)",
                 params![
                     id,
                     secret.name,
@@ -155,6 +159,7 @@ impl Vault {
                     secret.kind,
                     secret.username,
                     secret.policy,
+                    serde_json::to_string(&secret.commands).map_err(|e| e.to_string())?,
                 ],
             )
             .map_err(sql)?;
@@ -206,7 +211,7 @@ impl Vault {
             .execute(
                 "UPDATE secrets SET name = ?2, label = ?3, description = ?4, hosts = ?5,
                    allow_in = ?6, purpose = ?7, kind = ?8, username = ?9, policy = ?10,
-                   updated_at = ?11
+                   updated_at = ?11, commands = ?12
                  WHERE id = ?1",
                 params![
                     id,
@@ -220,6 +225,7 @@ impl Vault {
                     secret.username,
                     secret.policy,
                     now,
+                    serde_json::to_string(&secret.commands).map_err(|e| e.to_string())?,
                 ],
             )
             .map_err(sql)?;
@@ -478,7 +484,7 @@ fn audit_conn(conn: &Connection, entry: &AuditEntry) -> Result<(), String> {
     Ok(())
 }
 
-const META_COLUMNS: &str = "id, name, label, description, session_id, hosts, allow_in, purpose, max_uses, uses, created_at, expires_at, kind, username, policy, updated_at";
+const META_COLUMNS: &str = "id, name, label, description, session_id, hosts, allow_in, purpose, max_uses, uses, created_at, expires_at, kind, username, policy, updated_at, commands";
 
 fn meta_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecretMeta> {
     let hosts: String = row.get(5)?;
@@ -500,6 +506,7 @@ fn meta_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecretMeta> {
         username: row.get(13)?,
         policy: row.get(14)?,
         updated_at: row.get::<_, Option<i64>>(15)?.unwrap_or_default(),
+        commands: serde_json::from_str(&row.get::<_, String>(16)?).unwrap_or_default(),
     })
 }
 
@@ -551,6 +558,7 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         ("username", "TEXT NOT NULL DEFAULT ''"),
         ("policy", "TEXT NOT NULL DEFAULT 'free'"),
         ("updated_at", "INTEGER"),
+        ("commands", "TEXT NOT NULL DEFAULT '[]'"),
     ] {
         if !columns.iter().any(|c| c == column) {
             conn.execute_batch(&format!("ALTER TABLE secrets ADD COLUMN {column} {definition}"))
@@ -584,6 +592,7 @@ mod tests {
             kind: "key".into(),
             username: String::new(),
             policy: "free".into(),
+            commands: Vec::new(),
         }
     }
 

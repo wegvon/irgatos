@@ -72,6 +72,7 @@ type Draft = {
   policy: SecretPolicy;
   description: string;
   purpose: string;
+  commands: string;
 };
 
 const EMPTY: Draft = {
@@ -85,6 +86,7 @@ const EMPTY: Draft = {
   policy: "free",
   description: "",
   purpose: "",
+  commands: "",
 };
 
 function draftOf(meta: SecretMeta): Draft {
@@ -99,6 +101,7 @@ function draftOf(meta: SecretMeta): Draft {
     policy: meta.policy,
     description: meta.description,
     purpose: meta.purpose ?? "",
+    commands: (meta.commands ?? []).join(", "),
   };
 }
 
@@ -131,7 +134,11 @@ function SecretForm({
     if (!name) return setError("Give it a name.");
     if (!editing && !value.trim()) return setError(login ? "Enter the password." : "Enter the value.");
     const hosts = parseHosts(draft.hosts);
-    if (!hosts.length) return setError(login ? "Name the site it is for." : "Name at least one host it may be sent to.");
+    const commands = parseHosts(draft.commands);
+    if (!hosts.length && !commands.length)
+      return setError(
+        login ? "Name the site it is for." : "Name a host it may be sent to, or a program it may be given to.",
+      );
     const common = {
       name,
       label: draft.label.trim() || name,
@@ -142,6 +149,7 @@ function SecretForm({
       kind: draft.kind,
       username: login ? draft.username.trim() : "",
       policy: draft.policy,
+      commands,
     };
     setSaving(true);
     try {
@@ -253,6 +261,23 @@ function SecretForm({
           spellCheck={false}
           onChange={(event) => set({ hosts: event.target.value })}
         />
+      </label>
+
+      <label className={caption}>
+        Programs it may be given to (optional)
+        <input
+          className={`${field} mt-0.5 block w-full font-mono`}
+          placeholder="gh, npm, psql"
+          value={draft.commands}
+          spellCheck={false}
+          autoCapitalize="off"
+          onChange={(event) => set({ commands: event.target.value })}
+        />
+        <span className="mt-0.5 block text-[11px] text-content/40">
+          {draft.commands.trim()
+            ? `An agent may run these with the value as ${draft.name || "the name"} in their environment. The program can do anything with it, so name only tools you trust. Shells and script runners are refused.`
+            : "Leave empty to keep it out of commands."}
+        </span>
       </label>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-content/70">
@@ -382,6 +407,7 @@ function SecretRow({ secret, onEdit }: { secret: SecretMeta; onEdit?: () => void
           {[
             secret.kind === "login" && secret.username ? secret.username : "",
             secret.hosts.join(", "),
+            secret.commands?.length ? `runs with ${secret.commands.join(", ")}` : "",
             secret.sessionId ? secretScopeLabel(secret) : "",
             secret.purpose ? `only for ${secret.purpose}` : "",
             secret.maxUses
