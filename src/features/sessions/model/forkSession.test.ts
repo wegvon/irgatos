@@ -7,7 +7,12 @@ import {
   isForkedCopy,
   planFork,
 } from "./forkSession";
-import { newSession, type Block, type Session } from "./session";
+import {
+  hasPendingApproval,
+  newSession,
+  type Block,
+  type Session,
+} from "./session";
 import { groupTurns } from "./transcriptActivity";
 
 const blocks: Block[] = [
@@ -54,6 +59,27 @@ describe("planFork", () => {
     expect(plan.keepTurns).toBe(2);
     expect(plan.nextPrompt).toBeUndefined();
     expect(plan.throughProviderTurnId).toBe("t2");
+  });
+
+  it("does not carry over an approval the source is still waiting on", () => {
+    const waiting = source({
+      blocks: [
+        { id: "u1", role: "user", text: "Deploy" },
+        {
+          id: "p1",
+          role: "approval",
+          text: "Run deploy?",
+          approval: { requestId: 3 },
+        },
+        { id: "a1", role: "assistant", text: "Waiting" },
+      ],
+    });
+    const plan = planFork(waiting)!;
+    expect(plan.blocks[1]!.approval).toEqual({
+      requestId: 3,
+      decided: "cancelled",
+    });
+    expect(hasPendingApproval(plan.blocks)).toBe(false);
   });
 
   it("has nothing to fork before the first message", () => {

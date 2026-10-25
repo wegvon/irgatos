@@ -49,6 +49,13 @@ export function planFork(source: Session, turn?: Block[]): ForkPlan | null {
   return {
     blocks: kept.flatMap((block) => {
       if (block.draft || (block.streaming && !block.text.trim())) return [];
+      // A question the source is still waiting on is the source's to answer.
+      if (
+        block.secretRequest?.state === "pending" ||
+        block.secretApproval?.state === "pending"
+      ) {
+        return [];
+      }
       const {
         streaming: _streaming,
         btwThreads: _btwThreads,
@@ -56,7 +63,12 @@ export function planFork(source: Session, turn?: Block[]): ForkPlan | null {
         appRequestId: _appRequestId,
         ...rest
       } = block;
-      return [rest];
+      // The fork never asked, so an open approval there reads as closed.
+      return [
+        rest.approval && !rest.approval.decided
+          ? { ...rest, approval: { ...rest.approval, decided: "cancelled" } }
+          : rest,
+      ];
     }),
     keepTurns: users.length,
     ...(next ? { nextPrompt: next.text } : {}),
