@@ -103,6 +103,8 @@ export type SecretSave = {
   once: boolean;
   persistent: boolean;
   ttlHours?: number;
+  /** Refuse a name already saved instead of replacing its value. */
+  createOnly?: boolean;
   kind?: SecretKind;
   username?: string;
   policy?: SecretPolicy;
@@ -137,6 +139,8 @@ export type SecretApproval = {
   action: string;
   method: string;
   target: string;
+  /** Cards from one agent call share it and are answered as a set. */
+  callId?: string;
   state: "pending" | "once" | "chat" | "deny";
 };
 
@@ -309,6 +313,7 @@ export function sanitizeSecretApproval(value: unknown): SecretApproval | undefin
     action: text(raw.action, 40),
     method: text(raw.method, 10),
     target: text(raw.target, 200),
+    ...(typeof raw.callId === "string" && raw.callId ? { callId: raw.callId.slice(0, 64) } : {}),
     state: (APPROVAL_STATES as readonly unknown[]).includes(raw.state)
       ? (raw.state as SecretApproval["state"])
       : "pending",
@@ -335,12 +340,28 @@ export function pendingSecretApproval(blocks: Block[], secretId: string) {
   );
 }
 
-/** What the agent hears once the user answers an approval. */
-export function secretApprovalPrompt(approval: SecretApproval) {
-  if (approval.state === "deny")
-    return `Irgatos: The user did not allow ${approval.name} this time. Do not retry with it; continue without it or explain what it was needed for.`;
-  const scope = approval.state === "chat" ? "for the rest of this chat" : "for one use";
-  return `Irgatos: The user allowed ${approval.name} ${scope}. Retry the same ${approval.action || "call"} now.`;
+/**
+ * The cards of the same agent call as `approval`, once all are answered;
+ * undefined while any is still open, so the agent hears only once.
+ */
+export function settledSecretApprovals(blocks: Block[], approval: SecretApproval) {
+  if (!approval.callId) return [approval];
+  const set = blocks
+    .map((block) => block.secretApproval)
+    .filter((item): item is SecretApproval => item?.callId === approval.callId);
+  if (set.some((item) => item.state === "pending")) return undefined;
+  return set.length ? set : [approval];
+}
+
+/** What the agent hears once the user answers a call's approvals. */
+export function secretApprovalPrompt(approvals: SecretApproval[]) {
+  const denied = approvals.filter((item) => item.state === "deny").map((item) => item.name);
+  if (denied.length)
+    return `Irgatos: The user did not allow ${denied.join(", ")} this time. Do not retry that call; continue without it or explain what it was needed for.`;
+  const allowed = approvals.map(
+    (item) => `${item.name} ${item.state === "chat" ? "for the rest of this chat" : "for one use"}`,
+  );
+  return `Irgatos: The user allowed ${allowed.join(" and ")}. Retry the same ${approvals[0]?.action || "call"} now, once.`;
 }
 
 export const SECRET_KIND_LABEL: Record<SecretKind, string> = {

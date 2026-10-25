@@ -189,7 +189,9 @@ impl Vault {
         if clash.is_some() {
             return Err(format!("{} is already in the vault", secret.name));
         }
-        // The name is bound into the ciphertext, so a rename seals it again.
+        // The name is bound into the ciphertext, so a rename seals it again,
+        // in the same transaction as the new name.
+        let tx = self.conn.unchecked_transaction().map_err(sql)?;
         if value.is_some() || secret.name != current.name {
             let kept;
             let plain = match value {
@@ -229,6 +231,7 @@ impl Vault {
                 ],
             )
             .map_err(sql)?;
+        tx.commit().map_err(sql)?;
         self.get(id)?
             .ok_or_else(|| "The secret was not saved".into())
     }
