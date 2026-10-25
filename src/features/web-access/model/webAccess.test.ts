@@ -644,6 +644,20 @@ describe("handleWebAccess", () => {
     ).rejects.toThrow("allow or deny");
   });
 
+  it("allows everything waiting and stops the asking for that chat", async () => {
+    const second: Block = { ...approval, id: "ask-8", approval: { requestId: 8 } };
+    const d = deps([chat("a", { blocks: [sent, approval, second] })]);
+    const result = await handleWebAccess(d, "approval", {
+      sessionId: "a",
+      requestId: 7,
+      decision: "allowAll",
+    });
+    expect(d.setRuntimeMode).toHaveBeenCalledWith("a", "full-access");
+    expect(d.approve).toHaveBeenCalledWith("a", 7, "allow");
+    expect(d.approve).toHaveBeenCalledWith("a", 8, "allow");
+    expect(result).toEqual({ decided: "allow", allowed: 2 });
+  });
+
   it("answers a vault approval like the card on the Mac", async () => {
     const secretApproval = {
       requestId: "r1",
@@ -787,6 +801,14 @@ describe("handleWebAccess", () => {
       "claude",
       "codex",
     ]);
+    expect(result.mode).toBe("supervised");
+  });
+
+  it("starts the phone's new chats with the Mac's access", async () => {
+    const d = deps([]);
+    d.defaultMode = () => "full-access";
+    const result = (await handleWebAccess(d, "projects", {})) as WebProjects;
+    expect(result.mode).toBe("full-access");
   });
 
   it("takes a file in pieces and sends it with the next message", async () => {

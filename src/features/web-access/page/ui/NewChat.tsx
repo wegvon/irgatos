@@ -10,6 +10,7 @@ import type { WebBranches, WebProjects } from "../../model/protocol";
 import { read, write } from "../client";
 import { leaveSheetFor, navigate } from "../route";
 import {
+  ACCESS_MODES,
   AccessSelect,
   ModelSelect,
   PickerPill,
@@ -59,7 +60,8 @@ type Draft = {
   cwd: string;
   /** Null keeps the project's own provider and model. */
   pick: { harness: HarnessId; model: string } | null;
-  mode: RuntimeMode;
+  /** Null starts with the phone's last pick, else the Mac's own. */
+  mode: RuntimeMode | null;
   /** The branch a new worktree starts from; empty works in the folder. */
   worktree: string;
   plan: boolean;
@@ -69,12 +71,32 @@ const EMPTY: Draft = {
   text: "",
   cwd: "",
   pick: null,
-  mode: "supervised",
+  mode: null,
   worktree: "",
   plan: false,
 };
 
 const draft: Draft = { ...EMPTY };
+
+const MODE_KEY = "irgatos.web.newChatMode";
+
+/** The access last picked on this phone, kept for every new chat after. */
+function rememberedMode(): RuntimeMode | null {
+  try {
+    const stored = localStorage.getItem(MODE_KEY);
+    return ACCESS_MODES.find((entry) => entry.mode === stored)?.mode ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberMode(mode: RuntimeMode) {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    // Private browsing: the pick still holds for this chat.
+  }
+}
 
 /** The composer's field, so a "New chat" button elsewhere can focus it. */
 export const NEW_CHAT_FIELD = "new-chat-field";
@@ -101,7 +123,7 @@ export function NewChat({
   const [text, setText] = useState(draft.text);
   const [cwd, setCwd] = useState(draft.cwd);
   const [pick, setPick] = useState(draft.pick);
-  const [mode, setMode] = useState(draft.mode);
+  const [picked, setPicked] = useState(() => draft.mode ?? rememberedMode());
   const [worktree, setWorktree] = useState(draft.worktree);
   const [plan, setPlan] = useState(draft.plan);
   const [branches, setBranches] = useState<WebBranches | null>(null);
@@ -119,8 +141,8 @@ export function NewChat({
   }, []);
 
   useEffect(() => {
-    Object.assign(draft, { text, cwd, pick, mode, worktree, plan });
-  }, [text, cwd, pick, mode, worktree, plan]);
+    Object.assign(draft, { text, cwd, pick, mode: picked, worktree, plan });
+  }, [text, cwd, pick, picked, worktree, plan]);
 
   useEffect(() => {
     setBranches(null);
@@ -144,6 +166,11 @@ export function NewChat({
 
   const project = projects?.projects.find((entry) => entry.path === cwd);
   const choice = pick ?? project?.choice ?? null;
+  const mode = picked ?? projects?.mode ?? "supervised";
+  const pickMode = (next: RuntimeMode) => {
+    setPicked(next);
+    rememberMode(next);
+  };
   const ready =
     (!!text.trim() || files.ids.length > 0) &&
     !files.blocked &&
@@ -173,7 +200,7 @@ export function NewChat({
       setText(EMPTY.text);
       setCwd(EMPTY.cwd);
       setPick(EMPTY.pick);
-      setMode(EMPTY.mode);
+      setPicked(rememberedMode());
       setWorktree(EMPTY.worktree);
       setPlan(EMPTY.plan);
       navigate(chat);
@@ -288,7 +315,7 @@ export function NewChat({
               />
             ) : null}
             {choice?.harness === "fx" ? null : (
-              <AccessSelect mode={mode} onChange={setMode} />
+              <AccessSelect mode={mode} onChange={pickMode} />
             )}
             <PlanToggle on={plan} onChange={setPlan} />
           </div>
