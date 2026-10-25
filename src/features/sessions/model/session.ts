@@ -778,7 +778,14 @@ export function hasPendingApproval(blocks: Block[]): boolean {
 export function sessionNeedsInput(session: Session): boolean {
   return (
     !session.worktreeRemoved &&
-    (hasPendingApproval(session.blocks) || session.pendingQuestion != null)
+    (hasPendingApproval(session.blocks) ||
+      session.pendingQuestion != null ||
+      session.blocks.some(
+        (block) =>
+          // An agent waits on a vault value to enter or a use to allow.
+          block.secretApproval?.state === "pending" ||
+          block.secretRequest?.state === "pending",
+      ))
   );
 }
 

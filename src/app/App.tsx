@@ -195,6 +195,7 @@ import {
   secretAnswerPrompt,
   secretApprovalBlock,
   secretApprovalPrompt,
+  settledSecretApprovals,
   secretRequestBlock,
   secretsContext,
   type SecretAnswer,
@@ -12179,7 +12180,8 @@ function Workspace({
           ),
         };
       });
-      if (updated) continueWith(approval.sessionId, secretApprovalPrompt(approval));
+      const settled = updated && settledSecretApprovals(updated.blocks, approval);
+      if (settled) continueWith(approval.sessionId, secretApprovalPrompt(settled));
     };
     window.addEventListener(SECRET_APPROVED_EVENT, onApproved);
     return () => {

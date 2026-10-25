@@ -156,7 +156,7 @@ function SecretForm({
       if (editing) {
         await updateSecret({ id: editing.id, ...common, ...(value.trim() ? { value } : {}) });
       } else {
-        await saveSecret({ ...common, once: false, persistent: true, value });
+        await saveSecret({ ...common, once: false, persistent: true, createOnly: true, value });
       }
       if (valueRef.current) valueRef.current.value = "";
       onDone();
