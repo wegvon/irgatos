@@ -127,6 +127,7 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
     irgatsEnabled: () => false,
     saveSession: vi.fn(async () => null),
     rename: vi.fn(async () => {}),
+    fork: vi.fn(async (): Promise<string | undefined> => "forked"),
     remove: vi.fn(async () => true),
     projects: () => ["/Users/me/code/shop", "/Users/me/code/irgatos"],
     freeChatDir: async () => "/Users/me/.irgatos/scratch",
@@ -690,6 +691,29 @@ describe("handleWebAccess", () => {
       handleWebAccess(d, "renameChat", { sessionId: "zzz", title: "x" }),
     ).rejects.toThrow("not open");
     expect(d.rename).toHaveBeenCalledTimes(1);
+  });
+
+  it("forks a chat through the turn of the chosen message", async () => {
+    const blocks: Block[] = [
+      { id: "u1", role: "user", text: "One" },
+      { id: "a1", role: "assistant", text: "First" },
+      { id: "u2", role: "user", text: "Two" },
+      { id: "a2", role: "assistant", text: "Second" },
+    ];
+    const d = deps([chat("a", { blocks })]);
+    expect(
+      await handleWebAccess(d, "forkChat", { sessionId: "a", blockId: "a1" }),
+    ).toEqual({ sessionId: "forked" });
+    expect(d.fork).toHaveBeenLastCalledWith("a", blocks.slice(0, 2));
+    await handleWebAccess(d, "forkChat", { sessionId: "a" });
+    expect(d.fork).toHaveBeenLastCalledWith("a", undefined);
+    await expect(
+      handleWebAccess(d, "forkChat", { sessionId: "a", blockId: "gone" }),
+    ).rejects.toThrow("not in this chat");
+    d.fork.mockResolvedValueOnce(undefined);
+    await expect(
+      handleWebAccess(d, "forkChat", { sessionId: "a" }),
+    ).rejects.toThrow("cannot be forked");
   });
 
   it("deletes a chat, and says so when the Mac keeps it", async () => {

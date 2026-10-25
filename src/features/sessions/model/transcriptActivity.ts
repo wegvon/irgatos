@@ -350,7 +350,7 @@ function groupTranscriptTurns(
       }
       continue;
     }
-    if (block.role === "handoff" || block.irgatHabit) {
+    if (block.role === "handoff" || block.irgatHabit || block.forkPoint) {
       if (current.length > 0) turns.push(current);
       turns.push([block]);
       current = [];
@@ -421,6 +421,7 @@ export function groupIrgatChatTurns(
       previous &&
       !previous[0].irgatHabit &&
       previous[0].role !== "handoff" &&
+      !previous[0].forkPoint &&
       isIrgatCompletionPrompt(turn[0]) &&
       (at == null || !opensNewStretch(at, irgatTurnLatestStart(previous)))
     ) {

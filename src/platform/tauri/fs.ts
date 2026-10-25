@@ -89,6 +89,21 @@ export function claudeShellCommands(
   });
 }
 
+/** New Claude conversation id holding the kept turns, or null when the cut cannot be placed. */
+export function claudeForkTranscript(input: {
+  providerSessionId: string;
+  providerAccountId?: string;
+  keepTurns?: number;
+  nextPrompt?: string;
+}): Promise<string | null> {
+  return invoke<string | null>("claude_fork_transcript", {
+    providerSessionId: input.providerSessionId,
+    providerAccountId: input.providerAccountId,
+    keepTurns: input.keepTurns,
+    nextPrompt: input.nextPrompt,
+  });
+}
+
 export type FsEntry = {
   name: string;
   path: string;

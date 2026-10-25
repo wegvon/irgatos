@@ -16,7 +16,7 @@ import { SignedOut, read, usePoll, write } from "../client";
 import { clock, duration } from "../format";
 import { AttachButton, UploadChips, pastedFiles, useUploads } from "./Attach";
 import { Markdown } from "./Markdown";
-import { ChatOptions } from "./ChatOptions";
+import { ChatOptions, forkChat } from "./ChatOptions";
 import {
   AccessSelect,
   EffortSelect,
@@ -45,6 +45,7 @@ import {
   ChevronLeft,
   CircleX,
   File,
+  GitFork,
   Globe,
   ImageIcon,
   MessageSquare,
@@ -498,6 +499,28 @@ function UserBubble({
   );
 }
 
+/** Fork from this reply: a new chat holding the conversation up to here. */
+function ForkHere({ sessionId, blockId }: { sessionId: string; blockId: string }) {
+  const { busy, run } = useAction();
+  return (
+    <button
+      type="button"
+      aria-label="Fork from here"
+      disabled={busy !== null}
+      onClick={() =>
+        void run("fork", () => forkChat(sessionId, blockId), "Chat forked")
+      }
+      className="web-press -my-1 flex size-7 items-center justify-center rounded-full text-(--ink-3) disabled:opacity-50"
+    >
+      {busy ? (
+        <Spinner className="size-3.5" />
+      ) : (
+        <GitFork className="size-3.5" />
+      )}
+    </button>
+  );
+}
+
 function BlockView({
   block,
   sessionId,
@@ -522,8 +545,11 @@ function BlockView({
             <Markdown text={block.text} streaming={block.streaming} />
           </div>
           {block.durationMs && block.at ? (
-            <div className="px-1 text-[11.5px] font-medium text-(--ink-3)">
-              {duration(block.durationMs)} · {clock(block.at)}
+            <div className="flex items-center gap-2 px-1 text-[11.5px] font-medium text-(--ink-3)">
+              <span>
+                {duration(block.durationMs)} · {clock(block.at)}
+              </span>
+              <ForkHere sessionId={sessionId} blockId={block.id} />
             </div>
           ) : null}
         </div>

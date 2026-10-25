@@ -66,6 +66,7 @@ import {
 import {
   listRecentSessions,
   upsertSession,
+  wholeSessionBlocks,
   type SessionSummary,
 } from "../../sessions/data/sessionStore";
 import { gitBranches, type GitBranches } from "../../../platform/tauri/fs";
@@ -107,7 +108,10 @@ import {
   type RuntimeMode,
   type Session,
 } from "../../sessions/model/session";
-import { toolCallLabel } from "../../sessions/model/transcriptActivity";
+import {
+  groupTurns,
+  toolCallLabel,
+} from "../../sessions/model/transcriptActivity";
 import {
   buildQuestionReply,
   type UserQuestionReply,
@@ -201,6 +205,8 @@ export type WebAccessDeps = {
   saveSession: (session: Session) => Promise<unknown>;
   /** Renames a chat the way the sidebar does. */
   rename: (sessionId: string, title: string) => Promise<void>;
+  /** The new chat's id, or undefined when this chat cannot be forked. */
+  fork: (sessionId: string, turn?: Block[]) => Promise<string | undefined>;
   /** Deletes a chat without the Mac's confirmation: the page asked. */
   remove: (sessionId: string) => Promise<boolean>;
   /** Recent project folders, newest first. */
@@ -264,6 +270,7 @@ export const webAccessDefaults: Omit<
   WebAccessDeps,
   | "sessions"
   | "submit"
+  | "fork"
   | "approve"
   | "answer"
   | "stop"
@@ -837,6 +844,26 @@ export async function handleWebAccess(
       if (!title) throw new Error("Give the chat a name.");
       await deps.rename(session.id, title);
       return { renamed: true };
+    }
+    case "forkChat": {
+      const session = await findSession(deps, input);
+      const blockId =
+        typeof input.blockId === "string" ? input.blockId.slice(0, 200) : "";
+      // An Irgat chat holds only its latest page; the message may be older.
+      const blocks =
+        blockId && session.irgatTranscript
+          ? await wholeSessionBlocks(session)
+          : session.blocks;
+      const turn = blockId
+        ? groupTurns(blocks).find((entry) =>
+            entry.some((block) => block.id === blockId),
+          )
+        : undefined;
+      if (blockId && !turn)
+        throw new Error("That message is not in this chat anymore.");
+      const sessionId = await deps.fork(session.id, turn);
+      if (!sessionId) throw new Error("This chat cannot be forked right now.");
+      return { sessionId };
     }
     case "deleteChat": {
       const session = await findSession(deps, input);

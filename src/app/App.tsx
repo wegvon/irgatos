@@ -371,9 +371,11 @@ import {
   cancelHarnessTurn,
   canCompactHarnessContext,
   canRewindHarnessLastTurn,
+  canForkHarnessSession,
   canSteerHarness,
   compactHarnessContext,
   rewindHarnessLastTurn,
+  forkHarnessSession,
   forgetHarnessSession,
   generateHarnessTitle,
   generateHarnessBranchName,
@@ -632,9 +634,15 @@ import {
   shouldPersistSession,
   upsertSession,
   flushSessionWrites,
+  wholeSessionBlocks,
   type SessionSummary,
 } from "../features/sessions/data/sessionStore";
 import { rememberLoadedSession } from "../features/sessions/data/sessionCache";
+import {
+  canForkSession,
+  forkedSession,
+  planFork,
+} from "../features/sessions/model/forkSession";
 import {
   TranscriptPool,
   TranscriptPoolOutlet,
@@ -5446,6 +5454,127 @@ function Workspace({
       setComposerFocused(true);
     },
     [appendTab, openFreeChat, onOpenIrgat],
+  );
+  /**
+   * Fork: a new chat holding this one through `turn` (or all of it). The
+   * provider copies its conversation when it can; otherwise the first message
+   * carries a recap. The source chat is left exactly as it was.
+   */
+  const onForkSession = useCallback(
+    async (
+      sourceId: string,
+      turn?: Block[],
+      reveal = true,
+    ): Promise<Session | undefined> => {
+      const loaded = sessionsRef.current.find(
+        (session) => session.id === sourceId,
+      );
+      if (!loaded || !canForkSession(loaded)) return undefined;
+      const source = loaded.irgatTranscript
+        ? { ...loaded, blocks: await wholeSessionBlocks(loaded) }
+        : loaded;
+      const plan = planFork(source, turn);
+      // The end of a running turn is not a place to cut yet.
+      if (!plan || (source.busy && plan.nextPrompt == null)) return undefined;
+      const owner = irgatForSession(source.id);
+      const cwd = sessionWorkCwd(source);
+      let providerSessionId: string | null = null;
+      if (
+        source.providerSessionId &&
+        canForkHarnessSession(source.harness) &&
+        (!source.busy || source.harness === "claude")
+      ) {
+        providerSessionId = await forkHarnessSession({
+          harness: source.harness,
+          sessionId: source.id,
+          cwd,
+          model: source.model,
+          modelSettings: source.modelSettings,
+          providerAccountId: source.providerAccountId,
+          runtimeMode: source.runtimeMode,
+          ephemeral: source.ephemeral === true,
+          codexStore: owner ? "irgat" : undefined,
+          providerSessionId: source.providerSessionId,
+          keepTurns: plan.keepTurns,
+          ...(plan.nextPrompt != null ? { nextPrompt: plan.nextPrompt } : {}),
+          ...(plan.throughProviderTurnId
+            ? { throughProviderTurnId: plan.throughProviderTurnId }
+            : {}),
+          onEvent: (event) => enqueueHarnessEvent(source.id, event),
+        }).catch(() => null);
+      }
+      const fresh = owner
+        ? createIrgatChildSession(
+            owner.id,
+            source,
+            (id) => sessionsRef.current.find((entry) => entry.id === id)?.title,
+          )
+        : newSession(
+            source.harness,
+            source.cwd,
+            source.model,
+            source.runtimeMode,
+            source.modelSettings,
+          );
+      const session = forkedSession({
+        source,
+        plan,
+        fresh,
+        dividerId: crypto.randomUUID(),
+        providerSessionId,
+      });
+      if (providerSessionId) {
+        bindHarnessSession(
+          session.harness,
+          session.id,
+          providerSessionId,
+          cwd,
+          session.providerAccountId,
+        );
+      }
+      updateSessionState(sessionsRef, setSessions, (sessions) => [
+        ...sessions,
+        session,
+      ]);
+      if (owner) {
+        // Like New chat: the roster lists this child, so store it first.
+        try {
+          await upsertSession(session);
+        } catch (error) {
+          updateIrgat(owner.id, (irgat) => ({
+            ...irgat,
+            childSessionIds: irgat.childSessionIds?.filter(
+              (id) => id !== session.id,
+            ),
+          }));
+          updateSessionState(sessionsRef, setSessions, (sessions) =>
+            sessions.filter((entry) => entry.id !== session.id),
+          );
+          throw error;
+        }
+        if (reveal) await onOpenIrgat(owner.id, session.id);
+      }
+      if (!reveal) return session;
+      if (owner) {
+        // Opened on its Irgat's page above.
+      } else if (isFreeChatSession(source)) openFreeChat(session.id);
+      else {
+        const tab = newTab(session.id);
+        appendTab(tab, source.cwd);
+        setActiveTabId(tab.id);
+      }
+      setComposerFocused(true);
+      return session;
+    },
+    [appendTab, enqueueHarnessEvent, openFreeChat, onOpenIrgat],
+  );
+  const onForkFromTurn = useCallback(
+    (sourceId: string, turn: Block[]) => {
+      void onForkSession(sourceId, turn).catch((error) =>
+        message(String(error), { title: "Could not fork this chat", kind: "error" }),
+      );
+    },
+    [onForkSession],
   );
   // A Irgat open when the app last closed opens again; a moved window keeps
   // what it carried.
@@ -12104,6 +12233,8 @@ function Workspace({
       },
     },
     rename: onRenameHistorySession,
+    fork: async (sessionId, turn) =>
+      (await onForkSession(sessionId, turn, false))?.id,
     remove: (sessionId) => onRemoveHistorySession(sessionId, "delete", true),
     agents: {
       ...webAgentsDefaults,
@@ -14946,6 +15077,7 @@ function Workspace({
     onBuildPlan,
     onSecondOpinion,
     onHandoff,
+    onFork: onForkFromTurn,
     onBtwSubmit,
     onBtwRetry,
     onBtwDelete,
