@@ -106,6 +106,7 @@ const WRITE_ACTIONS: [&str; 33] = [
     "setModel",
     "setEffort",
     "setMode",
+    "secretApproval",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.

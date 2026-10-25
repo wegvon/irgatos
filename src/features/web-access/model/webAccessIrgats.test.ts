@@ -27,6 +27,7 @@ function mac(open: Session[], saved: Session[] = []) {
     sessions: () => sessions,
     submit: vi.fn(() => true),
     approve: vi.fn(),
+    answerSecretApproval: vi.fn(async () => undefined),
     answer: vi.fn(),
     stop: vi.fn(),
     launch: vi.fn(async () => {}),

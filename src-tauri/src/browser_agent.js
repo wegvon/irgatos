@@ -206,6 +206,90 @@
     };
   }
 
+  // The page may take this login: HTTPS on a host the vault entry names.
+  function loginAllowed(hosts) {
+    const host = location.hostname.toLowerCase();
+    const port = location.port;
+    return (
+      location.protocol === "https:" &&
+      hosts.some((pattern) => {
+        const [name, wanted] = pattern.split(":");
+        // No port in the pattern means the default HTTPS port only.
+        const portOk = wanted ? wanted === port || (wanted === "443" && !port) : !port;
+        const hostOk = name.startsWith("*.") ? host.endsWith(name.slice(1)) : host === name;
+        return portOk && hostOk;
+      })
+    );
+  }
+
+  function usable(el) {
+    return !el.disabled && !el.readOnly && visible(el);
+  }
+
+  // Fills the vault's login into the page's form, checking the host right
+  // here so a navigation in between cannot take it elsewhere. Nothing of the
+  // username or password goes back in the answer.
+  function fillLogin(username, password, hosts, options) {
+    if (!loginAllowed(hosts))
+      throw new Error(
+        `This login is for ${hosts.join(", ")}; the page is ${location.protocol}//${location.host}`,
+      );
+    const inputs = [...document.querySelectorAll("input")].filter(usable);
+    const passwords = inputs.filter((el) => el.type === "password");
+    const pass =
+      passwords.find((el) => !/new-password/i.test(el.autocomplete || "")) || passwords[0] || null;
+    const scope = pass && pass.form;
+    const named = (el) =>
+      /user|email|login|account|identifier|phone/i.test(
+        `${el.name} ${el.id} ${el.autocomplete} ${el.type} ${el.placeholder || ""}`,
+      );
+    const candidates = inputs.filter(
+      (el) => /^(text|email|tel|)$/i.test(el.type) && (!scope || el.form === scope),
+    );
+    let user = pass
+      ? candidates
+          .filter((el) => el.compareDocumentPosition(pass) & Node.DOCUMENT_POSITION_FOLLOWING)
+          .pop() || null
+      : null;
+    if (!user) user = candidates.find(named) || (!pass ? candidates[0] || null : null);
+    if (!pass && !user) throw new Error("This page has no login form to fill");
+    const filled = [];
+    if (user && username) {
+      user.focus();
+      setValue(user, username);
+      filled.push("username");
+    }
+    if (pass) {
+      pass.focus();
+      setValue(pass, password);
+      filled.push("password");
+    }
+    let submitted = false;
+    if (options.submit) {
+      const last = pass || user;
+      const form = last.form;
+      const button =
+        form &&
+        [...form.querySelectorAll('button[type="submit"], input[type="submit"], button:not([type])')].find(
+          usable,
+        );
+      if (button) button.click();
+      else if (form && typeof form.requestSubmit === "function") form.requestSubmit();
+      else {
+        const key = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+        last.dispatchEvent(new KeyboardEvent("keydown", key));
+        last.dispatchEvent(new KeyboardEvent("keyup", key));
+      }
+      submitted = true;
+    }
+    return {
+      filled,
+      submitted,
+      step: pass ? "password" : "username",
+      host: location.hostname,
+    };
+  }
+
   function read(options) {
     const offset = Math.max(0, Number(options.offset) || 0);
     const max = Math.min(Math.max(Number(options.maxChars) || 6000, 200), 40000);
@@ -235,6 +319,8 @@
     type: (target, text, options) => run(() => type(target || {}, String(text), options || {})),
     scroll: (options) => run(() => scroll(options || {})),
     page: () => run(() => ({ url: location.href, title: document.title })),
+    fillLogin: (username, password, hosts, options) =>
+      run(() => fillLogin(String(username), String(password), hosts || [], options || {})),
     // `fn` is the agent's script, wrapped by the app as a function body.
     evaluate: (fn) =>
       run(() => {

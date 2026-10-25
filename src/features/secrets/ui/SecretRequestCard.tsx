@@ -183,7 +183,7 @@ export function SecretRequestCard({
         </div>
         <p className="mt-1 text-[11px] text-content/45">
           {persistent
-            ? "Kept until you revoke it in Settings > Secrets."
+            ? "Kept in Settings > Vault until you delete it."
             : `Removed when this chat is archived or deleted, or after ${DEFAULT_TTL_HOURS} hours.`}
         </p>
         {error && <p className="mt-1.5 text-[11px] text-red-500">{error}</p>}

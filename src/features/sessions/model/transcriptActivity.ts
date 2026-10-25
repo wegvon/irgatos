@@ -146,7 +146,7 @@ function isStatusStep(block: Block): boolean {
  * neither work nor chrome, so it keeps its own row live and settled alike.
  */
 export function isActivityBlock(block: Block): boolean {
-  if (block.irgatProjectAccess || block.secretRequest) return false;
+  if (block.irgatProjectAccess || block.secretRequest || block.secretApproval) return false;
   if (isThinkingBlock(block)) return true;
   if (block.role === "system") {
     return !block.interjection && !isNoticeBlock(block);
@@ -584,6 +584,7 @@ export function groupIrgatTurnItems(
       index <= end &&
       !(item.type === "block" && item.block.irgatProjectAccess) &&
       !(item.type === "block" && item.block.secretRequest) &&
+      !(item.type === "block" && item.block.secretApproval) &&
       !(item.type === "block" && followUpReplies.has(item.block.id)) &&
       // A reply already delivered before background work resumed stays put.
       !(boundary < items.length && index === boundary - 1) &&

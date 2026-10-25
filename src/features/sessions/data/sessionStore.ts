@@ -53,7 +53,7 @@ import { HARNESSES, RUNTIME_MODES } from "../model/session";
 import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
-import { sanitizeSecretRequest } from "../../secrets/model/secrets";
+import { sanitizeSecretApproval, sanitizeSecretRequest } from "../../secrets/model/secrets";
 
 export type SessionSummary = {
   sidebarHidden?: boolean;
@@ -1018,6 +1018,9 @@ function sanitizeBlock(
   const secretRequest =
     block.role === "system" ? sanitizeSecretRequest(block.secretRequest) : undefined;
   if (secretRequest) next.secretRequest = secretRequest;
+  const secretApproval =
+    block.role === "system" ? sanitizeSecretApproval(block.secretApproval) : undefined;
+  if (secretApproval) next.secretApproval = secretApproval;
   const projectAccess = block.irgatProjectAccess;
   if (block.role === "approval" &&
       typeof projectAccess?.irgatId === "string" && projectAccess.irgatId.trim() &&

@@ -421,6 +421,8 @@ export type Block = {
    * name and limits only; the value goes straight to the vault.
    */
   secretRequest?: import("../../secrets/model/secrets").SecretRequest;
+  /** An agent wants a vault value set to "ask"; the user allows or denies it. */
+  secretApproval?: import("../../secrets/model/secrets").SecretApproval;
   /** User approval to permanently assign a registered project to this Irgat. */
   irgatProjectAccess?: { irgatId: string; project: string; userTurnId?: string };
   /**
@@ -778,7 +780,14 @@ export function hasPendingApproval(blocks: Block[]): boolean {
 export function sessionNeedsInput(session: Session): boolean {
   return (
     !session.worktreeRemoved &&
-    (hasPendingApproval(session.blocks) || session.pendingQuestion != null)
+    (hasPendingApproval(session.blocks) ||
+      session.pendingQuestion != null ||
+      session.blocks.some(
+        (block) =>
+          // An agent waits on a vault value to enter or a use to allow.
+          block.secretApproval?.state === "pending" ||
+          block.secretRequest?.state === "pending",
+      ))
   );
 }
 

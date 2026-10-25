@@ -25,7 +25,7 @@ import {
   useModels,
 } from "./ModelControls";
 import { Mascot } from "./Irgats";
-import { RequestBody } from "./Requests";
+import { RequestBody, SecretApprovalBody } from "./Requests";
 import { DictateButton, ReadAloud } from "./Voice";
 import {
   Empty,
@@ -531,6 +531,8 @@ function BlockView({
   const images = block.images?.length ? (
     <Images sessionId={sessionId} block={block} />
   ) : null;
+  if (block.secretApproval)
+    return <SecretApprovalBody sessionId={sessionId} block={block} />;
   switch (block.role) {
     case "user":
       return (
