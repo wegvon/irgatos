@@ -93,13 +93,16 @@ fn placeholder() -> Regex {
 
 /// Shells and interpreters run whatever their arguments say, so handing one
 /// a value hands it to any script the agent writes.
-const INTERPRETERS: [&str; 22] = [
+const INTERPRETERS: [&str; 27] = [
     "sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "env", "xargs", "node", "deno",
     "bun", "python", "python3", "perl", "ruby", "php", "osascript", "lua", "tclsh", "awk",
+    "cmd", "powershell", "pwsh", "wscript", "cscript",
 ];
 
+/// macOS finds `BASH` as `bash`, so names compare without case.
 pub fn interpreter(name: &str) -> bool {
-    INTERPRETERS.contains(&name)
+    let name = name.to_ascii_lowercase();
+    INTERPRETERS.contains(&name.as_str())
 }
 
 /// A program as the vault lists it: a bare name such as `gh` or `psql`.
@@ -256,8 +259,11 @@ pub fn run(
     let drain = |stream: Option<Box<dyn Read + Send>>| {
         std::thread::spawn(move || {
             let mut bytes = Vec::new();
-            if let Some(stream) = stream {
-                let _ = stream.take(READ_LIMIT).read_to_end(&mut bytes);
+            if let Some(mut stream) = stream {
+                let _ = (&mut stream).take(READ_LIMIT).read_to_end(&mut bytes);
+                // Keep the pipe open and drained, so a chatty program is
+                // clipped rather than killed by a broken pipe.
+                let _ = std::io::copy(&mut stream, &mut std::io::sink());
             }
             String::from_utf8_lossy(&bytes).into_owned()
         })
