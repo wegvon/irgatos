@@ -179,8 +179,11 @@ Actions:
                   Returns pending: end your turn, Irgatos continues once it is
                   saved. Returns ready when it is already saved. Never ask the
                   user to paste a secret into the chat.
-  secrets.list  {} Secrets this chat may use: name, placeholder, hosts, where
-                  it may be placed, purpose, uses left and expiry. No values.
+  secrets.list  {} Secrets this chat may use, from the user's vault and this
+                  chat: name, placeholder, kind (key or login, with its
+                  username), note, hosts, where it may be placed, purpose,
+                  access, uses left and expiry. No values. Check it before
+                  asking: what the user saved is there.
   secrets.http  {"method":"POST","url":"https://api.stripe.com/v1/charges",
                   "headers":{"Authorization":"Bearer {{secret:STRIPE_KEY}}"},
                   "body":"amount=100" | "json":{...},"purpose":"deploy",
@@ -191,7 +194,9 @@ Actions:
                   in the host or outside its allowed places, or the purpose
                   does not match. Redirects are not followed. Returns status,
                   headers and body; secret values and secret-shaped text in
-                  them read [REDACTED]. Placeholders mean nothing anywhere
+                  them read [REDACTED]. A vault value the user set to ask
+                  first returns approval_pending: end your turn, Irgatos
+                  continues you once they answer, then retry the call. Placeholders mean nothing anywhere
                   else: your own shell and tools get the literal text.
   browser.state {} The Irgatos Browser the user sees beside this chat: whether
                   it is open and shown, the active page's url, title and

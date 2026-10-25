@@ -143,11 +143,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: "secrets",
     group: "agents",
-    label: "Secrets",
+    label: "Vault",
     description:
-      "Passwords, API keys and tokens agents use without seeing them: where each may be sent, when it lapses, and where it was used.",
+      "API keys and logins agents use without seeing them: where each may be sent, whether to ask first, and where it was used.",
     keywords:
-      "secret password api key token credential vault keychain redact revoke gizli şifre anahtar",
+      "secret secrets password login username api key token credential vault keychain redact revoke gizli şifre anahtar kasa parola",
   },
   {
     id: "skills",
@@ -228,8 +228,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   {
     id: "secrets",
     section: "secrets",
-    label: "Secrets",
-    keywords: "secret password api key token credential vault keychain revoke audit",
+    label: "Vault",
+    keywords: "secret secrets password login api key token credential vault keychain revoke audit kasa",
   },
   {
     id: "mcp-servers",

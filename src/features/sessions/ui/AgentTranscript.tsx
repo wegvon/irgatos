@@ -44,6 +44,7 @@ import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { PlanPreview } from "./PlanPreview";
 import { SecretRequestCard } from "../../secrets/ui/SecretRequestCard";
+import { SecretApprovalCard } from "../../secrets/ui/SecretApprovalCard";
 import { OrchestrationPreview } from "../../orchestration/ui/OrchestrationPreview";
 import { TaskListPreview } from "./TaskListPreview";
 import { HandoffButton, SecondOpinionButton } from "./SecondOpinionButton";
@@ -2424,6 +2425,15 @@ const TranscriptBlock = memo(function TranscriptBlock({
         <SecretRequestCard
           blockId={block.id}
           request={block.secretRequest}
+          embedded={embedded}
+        />
+      );
+    }
+    if (block.secretApproval) {
+      return (
+        <SecretApprovalCard
+          blockId={block.id}
+          approval={block.secretApproval}
           embedded={embedded}
         />
       );

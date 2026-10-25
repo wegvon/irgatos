@@ -61,6 +61,13 @@ export type WebBlock = {
     output?: string;
   };
   approval?: { requestId: number; decided?: "allow" | "deny" | "cancelled" };
+  /** An agent wants a vault value set to "ask"; answered with `secretApproval`. */
+  secretApproval?: {
+    name: string;
+    label: string;
+    target: string;
+    state: "pending" | "once" | "chat" | "deny";
+  };
   /** Attachments on a user turn, by name only. */
   files?: string[];
   /** Images on this block, loaded one by one with the `image` read. */

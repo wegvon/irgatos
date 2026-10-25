@@ -540,6 +540,8 @@ pub fn run() {
             secrets::secrets_save,
             secrets::secrets_list,
             secrets::secrets_revoke,
+            secrets::secrets_update,
+            secrets::secrets_approve,
             secrets::secrets_audit,
             feed::feed_save_interest,
             feed::feed_remove_interest,

@@ -419,6 +419,8 @@ export type Block = {
    * name and limits only; the value goes straight to the vault.
    */
   secretRequest?: import("../../secrets/model/secrets").SecretRequest;
+  /** An agent wants a vault value set to "ask"; the user allows or denies it. */
+  secretApproval?: import("../../secrets/model/secrets").SecretApproval;
   /** User approval to permanently assign a registered project to this Irgat. */
   irgatProjectAccess?: { irgatId: string; project: string; userTurnId?: string };
   /**

@@ -117,6 +117,7 @@ function mac(open: Session[], automations: Automation[] = [automation()]) {
     sessions: () => sessions,
     submit: vi.fn(() => true),
     approve: vi.fn(),
+    answerSecretApproval: vi.fn(async () => undefined),
     answer: vi.fn(),
     stop: vi.fn(),
     launch: vi.fn(async () => {}),

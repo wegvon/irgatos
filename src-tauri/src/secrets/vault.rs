@@ -40,6 +40,14 @@ pub struct SecretMeta {
     pub uses: u32,
     pub created_at: i64,
     pub expires_at: Option<i64>,
+    /// "key" (API key or token) or "login" (a password with its username).
+    pub kind: String,
+    /// The login's username; not secret, so agents and the vault list see it.
+    pub username: String,
+    /// "free": agents use it within its limits; "ask": each use waits for the
+    /// user's approval in the chat.
+    pub policy: String,
+    pub updated_at: i64,
 }
 
 impl SecretMeta {
@@ -62,6 +70,9 @@ pub struct NewSecret {
     pub purpose: Option<String>,
     pub max_uses: Option<u32>,
     pub expires_at: Option<i64>,
+    pub kind: String,
+    pub username: String,
+    pub policy: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -106,18 +117,7 @@ impl Vault {
 
     pub fn insert(&self, secret: &NewSecret, value: &str, now: i64) -> Result<SecretMeta, String> {
         let id = uuid::Uuid::new_v4().simple().to_string();
-        let mut nonce = [0u8; NONCE_LEN];
-        SystemRandom::new()
-            .fill(&mut nonce)
-            .map_err(|_| "Could not create a nonce")?;
-        let mut sealed = Zeroizing::new(value.as_bytes().to_vec());
-        self.key
-            .seal_in_place_append_tag(
-                Nonce::assume_unique_for_key(nonce),
-                Aad::from(aad(&id, &secret.name)),
-                &mut *sealed,
-            )
-            .map_err(|_| "Could not encrypt the value")?;
+        let (nonce, sealed) = self.seal(&id, &secret.name, value)?;
         // A chat asks again under the same name to replace its value.
         let replaced: Vec<String> = {
             let mut stmt = self
@@ -135,8 +135,9 @@ impl Vault {
         self.conn
             .execute(
                 "INSERT INTO secrets (id, name, label, description, session_id, hosts, allow_in,
-                   purpose, max_uses, uses, created_at, expires_at, nonce, ciphertext)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13)",
+                   purpose, max_uses, uses, created_at, expires_at, nonce, ciphertext,
+                   kind, username, policy, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?10)",
                 params![
                     id,
                     secret.name,
@@ -151,11 +152,100 @@ impl Vault {
                     secret.expires_at,
                     nonce.to_vec(),
                     sealed.to_vec(),
+                    secret.kind,
+                    secret.username,
+                    secret.policy,
                 ],
             )
             .map_err(sql)?;
         self.get(&id)?
             .ok_or_else(|| "The secret was not saved".into())
+    }
+
+    /// Changes a secret in place: its limits, name and, when `value` is
+    /// given, its value. Uses so far and the chat it belongs to stay.
+    pub fn update(
+        &self,
+        id: &str,
+        secret: &NewSecret,
+        value: Option<&str>,
+        now: i64,
+    ) -> Result<SecretMeta, String> {
+        let current = self.get(id)?.ok_or("The secret is no longer available")?;
+        let clash: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM secrets WHERE name = ?1 AND session_id IS ?2 AND id != ?3",
+                params![secret.name, current.session_id, id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(sql)?;
+        if clash.is_some() {
+            return Err(format!("{} is already in the vault", secret.name));
+        }
+        // The name is bound into the ciphertext, so a rename seals it again.
+        if value.is_some() || secret.name != current.name {
+            let kept;
+            let plain = match value {
+                Some(value) => value,
+                None => {
+                    kept = self.reveal(id)?;
+                    kept.as_str()
+                }
+            };
+            let (nonce, sealed) = self.seal(id, &secret.name, plain)?;
+            self.conn
+                .execute(
+                    "UPDATE secrets SET nonce = ?2, ciphertext = ?3 WHERE id = ?1",
+                    params![id, nonce.to_vec(), sealed.to_vec()],
+                )
+                .map_err(sql)?;
+        }
+        self.conn
+            .execute(
+                "UPDATE secrets SET name = ?2, label = ?3, description = ?4, hosts = ?5,
+                   allow_in = ?6, purpose = ?7, kind = ?8, username = ?9, policy = ?10,
+                   updated_at = ?11
+                 WHERE id = ?1",
+                params![
+                    id,
+                    secret.name,
+                    secret.label,
+                    secret.description,
+                    serde_json::to_string(&secret.hosts).map_err(|e| e.to_string())?,
+                    serde_json::to_string(&secret.allow_in).map_err(|e| e.to_string())?,
+                    secret.purpose,
+                    secret.kind,
+                    secret.username,
+                    secret.policy,
+                    now,
+                ],
+            )
+            .map_err(sql)?;
+        self.get(id)?
+            .ok_or_else(|| "The secret was not saved".into())
+    }
+
+    fn seal(
+        &self,
+        id: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<([u8; NONCE_LEN], Zeroizing<Vec<u8>>), String> {
+        let mut nonce = [0u8; NONCE_LEN];
+        SystemRandom::new()
+            .fill(&mut nonce)
+            .map_err(|_| "Could not create a nonce")?;
+        let mut sealed = Zeroizing::new(value.as_bytes().to_vec());
+        self.key
+            .seal_in_place_append_tag(
+                Nonce::assume_unique_for_key(nonce),
+                Aad::from(aad(id, name)),
+                &mut *sealed,
+            )
+            .map_err(|_| "Could not encrypt the value")?;
+        Ok((nonce, sealed))
     }
 
     pub fn get(&self, id: &str) -> Result<Option<SecretMeta>, String> {
@@ -388,7 +478,7 @@ fn audit_conn(conn: &Connection, entry: &AuditEntry) -> Result<(), String> {
     Ok(())
 }
 
-const META_COLUMNS: &str = "id, name, label, description, session_id, hosts, allow_in, purpose, max_uses, uses, created_at, expires_at";
+const META_COLUMNS: &str = "id, name, label, description, session_id, hosts, allow_in, purpose, max_uses, uses, created_at, expires_at, kind, username, policy, updated_at";
 
 fn meta_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecretMeta> {
     let hosts: String = row.get(5)?;
@@ -406,6 +496,10 @@ fn meta_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SecretMeta> {
         uses: row.get(9)?,
         created_at: row.get(10)?,
         expires_at: row.get(11)?,
+        kind: row.get(12)?,
+        username: row.get(13)?,
+        policy: row.get(14)?,
+        updated_at: row.get::<_, Option<i64>>(15)?.unwrap_or_default(),
     })
 }
 
@@ -445,7 +539,25 @@ fn migrate(conn: &Connection) -> Result<(), String> {
            detail TEXT NOT NULL
          );",
     )
-    .map_err(sql)
+    .map_err(sql)?;
+    // Columns the vault screen added; older files gain them with defaults.
+    let columns: Vec<String> = {
+        let mut stmt = conn.prepare("PRAGMA table_info(secrets)").map_err(sql)?;
+        let rows = stmt.query_map([], |row| row.get(1)).map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    for (column, definition) in [
+        ("kind", "TEXT NOT NULL DEFAULT 'key'"),
+        ("username", "TEXT NOT NULL DEFAULT ''"),
+        ("policy", "TEXT NOT NULL DEFAULT 'free'"),
+        ("updated_at", "INTEGER"),
+    ] {
+        if !columns.iter().any(|c| c == column) {
+            conn.execute_batch(&format!("ALTER TABLE secrets ADD COLUMN {column} {definition}"))
+                .map_err(sql)?;
+        }
+    }
+    Ok(())
 }
 
 fn sql(error: rusqlite::Error) -> String {
@@ -469,6 +581,9 @@ mod tests {
             purpose: None,
             max_uses: None,
             expires_at: Some(10_000),
+            kind: "key".into(),
+            username: String::new(),
+            policy: "free".into(),
         }
     }
 
@@ -554,5 +669,54 @@ mod tests {
         let active = vault.active(3).unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(&*vault.reveal(&second.id).unwrap(), "second-value");
+    }
+
+    #[test]
+    fn editing_keeps_the_value_unless_replaced_and_survives_a_rename() {
+        let vault = Vault::open_in_memory(&KEY).unwrap();
+        let mut kept = new_secret("GH_TOKEN", None);
+        kept.expires_at = None;
+        let meta = vault.insert(&kept, "first-value", 1).unwrap();
+        let mut edit = new_secret("GITHUB_TOKEN", None);
+        edit.kind = "login".into();
+        edit.username = "turel".into();
+        edit.policy = "ask".into();
+        let renamed = vault.update(&meta.id, &edit, None, 5).unwrap();
+        assert_eq!(
+            (renamed.name.as_str(), renamed.username.as_str(), renamed.policy.as_str(), renamed.updated_at),
+            ("GITHUB_TOKEN", "turel", "ask", 5)
+        );
+        assert_eq!(renamed.expires_at, None, "an edit does not add a lapse");
+        assert_eq!(&*vault.reveal(&meta.id).unwrap(), "first-value");
+        vault.update(&meta.id, &edit, Some("second-value"), 6).unwrap();
+        assert_eq!(&*vault.reveal(&meta.id).unwrap(), "second-value");
+        // Two saved values cannot share a name.
+        let other = vault.insert(&new_secret("OTHER", None), "other-value", 1).unwrap();
+        assert!(vault.update(&other.id, &edit, None, 7).is_err());
+    }
+
+    #[test]
+    fn older_files_gain_the_new_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secrets.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE secrets (id TEXT PRIMARY KEY, name TEXT NOT NULL, label TEXT NOT NULL,
+                   description TEXT NOT NULL, session_id TEXT, hosts TEXT NOT NULL,
+                   allow_in TEXT NOT NULL, purpose TEXT, max_uses INTEGER,
+                   uses INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+                   expires_at INTEGER, nonce BLOB NOT NULL, ciphertext BLOB NOT NULL);
+                 INSERT INTO secrets VALUES ('a', 'OLD_KEY', 'Old', '', NULL, '[\"a.com\"]',
+                   '[\"header\"]', NULL, NULL, 0, 1, NULL, x'00', x'00');",
+            )
+            .unwrap();
+        }
+        let vault = Vault::open(&path, &KEY).unwrap();
+        let meta = vault.get("a").unwrap().unwrap();
+        assert_eq!(
+            (meta.kind.as_str(), meta.username.as_str(), meta.policy.as_str()),
+            ("key", "", "free")
+        );
     }
 }
