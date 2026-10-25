@@ -72,7 +72,7 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 32] = [
+const WRITE_ACTIONS: [&str; 33] = [
     "upload",
     "send",
     "approval",
@@ -105,6 +105,7 @@ const WRITE_ACTIONS: [&str; 32] = [
     "setModel",
     "setEffort",
     "setMode",
+    "secretApproval",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.

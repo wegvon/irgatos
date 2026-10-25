@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FleetRequest } from "../../../fleet/model/fleet";
+import type { WebBlock } from "../../model/protocol";
 import type { UserQuestion } from "../../../sessions/model/userQuestion";
 import { write } from "../client";
 import { Spinner, primaryButton, secondaryButton, useAction } from "./parts";
@@ -64,6 +65,75 @@ function Approval({
         >
           {busy === "allow" ? <Spinner /> : <Check className="size-4" />}
           Allow
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A vault value set to "ask": allow it once, for the chat, or deny it. */
+export function SecretApprovalBody({
+  sessionId,
+  block,
+}: {
+  sessionId: string;
+  block: WebBlock;
+}) {
+  const { busy, run } = useAction();
+  const approval = block.secretApproval!;
+  const answer = (state: "once" | "chat" | "deny") =>
+    run(
+      state,
+      () => write("secretApproval", { sessionId, blockId: block.id, answer: state }),
+      state === "deny" ? "Denied" : "Allowed",
+    );
+  if (approval.state !== "pending")
+    return (
+      <div className="self-center px-6 text-center text-[13px] text-(--ink-3)">
+        {approval.label}{" "}
+        {approval.state === "deny"
+          ? "not allowed"
+          : approval.state === "chat"
+            ? "allowed for this chat"
+            : "allowed once"}
+      </div>
+    );
+  return (
+    <div className="attention flex flex-col gap-3 rounded-[24px] bg-(--raised) p-4">
+      <div className="text-[15px] leading-snug">
+        <span className="text-(--ink-2)">Wants to use </span>
+        <span className="font-semibold text-(--ink)">{approval.label}</span>
+        {approval.target ? (
+          <span className="text-(--ink-2)"> for {approval.target}</span>
+        ) : null}
+      </div>
+      <div className="text-[13px] text-(--ink-3)">
+        From your vault. The agent never sees the value.
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          className={secondaryButton}
+          disabled={busy !== null}
+          onClick={() => void answer("deny")}
+        >
+          {busy === "deny" ? <Spinner /> : <X className="size-4" />}
+          Deny
+        </button>
+        <button
+          className={primaryButton}
+          disabled={busy !== null}
+          onClick={() => void answer("once")}
+        >
+          {busy === "once" ? <Spinner /> : <Check className="size-4" />}
+          Allow once
+        </button>
+        <button
+          className={`${secondaryButton} col-span-2`}
+          disabled={busy !== null}
+          onClick={() => void answer("chat")}
+        >
+          {busy === "chat" ? <Spinner /> : null}
+          Allow in this chat
         </button>
       </div>
     </div>
