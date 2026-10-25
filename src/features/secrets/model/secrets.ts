@@ -67,6 +67,8 @@ export type SecretMeta = {
   username: string;
   policy: SecretPolicy;
   updatedAt: number;
+  /** Programs `secrets.run` may hand it to as an environment variable. */
+  commands: string[];
 };
 
 export type SecretAudit = {
@@ -106,6 +108,7 @@ export type SecretSave = {
   kind?: SecretKind;
   username?: string;
   policy?: SecretPolicy;
+  commands?: string[];
   value: string;
 };
 
@@ -121,6 +124,7 @@ export type SecretUpdate = {
   kind: SecretKind;
   username: string;
   policy: SecretPolicy;
+  commands: string[];
   value?: string;
 };
 
@@ -369,7 +373,14 @@ export const SECRET_KIND_LABEL: Record<SecretKind, string> = {
 export function matchesSecret(meta: SecretMeta, query: string) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const haystack = [meta.name, meta.label, meta.username, meta.description, ...meta.hosts]
+  const haystack = [
+    meta.name,
+    meta.label,
+    meta.username,
+    meta.description,
+    ...meta.hosts,
+    ...(meta.commands ?? []),
+  ]
     .join(" ")
     .toLowerCase();
   return words.every((word) => haystack.includes(word));

@@ -278,7 +278,7 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             } else if action.starts_with("browser.") {
                 crate::browser_agent::agent_action(app, &window, action, &request.input)?
             } else if action.starts_with("secrets.") {
-                crate::secrets::agent_action(app, &session, &window, action, &request.input)?
+                crate::secrets::agent_action(app, &session, &window, &cwd, action, &request.input)?
             } else if action.starts_with("feed.") {
                 crate::feed::agent_action(app, &session, action, &request.input)?
             } else {
