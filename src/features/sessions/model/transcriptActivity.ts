@@ -565,12 +565,17 @@ export function groupIrgatTurnItems(
   const boundary = yieldedAt(items);
   // A question hands the turn to the user, so what the agent said last is the
   // context for its options, not narration: it stays in the chat above them.
-  let lastProse = -1;
-  if (options?.waitingForAnswer)
+  let scanEnd = items.length;
+  if (options?.waitingForAnswer) {
+    let lastProse = -1;
     items.forEach((item, index) => {
       if (item.type === "block" && isProseBlock(item.block)) lastProse = index;
     });
-  const scanEnd = lastProse > start ? lastProse : items.length;
+    let proseStart = lastProse;
+    while (proseStart > start && isProseItem(items[proseStart - 1]))
+      proseStart -= 1;
+    if (lastProse >= start) scanEnd = proseStart;
+  }
   for (let index = start; index < scanEnd; index += 1) {
     const item = items[index];
     // Status pings after an answer are not new work that should absorb it.
@@ -1169,6 +1174,10 @@ function yieldedAt(items: TurnItem[]): number {
     );
   });
   return index < 0 ? items.length : index;
+}
+
+function isProseItem(item: TurnItem): boolean {
+  return item.type === "block" && isProseBlock(item.block);
 }
 
 function isFoldableItem(item: TurnItem): boolean {

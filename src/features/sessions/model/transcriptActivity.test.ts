@@ -234,6 +234,24 @@ describe("groupIrgatTurnItems", () => {
     expect(visibleProse(groupIrgatTurnItems(blocks, { live: true }))).toEqual(
       [],
     );
+    // The whole explanation stays, however many blocks it spans.
+    const split: Block[] = [
+      ...blocks.slice(0, 4),
+      note("plan-2", "Next step: pick a starting point."),
+      blocks[4],
+    ];
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(split, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan", "plan-2"]);
+    // A question asked straight away keeps its explanation too.
+    const direct: Block[] = [blocks[0], blocks[3], blocks[4]];
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(direct, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan"]);
   });
 
   it("keeps replies after mid-turn follow-ups visible while tools continue", () => {

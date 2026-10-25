@@ -461,6 +461,7 @@ function FloatingConversation({
           model={session.model}
           modelSettings={session.modelSettings}
           pendingQuestion={!!question}
+          awaitingAnswer={!!question && question.autoResolveAt == null}
           backgroundTasks={session.backgroundTasks}
           onApproval={(requestId, decision) =>
             void action({ kind: "approval", requestId, decision })
