@@ -136,6 +136,66 @@ struct RelayRequest {
     input: Value,
 }
 
+/// How long `browser.eval` stays off in a window after a vault login was
+/// filled there, so the agent cannot read the field back.
+const EVAL_PAUSE: Duration = Duration::from_secs(120);
+
+fn eval_paused() -> &'static Mutex<HashMap<String, SystemTime>> {
+    static PAUSED: OnceLock<Mutex<HashMap<String, SystemTime>>> = OnceLock::new();
+    PAUSED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Fills a vault login into the active page of the window's Browser, for
+/// `secrets.login`. The page script checks the host itself, at fill time.
+pub fn fill_login(
+    app: &AppHandle,
+    window_label: &str,
+    username: &str,
+    password: &str,
+    hosts: &[String],
+    submit: bool,
+) -> Result<Value, String> {
+    let window = app
+        .get_webview_window(window_label)
+        .ok_or("The Irgatos window for this chat is closed")?;
+    let call = format!(
+        "fillLogin({}, {}, {}, {})",
+        json!(username),
+        json!(password),
+        json!(hosts),
+        json!({ "submit": submit })
+    );
+    if let Ok(mut paused) = eval_paused().lock() {
+        paused.insert(window_label.to_string(), SystemTime::now());
+    }
+    tauri::async_runtime::block_on(async move {
+        let result = run_page(window.clone(), call).await?;
+        if submit {
+            settled(window, result).await
+        } else {
+            Ok(result)
+        }
+    })
+}
+
+/// The active page's address, for checking where a login would go.
+pub fn page_url(app: &AppHandle, window_label: &str) -> Result<String, String> {
+    let window = app
+        .get_webview_window(window_label)
+        .ok_or("The Irgatos window for this chat is closed")?;
+    let page = tauri::async_runtime::block_on(run_page(window, "page()".into()))?;
+    page.get("url")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| NO_PAGE.to_string())
+}
+
+fn eval_pause_left(window_label: &str) -> Option<Duration> {
+    let paused = eval_paused().lock().ok()?;
+    let since = paused.get(window_label)?.elapsed().ok()?;
+    EVAL_PAUSE.checked_sub(since).filter(|left| !left.is_zero())
+}
+
 pub fn agent_action(
     app: &AppHandle,
     window_label: &str,
@@ -192,6 +252,12 @@ async fn dispatch(window: WebviewWindow, action: &str, input: &Value) -> Result<
             run_page(window, format!("scroll({options})")).await
         }
         "browser.eval" => {
+            if let Some(left) = eval_pause_left(window.label()) {
+                return Err(format!(
+                    "browser.eval is paused for {} s: a password from the vault was just filled in this Browser. Use browser.read, click and type meanwhile.",
+                    left.as_secs().max(1)
+                ));
+            }
             let script = input
                 .get("script")
                 .and_then(Value::as_str)

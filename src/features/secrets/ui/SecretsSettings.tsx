@@ -191,6 +191,12 @@ function SecretForm({
         ))}
       </div>
 
+      <p className="-mt-1 text-[11px] text-content/45">
+        {login
+          ? "Agents sign in with it in the Irgatos Browser, only on the sites below. They never see the password."
+          : "Agents use it in requests to the hosts below, or in the programs you name. They never see it."}
+      </p>
+
       <div className="grid gap-2 sm:grid-cols-2">
         <label className={caption}>
           Label

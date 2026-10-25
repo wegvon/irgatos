@@ -82,12 +82,13 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 62] = [
+const APP_ACTIONS: [&str; 63] = [
     "code.search",
     "secrets.request",
     "secrets.list",
     "secrets.http",
     "secrets.run",
+    "secrets.login",
     "browser.state",
     "browser.read",
     "browser.open",
@@ -208,7 +209,15 @@ Actions:
                   command line. Refused, and nothing runs, unless the user
                   allowed that program for the secret (secrets.list shows
                   commands). No shell and no input. Returns exitCode,
-                  timedOut, stdout and stderr, scrubbed like secrets.http. Placeholders mean nothing anywhere
+                  timedOut, stdout and stderr, scrubbed like secrets.http.
+  secrets.login {"name":"GITHUB_LOGIN","submit":true,"purpose":"deploy"}
+                  Fill a vault login (username and password) into the login
+                  form of the page open in the Irgatos Browser, and submit it
+                  (submit defaults to true). Only on HTTPS pages of the
+                  login's sites; refused, and nothing is filled, anywhere
+                  else. A username-only step fills the username; call again
+                  on the password step. Returns what was filled, never the
+                  values. browser.eval pauses for 2 minutes afterwards. Placeholders mean nothing anywhere
                   else: your own shell and tools get the literal text.
   browser.state {} The Irgatos Browser the user sees beside this chat: whether
                   it is open and shown, the active page's url, title and
