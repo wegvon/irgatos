@@ -49,11 +49,12 @@ const MAX_TTL_HOURS: u32 = 24 * 7;
 const MAX_VALUE_CHARS: usize = 16_384;
 const MAX_HOSTS: usize = 8;
 
-pub const AGENT_ACTIONS: [&str; 4] = [
+pub const AGENT_ACTIONS: [&str; 5] = [
     "secrets.request",
     "secrets.list",
     "secrets.http",
     "secrets.run",
+    "secrets.login",
 ];
 
 /// The open vault and the values in use, decrypted once so output can be
@@ -706,8 +707,133 @@ pub(crate) fn agent_action(
             changed(app);
             response
         }
+        "secrets.login" => {
+            let input: LoginInput = serde_json::from_value(input.clone())
+                .map_err(|e| format!("secrets.login: {e}"))?;
+            let url = crate::browser_agent::page_url(app, window)?;
+            let target = page_target(&url)?;
+            let waiting = with_existing(app, Vec::new(), |loaded| {
+                Ok(loaded.awaiting_approval(session_id, std::slice::from_ref(&input.name)))
+            })?;
+            if !waiting.is_empty() {
+                return ask_approval(app, session_id, window, &waiting, "secrets.login", "", &target.host);
+            }
+            let login = with_existing(app, None, |loaded| {
+                login_prepare(loaded, session_id, &input.name, &target, input.purpose.as_deref(), now()).map(Some)
+            })?
+            .ok_or("No secrets are saved. The user can add a login in Settings > Vault.")?;
+            let filled = crate::browser_agent::fill_login(
+                app,
+                window,
+                &login.meta.username,
+                &login.password,
+                &login.meta.hosts,
+                input.submit.unwrap_or(true),
+            );
+            let response = with_loaded(app, |loaded| {
+                let detail = match &filled {
+                    Ok(result) => result
+                        .get("filled")
+                        .and_then(Value::as_array)
+                        .map(|f| format!("filled {}", f.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" and ")))
+                        .unwrap_or_else(|| "filled".into()),
+                    Err(_) => "not filled".into(),
+                };
+                let _ = loaded.vault.audit(&audit(&login.meta, "used", "secrets.login", "", &target.host, &detail));
+                let mut plain = loaded.plain_values();
+                plain.push(login.password.as_str());
+                let scrub = |text: &str| redact::all(text, &plain);
+                let mut result = filled.map_err(|error| scrub(&error))?;
+                redact::json(&mut result, &scrub);
+                Ok(result)
+            });
+            changed(app);
+            response
+        }
         _ => Err(format!("Unknown action {action}")),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LoginInput {
+    name: String,
+    #[serde(default)]
+    submit: Option<bool>,
+    #[serde(default)]
+    purpose: Option<String>,
+}
+
+/// The Browser page a login would go to, as a host to check.
+fn page_target(url: &str) -> Result<http::Target, String> {
+    let url = url::Url::parse(url).map_err(|_| "The Browser has no page open")?;
+    if url.scheme() != "https" {
+        return Err(format!(
+            "Logins are filled on HTTPS pages only; this page is {}",
+            url.scheme()
+        ));
+    }
+    Ok(http::Target {
+        host: url.host_str().unwrap_or_default().to_ascii_lowercase(),
+        port: url.port(),
+    })
+}
+
+struct Login {
+    meta: SecretMeta,
+    password: Zeroizing<String>,
+}
+
+fn login_prepare(
+    loaded: &mut Loaded,
+    session_id: &str,
+    name: &str,
+    target: &http::Target,
+    purpose: Option<&str>,
+    at: i64,
+) -> Result<Login, String> {
+    let Some((meta, value)) = loaded.visible(session_id, name) else {
+        return Err(format!(
+            "{name} is not in the vault. The user can add it as a login in Settings > Vault."
+        ));
+    };
+    let (meta, password) = (meta.clone(), value.clone());
+    let refusal = if meta.kind != "login" {
+        Some(format!("{name} is an API key, not a login"))
+    } else if !meta.usable_at(at) {
+        Some(format!("{name} has expired or been used up"))
+    } else if !http::host_allowed(target, &meta.hosts) {
+        Some(format!(
+            "{name} is for {}; the Browser is on {}",
+            meta.hosts.join(", "),
+            target.host
+        ))
+    } else {
+        meta.purpose.as_ref().and_then(|wanted| {
+            (!purpose.is_some_and(|p| p.eq_ignore_ascii_case(wanted))).then(|| {
+                format!("{name} may only be used for \"{wanted}\"; pass \"purpose\":\"{wanted}\"")
+            })
+        })
+    };
+    if let Some(reason) = refusal {
+        let _ = loaded
+            .vault
+            .audit(&audit(&meta, "blocked", "secrets.login", "", &target.host, &reason));
+        return Err(format!("Blocked: {reason}. Nothing was filled."));
+    }
+    if !loaded
+        .awaiting_approval(session_id, &[name.to_string()])
+        .is_empty()
+    {
+        return Err(format!(
+            "{name} waits for the user's approval in this chat. Nothing was filled."
+        ));
+    }
+    if loaded.vault.record_use(&meta.id)? {
+        loaded.reload(at)?;
+    }
+    loaded.spend_grants(session_id, std::slice::from_ref(&meta));
+    Ok(Login { meta, password })
 }
 
 /// A checked `secrets.run`, uses counted, ready to start.
@@ -1529,5 +1655,35 @@ mod tests {
             1,
         )
         .is_err());
+    }
+
+    #[test]
+    fn logins_fill_only_on_their_sites_and_only_logins() {
+        let mut loaded = loaded();
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "GITHUB_LOGIN", "kind": "login", "username": "wegvon",
+                   "hosts": ["github.com"], "value": "FAKE-password-1"}),
+        );
+        save(
+            &mut loaded,
+            json!({"persistent": true, "name": "API_KEY", "hosts": ["github.com"], "value": "FAKE-key-1234"}),
+        );
+        let site = |url: &str| page_target(url).unwrap();
+        let ok = login_prepare(&mut loaded, "chat-1", "GITHUB_LOGIN", &site("https://github.com/login"), None, 2_000)
+            .unwrap();
+        assert_eq!((ok.meta.username.as_str(), ok.password.as_str()), ("wegvon", "FAKE-password-1"));
+        for (name, url) in [
+            ("GITHUB_LOGIN", "https://github.com.evil.example/login"),
+            ("GITHUB_LOGIN", "https://gist.github.com/"),
+            ("GITHUB_LOGIN", "https://github.com:8443/login"),
+            ("API_KEY", "https://github.com/login"),
+        ] {
+            let error = login_prepare(&mut loaded, "chat-1", name, &site(url), None, 2_000).err().unwrap();
+            assert!(error.starts_with("Blocked"), "{url}: {error}");
+            assert!(!error.contains("FAKE"), "{error}");
+        }
+        assert!(page_target("http://github.com/login").is_err());
+        assert!(login_prepare(&mut loaded, "chat-1", "MISSING", &site("https://github.com/"), None, 2_000).is_err());
     }
 }
