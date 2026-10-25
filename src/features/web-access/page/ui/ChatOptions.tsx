@@ -2,11 +2,25 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { WebSession } from "../../model/protocol";
 import { write } from "../client";
+import { navigate } from "../route";
 import { Sheet } from "./Sheet";
 import { Spinner, primaryButton, secondaryButton, useAction } from "./parts";
-import { Pencil, Trash2 } from "../../../../shared/ui/icons";
+import { GitFork, Pencil, Trash2 } from "../../../../shared/ui/icons";
 
-/** Rename or delete the open chat, as its sidebar row does on the Mac. */
+/** Copy the chat (through `blockId`'s turn, or all of it) and open the copy. */
+export async function forkChat(
+  sessionId: string,
+  blockId?: string,
+): Promise<boolean> {
+  const result = await write<{ sessionId: string }>("forkChat", {
+    sessionId,
+    ...(blockId ? { blockId } : {}),
+  });
+  navigate({ name: "chat", id: result.sessionId });
+  return true;
+}
+
+/** Rename, fork or delete the open chat, as its sidebar row does on the Mac. */
 export function ChatOptions({
   session,
   wide,
@@ -82,6 +96,22 @@ export function ChatOptions({
             Rename
           </button>
         </form>
+
+        <button
+          className={secondaryButton}
+          disabled={busy !== null || session.blocks.length === 0}
+          onClick={async () => {
+            const done = await run(
+              "fork",
+              () => forkChat(session.id),
+              "Chat forked",
+            );
+            if (done) onClose();
+          }}
+        >
+          {busy === "fork" ? <Spinner /> : <GitFork className="size-4" />}
+          Fork chat
+        </button>
 
         {session.deletable ? (
           <button

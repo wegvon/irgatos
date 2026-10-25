@@ -129,6 +129,7 @@ function deps(sessions: Session[], ideas: IdeasState = { boards: [board()] }) {
     irgatsEnabled: () => false,
     saveSession: vi.fn(async () => null),
     rename: vi.fn(async () => {}),
+    fork: vi.fn(async (): Promise<string | undefined> => "forked"),
     remove: vi.fn(async () => true),
     projects: () => ["/Users/me/code/shop", "/Users/me/code/irgatos"],
     freeChatDir: async () => "/Users/me/.irgatos/scratch",
@@ -643,6 +644,20 @@ describe("handleWebAccess", () => {
     ).rejects.toThrow("allow or deny");
   });
 
+  it("allows everything waiting and stops the asking for that chat", async () => {
+    const second: Block = { ...approval, id: "ask-8", approval: { requestId: 8 } };
+    const d = deps([chat("a", { blocks: [sent, approval, second] })]);
+    const result = await handleWebAccess(d, "approval", {
+      sessionId: "a",
+      requestId: 7,
+      decision: "allowAll",
+    });
+    expect(d.setRuntimeMode).toHaveBeenCalledWith("a", "full-access");
+    expect(d.approve).toHaveBeenCalledWith("a", 7, "allow");
+    expect(d.approve).toHaveBeenCalledWith("a", 8, "allow");
+    expect(result).toEqual({ decided: "allow", allowed: 2 });
+  });
+
   it("answers a vault approval like the card on the Mac", async () => {
     const secretApproval = {
       requestId: "r1",
@@ -727,6 +742,29 @@ describe("handleWebAccess", () => {
     expect(d.rename).toHaveBeenCalledTimes(1);
   });
 
+  it("forks a chat through the turn of the chosen message", async () => {
+    const blocks: Block[] = [
+      { id: "u1", role: "user", text: "One" },
+      { id: "a1", role: "assistant", text: "First" },
+      { id: "u2", role: "user", text: "Two" },
+      { id: "a2", role: "assistant", text: "Second" },
+    ];
+    const d = deps([chat("a", { blocks })]);
+    expect(
+      await handleWebAccess(d, "forkChat", { sessionId: "a", blockId: "a1" }),
+    ).toEqual({ sessionId: "forked" });
+    expect(d.fork).toHaveBeenLastCalledWith("a", blocks.slice(0, 2));
+    await handleWebAccess(d, "forkChat", { sessionId: "a" });
+    expect(d.fork).toHaveBeenLastCalledWith("a", undefined);
+    await expect(
+      handleWebAccess(d, "forkChat", { sessionId: "a", blockId: "gone" }),
+    ).rejects.toThrow("not in this chat");
+    d.fork.mockResolvedValueOnce(undefined);
+    await expect(
+      handleWebAccess(d, "forkChat", { sessionId: "a" }),
+    ).rejects.toThrow("cannot be forked");
+  });
+
   it("deletes a chat, and says so when the Mac keeps it", async () => {
     const d = deps([chat("a")]);
     const view = (await handleWebAccess(d, "session", {
@@ -763,6 +801,14 @@ describe("handleWebAccess", () => {
       "claude",
       "codex",
     ]);
+    expect(result.mode).toBe("supervised");
+  });
+
+  it("starts the phone's new chats with the Mac's access", async () => {
+    const d = deps([]);
+    d.defaultMode = () => "full-access";
+    const result = (await handleWebAccess(d, "projects", {})) as WebProjects;
+    expect(result.mode).toBe("full-access");
   });
 
   it("takes a file in pieces and sends it with the next message", async () => {

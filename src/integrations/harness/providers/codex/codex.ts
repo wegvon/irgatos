@@ -54,6 +54,7 @@ import type {
   CompactContextInput,
   HarnessEvent,
   HarnessSessionInput,
+  ForkSessionInput,
   RewindLastTurnInput,
   RewindLastTurnResult,
   SendTurnInput,
@@ -245,6 +246,36 @@ export async function rewindCodexLastTurn(
     beforeTurnId,
   });
   return { submitted: false };
+}
+
+/**
+ * Codex copies a thread natively, through the last kept turn. The source's
+ * own app-server does it, so the fork stays in the same store and folder.
+ */
+export async function forkCodexSession(
+  input: ForkSessionInput,
+): Promise<string | null> {
+  // Ephemeral and Irgat-store threads cannot be reopened by another session.
+  if (input.ephemeral || input.codexStore) return null;
+  let live: Live;
+  try {
+    live = await ensureLive(input);
+  } catch (error) {
+    cancelledThreads.delete(input.sessionId);
+    throw error;
+  }
+  if (live.threadId !== input.providerSessionId) return null;
+  const lastTurnId = input.throughProviderTurnId?.trim();
+  if (input.keepTurns != null && !lastTurnId && input.nextPrompt) return null;
+  const forked = await live.rpc.request<{ thread?: { id?: string } }>(
+    "thread/fork",
+    {
+      threadId: live.threadId,
+      ...(lastTurnId ? { lastTurnId } : {}),
+      excludeTurns: true,
+    },
+  );
+  return forked.thread?.id?.trim() || null;
 }
 
 async function lastUserTurnId(

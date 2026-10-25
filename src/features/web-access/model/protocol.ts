@@ -157,6 +157,8 @@ export type WebProject = {
 
 export type WebProjects = {
   projects: WebProject[];
+  /** The access a new chat gets on the Mac. */
+  mode?: RuntimeMode;
   harnesses: WebHarnessChoice[];
 };
 

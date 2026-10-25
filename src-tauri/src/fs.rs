@@ -195,18 +195,33 @@ pub fn claude_shell_commands(
     provider_account_id: Option<String>,
     tool_ids: Vec<String>,
 ) -> Result<HashMap<String, String>, String> {
-    if provider_session_id.is_empty()
-        || !provider_session_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    {
+    if !valid_claude_session_id(&provider_session_id) {
         return Err("Invalid Claude provider session id".into());
     }
     if tool_ids.is_empty() {
         return Ok(HashMap::new());
     }
+    let Some(path) = claude_transcript_path(&app, &provider_session_id, provider_account_id)?
+    else {
+        return Ok(HashMap::new());
+    };
+    claude_shell_commands_from_file(&path, &tool_ids)
+}
+
+fn valid_claude_session_id(provider_session_id: &str) -> bool {
+    !provider_session_id.is_empty()
+        && provider_session_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+fn claude_transcript_path(
+    app: &AppHandle,
+    provider_session_id: &str,
+    provider_account_id: Option<String>,
+) -> Result<Option<PathBuf>, String> {
     let config_dir = match provider_account_id.as_deref() {
-        Some(id) if id != "default" => crate::harness::provider_account_path(&app, "claude", id)?,
+        Some(id) if id != "default" => crate::harness::provider_account_path(app, "claude", id)?,
         _ => match std::env::var_os("CLAUDE_CONFIG_DIR") {
             Some(path) => PathBuf::from(path),
             None => {
@@ -216,15 +231,150 @@ pub fn claude_shell_commands(
     };
     let transcript_name = format!("{provider_session_id}.jsonl");
     let root = config_dir.join("projects");
-    let Some(path) = std::fs::read_dir(root).ok().and_then(|projects| {
+    Ok(std::fs::read_dir(root).ok().and_then(|projects| {
         projects.flatten().find_map(|project| {
             let candidate = project.path().join(&transcript_name);
             candidate.is_file().then_some(candidate)
         })
-    }) else {
-        return Ok(HashMap::new());
+    }))
+}
+
+/// Copy a Claude conversation into a new one beside it, as `--fork-session`
+/// does, ending before the prompt that follows the first `keep_turns`.
+/// `next_prompt` is that prompt's text: when the transcript's prompt there
+/// does not contain it, the cut would land elsewhere and nothing is written.
+/// Returns the new conversation id, or None when it cannot be placed.
+#[tauri::command]
+pub fn claude_fork_transcript(
+    app: AppHandle,
+    provider_session_id: String,
+    provider_account_id: Option<String>,
+    keep_turns: Option<usize>,
+    next_prompt: Option<String>,
+) -> Result<Option<String>, String> {
+    if !valid_claude_session_id(&provider_session_id) {
+        return Err("Invalid Claude provider session id".into());
+    }
+    let Some(source) = claude_transcript_path(&app, &provider_session_id, provider_account_id)?
+    else {
+        return Ok(None);
     };
-    claude_shell_commands_from_file(&path, &tool_ids)
+    let fork_id = Uuid::new_v4().to_string();
+    let target = source.with_file_name(format!("{fork_id}.jsonl"));
+    let written = claude_fork_transcript_file(
+        &source,
+        &target,
+        &fork_id,
+        keep_turns,
+        next_prompt.as_deref(),
+    )?;
+    Ok(written.then_some(fork_id))
+}
+
+fn claude_fork_transcript_file(
+    source: &Path,
+    target: &Path,
+    fork_id: &str,
+    keep_turns: Option<usize>,
+    next_prompt: Option<&str>,
+) -> Result<bool, String> {
+    let file = std::fs::File::open(source).map_err(|error| error.to_string())?;
+    let mut out = String::new();
+    let mut prompts = 0usize;
+    let mut cut = false;
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(mut record) = serde_json::from_str::<serde_json::Value>(&line) else {
+            // A torn last line is the only kind a live writer leaves behind.
+            continue;
+        };
+        if let Some(text) = claude_prompt_text(&record) {
+            prompts += 1;
+            if keep_turns.is_some_and(|keep| prompts > keep) {
+                if let Some(hint) = next_prompt
+                    .map(prompt_snippet)
+                    .filter(|hint| !hint.is_empty())
+                {
+                    if !prompt_snippet(&text).contains(&hint) {
+                        return Ok(false);
+                    }
+                }
+                cut = true;
+                break;
+            }
+        }
+        if let Some(session) = record.get_mut("sessionId") {
+            if session.is_string() {
+                *session = serde_json::Value::String(fork_id.to_owned());
+            }
+        }
+        out.push_str(&record.to_string());
+        out.push('\n');
+    }
+    // Fewer prompts than Irgatos shows: the turns do not line up.
+    if let Some(keep) = keep_turns {
+        if !cut && prompts != keep {
+            return Ok(false);
+        }
+    }
+    if out.is_empty() {
+        return Ok(false);
+    }
+    let partial = target.with_extension("jsonl.partial");
+    std::fs::write(&partial, out).map_err(|error| error.to_string())?;
+    std::fs::rename(&partial, target).map_err(|error| {
+        let _ = std::fs::remove_file(&partial);
+        error.to_string()
+    })?;
+    Ok(true)
+}
+
+/// The text of a prompt the user sent, or None for tool results, command
+/// output, summaries and subagent traffic, which Irgatos does not show as turns.
+fn claude_prompt_text(record: &serde_json::Value) -> Option<String> {
+    if record.get("type").and_then(serde_json::Value::as_str) != Some("user") {
+        return None;
+    }
+    let flag = |key: &str| record.get(key).and_then(serde_json::Value::as_bool) == Some(true);
+    if flag("isSidechain") || flag("isMeta") || flag("isCompactSummary") {
+        return None;
+    }
+    let content = record.pointer("/message/content")?;
+    let text = if let Some(text) = content.as_str() {
+        text.to_owned()
+    } else {
+        let parts = content.as_array()?;
+        if parts
+            .iter()
+            .any(|part| part.get("type").and_then(serde_json::Value::as_str) == Some("tool_result"))
+        {
+            return None;
+        }
+        parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let trimmed = text.trim_start();
+    if trimmed.starts_with("<local-command-") {
+        return None;
+    }
+    Some(text)
+}
+
+/// Whitespace-folded opening of a prompt, enough to tell turns apart while
+/// surviving the wrapping Irgatos adds around what the user typed.
+fn prompt_snippet(text: &str) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(60)
+        .collect()
 }
 
 fn claude_shell_commands_from_file(
@@ -6340,6 +6490,84 @@ mod tests {
             commands,
             HashMap::from([("toolu_one".into(), "npm test".into())])
         );
+    }
+
+    fn claude_fork_records() -> Vec<serde_json::Value> {
+        vec![
+            serde_json::json!({"type":"user","sessionId":"src","uuid":"u1","message":{"content":"first question"}}),
+            serde_json::json!({"type":"assistant","sessionId":"src","uuid":"a1","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash"}]}}),
+            serde_json::json!({"type":"user","sessionId":"src","uuid":"r1","message":{"content":[{"type":"tool_result","tool_use_id":"t1"}]}}),
+            serde_json::json!({"type":"user","sessionId":"src","isMeta":true,"message":{"content":"caveat"}}),
+            serde_json::json!({"type":"assistant","sessionId":"src","uuid":"a2","message":{"content":[{"type":"text","text":"first answer"}]}}),
+            serde_json::json!({"type":"user","sessionId":"src","uuid":"u2","message":{"content":[{"type":"text","text":"second   question\nwith lines"}]}}),
+            serde_json::json!({"type":"assistant","sessionId":"src","uuid":"a3","message":{"content":[{"type":"text","text":"second answer"}]}}),
+        ]
+    }
+
+    fn write_claude_fork_source(name: &str) -> (Tmp, PathBuf) {
+        let dir = tmp(name);
+        let path = dir.0.join("src.jsonl");
+        let lines = claude_fork_records()
+            .iter()
+            .map(|record| record.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&path, format!("{lines}\n{{\"type\":\"user\"")).unwrap();
+        (dir, path)
+    }
+
+    fn read_records(path: &Path) -> Vec<serde_json::Value> {
+        std::fs::read_to_string(path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn claude_fork_keeps_turns_before_the_next_prompt() {
+        let (dir, source) = write_claude_fork_source("claude-fork-cut");
+        let target = dir.0.join("fork.jsonl");
+        assert!(claude_fork_transcript_file(
+            &source,
+            &target,
+            "fork",
+            Some(1),
+            Some("second question\nwith"),
+        )
+        .unwrap());
+        let records = read_records(&target);
+        assert_eq!(records.len(), 5);
+        assert!(records.iter().all(|record| record["sessionId"] == "fork"));
+        assert_eq!(records.last().unwrap()["uuid"], "a2");
+        assert!(!dir.0.join("fork.jsonl.partial").exists());
+    }
+
+    #[test]
+    fn claude_fork_through_the_end_copies_everything() {
+        let (dir, source) = write_claude_fork_source("claude-fork-end");
+        let target = dir.0.join("fork.jsonl");
+        assert!(claude_fork_transcript_file(&source, &target, "fork", Some(2), None).unwrap());
+        assert_eq!(read_records(&target).len(), 7);
+        let target = dir.0.join("fork-open.jsonl");
+        assert!(claude_fork_transcript_file(&source, &target, "fork", None, None).unwrap());
+        assert_eq!(read_records(&target).len(), 7);
+    }
+
+    #[test]
+    fn claude_fork_refuses_a_cut_that_does_not_line_up() {
+        let (dir, source) = write_claude_fork_source("claude-fork-mismatch");
+        let target = dir.0.join("fork.jsonl");
+        assert!(!claude_fork_transcript_file(
+            &source,
+            &target,
+            "fork",
+            Some(1),
+            Some("something else")
+        )
+        .unwrap());
+        assert!(!claude_fork_transcript_file(&source, &target, "fork", Some(5), None).unwrap());
+        assert!(!target.exists());
     }
 
     fn assistant_text(text: &str, concat: &str) -> OmpAssistantText {

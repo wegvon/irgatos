@@ -5,6 +5,7 @@ import type {
   HarnessId,
   Session,
 } from "./session";
+import { isForkedCopy } from "./forkSession";
 import { isOperatorUserTurn, operatorUserPrompt } from "./operatorCommand";
 
 /** Harnesses that can rewind provider state before resending an edited prompt. */
@@ -183,5 +184,7 @@ export function canEditLastTurn(session: Session): boolean {
   if (session.harness === "codex" && !block.providerTurnId) return false;
   if (block.secondOpinion || block.noteCard || block.ciContext) return false;
   if (session.blocks.some((entry) => entry.role === "handoff")) return false;
+  // A fork's copied turns were never run by this provider conversation.
+  if (isForkedCopy(session.blocks, block.id)) return false;
   return true;
 }

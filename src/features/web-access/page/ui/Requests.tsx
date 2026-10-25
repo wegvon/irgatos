@@ -4,7 +4,7 @@ import type { WebBlock } from "../../model/protocol";
 import type { UserQuestion } from "../../../sessions/model/userQuestion";
 import { write } from "../client";
 import { Spinner, primaryButton, secondaryButton, useAction } from "./parts";
-import { Check, X } from "../../../../shared/ui/icons";
+import { Check, CheckCheck, X } from "../../../../shared/ui/icons";
 
 type Props = { sessionId: string; request: FleetRequest };
 
@@ -25,7 +25,7 @@ function Approval({
   request: Extract<FleetRequest, { kind: "approval" }>;
 }) {
   const { busy, run } = useAction();
-  const decide = (decision: "allow" | "deny") =>
+  const decide = (decision: "allow" | "deny" | "allowAll") =>
     run(
       decision,
       () =>
@@ -34,7 +34,11 @@ function Approval({
           requestId: request.requestId,
           decision,
         }),
-      decision === "allow" ? "Allowed" : "Denied",
+      decision === "allow"
+        ? "Allowed"
+        : decision === "deny"
+          ? "Denied"
+          : "Allowed. This chat won't ask again",
     );
   return (
     <div className="flex flex-col gap-3">
@@ -67,6 +71,14 @@ function Approval({
           Allow
         </button>
       </div>
+      <button
+        className={`${secondaryButton} w-full`}
+        disabled={busy !== null}
+        onClick={() => void decide("allowAll")}
+      >
+        {busy === "allowAll" ? <Spinner /> : <CheckCheck className="size-4" />}
+        Allow all in this chat
+      </button>
     </div>
   );
 }

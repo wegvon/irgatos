@@ -5,6 +5,7 @@ import {
   CircleDashed,
   Copy,
   FilePlusCorner,
+  GitFork,
   ListBullet,
   Minus,
   Pencil,
@@ -85,6 +86,7 @@ import {
 } from "../../../integrations/harness/core/preview";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
+import type { ForkPointMeta } from "../model/forkSession";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
@@ -254,6 +256,8 @@ type Props = {
   planBuildTargets?: boolean;
   onSecondOpinion?: (target: ModelTarget, turn: Block[]) => void;
   onHandoff?: (target: ModelTarget, turn: Block[]) => void;
+  /** Copy the chat through this turn into a new chat. */
+  onFork?: (turn: Block[]) => void;
   onEditLastTurn?: () => void;
   editingLastTurn?: boolean;
   onJumpToBottomChange?: (show: boolean) => void;
@@ -319,6 +323,7 @@ function AgentTranscriptComponent({
   planBuildTargets = true,
   onSecondOpinion,
   onHandoff,
+  onFork,
   onEditLastTurn,
   editingLastTurn = false,
   onJumpToBottomChange,
@@ -765,7 +770,9 @@ function AgentTranscriptComponent({
   // A scheduled update can land while the chat's own turn is still running.
   const activeTurnIndex = turns.reduce(
     (latest, turn, index) =>
-      turn[0].irgatHabit || turn[0].role === "handoff" ? latest : index,
+      turn[0].irgatHabit || turn[0].role === "handoff" || turn[0].forkPoint
+        ? latest
+        : index,
     -1,
   );
   const firstVisibleTurn = Math.max(0, turns.length - visibleTurnCount);
@@ -1094,6 +1101,9 @@ function AgentTranscriptComponent({
           </div>
         ) : null}
         {visibleTurns.map((turn, turnIndex) => {
+          if (turn[0].forkPoint) {
+            return <ForkDivider key={turn[0].id} meta={turn[0].forkPoint} />;
+          }
           const isLastTurn = firstVisibleTurn + turnIndex === turns.length - 1;
           // A Irgat's own follow-up replies join the turn they follow; each
           // run keeps its prompt, but the turn reads as one message.
@@ -1677,6 +1687,7 @@ function AgentTranscriptComponent({
                   onHandoff={
                     onHandoff ? (target) => onHandoff(target, turn) : undefined
                   }
+                  onFork={onFork && settled ? () => onFork(turn) : undefined}
                 />
               ) : null}
               <SessionMessagePills
@@ -1874,6 +1885,7 @@ function TurnDuration({
   fromModel,
   onSecondOpinion,
   onHandoff,
+  onFork,
   revealOnHover = false,
   sendBlockId,
 }: {
@@ -1894,6 +1906,7 @@ function TurnDuration({
   fromModel?: string;
   onSecondOpinion?: (target: ModelTarget) => void;
   onHandoff?: (target: ModelTarget) => void;
+  onFork?: () => void;
   /** Sit in the gap under the turn and show on hover, as a sent message's do. */
   revealOnHover?: boolean;
   /** A block of this reply, for sending it to another session. */
@@ -1935,6 +1948,17 @@ function TurnDuration({
             className={`rounded-md p-1 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent ${workExpanded ? "bg-content/8 text-content/70" : "text-content/40"}`}
           >
             <ListBullet className="size-3.5" strokeWidth={1.75} />
+          </button>
+        ) : null}
+        {onFork ? (
+          <button
+            type="button"
+            title="Fork from here"
+            aria-label="Fork from here"
+            onClick={onFork}
+            className="rounded-md p-1 text-content/40 outline-none hover:bg-content/8 hover:text-content/70 focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <GitFork className="size-3.5" strokeWidth={1.75} />
           </button>
         ) : null}
         {fromHarness && onHandoff ? (
@@ -5070,6 +5094,31 @@ function ApprovalControls({
       >
         {block.irgatProjectAccess ? "Reddet" : "Deny"}
       </button>
+    </div>
+  );
+}
+
+/** Where a fork's copied turns end and its own conversation begins. */
+function ForkDivider({ meta }: { meta: ForkPointMeta }) {
+  const label = meta.fromTitle
+    ? `Forked from ${meta.fromTitle}`
+    : "Forked from another chat";
+  return (
+    <div data-fork-point className="px-4 py-5">
+      <div className="flex items-center gap-3">
+        <div className="h-px min-w-4 flex-1 bg-content/12" />
+        <div
+          role="separator"
+          aria-label={label}
+          className="flex max-w-[min(100%,24rem)] items-center gap-1.5 px-1.5 font-sans text-[12px] text-content/55"
+        >
+          <GitFork className="size-3.5 shrink-0" strokeWidth={1.75} />
+          <span className="min-w-0 truncate" title={label}>
+            {label}
+          </span>
+        </div>
+        <div className="h-px min-w-4 flex-1 bg-content/12" />
+      </div>
     </div>
   );
 }

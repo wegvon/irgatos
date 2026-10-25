@@ -11,6 +11,7 @@ import {
   stopClaudeSession,
 } from "./claude";
 import { refreshClaudeCatalog } from "./claudeCatalog";
+import { forkClaudeSession } from "./claudeFork";
 import {
   generateClaudeBranchName,
   generateClaudeCommitMessage,
@@ -29,6 +30,7 @@ export const claudeAdapter: HarnessAdapter = {
   live: true,
   sendTurn: sendClaudeTurn,
   compactContext: compactClaudeContext,
+  forkSession: forkClaudeSession,
   steerTurn: steerClaudeTurn,
   cancelTurn: cancelClaudeTurn,
   respondApproval: respondClaudeApproval,

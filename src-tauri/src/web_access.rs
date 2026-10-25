@@ -79,6 +79,7 @@ const WRITE_ACTIONS: [&str; 34] = [
     "answer",
     "stop",
     "renameChat",
+    "forkChat",
     "deleteChat",
     "newChat",
     "irgatOpen",
