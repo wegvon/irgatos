@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { Block } from "../../sessions/model/session";
 import {
   matchesSecret,
   pendingSecretApproval,
   sanitizeSecretApproval,
   secretApprovalBlock,
   secretApprovalPrompt,
+  settledSecretApprovals,
   pendingSecretRequest,
   sanitizeSecretRequest,
   secretAnswerPrompt,
@@ -107,9 +109,26 @@ describe("vault approvals and search", () => {
 
   it("tells the agent to retry or carry on without it", () => {
     const approval = { ...event, state: "once" as const };
-    expect(secretApprovalPrompt(approval)).toMatch(/allowed GH_TOKEN for one use.*Retry/);
-    expect(secretApprovalPrompt({ ...approval, state: "chat" })).toMatch(/rest of this chat/);
-    expect(secretApprovalPrompt({ ...approval, state: "deny" })).toMatch(/Do not retry/);
+    expect(secretApprovalPrompt([approval])).toMatch(/allowed GH_TOKEN for one use.*Retry/);
+    expect(secretApprovalPrompt([{ ...approval, state: "chat" }])).toMatch(/rest of this chat/);
+    expect(secretApprovalPrompt([{ ...approval, state: "deny" }])).toMatch(/Do not retry/);
+  });
+
+  it("answers the cards of one call once, after the last", () => {
+    const card = (id: string, state: "pending" | "once" | "deny", callId = "c1") =>
+      ({
+        id,
+        role: "system",
+        text: "",
+        secretApproval: { ...event, secretId: id, name: id.toUpperCase(), callId, state },
+      }) as Block;
+    const first = card("a", "once");
+    const open = [first, card("b", "pending"), card("x", "pending", "c2")];
+    expect(settledSecretApprovals(open, first.secretApproval!)).toBeUndefined();
+    const done = [first, card("b", "deny"), card("x", "pending", "c2")];
+    const settled = settledSecretApprovals(done, first.secretApproval!)!;
+    expect(settled.map((item) => item.name)).toEqual(["A", "B"]);
+    expect(secretApprovalPrompt(settled)).toMatch(/did not allow B/);
   });
 
   it("finds entries by label, username or host", () => {
