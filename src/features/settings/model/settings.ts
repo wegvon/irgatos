@@ -238,6 +238,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "claude tools connections oauth authenticate login add remove",
   },
   {
+    id: "shared-mcp",
+    section: "mcp",
+    label: "Shared with every agent",
+    keywords:
+      "shared mcp servers every agent executor sign in once vault key bearer cursor codex claude opencode ortak",
+  },
+  {
     id: "lightpanda",
     section: "mcp",
     label: "Lightpanda Headless Browser",

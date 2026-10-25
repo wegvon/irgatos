@@ -779,6 +779,60 @@ struct LoginInput {
 }
 
 /// The Browser page a login would go to, as a host to check.
+/// The value of a Vault key for a shared MCP server at `url`, which Irgatos
+/// sends upstream itself; agents only talk to the local bridge. Only a key
+/// saved for every chat, free to use, without a use limit and bound to the
+/// server's host qualifies: the shared server has no chat to ask in.
+pub(crate) fn mcp_value(
+    app: &AppHandle,
+    secret_id: &str,
+    url: &str,
+) -> Result<Zeroizing<String>, String> {
+    let parsed = url::Url::parse(url).map_err(|_| "Invalid MCP server URL")?;
+    if parsed.scheme() != "https" {
+        return Err("Vault keys are sent to HTTPS servers only".into());
+    }
+    let target = http::Target {
+        host: parsed.host_str().unwrap_or_default().to_ascii_lowercase(),
+        port: parsed.port(),
+    };
+    with_loaded(app, |loaded| {
+        let (meta, value) = loaded
+            .values
+            .iter()
+            .find(|(meta, _)| meta.id == secret_id)
+            .ok_or("The Vault key for this MCP server is gone")?;
+        mcp_refusal(meta, &target).map_or(Ok(value.clone()), Err)
+    })
+}
+
+fn mcp_refusal(meta: &SecretMeta, target: &http::Target) -> Option<String> {
+    if !meta.persistent() || meta.kind != "key" {
+        return Some(format!("{} is not a key saved in the Vault", meta.name));
+    }
+    if meta.policy != "free" {
+        return Some(format!(
+            "{} asks before each use; set it to free in the Vault to share it with agents",
+            meta.name
+        ));
+    }
+    if meta.max_uses.is_some() {
+        return Some(format!("{} has a use limit; shared servers need one without", meta.name));
+    }
+    if !meta.allow_in.iter().any(|place| place == "header") {
+        return Some(format!("{} is not allowed in request headers", meta.name));
+    }
+    if !http::host_allowed(target, &meta.hosts) {
+        return Some(format!(
+            "{} is only for {}; add {} to its hosts in the Vault",
+            meta.name,
+            meta.hosts.join(", "),
+            target.host
+        ));
+    }
+    None
+}
+
 fn page_target(url: &str) -> Result<http::Target, String> {
     let url = url::Url::parse(url).map_err(|_| "The Browser has no page open")?;
     if url.scheme() != "https" {

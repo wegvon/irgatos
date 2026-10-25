@@ -1,3 +1,4 @@
+import { acpSharedMcpServers } from "../../core/sharedMcp";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
@@ -485,6 +486,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
       throw antigravityError(error);
     }
 
+    const mcpServers = await acpSharedMcpServers();
     let setup: SessionSetupResult | undefined;
     let acpSessionId: string | undefined;
     let didLoad = false;
@@ -493,7 +495,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
       try {
         setup = await acp.request<SessionSetupResult>(
           "session/resume",
-          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers: [] },
+          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers },
           SESSION_TIMEOUT_MS,
         );
         acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
@@ -512,7 +514,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
             {
               sessionId: resume.acpSessionId,
               cwd: input.cwd,
-              mcpServers: [],
+              mcpServers,
             },
             SESSION_TIMEOUT_MS,
           );
@@ -533,7 +535,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
       const droppedBinding = canLoad && resume != null;
       setup = await acp.request<SessionSetupResult>(
         "session/new",
-        { cwd: input.cwd, mcpServers: [] },
+        { cwd: input.cwd, mcpServers },
         SESSION_TIMEOUT_MS,
       );
       acpSessionId = sessionIdFromResult(setup);

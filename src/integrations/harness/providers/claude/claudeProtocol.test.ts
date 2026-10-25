@@ -106,6 +106,20 @@ describe("resolveClaudeApiModelId", () => {
 });
 
 describe("buildClaudeSpawnArgs", () => {
+  it("adds shared MCP servers to interactive sessions only", () => {
+    const config = '{"mcpServers":{}}';
+    const args = buildClaudeSpawnArgs({ mcpConfig: config });
+    expect(args).toEqual(expect.arrayContaining(["--mcp-config", config]));
+    expect(args).not.toContain("--strict-mcp-config");
+    const isolated = buildClaudeSpawnArgs({
+      isolated: true,
+      mcpConfig: config,
+    });
+    expect(isolated[isolated.indexOf("--mcp-config") + 1]).toBe(
+      JSON.stringify({ mcpServers: {} }),
+    );
+    expect(buildClaudeSpawnArgs({})).not.toContain("--mcp-config");
+  });
   it("speaks stream-json with stdio permissions like the Agent SDK", () => {
     const args = buildClaudeSpawnArgs({
       model: "claude-sonnet-5",

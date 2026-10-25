@@ -1,3 +1,4 @@
+import { acpSharedMcpServers } from "../../core/sharedMcp";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpSubagents } from "../../core/acpSubagents";
@@ -414,6 +415,7 @@ async function startLive(input: HarnessSessionInput, startup: Startup): Promise<
       askBeforeEdits: asksBeforeEdits,
     });
 
+    const mcpServers = await acpSharedMcpServers();
     let setup: unknown;
     let acpSessionId: string | undefined;
     let didLoad = false;
@@ -424,7 +426,7 @@ async function startLive(input: HarnessSessionInput, startup: Startup): Promise<
       try {
         setup = await rpc.request(
           "session/load",
-          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers: [] },
+          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers },
           SESSION_TIMEOUT_MS,
         );
         acpSessionId = sessionIdFromResult(setup) ?? resume.acpSessionId;
@@ -445,7 +447,7 @@ async function startLive(input: HarnessSessionInput, startup: Startup): Promise<
       try {
         setup = await rpc.request(
           "session/new",
-          { cwd: input.cwd, mcpServers: [] },
+          { cwd: input.cwd, mcpServers },
           SESSION_TIMEOUT_MS,
         );
       } catch (error) {

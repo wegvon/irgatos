@@ -1,3 +1,7 @@
+import {
+  sharedMcpLaunches,
+  withCodexSharedMcp,
+} from "../../core/sharedMcp";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
@@ -593,7 +597,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           threadId: canResume ? resume?.threadId : undefined,
         })
       : undefined;
-  const storeConfig = store?.config;
+  const storeConfig = withCodexSharedMcp(
+    store?.config,
+    await sharedMcpLaunches(),
+  );
   const liveRef: { current: Live | null } = { current: null };
 
   const rpc = new JsonRpcClient(

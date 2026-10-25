@@ -1,3 +1,4 @@
+import { acpSharedMcpServers } from "../../core/sharedMcp";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
@@ -275,6 +276,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       throw hermesStartupError(error);
     }
 
+    const mcpServers = await acpSharedMcpServers();
     let setup: unknown;
     let acpSessionId: string | undefined;
     let didLoad = false;
@@ -283,7 +285,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       try {
         setup = await acp.request(
           "session/load",
-          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers: [] },
+          { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers },
           SESSION_TIMEOUT_MS,
         );
         acpSessionId = hermesSessionId(setup) ?? resume.acpSessionId;
@@ -300,7 +302,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       try {
         setup = await acp.request(
           "session/new",
-          { cwd: input.cwd, mcpServers: [] },
+          { cwd: input.cwd, mcpServers },
           SESSION_TIMEOUT_MS,
         );
       } catch (error) {
