@@ -493,7 +493,7 @@ fn list_core(loaded: &Loaded, session_id: &str) -> Value {
         .collect();
     json!({
         "secrets": secrets,
-        "note": "Use a secret only as its placeholder in app secrets.http. You cannot read values; ask for a missing one with secrets.request.",
+        "note": "Use a secret only as its placeholder: in app secrets.http for its hosts, or in the env of app secrets.run for the programs in its commands. You cannot read values; ask for a missing one with secrets.request.",
     })
 }
 
@@ -700,7 +700,11 @@ pub(crate) fn agent_action(
             let template = run::template(
                 serde_json::from_value(input.clone()).map_err(|e| format!("secrets.run: {e}"))?,
             )?;
+            // A relative PATH entry such as "." would find a file in the
+            // agent's folder; only an absolute, real program counts.
             let program = crate::harness::resolve_gui_binary(&template.program)
+                .filter(|path| path.is_absolute())
+                .and_then(|path| std::fs::canonicalize(path).ok())
                 .ok_or_else(|| format!("{} is not installed, or not on your terminal's PATH", template.program))?;
             let checked = with_existing(app, None, |loaded| {
                 run_prepare(loaded, session_id, template, now()).map(Some)
@@ -930,7 +934,11 @@ fn run_finish(
     let mut plain = loaded.plain_values();
     plain.extend(running.env.iter().map(|(_, value)| value.as_str()));
     let scrub = |text: &str| redact::all(text, &plain);
-    let finished = finished.map_err(|error| scrub(&error))?;
+    // Scrubbed whole, before clipping, so a value cut at the edge cannot
+    // slip through as a fragment.
+    let mut finished = finished.map_err(|error| scrub(&error))?;
+    finished.stdout = scrub(&finished.stdout);
+    finished.stderr = scrub(&finished.stderr);
     let mut report = run::report(&running.template, &finished);
     redact::json(&mut report, &scrub);
     Ok(report)
@@ -1690,7 +1698,7 @@ mod tests {
         // Shells and interpreters cannot be named at all.
         assert!(save_core(
             &mut loaded,
-            serde_json::from_value(json!({"persistent": true, "name": "X_KEY", "commands": ["bash"], "value": "abcdef"}))
+            serde_json::from_value(json!({"persistent": true, "name": "X_KEY", "commands": ["BASH"], "value": "abcdef"}))
                 .unwrap(),
             1,
         )

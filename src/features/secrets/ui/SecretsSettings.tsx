@@ -281,7 +281,7 @@ function SecretForm({
         />
         <span className="mt-0.5 block text-[11px] text-content/40">
           {draft.commands.trim()
-            ? `An agent may run these with the value as ${draft.name || "the name"} in their environment. The program can do anything with it, so name only tools you trust. Shells and script runners are refused.`
+            ? `An agent may run these with the value as ${draft.name || "the name"} in their environment. The program can do anything with it, so name only tools you trust. Shells and script runners are refused. While it runs, other programs of yours (an agent's too) could read its environment, so "Ask me each time" suits values that matter.`
             : "Leave empty to keep it out of commands."}
         </span>
       </label>
