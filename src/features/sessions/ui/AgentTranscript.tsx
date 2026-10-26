@@ -238,6 +238,8 @@ type Props = {
   model?: string;
   modelSettings?: Record<string, string>;
   pendingQuestion?: boolean;
+  /** The open question holds the turn until it is answered. */
+  awaitingAnswer?: boolean;
   /** Work the agent left running when it yielded; the turn waits on it. */
   backgroundTasks?: string[];
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
@@ -307,6 +309,7 @@ function AgentTranscriptComponent({
   model,
   modelSettings,
   pendingQuestion = false,
+  awaitingAnswer = false,
   backgroundTasks,
   onApproval,
   onAddToChat,
@@ -1141,6 +1144,7 @@ function AgentTranscriptComponent({
           const items = turnCache.turnItems(turn, settled, {
             managed,
             inlineWork,
+            waitingForAnswer: !settled && awaitingAnswer,
             undeliveredMessageIds,
           });
           // Earlier activity groups have already been followed by prose or

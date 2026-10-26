@@ -528,7 +528,12 @@ export function groupTurnItems(
  */
 export function groupIrgatTurnItems(
   blocks: Block[],
-  options?: { live?: boolean; undeliveredMessageIds?: ReadonlySet<string> },
+  options?: {
+    live?: boolean;
+    /** The agent asked a question and is waiting on the user's answer. */
+    waitingForAnswer?: boolean;
+    undeliveredMessageIds?: ReadonlySet<string>;
+  },
 ): TurnItem[] {
   // Read the original order before moving user bubbles above the work. Once
   // the user joins in, hiding subsequent replies makes a delivered message
@@ -558,7 +563,20 @@ export function groupIrgatTurnItems(
   if (start < 0) return items;
   let end = -1;
   const boundary = yieldedAt(items);
-  for (let index = start; index < items.length; index += 1) {
+  // A question hands the turn to the user, so what the agent said last is the
+  // context for its options, not narration: it stays in the chat above them.
+  let scanEnd = items.length;
+  if (options?.waitingForAnswer) {
+    let lastProse = -1;
+    items.forEach((item, index) => {
+      if (item.type === "block" && isProseBlock(item.block)) lastProse = index;
+    });
+    let proseStart = lastProse;
+    while (proseStart > start && isProseItem(items[proseStart - 1]))
+      proseStart -= 1;
+    if (lastProse >= start) scanEnd = proseStart;
+  }
+  for (let index = start; index < scanEnd; index += 1) {
     const item = items[index];
     // Status pings after an answer are not new work that should absorb it.
     if (
@@ -1156,6 +1174,10 @@ function yieldedAt(items: TurnItem[]): number {
     );
   });
   return index < 0 ? items.length : index;
+}
+
+function isProseItem(item: TurnItem): boolean {
+  return item.type === "block" && isProseBlock(item.block);
 }
 
 function isFoldableItem(item: TurnItem): boolean {

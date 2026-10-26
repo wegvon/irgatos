@@ -1217,6 +1217,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       model={session.model}
                       modelSettings={session.modelSettings}
                       pendingQuestion={!!session.pendingQuestion}
+                      awaitingAnswer={
+                        !!session.pendingQuestion &&
+                        session.pendingQuestion.autoResolveAt == null
+                      }
                       backgroundTasks={session.backgroundTasks}
                       onApproval={session.worktreeRemoved ? undefined : approve}
                       onAddToChat={addSelectionToChat}

@@ -52,10 +52,12 @@ export class TranscriptTurnCache {
     {
       managed = false,
       inlineWork = false,
+      waitingForAnswer = false,
       undeliveredMessageIds,
     }: {
       managed?: boolean;
       inlineWork?: boolean;
+      waitingForAnswer?: boolean;
       undeliveredMessageIds?: ReadonlySet<string>;
     } = {},
   ): TurnItem[] {
@@ -66,7 +68,13 @@ export class TranscriptTurnCache {
             .filter((block) => undeliveredMessageIds?.has(block.id))
             .map((block) => block.id)
         : [];
-    const key = JSON.stringify([settled, managed, inlineWork, undelivered]);
+    const key = JSON.stringify([
+      settled,
+      managed,
+      inlineWork,
+      waitingForAnswer,
+      undelivered,
+    ]);
     const previous = variants?.get(key);
     if (previous) return previous;
     const visible = (blocks: Block[]) =>
@@ -79,6 +87,7 @@ export class TranscriptTurnCache {
       ? irgatTurnRuns(turn).flatMap((run, index, runs) =>
           groupIrgatTurnItems(visible(run), {
             live: !settled && index === runs.length - 1,
+            waitingForAnswer: waitingForAnswer && index === runs.length - 1,
             undeliveredMessageIds,
           }),
         )

@@ -207,6 +207,53 @@ describe("groupIrgatTurnItems", () => {
     ]);
   });
 
+  it("keeps the explanation before a question in the chat while it waits", () => {
+    const blocks: Block[] = [
+      { id: "user", role: "user", text: "Plan the project" },
+      note("intro", "Checking the database."),
+      shell("research"),
+      note("plan", "Feasibility done. Three layers: resolver, directory, reports."),
+      {
+        id: "ask",
+        role: "tool",
+        text: "AskUserQuestion",
+        tool: { kind: "other", title: "AskUserQuestion", status: "in_progress" },
+      },
+    ];
+    const visibleProse = (items: ReturnType<typeof groupIrgatTurnItems>) =>
+      items.flatMap((item) =>
+        item.type === "block" && item.block.role === "assistant"
+          ? [item.block.id]
+          : [],
+      );
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(blocks, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan"]);
+    expect(visibleProse(groupIrgatTurnItems(blocks, { live: true }))).toEqual(
+      [],
+    );
+    // The whole explanation stays, however many blocks it spans.
+    const split: Block[] = [
+      ...blocks.slice(0, 4),
+      note("plan-2", "Next step: pick a starting point."),
+      blocks[4],
+    ];
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(split, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan", "plan-2"]);
+    // A question asked straight away keeps its explanation too.
+    const direct: Block[] = [blocks[0], blocks[3], blocks[4]];
+    expect(
+      visibleProse(
+        groupIrgatTurnItems(direct, { live: true, waitingForAnswer: true }),
+      ),
+    ).toEqual(["plan"]);
+  });
+
   it("keeps replies after mid-turn follow-ups visible while tools continue", () => {
     const blocks: Block[] = [
       { id: "user", role: "user", text: "Review the PR" },
