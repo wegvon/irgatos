@@ -19,6 +19,9 @@ vi.mock("./ComputerUseSettings", () => ({
 vi.mock("./LightpandaSettings", () => ({
   LightpandaSettings: () => null,
 }));
+vi.mock("./SharedMcpSettings", () => ({
+  SharedMcpSettings: () => null,
+}));
 
 let container: HTMLDivElement;
 let root: Root;

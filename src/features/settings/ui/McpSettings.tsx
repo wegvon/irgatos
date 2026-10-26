@@ -28,6 +28,7 @@ import { MCP_PROVIDER_LABELS, type McpConnection } from "../model/mcp";
 import { isComputerUseServer } from "../model/computerUse";
 import { ComputerUseSettings } from "./ComputerUseSettings";
 import { LightpandaSettings } from "./LightpandaSettings";
+import { SharedMcpSettings } from "./SharedMcpSettings";
 import {
   getCachedMcpSettings,
   loadMcpSettings,
@@ -496,6 +497,9 @@ function McpConnections({
             <Plus className="size-3.5" />
           </button>
         </div>
+      </div>
+      <div id="setting-shared-mcp" data-setting-id="shared-mcp">
+        <SharedMcpSettings />
       </div>
       <ComputerUseSettings
         cwd={cwd}

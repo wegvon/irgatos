@@ -1,3 +1,4 @@
+import { acpSharedMcpServers } from "../../core/sharedMcp";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
@@ -331,6 +332,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         });
     }
 
+    const mcpServers = await acpSharedMcpServers();
     let setup: unknown;
     let acpSessionId: string | undefined;
     let didLoad = false;
@@ -352,7 +354,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             {
               sessionId: resume.acpSessionId,
               cwd: input.cwd,
-              mcpServers: [],
+              mcpServers,
             },
             SESSION_TIMEOUT_MS,
           );
@@ -372,7 +374,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       try {
         setup = await acp.request(
           "session/new",
-          grokSessionNewParams(input.cwd, input.runtimeMode),
+          grokSessionNewParams(input.cwd, input.runtimeMode, mcpServers),
           SESSION_TIMEOUT_MS,
         );
       } catch (error) {

@@ -1,3 +1,7 @@
+import {
+  claudeSharedMcpConfig,
+  sharedMcpLaunches,
+} from "../../core/sharedMcp";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
@@ -548,7 +552,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   await spawnChild(
     input.sessionId,
     path,
-    buildClaudeSpawnArgs(launch),
+    buildClaudeSpawnArgs({
+      ...launch,
+      mcpConfig: claudeSharedMcpConfig(await sharedMcpLaunches()),
+    }),
     input.cwd,
     { provider: "claude", id: input.providerAccountId ?? "default" },
     "claude",
