@@ -54,31 +54,6 @@ export function restoreAppearance() {
 }
 
 /**
- * Opened from the Home Screen with a translucent status bar, iOS draws the
- * page over the whole screen but reports a window (and visual viewport) short
- * by the status bar, which leaves an empty strip under the composer. Returns
- * the missing height, or 0 in Safari, split view or when nothing is missing.
- */
-export function standaloneHeightGap(view: {
-  standalone: boolean;
-  innerWidth: number;
-  innerHeight: number;
-  screenWidth: number;
-  screenHeight: number;
-}): number {
-  if (!view.standalone) return 0;
-  const portrait = view.innerHeight >= view.innerWidth;
-  const long = Math.max(view.screenWidth, view.screenHeight);
-  const short = Math.min(view.screenWidth, view.screenHeight);
-  const [fullWidth, fullHeight] = portrait ? [short, long] : [long, short];
-  // Split view or Stage Manager: the window is not the screen.
-  if (Math.abs(view.innerWidth - fullWidth) > 1) return 0;
-  const gap = fullHeight - view.innerHeight;
-  // Only ever a status bar's worth; anything else is not this bug.
-  return gap > 0 && gap <= 80 ? gap : 0;
-}
-
-/**
  * iOS lays the keyboard over the page instead of resizing it. Size the app to
  * the visible area so the composer stays right above the keyboard, and drop
  * the home-indicator gap while the keyboard covers it.
@@ -86,18 +61,8 @@ export function standaloneHeightGap(view: {
 export function trackVisualViewport() {
   const viewport = window.visualViewport;
   const root = document.documentElement;
-  const standalone =
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as Navigator & { standalone?: boolean }).standalone === true;
   const update = () => {
-    const gap = standaloneHeightGap({
-      standalone,
-      innerWidth: window.innerWidth,
-      innerHeight: window.innerHeight,
-      screenWidth: window.screen.width,
-      screenHeight: window.screen.height,
-    });
-    const height = (viewport?.height ?? window.innerHeight) + gap;
+    const height = viewport?.height ?? window.innerHeight;
     root.style.setProperty("--app-height", `${Math.round(height)}px`);
     root.classList.toggle(
       "keyboard-open",
