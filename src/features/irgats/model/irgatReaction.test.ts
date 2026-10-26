@@ -12,7 +12,11 @@ const user = (id: string, extra: Partial<Block> = {}): Block => ({
   text: id,
   ...extra,
 });
-const reply = (id: string, text: string, extra: Partial<Block> = {}): Block => ({
+const reply = (
+  id: string,
+  text: string,
+  extra: Partial<Block> = {},
+): Block => ({
   id,
   role: "assistant",
   text,
@@ -48,16 +52,49 @@ describe("Irgat reactions", () => {
     expect(irgatReactionBlocks([...blocks])[2]).toBe(shown[2]);
   });
 
-  it("drops the work behind a reaction but keeps errors", () => {
+  it("drops the thinking behind a reaction but keeps errors", () => {
     const shown = irgatReactionBlocks([
       user("a"),
       { id: "think", role: "reasoning", text: "They are wrapping up." },
-      { id: "tool", role: "tool", text: "", tool: { title: "memory.add" } },
+      { id: "ping", role: "system", text: "Working" },
       { id: "err", role: "system", text: "Hook failed", notice: "error" },
       reply("r", "<reaction>👍</reaction>"),
     ]);
     expect(shown.map((block) => block.id)).toEqual(["a", "err"]);
     expect(shown[0].irgatReaction).toBe("👍");
+  });
+
+  it("keeps a turn that talked or asked before ending on a reaction", () => {
+    // Questions answered in a card add no user message, so the turn runs
+    // from the first message to the closing emoji.
+    const blocks: Block[] = [
+      user("a"),
+      { id: "browse", role: "tool", text: "", tool: { title: "browser.read" } },
+      reply("q", "Birkaç sorum var."),
+      { id: "ask", role: "tool", text: "", tool: { title: "Hangi gönderi?" } },
+      reply("r", "<reaction>👍</reaction>"),
+    ];
+    const shown = irgatReactionBlocks(blocks);
+    expect(shown.map((block) => block.id)).toEqual([
+      "a",
+      "browse",
+      "q",
+      "ask",
+      "r",
+    ]);
+    expect(shown[0]).toBe(blocks[0]);
+    expect(shown[4]).toMatchObject({ role: "assistant", text: "👍" });
+    for (const step of [
+      { id: "t", role: "tool", text: "", tool: { title: "memory.add" } },
+      { id: "p", role: "approval", text: "Run?", approval: { requestId: 1 } },
+    ] satisfies Block[])
+      expect(
+        irgatReactionBlocks([
+          user("a"),
+          step,
+          reply("r", "<reaction>👍</reaction>"),
+        ]).map((block) => block.id),
+      ).toEqual(["a", step.id, "r"]);
   });
 
   it("leaves chats without reactions untouched", () => {

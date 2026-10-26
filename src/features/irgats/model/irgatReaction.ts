@@ -76,11 +76,22 @@ export function irgatReactionBlocks(blocks: Block[]): Block[] {
       continue;
     }
     changed = true;
-    if (target >= 0) {
-      // The reaction is the whole answer: the thinking and steps behind it
-      // would only draw an empty reply. Errors still show.
-      const after = out.splice(target + 1);
-      out.push(...after.filter((step) => step.role === "system" && step.notice));
+    const after = target >= 0 ? out.slice(target + 1) : [];
+    // A turn that already said something, or asked a question the user
+    // answered with a card, ends on the emoji; hiding it would hide the talk.
+    const spoke = after.some(
+      (step) =>
+        step.role !== "reasoning" &&
+        step.role !== "system" &&
+        !(step.role === "assistant" && !step.tool && !step.text.trim()),
+    );
+    if (target >= 0 && !spoke) {
+      // The reaction is the whole answer: the thinking behind it would only
+      // draw an empty reply. Errors still show.
+      out.splice(target + 1);
+      out.push(
+        ...after.filter((step) => step.role === "system" && step.notice),
+      );
       out[target] = withReaction(out[target], emoji, "irgatReaction");
     } else out.push(withReaction(block, emoji, "text"));
   }
