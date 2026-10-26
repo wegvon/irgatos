@@ -454,6 +454,11 @@ pub fn mail_session_link(app: AppHandle, session_id: String) -> Result<Option<Ma
     Ok(link_of(&data_dir(&app)?, &session_id))
 }
 
+/// Whether the chat was started from an email thread.
+pub(crate) fn is_mail_session(app: &AppHandle, session_id: &str) -> bool {
+    data_dir(app).is_ok_and(|dir| link_of(&dir, session_id).is_some())
+}
+
 /// Chats started for a thread, oldest first.
 #[tauri::command]
 pub fn mail_thread_sessions(

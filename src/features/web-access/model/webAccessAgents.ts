@@ -64,7 +64,12 @@ import {
   type Session,
 } from "../../sessions/model/session";
 import { projectName } from "../../../shared/lib/paths";
-import { latestReply, spokenReply } from "../../voice/model/spokenReply";
+import {
+  latestReply,
+  spokenReply,
+  type Reply,
+} from "../../voice/model/spokenReply";
+import { nextPromptFor } from "../../sessions/model/nextPrompt";
 import {
   loadVoiceSettings,
   type VoiceSettings,
@@ -79,6 +84,7 @@ import type {
   WebIrgatDetail,
   WebIrgatOptions,
   WebOutsideSession,
+  WebNextPrompt,
   WebSpokenReply,
   WebVoice,
 } from "./protocol";
@@ -117,6 +123,8 @@ export type WebAgentsDeps = {
     dictateStart: () => Promise<string>;
     dictateChunk: (session: string, pcm: string) => Promise<string>;
     dictateFinish: (session: string) => Promise<string>;
+    /** The grey next-message suggestion, shared with the desktop composer. */
+    nextPrompt: (reply: Reply, sessionId: string) => Promise<string | null>;
   };
 };
 
@@ -166,6 +174,7 @@ export const webAgentsDefaults: Omit<
       invoke<string>("voice_relay_chunk", { session, pcm }),
     dictateFinish: (session) =>
       invoke<string>("voice_relay_finish", { session }),
+    nextPrompt: (reply, sessionId) => nextPromptFor(reply, sessionId),
   },
 };
 
@@ -195,6 +204,7 @@ export const WEB_AGENTS_WRITES = [
   "irgatForget",
   "voiceReply",
   "voiceAudio",
+  "nextPrompt",
   "dictateStart",
   "dictateChunk",
   "dictateFinish",
@@ -618,6 +628,17 @@ export async function handleWebAgents(
       const result: WebSpokenReply = {
         parts: await deps.voice.parts(words, settings.speechProvider),
         summarized: !!summary,
+      };
+      return result;
+    }
+    case "nextPrompt": {
+      const session = await host.findSession(input);
+      const reply = session.busy
+        ? null
+        : latestReply(session.blocks, session.queuedMessages);
+      const result: WebNextPrompt = {
+        replyId: reply?.id ?? null,
+        text: reply ? await deps.voice.nextPrompt(reply, session.id) : null,
       };
       return result;
     }

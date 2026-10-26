@@ -359,6 +359,7 @@ pub fn run() {
             voice::voice_set_live_key,
             voice::voice_live_key,
             voice::voice_summarize,
+            voice::next_prompt_suggest,
             voice::voice_open_privacy_settings,
             voice::voice_speak,
             voice::voice_stop_speaking,
