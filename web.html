@@ -9,10 +9,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Irgatos" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
+    <!-- Not black-translucent: on iOS 26 a Home Screen app with a translucent
+         status bar is drawn a status bar short, leaving a dead strip at the
+         bottom (WebKit 301108). Takes effect once re-added to Home Screen. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="theme-color" content="#161616" />
     <meta name="format-detection" content="telephone=no" />
     <link rel="manifest" href="/web.webmanifest" />
