@@ -14,6 +14,11 @@ fn main() {
             std::env::args().skip(2).collect(),
         ));
     }
+    if std::env::args().nth(1).as_deref() == Some(irgat_lib::shared_mcp::BRIDGE_COMMAND) {
+        std::process::exit(irgat_lib::shared_mcp::run_bridge(
+            std::env::args().skip(2).collect(),
+        ));
+    }
     #[cfg(all(debug_assertions, target_os = "macos"))]
     irgat_lib::ensure_macos_dev_bundle();
     irgat_lib::run()

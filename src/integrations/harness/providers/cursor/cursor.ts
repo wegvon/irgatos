@@ -1,3 +1,4 @@
+import { acpSharedMcpServers } from "../../core/sharedMcp";
 import { TurnNotReadyError } from "../../core/types";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
@@ -318,6 +319,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       clientInfo: { name: "irgat", version: "0.1.0" },
     });
 
+    const mcpServers = await acpSharedMcpServers();
     let setup: SessionSetupResult | undefined;
     let acpSessionId: string | undefined;
     let didLoad = false;
@@ -328,7 +330,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
         setup = await acp.request<SessionSetupResult>("session/load", {
           sessionId: resume.acpSessionId,
           cwd: input.cwd,
-          mcpServers: [],
+          mcpServers,
         });
         acpSessionId = resume.acpSessionId;
         didLoad = true;
@@ -344,7 +346,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     if (!acpSessionId) {
       setup = await acp.request<SessionSetupResult>("session/new", {
         cwd: input.cwd,
-        mcpServers: [],
+        mcpServers,
       });
       acpSessionId = setup.sessionId?.trim();
     }

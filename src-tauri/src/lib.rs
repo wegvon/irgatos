@@ -66,6 +66,7 @@ mod semantic_index;
 mod service_status;
 mod session_snapshots;
 mod session_store;
+pub mod shared_mcp;
 mod skills;
 pub mod ssh_askpass;
 mod state_file;
@@ -291,6 +292,7 @@ pub fn run() {
             session_store::init(app.handle())?;
             control::init(app.handle())?;
             secrets::init(app.handle());
+            shared_mcp::init(app.handle())?;
             web_access::init(app.handle())?;
             reminders::init(app.handle());
             checkpoint::init(app.handle())?;
@@ -586,6 +588,12 @@ pub fn run() {
             mcp::mcp_discover,
             mcp::mcp_add,
             mcp::mcp_remove,
+            shared_mcp::shared_mcp_list,
+            shared_mcp::shared_mcp_save,
+            shared_mcp::shared_mcp_remove,
+            shared_mcp::shared_mcp_specs,
+            shared_mcp::shared_mcp_executor_url,
+            shared_mcp::shared_mcp_test,
             computer_use::computer_use_status,
             computer_use::computer_use_disable_telemetry,
             computer_use::computer_use_grant_permissions,

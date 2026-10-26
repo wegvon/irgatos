@@ -103,6 +103,19 @@ pub(crate) fn status_endpoint(app: &AppHandle) -> Option<String> {
     (!endpoint.is_empty()).then_some(endpoint)
 }
 
+/// The Executor API key Mail signs in with, for the shared MCP server that
+/// points at the same Executor. It stays in the app.
+pub(crate) fn executor_key(app: &AppHandle) -> Result<Option<String>, String> {
+    crate::voice::read_secret(&data_dir(app)?.join(KEY_FILE))
+}
+
+/// Executor's MCP endpoint once Mail is connected.
+pub(crate) fn executor_mcp_url(app: &AppHandle) -> Option<String> {
+    let endpoint = status_endpoint(app)?;
+    executor_key(app).ok().flatten()?;
+    Some(format!("{}/mcp", endpoint.trim_end_matches('/')))
+}
+
 fn connect(dir: &Path) -> Result<Executor, String> {
     let endpoint = load_config(dir).endpoint;
     let key = crate::voice::read_secret(&dir.join(KEY_FILE))?;

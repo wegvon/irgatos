@@ -898,6 +898,31 @@ pub fn harness_resolve_antigravity() -> Result<AntigravityBinary, String> {
         })
 }
 
+/// Shared MCP servers in OpenCode 1.x config layout; None when there are
+/// none or the user already passes inline config.
+fn opencode_shared_mcp(specs: &[crate::shared_mcp::LaunchSpec]) -> Option<String> {
+    if specs.is_empty() || std::env::var_os("OPENCODE_CONFIG_CONTENT").is_some() {
+        return None;
+    }
+    let servers: serde_json::Map<String, serde_json::Value> = specs
+        .iter()
+        .map(|spec| {
+            let mut command = vec![spec.command.clone()];
+            command.extend(spec.args.iter().cloned());
+            let environment: serde_json::Map<String, serde_json::Value> = spec
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+                .collect();
+            (
+                spec.name.clone(),
+                serde_json::json!({"type": "local", "command": command, "environment": environment}),
+            )
+        })
+        .collect();
+    Some(serde_json::json!({ "mcp": servers }).to_string())
+}
+
 /// Bind an ephemeral loopback port for `opencode serve`.
 #[tauri::command]
 pub fn harness_free_port() -> Result<u16, String> {
@@ -987,6 +1012,14 @@ pub fn harness_spawn(
 
     crate::control::configure_child(&app, &session_id, &mut cmd);
     crate::lightpanda::configure_child(&app, &mut cmd);
+    // OpenCode 1.x serves one chat per process and reads extra config from
+    // the environment; other harnesses get shared servers per session.
+    if binary_provider.as_deref() == Some("opencode") && args.first().is_some_and(|a| a == "serve")
+    {
+        if let Some(content) = opencode_shared_mcp(&crate::shared_mcp::specs(&app)) {
+            cmd.env("OPENCODE_CONFIG_CONTENT", content);
+        }
+    }
 
     let mut child =
         spawn_managed(&mut cmd).map_err(|e| format!("Failed to start {command}: {e}"))?;
@@ -4300,5 +4333,32 @@ mod reap_logic_tests {
         assert!(!is_legacy_orphaned_cursor_acp(
             "node /usr/local/bin/typescript-language-server --stdio"
         ));
+    }
+}
+
+#[cfg(test)]
+mod shared_mcp_tests {
+    use super::opencode_shared_mcp;
+    use crate::shared_mcp::LaunchSpec;
+
+    #[test]
+    fn opencode_gets_shared_servers_as_local_commands() {
+        assert!(opencode_shared_mcp(&[]).is_none());
+        let content = opencode_shared_mcp(&[LaunchSpec {
+            name: "executor".into(),
+            command: "/A/Irgatos".into(),
+            args: vec!["mcp-bridge".into(), "id1".into()],
+            env: vec![("IRGAT_MCP_TOKEN".into(), "t".into())],
+        }])
+        .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            value["mcp"]["executor"],
+            serde_json::json!({
+                "type": "local",
+                "command": ["/A/Irgatos", "mcp-bridge", "id1"],
+                "environment": {"IRGAT_MCP_TOKEN": "t"}
+            })
+        );
     }
 }
