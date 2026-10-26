@@ -96,3 +96,18 @@ export const loadRailIrgatsPinned = railIrgatsPinned.load;
 export const saveRailIrgatsPinned = railIrgatsPinned.save;
 export const subscribeRailIrgatsPinned = railIrgatsPinned.subscribe;
 export const useRailIrgatsPinned = railIrgatsPinned.useFlag;
+
+const NEXT_PROMPT_KEY = "irgat.nextPromptSuggestions";
+export const NEXT_PROMPT_DEFAULT = true;
+/** Fired on `window` whenever next-message suggestions flip (detail: boolean). */
+export const NEXT_PROMPT_CHANGE_EVENT = "irgat:nextpromptchange";
+const nextPrompt = flagStore(
+  NEXT_PROMPT_KEY,
+  NEXT_PROMPT_DEFAULT,
+  NEXT_PROMPT_CHANGE_EVENT,
+);
+
+/** After a reply, the empty composer suggests the next message in grey; Tab takes it. */
+export const loadNextPromptSuggestions = nextPrompt.load;
+export const saveNextPromptSuggestions = nextPrompt.save;
+export const useNextPromptSuggestions = nextPrompt.useFlag;

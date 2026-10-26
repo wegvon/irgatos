@@ -25,18 +25,28 @@ file paths, identifiers, URLs, line numbers, lists and markdown. Output only \
 the sentences.";
 
 pub fn summarize(key: &str, text: &str, locale: &str) -> Result<Option<String>, String> {
+    generate(key, &request(text, locale), HTTP_TIMEOUT)
+}
+
+/// One `generateContent` call with the cheap model; the reply's text, if any.
+/// Next-prompt suggestions share it with the spoken summary.
+pub(super) fn generate(
+    key: &str,
+    body: &Value,
+    timeout: Duration,
+) -> Result<Option<String>, String> {
     let url = format!("{ENDPOINT}/{MODEL}:generateContent");
-    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let agent = ureq::AgentBuilder::new().timeout(timeout).build();
     match agent
         .post(&url)
         .set("x-goog-api-key", key)
         .set("Content-Type", "application/json")
-        .send_string(&request(text, locale).to_string())
+        .send_string(&body.to_string())
     {
         Ok(response) => {
             let raw = response
                 .into_string()
-                .map_err(|_| "Gemini sent an unreadable summary".to_string())?;
+                .map_err(|_| "Gemini sent an unreadable reply".to_string())?;
             Ok(parse_reply(&raw))
         }
         Err(ureq::Error::Status(400, _))
@@ -64,11 +74,15 @@ fn request(text: &str, locale: &str) -> Value {
 
 /// Keeps the start and the end of a long reply, where questions usually sit.
 fn clip(text: &str) -> String {
+    clip_to(text, MAX_INPUT_CHARS)
+}
+
+pub(super) fn clip_to(text: &str, max: usize) -> String {
     let chars: Vec<char> = text.trim().chars().collect();
-    if chars.len() <= MAX_INPUT_CHARS {
+    if chars.len() <= max {
         return chars.into_iter().collect();
     }
-    let half = MAX_INPUT_CHARS / 2;
+    let half = max / 2;
     let head: String = chars[..half].iter().collect();
     let tail: String = chars[chars.len() - half..].iter().collect();
     format!("{head}\n\n[…]\n\n{tail}")

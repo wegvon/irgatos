@@ -493,6 +493,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "effort thinking reasoning fast service tier model picker composer",
   },
   {
+    id: "next-prompt",
+    section: "chat",
+    label: "Suggest next message",
+    keywords:
+      "prediction predict follow-up ghost autocomplete tab gemini öneri tahmin sonraki mesaj",
+  },
+  {
     id: "composer-autocorrect",
     section: "chat",
     label: "Autocorrect",

@@ -240,6 +240,7 @@ import {
   type McpSettingsSnapshot,
 } from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
+import { useNextPrompt } from "../model/nextPrompt";
 import { useComposerAutocorrect } from "../../settings/model/displayPrefs";
 import { useComposerVoice } from "../../voice/hooks/useComposerVoice";
 import type { Reply } from "../../voice/model/spokenReply";
@@ -820,6 +821,29 @@ export function Composer({
   });
   const { dictation } = voice;
   const detachDictation = dictation.detach;
+
+  // The message the user will likely type next, grey in the empty field.
+  const nextPrompt = useNextPrompt({
+    reply: voiceReply,
+    sessionId,
+    active: enabled && !disabled && !busy && !question && !worktreeRemoved,
+  });
+  const ghost =
+    nextPrompt.suggestion &&
+    !draft &&
+    attachments.length === 0 &&
+    !inboxCard &&
+    !noteCard &&
+    !handoffCard
+      ? nextPrompt.suggestion
+      : null;
+  /** Tab puts the suggestion in as a draft to edit or send; it never sends. */
+  const takeGhost = () => {
+    if (!ghost) return;
+    nextPrompt.dismiss();
+    writeDraft(ghost, ghost.length);
+    ref.current?.focus();
+  };
 
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive =
@@ -1779,6 +1803,24 @@ export function Composer({
     if (isImeComposition(e.nativeEvent)) return;
     if (creatingSkill) return;
     if (voice.handleKeyDown(e)) return;
+    if (ghost && !e.currentTarget.value && !slash && !mention) {
+      if (
+        e.key === "Tab" &&
+        !e.shiftKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        !e.ctrlKey
+      ) {
+        e.preventDefault();
+        takeGhost();
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        nextPrompt.dismiss();
+        return;
+      }
+    }
     if (
       e.key === "Enter" &&
       !e.shiftKey &&
@@ -2483,7 +2525,8 @@ export function Composer({
               autoCorrect={autocorrect ? "on" : "off"}
               defaultValue={mountDraft}
               placeholder={
-                worktreeRemoved
+                ghost ??
+                (worktreeRemoved
                   ? "Select a branch or worktree to continue…"
                   : inboxCard
                     ? "Add a note, or send to start…"
@@ -2494,13 +2537,13 @@ export function Composer({
                         : (placeholder ??
                           (shell
                             ? "Ask, build, / for commands, @ for references... "
-                            : "Ask, build, / for commands, @ for references... "))
+                            : "Ask, build, / for commands, @ for references... ")))
               }
               aria-label={inputAriaLabel}
               disabled={disabled}
               className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-sm leading-5.5 outline-none placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
-              }`}
+              } ${ghost ? "pr-14" : ""}`}
               onFocus={onFocus}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
@@ -2535,6 +2578,18 @@ export function Composer({
                 syncTokensFromTextarea(el);
               }}
             />
+            {ghost ? (
+              <button
+                type="button"
+                title="Use this suggestion (Tab). Escape hides it."
+                aria-label="Use suggested message"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={takeGhost}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-content/15 px-1.5 text-[10.5px] font-medium leading-4 text-content/45 transition-colors hover:border-content/30 hover:text-content/80"
+              >
+                Tab
+              </button>
+            ) : null}
           </div>
 
           <ComposerVoiceStatus voice={voice} />
