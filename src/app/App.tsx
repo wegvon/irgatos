@@ -14,9 +14,11 @@ import {
   currentBrowserTabs,
   subscribeBrowserTabs,
 } from "../features/browser/model/browserTabs";
+import { noteBrowserAgentActing } from "../features/browser/model/browserTakeover";
 import {
   browserAction,
   browserPageExcerpt,
+  listenBrowserAgentActing,
   listenBrowserAgentRequests,
   replyBrowserAgent,
   setBrowserAgentView,
@@ -1612,6 +1614,13 @@ function Workspace({
       if (disposed) stop();
       else unlisten = stop;
     });
+    let unlistenActing: (() => void) | undefined;
+    void listenBrowserAgentActing((notice) =>
+      noteBrowserAgentActing(notice.sessionId, notice.action),
+    ).then((stop) => {
+      if (disposed) stop();
+      else unlistenActing = stop;
+    });
     let agentView = "";
     const syncView = () => {
       const { activeId } = currentBrowserTabs();
@@ -1624,6 +1633,7 @@ function Workspace({
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenActing?.();
       stopTabs();
     };
   }, []);
@@ -2342,6 +2352,10 @@ function Workspace({
   const freeChat = freeChatId
     ? sessions.find((session) => session.id === freeChatId)
     : undefined;
+  // Who the Browser panel says is using its page.
+  const browserAgentName = (sessionId: string) =>
+    irgatForSession(sessionId)?.name ??
+    sessionsRef.current.find((session) => session.id === sessionId)?.title;
   const browserShown =
     browserOpen &&
     !searchViewOpen &&
@@ -16360,6 +16374,7 @@ function Workspace({
                           visible={browserShown}
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
+                          agentName={browserAgentName}
                         />,
                             browserHost,
                           )

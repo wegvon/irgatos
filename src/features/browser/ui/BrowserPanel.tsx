@@ -1,10 +1,17 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import {
   ArrowLeft,
+  Bot,
   CheckCircle,
   ChevronRight,
   CursorMagicSelection,
@@ -26,6 +33,7 @@ import {
   listenBrowserEvents,
   openBrowser,
   prepareBrowser,
+  setBrowserAgentHold,
   setBrowserBounds,
   type BrowserAction,
   type BrowserBookmark,
@@ -63,6 +71,14 @@ import {
   tabLabel,
   type BrowserTab,
 } from "../model/browserTabs";
+import {
+  AGENT_ACTIVE_MS,
+  agentActingNow,
+  browserActionLabel,
+  browserTakeover,
+  setBrowserHeld,
+  subscribeBrowserTakeover,
+} from "../model/browserTakeover";
 import {
   captureRect,
   screenshotFile,
@@ -192,11 +208,14 @@ export function BrowserPanel({
   visible,
   onClose,
   openRequest,
+  agentName,
 }: {
   visible: boolean;
   onClose: () => void;
   /** A page to load, e.g. a worktree's dev server; a new token reloads it. */
   openRequest?: { url: string; token: number };
+  /** The name of the chat or Irgat behind a session, for "… is using it". */
+  agentName?: (sessionId: string) => string | undefined;
 }) {
   const [initial] = useState(restoreTabs);
   const [tabs, setTabs] = useState<BrowserTab[]>(initial.tabs);
@@ -1075,6 +1094,7 @@ export function BrowserPanel({
             {error ?? notice}
           </div>
         ) : null}
+        <AgentTakeoverBar agentName={agentName} onError={setError} />
         {/* Stays up until the screenshot is taken: changing the page's size
             before then can move what was selected. */}
         {picking || capture?.capturing ? (
@@ -1274,5 +1294,65 @@ export function BrowserPanel({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+/**
+ * Lets the user watch an agent use the Browser and take it over: while held,
+ * agents' browser actions are refused until the user hands it back.
+ */
+function AgentTakeoverBar({
+  agentName,
+  onError,
+}: {
+  agentName?: (sessionId: string) => string | undefined;
+  onError: (message: string | null) => void;
+}) {
+  const takeover = useSyncExternalStore(
+    subscribeBrowserTakeover,
+    browserTakeover,
+  );
+  const [, setTick] = useState(0);
+  const [switching, setSwitching] = useState(false);
+  const acting = agentActingNow(takeover);
+  useEffect(() => {
+    if (!acting) return;
+    // Re-render once the agent has gone quiet, so the bar steps aside.
+    const left = acting.at + AGENT_ACTIVE_MS - Date.now();
+    const timer = window.setTimeout(() => setTick((tick) => tick + 1), left);
+    return () => window.clearTimeout(timer);
+  }, [acting]);
+  if (!takeover.held && !acting) return null;
+  const hold = (held: boolean) => {
+    setSwitching(true);
+    setBrowserAgentHold(held)
+      .then(() => {
+        setBrowserHeld(held);
+        onError(null);
+      })
+      .catch((reason: unknown) => onError(message(reason)))
+      .finally(() => setSwitching(false));
+  };
+  const name = acting ? agentName?.(acting.sessionId)?.trim() : "";
+  return (
+    <div
+      role="status"
+      className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke bg-accent/10 px-3 text-[11px] text-content/75"
+    >
+      <Bot className="size-3.5 shrink-0 text-accent" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1 truncate">
+        {takeover.held
+          ? "You have the Browser. Agents wait until you hand it back."
+          : `${name || "An agent"} is using this page · ${browserActionLabel(acting!.action)}`}
+      </span>
+      <button
+        type="button"
+        disabled={switching}
+        onClick={() => hold(!takeover.held)}
+        className="shrink-0 rounded bg-content/[0.08] px-2 py-0.5 text-content/80 hover:bg-content/[0.14] hover:text-content disabled:opacity-50"
+      >
+        {takeover.held ? "Hand back" : "Take over"}
+      </button>
+    </div>
   );
 }

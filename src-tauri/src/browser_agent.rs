@@ -10,7 +10,7 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     rc::Rc,
     sync::{mpsc, Mutex, OnceLock},
     time::{Duration, SystemTime},
@@ -25,6 +25,9 @@ use crate::browser_picker::{encode_png, platform, shrink};
 
 const AGENT_JS: &str = include_str!("browser_agent.js");
 const REQUEST_EVENT: &str = "browser-agent-request";
+/// Tells the window's UI an agent is using its Browser, so the user can watch.
+const ACTING_EVENT: &str = "browser-agent-acting";
+const TAKEN_OVER: &str = "The user took over the Browser and is using it now. Wait until they hand it back, or ask them in the chat; don't retry in a loop.";
 /// The view the panel draws until the UI names another (a tab).
 const DEFAULT_VIEW: &str = "main";
 const PAGE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,6 +67,28 @@ thread_local! {
 fn active_views() -> &'static Mutex<HashMap<String, String>> {
     static ACTIVE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
     ACTIVE.get_or_init(Default::default)
+}
+
+/// Windows whose user took the Browser over: agents' actions are refused.
+fn held() -> &'static Mutex<HashSet<String>> {
+    static HELD: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    HELD.get_or_init(Default::default)
+}
+
+fn is_held(window: &str) -> bool {
+    held().lock().map(|set| set.contains(window)).unwrap_or(true)
+}
+
+/// The user takes the window's Browser over from agents, or hands it back.
+#[tauri::command]
+pub fn browser_set_agent_hold(window: WebviewWindow, held_now: bool) -> Result<(), String> {
+    let mut set = held().lock().map_err(|_| "Browser unavailable")?;
+    if held_now {
+        set.insert(window.label().to_string());
+    } else {
+        set.remove(window.label());
+    }
+    Ok(())
 }
 
 type Reply = mpsc::Sender<Result<Value, String>>;
@@ -126,6 +151,16 @@ pub fn window_closed(label: &str) {
     if let Ok(mut views) = active_views().lock() {
         views.remove(label);
     }
+    if let Ok(mut set) = held().lock() {
+        set.remove(label);
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActingNotice {
+    session_id: String,
+    action: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -198,6 +233,7 @@ fn eval_pause_left(window_label: &str) -> Option<Duration> {
 
 pub fn agent_action(
     app: &AppHandle,
+    session: &str,
     window_label: &str,
     action: &str,
     input: &Value,
@@ -205,6 +241,14 @@ pub fn agent_action(
     let window = app
         .get_webview_window(window_label)
         .ok_or("The Irgatos window for this chat is closed")?;
+    if is_held(window_label) {
+        return Err(TAKEN_OVER.into());
+    }
+    let notice = ActingNotice {
+        session_id: session.into(),
+        action: action.into(),
+    };
+    let _ = window.emit_to(window_label, ACTING_EVENT, notice);
     tauri::async_runtime::block_on(dispatch(window, action, input))
 }
 
@@ -479,6 +523,16 @@ mod tests {
         );
         assert!(target_of(&json!({"ref": null})).is_err());
         assert!(target_of(&json!({})).is_err());
+    }
+
+    #[test]
+    fn a_taken_over_window_is_held_until_handed_back() {
+        assert!(!is_held("hold-test"));
+        held().lock().unwrap().insert("hold-test".into());
+        assert!(is_held("hold-test"));
+        assert!(!is_held("other-window"));
+        held().lock().unwrap().remove("hold-test");
+        assert!(!is_held("hold-test"));
     }
 
     #[test]

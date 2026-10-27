@@ -276,7 +276,7 @@ fn serve(mut stream: TcpStream, app: &AppHandle, inner: &Arc<Mutex<Inner>>) {
             let result = if action == "code.search" {
                 crate::semantic_index::agent_search(app, Path::new(&cwd), &request.input)?
             } else if action.starts_with("browser.") {
-                crate::browser_agent::agent_action(app, &window, action, &request.input)?
+                crate::browser_agent::agent_action(app, &session, &window, action, &request.input)?
             } else if action.starts_with("secrets.") {
                 crate::secrets::agent_action(app, &session, &window, &cwd, action, &request.input)?
             } else if action.starts_with("feed.") {
