@@ -19,7 +19,7 @@ import type { ArtifactCard } from "../../artifacts/artifacts";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { IrgatSpawnedSession, Session } from "../../sessions/model/session";
 import type { IrgatLook, IrgatState } from "../model/irgat";
-import { HABITS_MAX } from "../model/irgatHabits";
+import { HABITS_MAX, habitRunSessionId } from "../model/irgatHabits";
 import {
   INITIAL_OVERVIEW_LIMITS,
   showMoreInSection,
@@ -265,6 +265,9 @@ export function IrgatOverview({
         node: (
           <HabitPage
             habit={habit}
+            runSession={sessions.find(
+              (session) => session.id === habitRunSessionId(habit.id),
+            )}
             color={agent.color}
             cwd={cwd}
             onBack={back}

@@ -503,15 +503,49 @@ export function afterRun(
 const active = new Map<string, number>();
 const ACTIVE_CHANGED = "irgat:irgat-habits-active";
 
-export function setHabitRunning(habitId: string, startedAt?: number): void {
-  if (startedAt == null) active.delete(habitId);
-  else active.set(habitId, startedAt);
+/** The hidden session each running habit works in, by habit id. */
+const runSessions = new Map<string, string>();
+/** Running habits the user asked to stop, until their run notices. */
+const stopRequests = new Set<string>();
+
+export function setHabitRunning(
+  habitId: string,
+  startedAt?: number,
+  runSessionId?: string,
+): void {
+  if (startedAt == null) {
+    active.delete(habitId);
+    runSessions.delete(habitId);
+    stopRequests.delete(habitId);
+  } else {
+    active.set(habitId, startedAt);
+    if (runSessionId) runSessions.set(habitId, runSessionId);
+  }
   window.dispatchEvent(new CustomEvent(ACTIVE_CHANGED));
 }
 
 export function habitRunningSince(habitId: string): number | undefined {
   return active.get(habitId);
 }
+
+/** The hidden session a running habit works in, to watch its steps. */
+export function habitRunSessionId(habitId: string): string | undefined {
+  return runSessions.get(habitId);
+}
+
+/** Asks a running habit to stop; its run ends at its next check. */
+export function stopHabitRun(habitId: string): void {
+  if (!active.has(habitId)) return;
+  stopRequests.add(habitId);
+  window.dispatchEvent(new CustomEvent(ACTIVE_CHANGED));
+}
+
+export function habitStopRequested(habitId: string): boolean {
+  return stopRequests.has(habitId);
+}
+
+/** What a run the user stopped records, so its history says why it ended. */
+export const HABIT_STOPPED_REASON = "You stopped this run.";
 
 const CHECK_NOW = "irgat:irgat-habits-check-now";
 

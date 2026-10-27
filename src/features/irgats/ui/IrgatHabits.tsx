@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Clock, Pause, Play, Trash2, Zap } from "../../../shared/ui/icons";
+import { Clock, Pause, Play, Square, Trash2, Zap } from "../../../shared/ui/icons";
 import { mascotPath } from "../../projects/model/projectMascots";
 import type { IrgatState } from "../model/irgat";
 import { subscribeIrgatFiles } from "../model/irgatFiles";
@@ -12,6 +12,7 @@ import {
   loadHabits,
   habitAwaitingApproval,
   nextHabitRunAt,
+  stopHabitRun,
   subscribeHabitsRunning,
   updateHabits,
   type Habit,
@@ -24,7 +25,12 @@ import {
 } from "../model/habitGuards";
 import { decideHabitApproval } from "../model/habitApprovals";
 import { heldUntilLabel } from "../../quotas/model/usageLimitRegistry";
-import { RunningFor, useHabitRunning, when } from "./HabitPage";
+import {
+  RunningFor,
+  useHabitRunning,
+  useHabitStopping,
+  when,
+} from "./HabitPage";
 import { Empty, Section } from "./irgatPanelParts";
 
 /** Each Irgat's habits as last loaded, so switching back shows them at once. */
@@ -165,6 +171,7 @@ export function HabitRow({
 }) {
   const runningSince = useHabitRunning(habit.id);
   const running = runningSince != null;
+  const stopping = useHabitStopping(habit.id);
   const now = Date.now();
   const held = !running && habitQuotaHeld(habit, now);
   const awaiting = !running && habitAwaitingApproval(habit, now);
@@ -242,6 +249,15 @@ export function HabitRow({
         />
       ) : null}
       <span className="flex shrink-0 items-center pr-2 opacity-0 transition-opacity group-hover/habit:opacity-100 focus-within:opacity-100">
+        {running ? (
+          <HabitButton
+            label={stopping ? "Stopping…" : "Stop this run"}
+            disabled={stopping}
+            onClick={() => stopHabitRun(habit.id)}
+          >
+            <Square className="size-3.5" strokeWidth={1.75} />
+          </HabitButton>
+        ) : null}
         <HabitButton
           label={
             running

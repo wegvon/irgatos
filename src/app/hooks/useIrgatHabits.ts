@@ -20,6 +20,8 @@ import {
   claimHabit,
   clearHabitRun,
   dueHabits,
+  HABIT_STOPPED_REASON,
+  habitStopRequested,
   HABIT_APPROVAL_WAIT_MS,
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
@@ -127,6 +129,8 @@ async function watchRun(
   while (!settled) {
     await Promise.race([turn, new Promise((r) => setTimeout(r, POLL_MS))]);
     if (settled) break;
+    if (habitStopRequested(habit.id))
+      return { status: "cancelled", text: "", error: HABIT_STOPPED_REASON };
     const pending =
       host
         .sessions()
@@ -333,7 +337,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
         ephemeral: true,
       };
       markHabitRun(run.id, irgatId);
-      setHabitRunning(habit.id, now);
+      setHabitRunning(habit.id, now, run.id);
       host.add(run);
       let outcome: ControlOutcome;
       try {
@@ -377,19 +381,26 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       const report =
         outcome.status === "completed" ? habitReport(reply) : undefined;
       if (report) host.post(irgatSessionId, habit, report, look.name, artifacts);
+      // Stopped by the user: not a failure, just a run that did not go on.
+      const stoppedByUser =
+        outcome.status === "cancelled" &&
+        outcome.error === HABIT_STOPPED_REASON;
       await updateHabits(irgatId, (habits) => ({
         habits: habits.map((entry) =>
           entry.id === habit.id
             ? afterRun(entry, Date.now(), {
-                kind:
-                  outcome.status !== "completed"
+                kind: stoppedByUser
+                  ? "skipped"
+                  : outcome.status !== "completed"
                     ? "failed"
                     : report
                       ? "posted"
                       : "quiet",
-                ...(outcome.status !== "completed"
-                  ? { error: outcome.error ?? "The run did not finish." }
-                  : {}),
+                ...(stoppedByUser
+                  ? { reason: HABIT_STOPPED_REASON }
+                  : outcome.status !== "completed"
+                    ? { error: outcome.error ?? "The run did not finish." }
+                    : {}),
                 ...(report ? { report } : {}),
                 startedAt: now,
               })

@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Pause, Play, Trash2, Zap } from "../../../shared/ui/icons";
+import { Pause, Play, Square, Trash2, Zap } from "../../../shared/ui/icons";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { PageHeader } from "./irgatPanelParts";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
@@ -20,11 +20,14 @@ import {
   habitRunningSince,
   habitScheduleLabel,
   habitStarting,
+  habitStopRequested,
+  stopHabitRun,
   subscribeHabitsRunning,
   type Habit,
   type HabitRun,
 } from "../model/irgatHabits";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId, Session } from "../../sessions/model/session";
+import { IrgatActivityTrail } from "../../sessions/ui/AgentTranscript";
 import { HeldWorkNotice } from "../../quotas/ui/HeldWorkNotice";
 
 const dayTime = new Intl.DateTimeFormat(undefined, {
@@ -82,6 +85,7 @@ export function HabitPage({
   onToggle,
   onRemove,
   guards,
+  runSession,
 }: {
   habit: Habit;
   /** The Irgat's color, for runs that reached the user. */
@@ -92,6 +96,8 @@ export function HabitPage({
   onToggle: () => void;
   onRemove: () => void;
   guards?: HabitPageGuardActions;
+  /** The hidden session of the run in progress, to watch its steps live. */
+  runSession?: Session;
 }) {
   const runningSince = useHabitRunning(habit.id);
   const now = Date.now();
@@ -113,6 +119,7 @@ export function HabitPage({
       data-habit-page={habit.id}
     >
       <PageHeader title={habit.name} onBack={onBack}>
+        {runningSince != null ? <StopRunButton habitId={habit.id} /> : null}
         <IconButton
           label={
             runningSince != null
@@ -217,6 +224,18 @@ export function HabitPage({
           </>
         ) : null}
 
+        {runningSince != null && runSession ? (
+          <Section title="Working on it now">
+            <div className="px-1" data-habit-live-trail>
+              <IrgatActivityTrail
+                blocks={runSession.blocks}
+                live
+                cwd={runSession.cwd}
+              />
+            </div>
+          </Section>
+        ) : null}
+
         <Section title="Recent runs">
           {runningSince != null ? <RunningRow since={runningSince} /> : null}
           {runs.length === 0 && runningSince == null ? (
@@ -286,6 +305,30 @@ export function RunningFor({ since }: { since: number }) {
     return () => window.clearInterval(timer);
   }, []);
   return <span className="tabular-nums">{duration(now - since)}</span>;
+}
+
+/** Whether the user asked the habit's run to stop and it has not yet. */
+export function useHabitStopping(habitId: string): boolean {
+  return useSyncExternalStore(subscribeHabitsRunning, () =>
+    habitStopRequested(habitId),
+  );
+}
+
+/**
+ * Stops the run in progress. The run notices within a couple of seconds;
+ * until then the button says it is stopping.
+ */
+export function StopRunButton({ habitId }: { habitId: string }) {
+  const stopping = useHabitStopping(habitId);
+  return (
+    <IconButton
+      label={stopping ? "Stopping…" : "Stop this run"}
+      disabled={stopping}
+      onClick={() => stopHabitRun(habitId)}
+    >
+      <Square className="size-3.5" strokeWidth={1.75} />
+    </IconButton>
+  );
 }
 
 function RunningRow({ since }: { since: number }) {
