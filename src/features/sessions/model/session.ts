@@ -496,6 +496,12 @@ export type Session = {
   blocks: Block[];
   /** Irgat-only database window. Older blocks are fetched separately by the viewer. */
   irgatTranscript?: { before: number | null; firstBlockId: string | null };
+  /**
+   * Which stored copy this in-memory session descends from. Set when the
+   * store loads or rebases it, never persisted; a snapshot from an older
+   * lineage is merged onto the newer stored copy before it can be written.
+   */
+  storeLineage?: string;
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /** The provider has accepted this turn and can take live follow-ups. */

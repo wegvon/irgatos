@@ -54,6 +54,12 @@ import { restoreOrchestrationProposal } from "../../orchestration/model/orchestr
 
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 import { sanitizeSecretApproval, sanitizeSecretRequest } from "../../secrets/model/secrets";
+import {
+  headerSnapshot,
+  rebaseSession,
+  storedWindow,
+  type WriteBase,
+} from "./sessionMerge";
 
 export type SessionSummary = {
   sidebarHidden?: boolean;
@@ -79,6 +85,8 @@ export type SessionSummary = {
   draft?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
+  /** Stored revision; advances on every write that changes the row. */
+  revision?: number;
 };
 
 type SessionRecord = {
@@ -106,6 +114,7 @@ type SessionRecord = {
   automationId?: string | null;
   createdAt: number;
   updatedAt: number;
+  revision?: number;
 };
 
 type SessionUpsertPayload = {
@@ -400,63 +409,129 @@ function enqueueSessionWrite<T>(
   return run;
 }
 
-export async function upsertSession(
-  session: Session,
-): Promise<SessionSummary | null> {
-  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
-    return null;
-  }
+type PreparedWrite = {
+  irgat: boolean;
+  snapshot: Block[];
+  payload: Omit<SessionUpsertPayload, "blocks"> | SessionUpsertPayload;
+};
+
+function prepareWrite(session: Session): PreparedWrite {
   const irgat = !!session.irgatTranscript || isIrgatSession(session.id);
-  const snapshot = irgat
-    ? session.blocks.filter((block) => irgatPersistedBlock(block) !== null)
-    : session.blocks;
-  // Irgat writes sanitize only the changed suffix inside the serialized queue.
-  const payload = irgat
-    ? persistableMeta(session)
-    : sanitizeSessionForPersist(session);
-  if (session.orchestrationLeadId) {
-    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
-  } else {
-    sessionWriteLeadById.delete(session.id);
+  return {
+    irgat,
+    snapshot: irgat
+      ? session.blocks.filter((block) => irgatPersistedBlock(block) !== null)
+      : session.blocks,
+    // Irgat writes sanitize only the changed suffix inside the serialized queue.
+    payload: irgat ? persistableMeta(session) : sanitizeSessionForPersist(session),
+  };
+}
+
+/**
+ * Per session, the stored revision this window last read or wrote. Every
+ * write names it, so a window holding an older snapshot (closing, or
+ * flushing a tab it has not touched) cannot overwrite what another window
+ * saved since. `stale` remembers the last adoption so snapshots taken before
+ * it can still be merged instead of written as they are.
+ */
+const writeBases = new Map<
+  string,
+  WriteBase & {
+    stale?: { base: WriteBase; remote: Session; summary: SessionSummary };
   }
-  const summary = await enqueueSessionWrite(session.id, async () => {
-    if (deletedSessionIds.has(session.id)) return null;
-    if (irgat) {
-      const previous = irgatSavedBlocks.get(session.id);
-      let same = 0;
-      if (previous) {
-        while (
-          same < previous.length &&
-          same < snapshot.length &&
-          previous[same] === snapshot[same]
-        )
-          same++;
-      }
-      const changed =
-        !previous || same !== previous.length || same !== snapshot.length;
-      const summary = await invoke<SessionSummary>("irgat_session_upsert", {
-        session: {
-          ...payload,
-          blocks: changed
-            ? snapshot.slice(same).map((block) => irgatPersistedBlock(block)!)
-            : [],
-        },
-        afterBlockId: same > 0 ? snapshot[same - 1].id : null,
-        fromBlockId:
-          same === 0
-            ? previous !== undefined
-              ? (previous[0]?.id ?? null)
-              : (session.irgatTranscript?.firstBlockId ?? null)
-            : null,
-        blocksChanged: changed,
-        appendOnly: previous?.length === 0,
-      });
-      irgatSavedBlocks.set(session.id, snapshot);
-      return summary;
+>();
+
+type SessionRebase = (current: Session) => { session: Session; dirty: boolean };
+const rebaseListeners = new Set<
+  (sessionId: string, rebase: SessionRebase) => void
+>();
+
+/**
+ * Called when the stored copy of an open session moved ahead of this
+ * window's (another window saved it). `rebase` merges any in-memory session
+ * onto it, keeping what this window changed since it last synced; `dirty`
+ * says whether the result holds anything the store does not.
+ */
+export function subscribeSessionRebase(
+  listener: (sessionId: string, rebase: SessionRebase) => void,
+): () => void {
+  rebaseListeners.add(listener);
+  return () => rebaseListeners.delete(listener);
+}
+
+let lineageCounter = 0;
+function nextLineage(): string {
+  lineageCounter += 1;
+  return `${Date.now().toString(36)}-${lineageCounter}`;
+}
+
+/** The store refused a snapshot built on an older revision. */
+export function staleRevision(error: unknown): number | null {
+  const text = error instanceof Error ? error.message : String(error);
+  const match = /^stale-session-write:(\d+)$/.exec(text);
+  return match ? Number(match[1]) : null;
+}
+
+/** Revision this window last synced for the session, if it has one. */
+export function knownSessionRevision(sessionId: string): number | undefined {
+  return writeBases.get(sessionId)?.revision;
+}
+
+function rememberBase(session: Session, revision: number) {
+  writeBases.set(session.id, {
+    revision,
+    lineage: session.storeLineage,
+    blocks: session.blocks,
+    header: headerSnapshot(session),
+  });
+}
+
+async function writeNow(
+  session: Session,
+  { irgat, snapshot, payload }: PreparedWrite,
+  /** Lineage of the caller's snapshot, before any merge done here. */
+  fromLineage: string | undefined,
+): Promise<SessionSummary> {
+  const base = writeBases.get(session.id);
+  const baseRevision = base?.revision ?? null;
+  let summary: SessionSummary;
+  if (irgat) {
+    const previous = irgatSavedBlocks.get(session.id);
+    let same = 0;
+    if (previous) {
+      while (
+        same < previous.length &&
+        same < snapshot.length &&
+        previous[same] === snapshot[same]
+      )
+        same++;
     }
-    return invoke<SessionSummary>("session_upsert", {
+    const changed =
+      !previous || same !== previous.length || same !== snapshot.length;
+    summary = await invoke<SessionSummary>("irgat_session_upsert", {
       session: {
         ...payload,
+        baseRevision,
+        blocks: changed
+          ? snapshot.slice(same).map((block) => irgatPersistedBlock(block)!)
+          : [],
+      },
+      afterBlockId: same > 0 ? snapshot[same - 1].id : null,
+      fromBlockId:
+        same === 0
+          ? previous !== undefined
+            ? (previous[0]?.id ?? null)
+            : (session.irgatTranscript?.firstBlockId ?? null)
+          : null,
+      blocksChanged: changed,
+      appendOnly: previous?.length === 0,
+    });
+    irgatSavedBlocks.set(session.id, snapshot);
+  } else {
+    summary = await invoke<SessionSummary>("session_upsert", {
+      session: {
+        ...payload,
+        baseRevision,
         blocks: (payload as SessionUpsertPayload).blocks.map((block) =>
           block.orchestrationLeadId &&
           deletedSessionIds.has(block.orchestrationLeadId)
@@ -465,6 +540,119 @@ export async function upsertSession(
         ),
       },
     });
+  }
+  const adopted = !base?.stale || fromLineage === base.lineage;
+  writeBases.set(session.id, {
+    revision: summary?.revision ?? 0,
+    lineage: session.storeLineage,
+    blocks: session.blocks,
+    header: headerSnapshot(session),
+    // Older snapshots may still arrive until the window adopts the merge.
+    ...(adopted ? {} : { stale: base!.stale }),
+  });
+  return summary;
+}
+
+/**
+ * Read the stored copy, make it this window's base, and tell the window to
+ * merge its open copy onto it. Must run inside the session's write queue.
+ */
+async function adoptStoredCopy(
+  sessionId: string,
+  previous: WriteBase,
+  local: Session,
+): Promise<{ remote: Session; summary: SessionSummary } | null> {
+  const record = await invoke<SessionRecord | null>(
+    isIrgatSession(sessionId) ? "irgat_session_get" : "session_get",
+    { sessionId },
+  );
+  if (!record) return null;
+  const remote = recordToSession(record, { live: true });
+  remote.storeLineage = nextLineage();
+  const summary = normalizeSummary(summaryFromRecord(record));
+  if (remote.irgatTranscript) {
+    irgatSavedBlocks.set(
+      sessionId,
+      storedWindow(local, remote).filter(
+        (block) => irgatPersistedBlock(block) !== null,
+      ),
+    );
+  }
+  writeBases.set(sessionId, {
+    revision: record.revision ?? 0,
+    lineage: remote.storeLineage,
+    blocks: remote.blocks,
+    header: headerSnapshot(remote),
+    stale: { base: previous, remote, summary },
+  });
+  const rebase: SessionRebase = (current) =>
+    current.storeLineage === remote.storeLineage
+      ? { session: current, dirty: false }
+      : rebaseSession(current, previous, remote);
+  for (const listener of rebaseListeners) listener(sessionId, rebase);
+  return { remote, summary };
+}
+
+/**
+ * Another window saved this session. Pull its copy in now so this window
+ * shows it and its next write builds on it. No-op for sessions this window
+ * never synced or already holds at `revision`.
+ */
+export function refreshStoredSession(
+  sessionId: string,
+  revision: number,
+  current: () => Session | undefined,
+): Promise<void> {
+  const known = writeBases.get(sessionId);
+  if (!known || known.revision >= revision || deletedSessionIds.has(sessionId))
+    return Promise.resolve();
+  return enqueueSessionWrite(sessionId, async () => {
+    const base = writeBases.get(sessionId);
+    const local = current();
+    if (!base || !local || base.revision >= revision) return;
+    await adoptStoredCopy(sessionId, base, local);
+  });
+}
+
+export async function upsertSession(
+  session: Session,
+): Promise<SessionSummary | null> {
+  if (!shouldPersistSession(session) || deletedSessionIds.has(session.id)) {
+    return null;
+  }
+  const prepared = prepareWrite(session);
+  if (session.orchestrationLeadId) {
+    sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
+  } else {
+    sessionWriteLeadById.delete(session.id);
+  }
+  const summary = await enqueueSessionWrite(session.id, async () => {
+    if (deletedSessionIds.has(session.id)) return null;
+    let current = session;
+    let ready = prepared;
+    const base = writeBases.get(session.id);
+    if (base?.stale && session.storeLineage !== base.lineage) {
+      // Taken before this window adopted a newer stored copy.
+      const rebased = rebaseSession(session, base.stale.base, base.stale.remote);
+      if (!rebased.dirty) return base.stale.summary;
+      current = rebased.session;
+      ready = prepareWrite(current);
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await writeNow(current, ready, session.storeLineage);
+      } catch (error) {
+        const known = writeBases.get(current.id);
+        if (staleRevision(error) === null || !known || attempt >= 2) throw error;
+        const adopted = await adoptStoredCopy(current.id, known, current);
+        if (!adopted) throw error;
+        const rebased = rebaseSession(current, known, adopted.remote);
+        // Nothing of this window's own: the stored copy already has it all.
+        if (!rebased.dirty) return adopted.summary;
+        current = rebased.session;
+        ready = prepareWrite(current);
+      }
+    }
   });
   return summary ? normalizeSummary(summary) : null;
 }
@@ -658,6 +846,8 @@ export async function getSession(sessionId: string): Promise<Session | null> {
   );
   if (!record) return null;
   const session = recordToSession(record);
+  session.storeLineage = nextLineage();
+  rememberBase(session, record.revision ?? 0);
   if (session.irgatTranscript) irgatSavedBlocks.set(sessionId, session.blocks);
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);
@@ -811,6 +1001,7 @@ export async function deleteSession(
       invoke<void>("session_delete", { sessionId, imagePaths }),
     );
     irgatSavedBlocks.delete(sessionId);
+    writeBases.delete(sessionId);
     forgetAdhdChat(sessionId);
     forgetStandingPrompt(sessionId);
     const tombstone = setTimeout(
@@ -832,6 +1023,7 @@ export async function discardDraftSessionRecord(
     invoke<void>("session_delete", { sessionId, imagePaths: [] }),
   );
   irgatSavedBlocks.delete(sessionId);
+  writeBases.delete(sessionId);
 }
 
 export async function setSessionArchived(
@@ -1505,7 +1697,37 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
   };
 }
 
-function recordToSession(record: SessionRecord): Session {
+function summaryFromRecord(record: SessionRecord): SessionSummary {
+  return {
+    id: record.id,
+    cwd: record.cwd,
+    harness: asHarness(record.harness),
+    model: record.model,
+    runtimeMode: asRuntimeMode(record.runtimeMode),
+    title: record.title,
+    ...(record.providerSessionId
+      ? { providerSessionId: record.providerSessionId }
+      : {}),
+    ...(record.branch ? { branch: record.branch } : {}),
+    ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
+    ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),
+    ...(record.linkedWorkItem ? { linkedWorkItem: record.linkedWorkItem } : {}),
+    ...(record.automationId ? { automationId: record.automationId } : {}),
+    ...(record.sidebarHidden ? { sidebarHidden: true } : {}),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    revision: record.revision ?? 0,
+  };
+}
+
+/**
+ * `live` reads a copy another window just saved: its queue is still running
+ * there, so it is not paused the way a restart pauses it.
+ */
+function recordToSession(
+  record: SessionRecord,
+  { live = false }: { live?: boolean } = {},
+): Session {
   const blocks = Array.isArray(record.blocks)
     ? record.blocks
         .map((block) => sanitizeBlock(block, { hydrate: true }))
@@ -1528,7 +1750,10 @@ function recordToSession(record: SessionRecord): Session {
     blocks,
     // A restart interrupted the active turn. Let the user resume pending work.
     ...(queuedMessages.length
-      ? { queuedMessages, queueStatus: "paused" as const }
+      ? {
+          queuedMessages,
+          queueStatus: live ? (record.queueStatus ?? "active") : ("paused" as const),
+        }
       : {}),
     ...(record.irgatTranscript ? { irgatTranscript: record.irgatTranscript } : {}),
     busy: false,

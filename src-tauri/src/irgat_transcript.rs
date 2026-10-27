@@ -381,14 +381,19 @@ fn upsert_with_mode(
                 .as_array()
                 .ok_or_else(|| invalid("blocks must be an array"))?,
         )?;
+        // The header fingerprint never sees these blocks, so a transcript
+        // change advances the revision here; otherwise a stale window could
+        // still rewind the suffix another window just appended.
         tx.execute(
-            "UPDATE sessions SET updated_at = ?2 WHERE id = ?1",
+            "UPDATE sessions SET updated_at = ?2, revision = revision + 1,
+               write_fingerprint = NULL
+             WHERE id = ?1",
             params![session.id, session_store::now_millis()],
         )?;
-        summary.updated_at = tx.query_row(
-            "SELECT updated_at FROM sessions WHERE id = ?1",
+        (summary.updated_at, summary.revision) = tx.query_row(
+            "SELECT updated_at, revision FROM sessions WHERE id = ?1",
             [&session.id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
     }
     let (has_user, draft): (bool, bool) = tx.query_row("SELECT EXISTS(SELECT 1 FROM irgat_blocks WHERE session_id = ?1 AND is_user = 1), EXISTS(SELECT 1 FROM irgat_blocks WHERE session_id = ?1 AND is_user = 1 AND is_draft = 1)", [&session.id], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -404,6 +409,7 @@ fn upsert_with_mode(
 #[tauri::command(async)]
 pub fn irgat_session_upsert(
     app: tauri::AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     mut session: SessionUpsert,
     after_block_id: Option<String>,
@@ -430,7 +436,7 @@ pub fn irgat_session_upsert(
     }
     crate::secrets::scrub_saved(&app, &mut session.blocks);
     let conn = store.lock_conn()?;
-    upsert_with_mode(
+    let summary = upsert_with_mode(
         &conn,
         &session,
         after_block_id.as_deref(),
@@ -438,7 +444,10 @@ pub fn irgat_session_upsert(
         blocks_changed,
         append_only,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    drop(conn);
+    session_store::announce_saved(&app, &window, &summary);
+    Ok(summary)
 }
 
 #[cfg(test)]
@@ -468,6 +477,35 @@ mod tests {
             })
             .collect();
         serde_json::from_value(json!({"id":id, "cwd":"/tmp", "harness":"codex", "model":"model", "modelSettings":{}, "runtimeMode":"default", "title":"Irgat", "blocks":blocks})).unwrap()
+    }
+
+    #[test]
+    fn a_stale_window_cannot_rewind_an_appended_irgat_turn() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.lock_conn().unwrap();
+        let opened = sample("shared-irgat", 1);
+        let first = upsert(&conn, &opened, None, None, true).unwrap();
+
+        // Window A appends a turn after a1.
+        let mut window_a = sample("shared-irgat", 2);
+        window_a.base_revision = Some(first.revision);
+        window_a.blocks = json!(window_a.blocks.as_array().unwrap()[2..]);
+        let appended = upsert(&conn, &window_a, Some("a0"), None, true).unwrap();
+        assert!(appended.revision > first.revision);
+
+        // Window B still holds one turn and rewrites after a0, which would
+        // delete A's turn without the revision check.
+        let mut window_b = sample("shared-irgat", 1);
+        window_b.base_revision = Some(first.revision);
+        window_b.blocks = json!([]);
+        let refused = upsert(&conn, &window_b, Some("a0"), None, true).unwrap_err();
+        assert!(refused
+            .to_string()
+            .starts_with(session_store::STALE_SESSION_WRITE));
+        assert_eq!(
+            page(&conn, "shared-irgat", None, None).unwrap().blocks.len(),
+            4
+        );
     }
 
     #[test]
