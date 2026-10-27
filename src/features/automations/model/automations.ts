@@ -87,6 +87,8 @@ export type AutomationRun = {
   eventKind?: AutomationTriggerKind;
   event?: string;
   prompt?: string;
+  /** The window that claimed the run; only it executes the run. */
+  owner?: string;
 };
 
 export type DueAutomationRun = {
@@ -485,11 +487,51 @@ export function listAutomationRuns(
   return invoke("automation_runs_list", { automationId });
 }
 
-export function recoverAutomationRuns(
-  startedBefore: number,
+/**
+ * Take over runs left by a window that closed: pending ones come back to
+ * launch here, running ones are cancelled. Runs owned by an open window are
+ * never touched, so calling this from every window is safe. Restart
+ * recovery happens once in the backend when the app starts.
+ */
+export function adoptAutomationRuns(
   now = Date.now(),
 ): Promise<DueAutomationRun[]> {
-  return invoke("automation_runs_recover", { startedBefore, now });
+  return invoke("automation_runs_adopt", { now });
+}
+
+/**
+ * Claim a pending run for execution. Resolves with the automation as it is
+ * now (a run that waited uses current settings), or null when the run must
+ * not execute: another window has it, it already ran or was cancelled, or
+ * its automation was deleted or turned off.
+ */
+export async function startAutomationRun(
+  runId: string,
+  now = Date.now(),
+): Promise<DueAutomationRun | null> {
+  const started = await invoke<DueAutomationRun | null>(
+    "automation_run_start",
+    { runId, now },
+  );
+  emitLocalChange();
+  return started;
+}
+
+/**
+ * Held runs that can no longer start: their automation was deleted or
+ * turned off (a manual run excepted). Their quota hold is dropped.
+ */
+export function unlaunchableHeldRuns(
+  held: Iterable<[string, { automation: Automation; run: AutomationRun }]>,
+  automations: readonly Automation[],
+): string[] {
+  const byId = new Map(automations.map((automation) => [automation.id, automation]));
+  const ids: string[] = [];
+  for (const [id, { automation, run }] of held) {
+    const current = byId.get(automation.id);
+    if (!current || (!current.enabled && run.trigger !== "manual")) ids.push(id);
+  }
+  return ids;
 }
 
 export async function createManualAutomationRun(

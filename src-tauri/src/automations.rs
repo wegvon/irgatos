@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::session_store::{now_millis, validate_id, SessionStore};
@@ -117,6 +117,9 @@ pub struct AutomationRun {
     event: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prompt: Option<String>,
+    /// Label of the window that claimed this run and alone may execute it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -531,6 +534,7 @@ fn new_run(
         event_kind: None,
         event: None,
         prompt: Some(prompt.to_string()),
+        owner: None,
     }
 }
 
@@ -697,9 +701,38 @@ pub fn automations_upsert(
         updated_at: now,
     };
     write_automation(&conn, &saved)?;
+    let mut saved = saved;
+    if !saved.enabled {
+        cancel_waiting_runs(&conn, &mut saved, now)?;
+    }
     drop(conn);
     let _ = app.emit(CHANGED, ());
     Ok(saved)
+}
+
+/// Turning an automation off also stops its runs that have not started,
+/// such as one held for a provider's usage reset. A manual run was asked
+/// for explicitly and stays.
+fn cancel_waiting_runs(
+    conn: &Connection,
+    automation: &mut Automation,
+    now: i64,
+) -> Result<(), String> {
+    for mut run in unfinished_runs(conn)? {
+        if run.automation_id != automation.id || run.status != "pending" || run.trigger == "manual"
+        {
+            continue;
+        }
+        finish_run(
+            conn,
+            automation,
+            &mut run,
+            "cancelled",
+            "The automation was turned off before this run started.",
+            now,
+        )?;
+    }
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -733,50 +766,111 @@ pub fn automation_runs_list(
     Ok(runs)
 }
 
-#[tauri::command(async)]
-pub fn automation_runs_recover(
-    app: AppHandle,
-    store: State<'_, SessionStore>,
-    started_before: i64,
-    now: i64,
-) -> Result<Vec<DueAutomationRun>, String> {
-    let mut conn = store.lock_conn()?;
-    let tx = conn.transaction().map_err(|error| error.to_string())?;
-    let mut statement = tx
-        .prepare(
-            "SELECT run_json FROM automation_runs WHERE created_at <= ?1
-             ORDER BY created_at, id",
-        )
+const TERMINAL: [&str; 4] = ["succeeded", "failed", "skipped", "cancelled"];
+
+fn is_terminal(status: &str) -> bool {
+    TERMINAL.contains(&status)
+}
+
+fn unfinished_runs(conn: &Connection) -> Result<Vec<AutomationRun>, String> {
+    let mut statement = conn
+        .prepare("SELECT run_json FROM automation_runs ORDER BY created_at, id")
         .map_err(|error| error.to_string())?;
     let rows = statement
-        .query_map([started_before], |row| row.get::<_, String>(0))
+        .query_map([], |row| row.get::<_, String>(0))
         .map_err(|error| error.to_string())?;
     let mut runs = Vec::new();
     for row in rows {
         let raw = row.map_err(|error| error.to_string())?;
-        runs.push(serde_json::from_str::<AutomationRun>(&raw).map_err(|error| error.to_string())?);
+        let run: AutomationRun =
+            serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+        if !is_terminal(&run.status) {
+            runs.push(run);
+        }
     }
-    drop(statement);
+    Ok(runs)
+}
 
+fn finish_run(
+    conn: &Connection,
+    automation: &mut Automation,
+    run: &mut AutomationRun,
+    status: &str,
+    error: &str,
+    now: i64,
+) -> Result<(), String> {
+    run.status = status.into();
+    run.completed_at = Some(now);
+    run.error = Some(error.into());
+    apply_run_summary(automation, run);
+    write_run(conn, run)?;
+    write_automation(conn, automation)?;
+    trim_history(conn, &run.automation_id)
+}
+
+/// Once per app start, before any window exists: a run still marked
+/// running was cut off with the previous process, and no pending run has a
+/// live owner any more. Window start-up never does this, so opening a
+/// window cannot touch runs another window is executing.
+pub(crate) fn recover_after_restart(conn: &mut Connection, now: i64) -> Result<(), String> {
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    for mut run in unfinished_runs(&tx)? {
+        let Some(mut automation) = get(&tx, &run.automation_id)? else {
+            continue;
+        };
+        if run.status == "running" {
+            finish_run(
+                &tx,
+                &mut automation,
+                &mut run,
+                "cancelled",
+                "Interrupted when Irgatos last stopped.",
+                now,
+            )?;
+        } else if run.owner.take().is_some() {
+            write_run(&tx, &run)?;
+        }
+    }
+    tx.commit().map_err(|error| error.to_string())
+}
+
+pub(crate) fn init(app: &AppHandle) {
+    let store = app.state::<SessionStore>();
+    let Ok(mut conn) = store.lock_conn() else {
+        return;
+    };
+    if let Err(error) = recover_after_restart(&mut conn, now_millis()) {
+        eprintln!("automation recovery failed: {error}");
+    }
+}
+
+/// Runs whose owner window is gone: a pending one is taken over by `owner`
+/// (and returned to launch), a running one is cancelled because its turn
+/// went with that window. Runs owned by a live window are left to it.
+fn adopt_runs(
+    conn: &mut Connection,
+    owner: &str,
+    live: &HashSet<String>,
+    now: i64,
+) -> Result<(Vec<DueAutomationRun>, bool), String> {
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut due = Vec::new();
     let mut changed = false;
-    let mut changed_automation_ids = Vec::new();
-    for mut run in runs {
-        if run.status != "pending" && run.status != "running" {
+    for mut run in unfinished_runs(&tx)? {
+        if run.owner.as_ref().is_some_and(|label| live.contains(label)) {
             continue;
         }
         let Some(mut automation) = get(&tx, &run.automation_id)? else {
             continue;
         };
+        changed = true;
         if run.status == "running" {
-            run.status = "cancelled".into();
-            run.completed_at = Some(now);
-            run.error = Some("Interrupted when Irgatos last stopped.".into());
-            apply_run_summary(&mut automation, &run);
-            write_run(&tx, &run)?;
-            write_automation(&tx, &automation)?;
-            changed_automation_ids.push(run.automation_id.clone());
-            changed = true;
+            let reason = if run.owner.is_some() {
+                "The window running this automation was closed."
+            } else {
+                "Interrupted when Irgatos last stopped."
+            };
+            finish_run(&tx, &mut automation, &mut run, "cancelled", reason, now)?;
             continue;
         }
         if run.trigger == "event"
@@ -785,34 +879,137 @@ pub fn automation_runs_recover(
                 .as_deref()
                 .is_none_or(|prompt| prompt.trim().is_empty())
         {
-            run.status = "failed".into();
-            run.completed_at = Some(now);
-            run.error = Some("The Inbox event prompt was not available after restart.".into());
-            apply_run_summary(&mut automation, &run);
-            write_run(&tx, &run)?;
-            write_automation(&tx, &automation)?;
-            changed_automation_ids.push(run.automation_id.clone());
-            changed = true;
+            finish_run(
+                &tx,
+                &mut automation,
+                &mut run,
+                "failed",
+                "The Inbox event prompt was not available after restart.",
+                now,
+            )?;
             continue;
         }
+        run.owner = Some(owner.to_string());
+        write_run(&tx, &run)?;
         due.push(DueAutomationRun { automation, run });
     }
-    changed_automation_ids.sort();
-    changed_automation_ids.dedup();
-    for automation_id in changed_automation_ids {
-        trim_history(&tx, &automation_id)?;
-    }
     tx.commit().map_err(|error| error.to_string())?;
+    Ok((due, changed))
+}
+
+fn live_windows(app: &AppHandle) -> HashSet<String> {
+    app.webview_windows().into_keys().collect()
+}
+
+#[tauri::command(async)]
+pub fn automation_runs_adopt(
+    app: AppHandle,
+    window: tauri::Window,
+    store: State<'_, SessionStore>,
+    now: i64,
+) -> Result<Vec<DueAutomationRun>, String> {
+    let live = live_windows(&app);
+    let mut conn = store.lock_conn()?;
+    let (due, changed) = adopt_runs(&mut conn, window.label(), &live, now)?;
     drop(conn);
-    if changed || !due.is_empty() {
+    if changed {
         let _ = app.emit(CHANGED, ());
     }
     Ok(due)
 }
 
+/// Atomically turns a pending run this window owns into a running one. The
+/// automation is read again here: a run whose automation was deleted, or
+/// turned off while it waited (a manual run excepted), is cancelled instead.
+/// `None` means the run must not execute (someone else has it, or it ended).
+fn start_run(
+    conn: &mut Connection,
+    run_id: &str,
+    owner: &str,
+    live: &HashSet<String>,
+    now: i64,
+) -> Result<Option<DueAutomationRun>, String> {
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let Some(mut run) = get_run(&tx, run_id)? else {
+        return Ok(None);
+    };
+    let taken = run
+        .owner
+        .as_deref()
+        .is_some_and(|label| label != owner && live.contains(label));
+    if run.status != "pending" || taken {
+        return Ok(None);
+    }
+    let Some(mut automation) = get(&tx, &run.automation_id)? else {
+        return Ok(None);
+    };
+    if !automation.enabled && run.trigger != "manual" {
+        finish_run(
+            &tx,
+            &mut automation,
+            &mut run,
+            "cancelled",
+            "The automation was turned off before this run started.",
+            now,
+        )?;
+        tx.commit().map_err(|error| error.to_string())?;
+        return Ok(None);
+    }
+    run.status = "running".into();
+    run.started_at = Some(now);
+    run.owner = Some(owner.to_string());
+    run.error = None;
+    apply_run_summary(&mut automation, &run);
+    write_run(&tx, &run)?;
+    write_automation(&tx, &automation)?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(Some(DueAutomationRun { automation, run }))
+}
+
+#[tauri::command(async)]
+pub fn automation_run_start(
+    app: AppHandle,
+    window: tauri::Window,
+    store: State<'_, SessionStore>,
+    run_id: String,
+    now: i64,
+) -> Result<Option<DueAutomationRun>, String> {
+    validate_id(&run_id, "automation run")?;
+    let live = live_windows(&app);
+    let mut conn = store.lock_conn()?;
+    let started = start_run(&mut conn, &run_id, window.label(), &live, now)?;
+    drop(conn);
+    let _ = app.emit(CHANGED, ());
+    Ok(started)
+}
+
+fn get_run(conn: &Connection, run_id: &str) -> Result<Option<AutomationRun>, String> {
+    conn.query_row(
+        "SELECT run_json FROM automation_runs WHERE id = ?1",
+        [run_id],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|error| error.to_string())?
+    .map(|raw| serde_json::from_str(&raw).map_err(|error| error.to_string()))
+    .transpose()
+}
+
+/// Which status changes a caller may make. Terminal states are final, so a
+/// late callback cannot reopen or relabel a finished run, and only `start`
+/// moves a run from pending to running.
+fn valid_transition(from: &str, to: &str) -> bool {
+    match from {
+        "pending" => matches!(to, "failed" | "skipped" | "cancelled"),
+        "running" => matches!(to, "running" | "succeeded" | "failed" | "cancelled"),
+        _ => false,
+    }
+}
+
 #[tauri::command(async)]
 pub fn automation_run_now(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     now: i64,
@@ -822,7 +1019,8 @@ pub fn automation_run_now(
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let mut automation =
         get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
-    let run = new_run(&automation_id, "manual", now, now, &automation.prompt);
+    let mut run = new_run(&automation_id, "manual", now, now, &automation.prompt);
+    run.owner = Some(window.label().to_string());
     automation.last_run_at = Some(now);
     automation.last_run_status = Some(run.status.clone());
     automation.last_run_error = None;
@@ -838,6 +1036,7 @@ pub fn automation_run_now(
 #[tauri::command(async)]
 pub fn automations_claim_due(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_next_run_at: i64,
@@ -876,6 +1075,7 @@ pub fn automations_claim_due(
         now,
         &automation.prompt,
     );
+    run.owner = Some(window.label().to_string());
     let grace_ms = automation.missed_run_grace_minutes.saturating_mul(60_000);
     let missed = now.saturating_sub(expected_next_run_at);
     let dispatch = missed <= grace_ms;
@@ -899,6 +1099,7 @@ pub fn automations_claim_due(
 #[tauri::command(async)]
 pub fn automations_claim_event(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     claim: AutomationEventClaim,
@@ -942,7 +1143,7 @@ pub fn automations_claim_event(
         tx.rollback().map_err(|error| error.to_string())?;
         return Ok(None);
     }
-    let run = new_event_run(
+    let mut run = new_event_run(
         &automation_id,
         &claim.event_key,
         &claim.event_kind,
@@ -951,6 +1152,7 @@ pub fn automations_claim_event(
         now,
         &claim.prompt,
     );
+    run.owner = Some(window.label().to_string());
     automation.last_run_at = Some(now);
     automation.last_run_status = Some(run.status.clone());
     automation.last_run_error = None;
@@ -966,6 +1168,7 @@ pub fn automations_claim_event(
 #[tauri::command(async)]
 pub fn automation_run_update(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     run_id: String,
     status: String,
@@ -983,32 +1186,62 @@ pub fn automation_run_update(
     ) {
         return Err("Invalid automation run status.".into());
     }
+    let live = live_windows(&app);
     let mut conn = store.lock_conn()?;
+    let run = update_run(
+        &mut conn,
+        &run_id,
+        window.label(),
+        &live,
+        RunUpdate {
+            status,
+            session_id,
+            error,
+        },
+        now,
+    )?;
+    drop(conn);
+    let _ = app.emit(CHANGED, ());
+    Ok(run)
+}
+
+struct RunUpdate {
+    status: String,
+    session_id: Option<String>,
+    error: Option<String>,
+}
+
+fn update_run(
+    conn: &mut Connection,
+    run_id: &str,
+    caller: &str,
+    live: &HashSet<String>,
+    update: RunUpdate,
+    now: i64,
+) -> Result<AutomationRun, String> {
     let tx = conn.transaction().map_err(|error| error.to_string())?;
-    let raw = tx
-        .query_row(
-            "SELECT run_json FROM automation_runs WHERE id = ?1",
-            [&run_id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Automation run not found.".to_string())?;
-    let mut run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-    run.status = status;
-    if run.status == "running" && run.started_at.is_none() {
-        run.started_at = Some(now);
+    let mut run = get_run(&tx, run_id)?.ok_or_else(|| "Automation run not found.".to_string())?;
+    if !valid_transition(&run.status, &update.status) {
+        return Err(format!(
+            "Automation run is {} and cannot become {}.",
+            run.status, update.status
+        ));
     }
-    if matches!(
-        run.status.as_str(),
-        "succeeded" | "failed" | "skipped" | "cancelled"
-    ) {
+    if run
+        .owner
+        .as_deref()
+        .is_some_and(|label| label != caller && live.contains(label))
+    {
+        return Err("Another window is running this automation.".into());
+    }
+    run.status = update.status;
+    if is_terminal(&run.status) {
         run.completed_at = Some(now);
     }
-    if session_id.is_some() {
-        run.session_id = session_id;
+    if update.session_id.is_some() {
+        run.session_id = update.session_id;
     }
-    run.error = error.filter(|value| !value.trim().is_empty());
+    run.error = update.error.filter(|value| !value.trim().is_empty());
     let mut automation =
         get(&tx, &run.automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
     apply_run_summary(&mut automation, &run);
@@ -1016,8 +1249,6 @@ pub fn automation_run_update(
     write_automation(&tx, &automation)?;
     trim_history(&tx, &run.automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
-    drop(conn);
-    let _ = app.emit(CHANGED, ());
     Ok(run)
 }
 
@@ -1181,6 +1412,7 @@ mod tests {
                 event_kind: None,
                 event: None,
                 prompt: Some("Run the automation".into()),
+                owner: None,
             };
             write_run(&conn, &run).unwrap();
         }
@@ -1223,6 +1455,7 @@ mod tests {
                 event_kind: None,
                 event: None,
                 prompt: Some("Run the automation".into()),
+                owner: None,
             };
             write_run(&conn, &run).unwrap();
         }
@@ -1298,5 +1531,172 @@ mod tests {
 
         assert_eq!(claim(), 1);
         assert_eq!(claim(), 0);
+    }
+
+    mod ownership {
+        use super::*;
+
+        fn automation(id: &str) -> Automation {
+            Automation {
+                id: id.into(),
+                name: "Audit".into(),
+                prompt: "Review the repository".into(),
+                harness: "codex".into(),
+                model: "model".into(),
+                model_settings: HashMap::new(),
+                cwd: "/tmp".into(),
+                workspace_mode: "current".into(),
+                worktree_cwd: String::new(),
+                session_folder_id: String::new(),
+                reuse_session: false,
+                runtime_mode: "auto".into(),
+                trigger_kind: "time".into(),
+                trigger_event: String::new(),
+                schedule_kind: "daily".into(),
+                minute: 0,
+                time: "09:00".into(),
+                day_of_week: 1,
+                triggers: None,
+                missed_run_grace_minutes: 720,
+                enabled: true,
+                next_run_at: 10,
+                last_run_at: None,
+                last_run_status: None,
+                last_run_error: None,
+                last_session_id: None,
+                created_at: 1,
+                updated_at: 1,
+            }
+        }
+
+        fn setup() -> Connection {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            ensure_tables(&conn).unwrap();
+            write_automation(&conn, &automation("audit")).unwrap();
+            conn
+        }
+
+        fn run(conn: &Connection, owner: &str, status: &str) -> String {
+            let mut run = new_run("audit", "scheduled", 5, 5, "Review");
+            run.owner = Some(owner.into());
+            run.status = status.into();
+            write_run(conn, &run).unwrap();
+            run.id
+        }
+
+        fn status(conn: &Connection, id: &str) -> (String, Option<String>) {
+            let run = get_run(conn, id).unwrap().unwrap();
+            (run.status, run.owner)
+        }
+
+        fn live(labels: &[&str]) -> HashSet<String> {
+            labels.iter().map(|label| label.to_string()).collect()
+        }
+
+        #[test]
+        fn opening_another_window_leaves_live_runs_alone() {
+            let mut conn = setup();
+            let running = run(&conn, "main", "running");
+            let held = run(&conn, "main", "pending");
+            let (due, _) = adopt_runs(&mut conn, "window-2", &live(&["main", "window-2"]), 9)
+                .unwrap();
+            assert!(due.is_empty());
+            assert_eq!(status(&conn, &running), ("running".into(), Some("main".into())));
+            assert_eq!(status(&conn, &held), ("pending".into(), Some("main".into())));
+        }
+
+        #[test]
+        fn a_closed_windows_runs_move_to_one_live_window() {
+            let mut conn = setup();
+            let running = run(&conn, "main", "running");
+            let held = run(&conn, "main", "pending");
+            let windows = live(&["window-2", "window-3"]);
+            let (due, _) = adopt_runs(&mut conn, "window-2", &windows, 9).unwrap();
+            assert_eq!(due.len(), 1);
+            assert_eq!(status(&conn, &held), ("pending".into(), Some("window-2".into())));
+            assert_eq!(status(&conn, &running).0, "cancelled");
+            // The next window finds nothing left to take.
+            let (again, _) = adopt_runs(&mut conn, "window-3", &windows, 9).unwrap();
+            assert!(again.is_empty());
+        }
+
+        #[test]
+        fn a_pending_run_starts_once() {
+            let mut conn = setup();
+            let id = run(&conn, "main", "pending");
+            let windows = live(&["main", "window-2"]);
+            assert!(start_run(&mut conn, &id, "window-2", &windows, 9).unwrap().is_none());
+            assert!(start_run(&mut conn, &id, "main", &windows, 9).unwrap().is_some());
+            assert!(start_run(&mut conn, &id, "main", &windows, 9).unwrap().is_none());
+            assert_eq!(status(&conn, &id).0, "running");
+        }
+
+        #[test]
+        fn stale_callbacks_cannot_rewrite_a_finished_run() {
+            let mut conn = setup();
+            let id = run(&conn, "main", "running");
+            let windows = live(&["main"]);
+            let update = |status: &str| RunUpdate {
+                status: status.into(),
+                session_id: None,
+                error: None,
+            };
+            update_run(&mut conn, &id, "main", &windows, update("cancelled"), 9).unwrap();
+            assert!(update_run(&mut conn, &id, "main", &windows, update("succeeded"), 10).is_err());
+            assert!(update_run(&mut conn, &id, "main", &windows, update("running"), 10).is_err());
+            assert_eq!(status(&conn, &id).0, "cancelled");
+
+            let pending = run(&conn, "main", "pending");
+            assert!(update_run(&mut conn, &pending, "main", &windows, update("succeeded"), 9).is_err());
+            let other = run(&conn, "main", "running");
+            assert!(
+                update_run(&mut conn, &other, "window-2", &live(&["main", "window-2"]), update("failed"), 9)
+                    .is_err()
+            );
+        }
+
+        #[test]
+        fn turning_an_automation_off_stops_its_held_run() {
+            let mut conn = setup();
+            let held = run(&conn, "main", "pending");
+            let mut manual = new_run("audit", "manual", 5, 5, "Review");
+            manual.owner = Some("main".into());
+            write_run(&conn, &manual).unwrap();
+
+            let mut off = automation("audit");
+            off.enabled = false;
+            write_automation(&conn, &off).unwrap();
+            cancel_waiting_runs(&conn, &mut off, 9).unwrap();
+            assert_eq!(status(&conn, &held).0, "cancelled");
+            assert_eq!(status(&conn, &manual.id).0, "pending");
+            // Even a run the cancel missed is checked again when it starts.
+            let late = run(&conn, "main", "pending");
+            assert!(start_run(&mut conn, &late, "main", &live(&["main"]), 9).unwrap().is_none());
+            assert_eq!(status(&conn, &late).0, "cancelled");
+        }
+
+        #[test]
+        fn a_run_starts_with_the_automations_current_settings() {
+            let mut conn = setup();
+            let id = run(&conn, "main", "pending");
+            let mut edited = automation("audit");
+            edited.model = "newer".into();
+            write_automation(&conn, &edited).unwrap();
+            let started = start_run(&mut conn, &id, "main", &live(&["main"]), 9)
+                .unwrap()
+                .unwrap();
+            assert_eq!(started.automation.model, "newer");
+        }
+
+        #[test]
+        fn restart_recovery_cancels_running_and_frees_pending_runs() {
+            let mut conn = setup();
+            let running = run(&conn, "main", "running");
+            let pending = run(&conn, "main", "pending");
+            recover_after_restart(&mut conn, 9).unwrap();
+            assert_eq!(status(&conn, &running).0, "cancelled");
+            assert_eq!(status(&conn, &pending), ("pending".into(), None));
+        }
     }
 }
