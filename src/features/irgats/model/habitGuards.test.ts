@@ -400,6 +400,19 @@ describe("checkHabitCondition", () => {
     durationMs: 5,
   });
 
+  it("never runs a shell check for a look-only habit", async () => {
+    const run = vi.fn(async () => result("passed", 0));
+    const checked = await checkHabitCondition(
+      habit({ readOnly: true }),
+      { kind: "shell", command: "make" },
+      "/code",
+      NOW,
+      run,
+    );
+    expect(checked.kind).toBe("fail");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("passes, skips or fails on the shell check's result", async () => {
     const condition = { kind: "shell", command: "test -f READY" } as const;
     const run = vi.fn(async () => result("passed", 0));

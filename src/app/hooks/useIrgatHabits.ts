@@ -21,6 +21,7 @@ import {
   clearHabitRun,
   dueHabits,
   readOnlyStepDecision,
+  readOnlyUnsupported,
   HABIT_APPROVAL_WAIT_MS,
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
@@ -308,6 +309,16 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       const host = hostRef.current;
       const irgat = await host.open(irgatSessionId);
       if (!irgat || stopped || !findIrgat(irgatId)) return;
+      const unsupported = readOnlyUnsupported(irgat.harness);
+      if (unsupported) {
+        const planned = (await loadHabits(irgatId)).find((entry) => entry.id === habitId);
+        if (planned?.readOnly) {
+          await changeHabit(irgatId, habitId, (entry) =>
+            skipHabit(entry, Date.now(), unsupported),
+          );
+          return;
+        }
+      }
       if (!(await passGuards(irgatId, habitId, irgat.cwd)) || stopped) return;
       const files = await loadIrgatFiles(irgatId);
       if (stopped || !findIrgat(irgatId)) return;

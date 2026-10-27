@@ -292,6 +292,12 @@ export async function checkHabitCondition(
       };
     }
   }
+  // A command can change things, which a look-only habit promises not to.
+  if (habit.readOnly)
+    return {
+      kind: "fail",
+      error: "A look-only habit cannot run a shell condition. Use an expression instead.",
+    };
   let result: CheckResult;
   try {
     result = await run(cwd, condition.command, HABIT_CONDITION_TIMEOUT_MS);

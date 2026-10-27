@@ -25,6 +25,7 @@ import {
   QUIET_MARKER,
   appCliAction,
   readOnlyStepDecision,
+  readOnlyUnsupported,
   serializeHabits,
   unseenHabitPosts,
   type Habit,
@@ -377,6 +378,21 @@ describe("look-only habits", () => {
     expect(readOnlyStepDecision(step("execute", "rm -rf build"))).toBe("deny");
     expect(readOnlyStepDecision(step("edit", "Edit a.ts"))).toBe("deny");
     expect(readOnlyStepDecision(step("agent", "Subagent"))).toBe("deny");
+  });
+
+  it("refuses a reading call with anything chained to it, and fx habits", () => {
+    for (const command of [
+      "irgatos app sessions.list; rm -rf build",
+      "irgatos app sessions.list && rm -rf build",
+      "irgatos app sessions.list | sh",
+      "irgatos app sessions.list $(rm -rf build)",
+      "irgatos app sessions.list > notes.txt",
+      "irgatos app sessions.list\nrm -rf build",
+    ])
+      expect(readOnlyStepDecision(step("execute", command))).toBe("deny");
+    expect(readOnlyStepDecision(step("shell", "irgatos app sessions.list"))).toBe("allow");
+    expect(readOnlyUnsupported("fx")).toContain("fx does not");
+    expect(readOnlyUnsupported("claude")).toBeNull();
   });
 
   it("keeps the flag in habits.json and says so in the run", () => {

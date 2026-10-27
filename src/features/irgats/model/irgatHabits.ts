@@ -614,19 +614,36 @@ export function appCliAction(command: string): string | undefined {
   return command.match(/(?:^|[\s"'/])app\s+([a-z]+\.[A-Za-z]+)\b/)?.[1];
 }
 
+/** Anything that would let a second command ride along with the first. */
+const SHELL_CHAINING = /[;&|`<>\n\r]|\$\(/;
+
 /**
  * How a look-only run's step is answered: reading and searching go ahead,
- * a shell command only when it is a reading app CLI call, the rest is refused.
+ * a shell command only when it is nothing but one reading app CLI call, the
+ * rest is refused.
  */
 export function readOnlyStepDecision(block: Block): "allow" | "deny" {
   const kind = block.tool?.kind;
   if (kind === "read" || kind === "search" || kind === "tasks" || kind === "fetch")
     return "allow";
-  if (kind === "execute") {
-    const action = appCliAction(block.tool?.title || block.text);
+  if (kind === "execute" || kind === "shell") {
+    const preview = block.tool?.preview;
+    const command =
+      preview?.kind === "shell" && preview.title
+        ? preview.title
+        : block.tool?.title || block.text;
+    if (SHELL_CHAINING.test(command)) return "deny";
+    const action = appCliAction(command);
     return action && READ_ONLY_APP_ACTIONS.has(action) ? "allow" : "deny";
   }
   return "deny";
+}
+
+/** fx answers its own permission requests, so nothing could be refused. */
+export function readOnlyUnsupported(harness: string): string | null {
+  return harness === "fx"
+    ? "Only look needs an agent that asks before each step, and fx does not. Pick another agent for this Irgat or turn Only look off."
+    : null;
 }
 
 /**
