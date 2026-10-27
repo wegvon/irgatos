@@ -72,7 +72,7 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 35] = [
+const WRITE_ACTIONS: [&str; 36] = [
     "upload",
     "send",
     "approval",
@@ -97,6 +97,7 @@ const WRITE_ACTIONS: [&str; 35] = [
     "irgatUpdate",
     "irgatSoul",
     "irgatForget",
+    "irgatHabit",
     "voiceReply",
     "voiceAudio",
     "nextPrompt",

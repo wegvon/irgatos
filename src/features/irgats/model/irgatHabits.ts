@@ -20,14 +20,19 @@ import {
  * only what it decides to tell the user is posted to the chat, and a run with
  * nothing worth saying posts nothing at all.
  */
+/** The automations' repeats, plus a one-off that runs once and is done. */
+export type HabitScheduleKind = AutomationScheduleKind | "once";
+
 export type HabitSchedule = {
-  scheduleKind: AutomationScheduleKind;
+  scheduleKind: HabitScheduleKind;
   /** Minute past the hour, for hourly habits. */
   minute: number;
   /** "HH:MM", local time. */
   time: string;
   /** 0 is Sunday, for weekly habits. */
   dayOfWeek: number;
+  /** "YYYY-MM-DD", local, for a habit that runs once. */
+  date?: string;
 };
 
 export type Habit = {
@@ -46,6 +51,8 @@ export type Habit = {
    */
   lastOutcome?: HabitOutcome;
   lastError?: string;
+  /** A one-off habit that has run: done, kept with its report. */
+  finishedAt?: number;
   /** Recent runs, newest first. The runs' sessions are not kept. */
   runs?: HabitRun[];
   /** Run once as soon as possible, paused or not, leaving the schedule alone. */
@@ -132,12 +139,55 @@ export const HABIT_RUN_TIMEOUT_MS = 60 * 60 * 1000;
 export const HABIT_APPROVAL_WAIT_MS = 12 * 60 * 60 * 1000;
 export const HABITS_MAX = 20;
 
-export function habitScheduleLabel(schedule: HabitSchedule): string {
-  return automationScheduleLabel(schedule);
+export function isHabitScheduleKind(value: string): value is HabitScheduleKind {
+  return value === "once" || isScheduleKind(value);
 }
 
+const DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/** The local moment a one-off habit is due. */
+function onceAt(schedule: HabitSchedule): number {
+  const [year, month, day] = (schedule.date ?? "").split("-").map(Number);
+  const [hour, minute] = schedule.time.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute).getTime();
+}
+
+const onceDay = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+});
+
+export function habitScheduleLabel(schedule: HabitSchedule): string {
+  if (schedule.scheduleKind === "once") {
+    const at = onceAt(schedule);
+    const clock = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(at);
+    return `Once · ${onceDay.format(at)} at ${clock}`;
+  }
+  return automationScheduleLabel({
+    ...schedule,
+    scheduleKind: schedule.scheduleKind,
+  });
+}
+
+/**
+ * When it is next due. A one-off is due at its moment even when that has
+ * passed, so one set for a time the app was closed still runs.
+ */
 export function nextHabitRunAt(schedule: HabitSchedule, after: number): number {
-  return nextAutomationRunAt(schedule, after);
+  if (schedule.scheduleKind === "once") return onceAt(schedule);
+  return nextAutomationRunAt(
+    { ...schedule, scheduleKind: schedule.scheduleKind },
+    after,
+  );
+}
+
+/** A one-off habit that has already run. */
+export function habitFinished(habit: Habit): boolean {
+  return habit.finishedAt != null;
 }
 
 function field<T>(
@@ -171,7 +221,9 @@ export function parseHabits(text: string | null | undefined): Habit[] {
     const instructions = field(value, "instructions", isString);
     const kind = schedule && field(schedule, "scheduleKind", isString);
     if (!id || !name || !instructions || !schedule || !kind) continue;
-    if (!isScheduleKind(kind)) continue;
+    if (!isHabitScheduleKind(kind)) continue;
+    const date = field(schedule, "date", isString);
+    if (kind === "once" && !(date && DATE_PATTERN.test(date))) continue;
     const outcome = value.lastOutcome;
     const delaySeconds = field(value, "delaySeconds", isNumber);
     habits.push({
@@ -183,11 +235,13 @@ export function parseHabits(text: string | null | undefined): Habit[] {
         minute: field(schedule, "minute", isNumber) ?? 0,
         time: field(schedule, "time", isString) ?? "09:00",
         dayOfWeek: field(schedule, "dayOfWeek", isNumber) ?? 1,
+        ...(kind === "once" ? { date } : {}),
       },
       enabled: value.enabled !== false,
       createdAt: field(value, "createdAt", isNumber) ?? 0,
       nextRunAt: field(value, "nextRunAt", isNumber) ?? 0,
       ...(isNumber(value.lastRunAt) ? { lastRunAt: value.lastRunAt } : {}),
+      ...(isNumber(value.finishedAt) ? { finishedAt: value.finishedAt } : {}),
       ...(isOutcome(outcome) ? { lastOutcome: outcome } : {}),
       ...(isString(value.lastError) ? { lastError: value.lastError } : {}),
       ...(Array.isArray(value.runs) ? { runs: parseRuns(value.runs) } : {}),
@@ -365,8 +419,13 @@ export function habitSchedule(value: unknown): HabitSchedule {
     );
   const input = value as Record<string, unknown>;
   const kind = input.kind;
-  if (typeof kind !== "string" || !isScheduleKind(kind))
-    throw new Error("schedule.kind must be hourly, daily, weekdays or weekly");
+  if (typeof kind !== "string" || !isHabitScheduleKind(kind))
+    throw new Error(
+      "schedule.kind must be hourly, daily, weekdays, weekly or once",
+    );
+  const date = input.date;
+  if (kind === "once" && (typeof date !== "string" || !DATE_PATTERN.test(date)))
+    throw new Error('schedule.date must be "YYYY-MM-DD" for a once habit');
   const time = input.time ?? "09:00";
   if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
     throw new Error('schedule.time must be 24-hour "HH:MM"');
@@ -385,7 +444,8 @@ export function habitSchedule(value: unknown): HabitSchedule {
   )
     throw new Error("schedule.dayOfWeek must be 0 (Sunday) to 6");
   const unknown = Object.keys(input).filter(
-    (key) => !["kind", "time", "minute", "dayOfWeek"].includes(key),
+    (key) =>
+      !["kind", "time", "minute", "dayOfWeek", ...(kind === "once" ? ["date"] : [])].includes(key),
   );
   if (unknown.length)
     throw new Error(`Unknown schedule fields: ${unknown.join(", ")}`);
@@ -394,6 +454,7 @@ export function habitSchedule(value: unknown): HabitSchedule {
     time,
     minute: minute as number,
     dayOfWeek: dayOfWeek as number,
+    ...(kind === "once" ? { date: date as string } : {}),
   };
 }
 
@@ -445,7 +506,11 @@ export function dueHabits(
       continue;
     }
     if (!habit.enabled || habit.nextRunAt > now) continue;
-    (now - habit.nextRunAt <= MISSED_RUN_GRACE_MS ? run : skipped).push(habit);
+    // A one-off has no next time to wait for, so a late one still runs.
+    const late = now - habit.nextRunAt > MISSED_RUN_GRACE_MS;
+    (late && habit.schedule.scheduleKind !== "once" ? skipped : run).push(
+      habit,
+    );
   }
   return { run, skipped };
 }
@@ -470,8 +535,15 @@ export function afterRun(
     trigger: _trigger,
     ...scheduled
   } = habit;
+  // A one-off is done as soon as its run is claimed, whatever comes of it,
+  // so no other window can pick it up again while it runs.
+  const finished =
+    habit.schedule.scheduleKind === "once"
+      ? { enabled: false, finishedAt: habit.finishedAt ?? now }
+      : {};
   const next: Habit = {
     ...scheduled,
+    ...finished,
     // A requested run leaves the schedule where it was.
     nextRunAt:
       runRequested && habit.nextRunAt > now

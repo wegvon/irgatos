@@ -431,8 +431,10 @@ Actions:
   habits.add     {"name":"Morning CI check","instructions":"...",
                   "schedule":{"kind":"weekdays","time":"09:00"}}
                   Add only after the user agreed to it in this chat. kind is
-                  hourly (with "minute"), daily, weekdays or weekly (with
-                  "dayOfWeek", 0 = Sunday); time is local 24-hour HH:MM.
+                  hourly (with "minute"), daily, weekdays, weekly (with
+                  "dayOfWeek", 0 = Sunday) or once (with "date":
+                  "YYYY-MM-DD", for a one-off that runs once and is then
+                  done); time is local 24-hour HH:MM.
                   Each run is a hidden session that posts to this chat only
                   when it has something worth saying.
                   Optional guards on add or update: "requestApproval":true

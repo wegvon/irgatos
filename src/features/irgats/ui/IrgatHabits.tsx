@@ -11,7 +11,6 @@ import {
   habitStarting,
   loadHabits,
   habitAwaitingApproval,
-  nextHabitRunAt,
   stopHabitRun,
   subscribeHabitsRunning,
   updateHabits,
@@ -24,6 +23,7 @@ import {
   type HabitGuardSettings,
 } from "../model/habitGuards";
 import { decideHabitApproval } from "../model/habitApprovals";
+import { resumeHabit } from "../model/habitCommands";
 import { heldUntilLabel } from "../../quotas/model/usageLimitRegistry";
 import {
   RunningFor,
@@ -133,13 +133,7 @@ export function habitActions(irgatId: string): HabitActions {
       change(id, (habit) => runHabitNow(habit, Date.now()), checkHabitsNow),
     toggle: (id) =>
       change(id, (habit) =>
-        habit.enabled
-          ? pauseHabit(habit)
-          : {
-              ...habit,
-              enabled: true,
-              nextRunAt: nextHabitRunAt(habit.schedule, Date.now()),
-            },
+        habit.enabled ? pauseHabit(habit) : resumeHabit(habit, Date.now()),
       ),
     remove: (id) => change(id, () => null),
     approve: (id) =>
@@ -233,6 +227,8 @@ export function HabitRow({
               `Delayed · starts ${when(delayedUntil, now)}`
             ) : starting ? (
               "Starting…"
+            ) : habit.finishedAt != null ? (
+              `Done · ${when(habit.finishedAt, now)}`
             ) : habit.enabled ? (
               habitScheduleLabel(habit.schedule)
             ) : (
@@ -273,16 +269,18 @@ export function HabitRow({
         >
           <Zap className="size-3.5" strokeWidth={1.75} />
         </HabitButton>
-        <HabitButton
-          label={habit.enabled ? "Pause" : "Resume"}
-          onClick={() => actions.toggle(habit.id)}
-        >
-          {habit.enabled ? (
-            <Pause className="size-3.5" strokeWidth={1.75} />
-          ) : (
-            <Play className="size-3.5" strokeWidth={1.75} />
-          )}
-        </HabitButton>
+        {habit.finishedAt == null ? (
+          <HabitButton
+            label={habit.enabled ? "Pause" : "Resume"}
+            onClick={() => actions.toggle(habit.id)}
+          >
+            {habit.enabled ? (
+              <Pause className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Play className="size-3.5" strokeWidth={1.75} />
+            )}
+          </HabitButton>
+        ) : null}
         <HabitButton
           label="Remove"
           onClick={() => {
@@ -375,8 +373,12 @@ export function HabitsList({
   const upcoming = today.filter((item) => item.state !== "done");
   const done = today.filter((item) => item.state === "done");
   const shown = new Set(today.map((item) => item.habit.id));
+  // One-offs that have run, newest first, below everything still to come.
+  const finished = habits
+    .filter((habit) => !shown.has(habit.id) && habit.finishedAt != null)
+    .sort((a, b) => b.finishedAt! - a.finishedAt!);
   const later = habits
-    .filter((habit) => !shown.has(habit.id))
+    .filter((habit) => !shown.has(habit.id) && habit.finishedAt == null)
     .sort(
       (a, b) =>
         Number(b.enabled) - Number(a.enabled) || a.nextRunAt - b.nextRunAt,
@@ -413,6 +415,7 @@ export function HabitsList({
         done.map((item) => item.habit),
       )}
       {group(today.length ? "Later" : "Scheduled", later)}
+      {group("Finished", finished)}
     </div>
   );
 }

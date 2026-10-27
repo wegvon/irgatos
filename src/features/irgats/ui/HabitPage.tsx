@@ -135,16 +135,18 @@ export function HabitPage({
         >
           <Zap className="size-3.5" strokeWidth={1.75} />
         </IconButton>
-        <IconButton
-          label={habit.enabled ? "Pause" : "Resume"}
-          onClick={onToggle}
-        >
-          {habit.enabled ? (
-            <Pause className="size-3.5" strokeWidth={1.75} />
-          ) : (
-            <Play className="size-3.5" strokeWidth={1.75} />
-          )}
-        </IconButton>
+        {habit.finishedAt == null ? (
+          <IconButton
+            label={habit.enabled ? "Pause" : "Resume"}
+            onClick={onToggle}
+          >
+            {habit.enabled ? (
+              <Pause className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Play className="size-3.5" strokeWidth={1.75} />
+            )}
+          </IconButton>
+        ) : null}
         <IconButton label="Remove" onClick={onRemove}>
           <Trash2 className="size-3.5" strokeWidth={1.75} />
         </IconButton>
@@ -153,7 +155,11 @@ export function HabitPage({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         <dl className="flex flex-col gap-0.5 px-4 py-3 text-[12px]">
           <Row label="Runs">
-            {habit.enabled ? habitScheduleLabel(habit.schedule) : "Paused"}
+            {habit.finishedAt != null
+              ? `${habitScheduleLabel(habit.schedule)} · done ${when(habit.finishedAt, now)}`
+              : habit.enabled
+                ? habitScheduleLabel(habit.schedule)
+                : "Paused"}
           </Row>
           {guardSummary ? <Row label="Guards">{guardSummary}</Row> : null}
           {awaiting ? (

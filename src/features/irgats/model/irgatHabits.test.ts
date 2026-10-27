@@ -23,6 +23,8 @@ import {
   newHabit,
   parseHabits,
   QUIET_MARKER,
+  habitScheduleLabel,
+  nextHabitRunAt,
   serializeHabits,
   unseenHabitPosts,
   type Habit,
@@ -348,4 +350,53 @@ it("starts a new habit enabled and due at its next scheduled time", () => {
     nextRunAt: at(7, 9),
   });
   expect(created.id).toBeTruthy();
+});
+
+describe("one-off habits", () => {
+  const once = (patch: Partial<Habit> = {}): Habit =>
+    habit({
+      schedule: {
+        scheduleKind: "once",
+        time: "14:30",
+        minute: 0,
+        dayOfWeek: 1,
+        date: "2026-10-05",
+      },
+      nextRunAt: at(5, 14, 30),
+      ...patch,
+    });
+
+  it("is due at its moment, and still runs when it comes up late", () => {
+    expect(nextHabitRunAt(once().schedule, at(6, 9))).toBe(at(5, 14, 30));
+    const late = at(5, 14, 30) + MISSED_RUN_GRACE_MS * 4;
+    expect(dueHabits([once()], late)).toEqual({ run: [once()], skipped: [] });
+  });
+
+  it("is done as soon as its run is claimed, and keeps its report", () => {
+    const claimed = afterRun(once(), at(5, 14, 31));
+    expect(claimed).toMatchObject({ enabled: false, finishedAt: at(5, 14, 31) });
+    expect(dueHabits([claimed], at(5, 15)).run).toEqual([]);
+    const reported = afterRun(claimed, at(5, 14, 40), {
+      kind: "posted",
+      report: "Booked.",
+      startedAt: at(5, 14, 31),
+    });
+    expect(reported.finishedAt).toBe(at(5, 14, 31));
+    expect(reported.runs?.[0]).toMatchObject({ outcome: "posted" });
+  });
+
+  it("round-trips, and is validated from the CLI", () => {
+    const done = once({ enabled: false, finishedAt: at(5, 14, 31) });
+    expect(parseHabits(serializeHabits([done]))).toEqual([done]);
+    expect(
+      habitSchedule({ kind: "once", date: "2026-10-28", time: "09:00" }),
+    ).toMatchObject({ scheduleKind: "once", date: "2026-10-28" });
+    expect(() => habitSchedule({ kind: "once", time: "09:00" })).toThrow(
+      "date",
+    );
+    expect(() =>
+      habitSchedule({ kind: "daily", date: "2026-10-28" }),
+    ).toThrow("date");
+    expect(habitScheduleLabel(once().schedule)).toMatch(/^Once · /);
+  });
 });

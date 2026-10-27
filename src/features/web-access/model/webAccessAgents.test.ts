@@ -102,6 +102,8 @@ function mac(open: Session[], automations: Automation[] = [automation()]) {
       }),
       setModel: vi.fn(),
       setMode: vi.fn(),
+      habits: vi.fn(async () => []),
+      habitCommand: vi.fn(async () => {}),
     },
     voice: {
       settings: () => ({ ...VOICE_SETTINGS_DEFAULTS }),
@@ -268,6 +270,70 @@ describe("Irgat settings on the web page", () => {
         struck: false,
       },
     ]);
+  });
+
+  it("lists its habits, live ones first, and passes commands on", async () => {
+    const crab = irgat({ sessionId: "main" });
+    const { deps, agents } = mac([stored("main")]);
+    const schedule = {
+      scheduleKind: "daily" as const,
+      time: "09:00",
+      minute: 0,
+      dayOfWeek: 1,
+    };
+    vi.mocked(agents.irgats.habits).mockResolvedValue([
+      {
+        id: "done",
+        name: "Book the table",
+        instructions: "Book it.",
+        schedule: { ...schedule, scheduleKind: "once", date: "2026-10-05" },
+        enabled: false,
+        createdAt: 0,
+        nextRunAt: 0,
+        finishedAt: 5,
+        runs: [{ at: 4, durationMs: 1, outcome: "posted", report: "Booked." }],
+      },
+      {
+        id: "digest",
+        name: "Morning digest",
+        instructions: "Sum up.",
+        schedule,
+        enabled: true,
+        createdAt: 0,
+        nextRunAt: 9,
+      },
+    ]);
+
+    const detail = (await handleWebAccess(deps, "irgat", {
+      irgatId: crab.id,
+    })) as WebIrgatDetail;
+    expect(detail.habits.map((habit) => [habit.id, habit.state])).toEqual([
+      ["digest", "scheduled"],
+      ["done", "finished"],
+    ]);
+    expect(detail.habits[1].last).toEqual({
+      at: 4,
+      outcome: "posted",
+      detail: "Booked.",
+    });
+
+    await handleWebAccess(deps, "irgatHabit", {
+      irgatId: crab.id,
+      habitId: "digest",
+      command: "pause",
+    });
+    expect(agents.irgats.habitCommand).toHaveBeenCalledWith(
+      crab.id,
+      "digest",
+      "pause",
+    );
+    await expect(
+      handleWebAccess(deps, "irgatHabit", {
+        irgatId: crab.id,
+        habitId: "digest",
+        command: "delete",
+      }),
+    ).rejects.toThrow("Unknown habit command");
   });
 
   it("creates an Irgat with its chat ready", async () => {

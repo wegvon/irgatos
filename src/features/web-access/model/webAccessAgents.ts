@@ -50,6 +50,17 @@ import {
   type IrgatFiles,
 } from "../../irgats/model/irgatFiles";
 import { memoryLines, withoutLine } from "../../irgats/model/irgatMemory";
+import {
+  applyHabitCommand,
+  isHabitCommand,
+  webHabitState,
+  type HabitCommand,
+} from "../../irgats/model/habitCommands";
+import {
+  habitScheduleLabel,
+  loadHabits,
+  type Habit,
+} from "../../irgats/model/irgatHabits";
 import { irgatLaunchesAcrossChats } from "../../irgats/model/irgatSpawnedSessions";
 import { ensureIrgatSession } from "../../irgats/model/irgatWorkspace";
 import { PROJECT_MASCOTS } from "../../projects/model/projectMascots";
@@ -82,6 +93,7 @@ import type {
   WebAutomationRun,
   WebAutomations,
   WebIrgatDetail,
+  WebIrgatHabit,
   WebIrgatOptions,
   WebOutsideSession,
   WebNextPrompt,
@@ -114,6 +126,12 @@ export type WebAgentsDeps = {
     ) => Promise<unknown>;
     setModel: (sessionId: string, harness: HarnessId, model: string) => void;
     setMode: (sessionId: string, mode: RuntimeMode) => void;
+    habits: (irgatId: string) => Promise<Habit[]>;
+    habitCommand: (
+      irgatId: string,
+      habitId: string,
+      command: HabitCommand,
+    ) => Promise<void>;
   };
   voice: {
     settings: () => VoiceSettings;
@@ -161,6 +179,8 @@ export const webAgentsDefaults: Omit<
     saveSoul: (irgatId, text, hash) =>
       saveIrgatFile(irgatId, "soul", text, hash),
     forget: (irgatId, edit) => editIrgatFile(irgatId, "memory", edit),
+    habits: loadHabits,
+    habitCommand: applyHabitCommand,
   },
   voice: {
     settings: loadVoiceSettings,
@@ -202,6 +222,7 @@ export const WEB_AGENTS_WRITES = [
   "irgatUpdate",
   "irgatSoul",
   "irgatForget",
+  "irgatHabit",
   "voiceReply",
   "voiceAudio",
   "nextPrompt",
@@ -278,6 +299,46 @@ function outsideSession(session: ExternalClaudeSession): WebOutsideSession {
 function needs(host: WebAgentsHost): WebAgentsDeps {
   if (!host.agents) throw new Error("Update Irgatos on your Mac first.");
   return host.agents;
+}
+
+/** Its habits as the Mac's Habits tab orders them: what is live first. */
+function webHabits(habits: readonly Habit[], now: number): WebIrgatHabit[] {
+  const order: Record<WebIrgatHabit["state"], number> = {
+    running: 0,
+    approval: 1,
+    scheduled: 2,
+    paused: 3,
+    finished: 4,
+  };
+  return habits
+    .map((habit): WebIrgatHabit => {
+      const state = webHabitState(habit, now);
+      const last = habit.runs?.[0];
+      const detail = last && (last.report ?? last.error ?? last.reason);
+      return {
+        id: habit.id,
+        name: habit.name,
+        schedule: habitScheduleLabel(habit.schedule),
+        state,
+        ...(state === "scheduled" ? { nextRunAt: habit.nextRunAt } : {}),
+        ...(habit.finishedAt != null ? { finishedAt: habit.finishedAt } : {}),
+        ...(last
+          ? {
+              last: {
+                at: last.at,
+                outcome: last.outcome,
+                ...(detail ? { detail: detail.slice(0, 600) } : {}),
+              },
+            }
+          : {}),
+      };
+    })
+    .sort(
+      (a, b) =>
+        order[a.state] - order[b.state] ||
+        (a.nextRunAt ?? Infinity) - (b.nextRunAt ?? Infinity) ||
+        (b.finishedAt ?? 0) - (a.finishedAt ?? 0),
+    );
 }
 
 function requestedIrgat(host: WebAgentsHost, input: Input): Irgat {
@@ -483,6 +544,7 @@ export async function handleWebAgents(
           ...(line.date ? { date: line.date } : {}),
         })),
         agents: irgatAgents(host, deps, irgat, session.id, look.name, now),
+        habits: webHabits(await deps.irgats.habits(irgat.id).catch(() => []), now),
       };
       return result;
     }
@@ -586,6 +648,17 @@ export async function handleWebAgents(
         );
       await deps.irgats.saveSoul(irgat.id, soul, files.soulHash);
       return { saved: true };
+    }
+    case "irgatHabit": {
+      const irgat = requestedIrgat(host, input);
+      const command = input.command;
+      if (!isHabitCommand(command)) throw new Error("Unknown habit command");
+      await deps.irgats.habitCommand(
+        irgat.id,
+        text(input, "habitId", 200),
+        command,
+      );
+      return { done: true };
     }
     case "irgatForget": {
       const irgat = requestedIrgat(host, input);
