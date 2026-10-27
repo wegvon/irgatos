@@ -193,6 +193,9 @@ pub fn fill_login(
     let window = app
         .get_webview_window(window_label)
         .ok_or("The Irgatos window for this chat is closed")?;
+    if is_held(window_label) {
+        return Err(TAKEN_OVER.into());
+    }
     let call = format!(
         "fillLogin({}, {}, {}, {})",
         json!(username),
@@ -218,6 +221,9 @@ pub fn page_url(app: &AppHandle, window_label: &str) -> Result<String, String> {
     let window = app
         .get_webview_window(window_label)
         .ok_or("The Irgatos window for this chat is closed")?;
+    if is_held(window_label) {
+        return Err(TAKEN_OVER.into());
+    }
     let page = tauri::async_runtime::block_on(run_page(window, "page()".into()))?;
     page.get("url")
         .and_then(Value::as_str)

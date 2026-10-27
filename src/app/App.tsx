@@ -21,6 +21,7 @@ import {
   listenBrowserAgentActing,
   listenBrowserAgentRequests,
   replyBrowserAgent,
+  setBrowserAgentHold,
   setBrowserAgentView,
 } from "../platform/tauri/browser";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
@@ -1614,6 +1615,9 @@ function Workspace({
       if (disposed) stop();
       else unlisten = stop;
     });
+    // A reload starts with the Browser handed back, so the bar and the
+    // native hold always agree.
+    void setBrowserAgentHold(false).catch(() => undefined);
     let unlistenActing: (() => void) | undefined;
     void listenBrowserAgentActing((notice) =>
       noteBrowserAgentActing(notice.sessionId, notice.action),
