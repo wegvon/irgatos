@@ -809,6 +809,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           {picker === "permissions" ? (
             <QuickPermissions
               value={runtimeMode}
+              harness={choice.harness}
               onChange={setRuntimeMode}
               onClose={closePicker}
             />

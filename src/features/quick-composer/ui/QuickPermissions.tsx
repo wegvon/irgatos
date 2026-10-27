@@ -8,8 +8,9 @@ import {
 } from "../../../shared/ui/icons";
 import {
   RUNTIME_MODES,
-  RUNTIME_MODE_HINT,
   RUNTIME_MODE_LABEL,
+  runtimeModeHint,
+  type HarnessId,
   type RuntimeMode,
 } from "../../sessions/model/session";
 
@@ -38,10 +39,12 @@ export function QuickPermissionIcon({
 
 export function QuickPermissions({
   value,
+  harness,
   onChange,
   onClose,
 }: {
   value: RuntimeMode;
+  harness?: HarnessId;
   onChange: (mode: RuntimeMode) => void;
   onClose: () => void;
 }) {
@@ -104,7 +107,7 @@ export function QuickPermissions({
               {RUNTIME_MODE_LABEL[mode]}
             </span>
             <span className="mt-0.5 block text-[11px] text-content/45">
-              {RUNTIME_MODE_HINT[mode]}
+              {runtimeModeHint(mode, harness)}
             </span>
           </span>
           {value === mode ? (

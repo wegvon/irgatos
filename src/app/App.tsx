@@ -591,10 +591,16 @@ import {
 import {
   canDispatchQueuedHead,
   canSteerQueuedHead,
+  canSteerQueuedMessage,
+  keepUnsentMessage,
+  retryUnsentMessages,
   dequeueQueuedMessage,
   queuedMessageForSubmit,
 } from "../features/sessions/model/messageQueue";
-import { deliverQueuedFollowUp } from "../features/sessions/model/queuedFollowUp";
+import {
+  deliverQueuedFollowUp,
+  steerFollowUp,
+} from "../features/sessions/model/queuedFollowUp";
 import {
   USAGE_LIMIT_RESUME_GRACE_MS,
   resumeUsageLimitedSession,
@@ -8264,6 +8270,8 @@ function Workspace({
                   : "queue"
                 : (options?.followUpBehavior ?? loadFollowUpBehavior());
         if (followUpBehavior === "queue") {
+          // A queued row is already in the queue; queuing it again duplicates it.
+          if (options?.queuedMessageId) return false;
           setSessions((prev) =>
             prev.map((s) =>
               s.id === sessionId
@@ -8304,30 +8312,51 @@ function Workspace({
         dismissNoticesForContinuedSession(sessionId);
         const visible = displayAttachments(attachments);
         const cards = userTurnCards(noteCard);
-        const nextSessions = sessionsRef.current.map((s) => {
-          if (s.id !== sessionId) return s;
-          let next: Session = {
+        // Bound to this turn and kept unsent until the provider accepts it.
+        const gen = turnGen.current.get(sessionId);
+        const queuedId = options?.queuedMessageId;
+        const unsent: QueuedMessage = (queuedId &&
+          current.queuedMessages?.find((entry) => entry.id === queuedId)) || {
+          id: crypto.randomUUID(),
+          text,
+          attachments,
+          noteCard,
+          handoffCard,
+          intent,
+        };
+        let steerBlockId: string | undefined;
+        const change = (update: (session: Session) => Session) => {
+          const next = sessionsRef.current.map((session) =>
+            session.id === sessionId ? update(session) : session,
+          );
+          sessionsRef.current = next;
+          setSessions(next);
+        };
+        change((s) => {
+          const next: Session = {
             ...s,
             inboxCard: rawCommand ? s.inboxCard : undefined,
             noteCard: rawCommand ? s.noteCard : undefined,
             handoffCard: rawCommand ? s.handoffCard : undefined,
           };
-          if (options?.queuedMessageId) {
-            next = dequeueQueuedMessage(next, options.queuedMessageId);
-          }
-          return appendSteerUser(next, submittedText, visible, cards);
+          // A queued row stays in the queue, locked, until it is accepted.
+          if (queuedId) return { ...next, sendingQueuedMessageId: queuedId };
+          const shown = appendSteerUser(next, submittedText, visible, cards);
+          steerBlockId = shown.blocks[shown.blocks.length - 1]?.id;
+          return shown;
         });
-        sessionsRef.current = nextSessions;
-        setSessions(nextSessions);
-        void (async () => {
-          try {
-            const prepared = await prepareAttachments(attachments);
-            const prompt = await preparePrompt(harnessText, {
+        void steerFollowUp({
+          isCurrentTurn: () => turnGen.current.get(sessionId) === gen,
+          prepare: async () => ({
+            attachments: await prepareAttachments(attachments),
+            text: await preparePrompt(harnessText, {
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
-            });
-            await steerHarnessTurn({
+            }),
+          }),
+          steer: (prepared) =>
+            steerHarnessTurn({
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
@@ -8335,22 +8364,42 @@ function Workspace({
               modelSettings: current.modelSettings,
               text: inboxAskPrompt(
                 rawCommand ? undefined : current.inboxAsk,
-                prompt,
+                prepared.text,
               ),
-              attachments: prepared,
+              attachments: prepared.attachments,
+            }),
+          delivered: () => {
+            if (!queuedId) return;
+            change((s) =>
+              appendSteerUser(
+                {
+                  ...dequeueQueuedMessage(s, queuedId),
+                  sendingQueuedMessageId:
+                    s.sendingQueuedMessageId === queuedId
+                      ? undefined
+                      : s.sendingQueuedMessageId,
+                },
+                submittedText,
+                visible,
+                cards,
+              ),
+            );
+          },
+          unsent: (error) => {
+            change((s) => {
+              // Removed from the queue while sending: the user let it go.
+              if (queuedId && !s.queuedMessages?.some((m) => m.id === queuedId))
+                return { ...s, sendingQueuedMessageId: undefined };
+              const withoutBubble = steerBlockId
+                ? {
+                    ...s,
+                    blocks: s.blocks.filter((block) => block.id !== steerBlockId),
+                  }
+                : s;
+              return keepUnsentMessage(withoutBubble, unsent, error);
             });
-          } catch (error: unknown) {
-            const message =
-              error instanceof Error
-                ? error.message
-                : `${current.harness} could not steer the active turn`;
-            enqueueHarnessEvent(sessionId, {
-              type: "session.error",
-              message,
-            });
-            flushHarnessEvents();
-          }
-        })();
+          },
+        });
         return true;
       }
 
@@ -10362,18 +10411,25 @@ function Workspace({
   const onSteerQueuedMessage = useCallback(
     (sessionId: string, messageId: string) => {
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      const message = session
-        ? queuedMessageForSubmit(session, messageId, "steer")
-        : undefined;
-      if (!session || !message) return;
-      if (message.intent === "orchestrate" && session.busy) {
+      const queued = session?.queuedMessages?.find(
+        (entry) => entry.id === messageId,
+      );
+      if (session?.busy && queued && !canSteerQueuedMessage(queued)) {
         enqueueHarnessEvent(sessionId, {
           type: "status",
-          text: "Orchestration planning will start after the current turn finishes.",
+          text:
+            queued.intent === "orchestrate"
+              ? "Orchestration planning will start after the current turn finishes."
+              : "The plan will start after the current turn finishes.",
         });
         flushHarnessEvents();
         return;
       }
+      if (session?.sendingQueuedMessageId === messageId) return;
+      const message = session
+        ? queuedMessageForSubmit(session, messageId, "steer")
+        : undefined;
+      if (!session || !message) return;
       onSubmit(sessionId, message.text, message.attachments, {
         followUpBehavior: "steer",
         queuedMessageId: message.id,
@@ -10390,7 +10446,9 @@ function Workspace({
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       if (
         !session ||
-        (session.busy && !irgatForSession(sessionId)) ||
+        (session.busy &&
+          !irgatForSession(sessionId) &&
+          !session.queuedMessages?.some((message) => message.error)) ||
         session.queueStatus !== "paused" ||
         !session.queuedMessages?.length
       ) {
@@ -10411,6 +10469,15 @@ function Workspace({
                     })),
                   }
               : entry,
+          ),
+        );
+        return;
+      }
+      // A message the provider never accepted: Retry sends it, not a continue.
+      if (session.queuedMessages.some((message) => message.error)) {
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId ? retryUnsentMessages(entry) : entry,
           ),
         );
         return;

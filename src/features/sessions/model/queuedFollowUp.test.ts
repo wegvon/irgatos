@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { TurnNotReadyError } from "../../../integrations/harness/core/types";
-import { deliverQueuedFollowUp } from "./queuedFollowUp";
+import {
+  STALE_FOLLOW_UP_ERROR,
+  deliverQueuedFollowUp,
+  steerFollowUp,
+} from "./queuedFollowUp";
 import { dequeueQueuedMessage } from "./messageQueue";
 import { newSession, type Session } from "./session";
 
@@ -150,5 +154,65 @@ describe("pending Irgat follow-up delivery", () => {
     });
     expect(d.session().queuedMessages?.[0]).toBe(d.options.message);
     expect(d.options.failed).not.toHaveBeenCalled();
+  });
+});
+
+describe("steerFollowUp", () => {
+  function steering() {
+    let turn = 1;
+    const sentTo: number[] = [];
+    const prep = deferred<string>();
+    const options = {
+      isCurrentTurn: (() => {
+        const aimedAt = turn;
+        return () => turn === aimedAt;
+      })(),
+      prepare: vi.fn(() => prep.promise),
+      steer: vi.fn(async (_text: string) => {
+        sentTo.push(turn);
+      }),
+      delivered: vi.fn(),
+      unsent: vi.fn((_error: string) => {}),
+    };
+    return {
+      options,
+      prep,
+      sentTo,
+      replaceTurn: () => {
+        turn += 1;
+      },
+    };
+  }
+
+  it("never delivers to a turn that replaced the one it was aimed at", async () => {
+    const run = steering();
+    const pending = steerFollowUp(run.options);
+    run.replaceTurn();
+    run.prep.resolve("Use TypeScript");
+    await expect(pending).resolves.toBe(false);
+    expect(run.options.steer).not.toHaveBeenCalled();
+    expect(run.sentTo).toEqual([]);
+    expect(run.options.delivered).not.toHaveBeenCalled();
+    expect(run.options.unsent).toHaveBeenCalledWith(STALE_FOLLOW_UP_ERROR);
+  });
+
+  it("hands a rejected message back as unsent, not delivered", async () => {
+    const run = steering();
+    run.options.steer.mockRejectedValueOnce(new Error("Provider rejected it"));
+    const pending = steerFollowUp(run.options);
+    run.prep.resolve("Use TypeScript");
+    await expect(pending).resolves.toBe(false);
+    expect(run.options.delivered).not.toHaveBeenCalled();
+    expect(run.options.unsent).toHaveBeenCalledWith("Provider rejected it");
+  });
+
+  it("delivers once the provider accepts it in the same turn", async () => {
+    const run = steering();
+    const pending = steerFollowUp(run.options);
+    run.prep.resolve("Use TypeScript");
+    await expect(pending).resolves.toBe(true);
+    expect(run.options.steer).toHaveBeenCalledWith("Use TypeScript");
+    expect(run.options.delivered).toHaveBeenCalledTimes(1);
+    expect(run.options.unsent).not.toHaveBeenCalled();
   });
 });
