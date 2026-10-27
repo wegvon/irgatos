@@ -56,6 +56,11 @@ export type Habit = {
   fromCard?: string;
   /** Ask the user before each run; it waits in Fleet and on its card. */
   requestApproval?: boolean;
+  /**
+   * Only looks: the run reads and reports, and anything that would change
+   * something is refused, by the app and not just by its instructions.
+   */
+  readOnly?: boolean;
   /** Checked before each run; a run whose condition is false is skipped. */
   ifCondition?: HabitCondition;
   /** Wait this long after coming due before checking and running. */
@@ -195,6 +200,7 @@ export function parseHabits(text: string | null | undefined): Habit[] {
       ...parseQuotaHold(value.quotaHold),
       ...(isString(value.fromCard) ? { fromCard: value.fromCard } : {}),
       ...(value.requestApproval === true ? { requestApproval: true } : {}),
+      ...(value.readOnly === true ? { readOnly: true } : {}),
       ...parseCondition(value.ifCondition),
       ...(delaySeconds && delaySeconds > 0
         ? { delaySeconds: normalizeDelaySeconds(delaySeconds) }
@@ -562,8 +568,65 @@ You are running one of your habits on your own; the user did not just message yo
 Habit: ${habit.name}
 ${habit.instructions.trim()}
 ${habitTriggerContext(habit.trigger)}
-Do the work now with your tools and the app CLI. Then reply with exactly the message you would send the user in your chat: short, in your own voice, only what they would want to know, with no preamble about running a habit. If there is nothing worth telling them, reply with exactly ${QUIET_MARKER} and nothing else; silence is the right answer more often than not. Save anything worth remembering with the memory actions before you reply.
+${habit.readOnly ? READ_ONLY_RUN_NOTE : ""}Do the work now with your tools and the app CLI. Then reply with exactly the message you would send the user in your chat: short, in your own voice, only what they would want to know, with no preamble about running a habit. If there is nothing worth telling them, reply with exactly ${QUIET_MARKER} and nothing else; silence is the right answer more often than not. Save anything worth remembering with the memory actions before you reply.
 </habit_run>`;
+}
+
+const READ_ONLY_RUN_NOTE = `This habit only looks. Read, search and research as much as you need, but change nothing: no file edits, no shell commands other than reading app CLI calls, no messages, drafts, sessions or notes. Anything that would change something is refused; if something needs doing, say so in your report and let the user decide.
+`;
+
+/**
+ * App CLI actions a look-only habit run may use: reading, plus its own
+ * memory and the cards that go out with its report.
+ */
+export const READ_ONLY_APP_ACTIONS: ReadonlySet<string> = new Set([
+  "code.search",
+  "browser.state",
+  "browser.read",
+  "browser.tabs",
+  "browser.screenshot",
+  "mail.read",
+  "feed.interests",
+  "projects.list",
+  "irgats.list",
+  "claude.list",
+  "models.list",
+  "sessions.list",
+  "sessions.read",
+  "worktrees.list",
+  "folders.list",
+  "notes.list",
+  "notes.read",
+  "artifacts.list",
+  "artifacts.read",
+  "soul.read",
+  "memory.read",
+  "memory.search",
+  "memory.add",
+  "memory.replace",
+  "memory.remove",
+  "habits.list",
+  "chat.card",
+]);
+
+/** The app action a shell command calls, as in `irgatos app sessions.list`. */
+export function appCliAction(command: string): string | undefined {
+  return command.match(/(?:^|[\s"'/])app\s+([a-z]+\.[A-Za-z]+)\b/)?.[1];
+}
+
+/**
+ * How a look-only run's step is answered: reading and searching go ahead,
+ * a shell command only when it is a reading app CLI call, the rest is refused.
+ */
+export function readOnlyStepDecision(block: Block): "allow" | "deny" {
+  const kind = block.tool?.kind;
+  if (kind === "read" || kind === "search" || kind === "tasks" || kind === "fetch")
+    return "allow";
+  if (kind === "execute") {
+    const action = appCliAction(block.tool?.title || block.text);
+    return action && READ_ONLY_APP_ACTIONS.has(action) ? "allow" : "deny";
+  }
+  return "deny";
 }
 
 /**
@@ -684,8 +747,21 @@ export async function updateHabits<T>(
  */
 const runs = new Map<string, string>();
 
-export function markHabitRun(sessionId: string, irgatId: string): void {
+/** Habit runs that only look, by their session. */
+const readOnlyRuns = new Set<string>();
+
+export function markHabitRun(
+  sessionId: string,
+  irgatId: string,
+  readOnly = false,
+): void {
   runs.set(sessionId, irgatId);
+  if (readOnly) readOnlyRuns.add(sessionId);
+}
+
+/** A look-only habit's run, which the app keeps from changing anything. */
+export function isReadOnlyHabitRun(sessionId: string): boolean {
+  return readOnlyRuns.has(sessionId);
 }
 
 export function isHabitRun(sessionId: string): boolean {
@@ -699,6 +775,7 @@ export function habitRunIrgat(sessionId: string): string | undefined {
 
 export function clearHabitRun(sessionId: string): void {
   runs.delete(sessionId);
+  readOnlyRuns.delete(sessionId);
 }
 
 /**

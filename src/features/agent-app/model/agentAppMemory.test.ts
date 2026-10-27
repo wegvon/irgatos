@@ -295,3 +295,22 @@ it("lets the Irgat add guards but only the user can stop approval", async () => 
   expect(habits()[0].approval).toBeUndefined();
   expect(habits()[0].runRequested).toBeUndefined();
 });
+
+it("lets a look-only habit's run read and remember, and refuses changes", async () => {
+  const { run } = fixture();
+  const source = newSession("codex", "/tmp/project", "codex:test");
+  source.id = "looking-run";
+  const host = {
+    isIrgat: () => false,
+    isHabitRun: (id: string) => id === "looking-run",
+    isReadOnlyRun: (id: string) => id === "looking-run",
+  } as unknown as AgentAppHost;
+  await expect(
+    handleAgentApp(source, "r1", "sessions.start", { prompt: "fix it" }, host),
+  ).rejects.toThrow("This habit only looks");
+  await expect(
+    handleAgentApp(source, "r2", "habits.remove", { id: "h" }, host),
+  ).rejects.toThrow("This habit only looks");
+  // An ordinary run is not held back here.
+  await run("memory.add", { fact: "still writable" });
+});

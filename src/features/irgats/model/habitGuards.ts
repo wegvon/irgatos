@@ -139,6 +139,8 @@ export function pauseHabit(habit: Habit): Habit {
 
 export type HabitGuardSettings = {
   requestApproval: boolean;
+  /** Left out, it stays as it was. */
+  readOnly?: boolean;
   ifCondition: HabitCondition | null;
   delaySeconds: number;
 };
@@ -169,10 +171,12 @@ export function setHabitGuards(
 ): Habit {
   const {
     requestApproval: _approval,
+    readOnly: _readOnly,
     ifCondition: _condition,
     delaySeconds: _delay,
     ...rest
   } = habit;
+  const readOnly = settings.readOnly ?? habit.readOnly;
   let condition: HabitCondition | undefined;
   if (settings.ifCondition) {
     const error = habitConditionError(settings.ifCondition);
@@ -189,6 +193,7 @@ export function setHabitGuards(
   return {
     ...rest,
     ...(settings.requestApproval ? { requestApproval: true } : {}),
+    ...(readOnly ? { readOnly: true } : {}),
     ...(condition ? { ifCondition: condition } : {}),
     ...(delaySeconds ? { delaySeconds } : {}),
   };

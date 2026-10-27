@@ -49,6 +49,7 @@ import {
 } from "../../irgats/model/irgatCards";
 import {
   HABITS_MAX,
+  READ_ONLY_APP_ACTIONS,
   checkHabitsNow,
   habitRunningSince,
   habitSchedule,
@@ -190,6 +191,8 @@ export type AgentAppHost = {
   ): Promise<void>;
   /** A hidden run of one of a Irgat's habits: it may remember, not schedule. */
   isHabitRun?(sessionId: string): boolean;
+  /** A look-only habit's run, which may only read. */
+  isReadOnlyRun?(sessionId: string): boolean;
   /** Puts a card in the Irgat's chat, or holds it for a habit run's report. */
   postCard?(sourceSessionId: string, card: IrgatCard): void;
   habits?: {
@@ -277,6 +280,7 @@ const FIELDS = new Map<string, readonly string[]>([
       "instructions",
       "schedule",
       "requestApproval",
+      "readOnly",
       "ifCondition",
       "delaySeconds",
     ],
@@ -290,6 +294,7 @@ const FIELDS = new Map<string, readonly string[]>([
       "schedule",
       "enabled",
       "requestApproval",
+      "readOnly",
       "ifCondition",
       "delaySeconds",
     ],
@@ -791,6 +796,7 @@ function habitView(habit: Habit) {
     nextRun: habit.enabled ? new Date(habit.nextRunAt).toLocaleString() : null,
     ...(habitRunningSince(habit.id) != null ? { running: true } : {}),
     ...(habit.requestApproval ? { requestApproval: true } : {}),
+    ...(habit.readOnly ? { readOnly: true } : {}),
     ...(habit.ifCondition ? { ifCondition: habit.ifCondition } : {}),
     ...(habit.delaySeconds ? { delaySeconds: habit.delaySeconds } : {}),
     // The token is the user's secret; the agent only learns that one exists.
@@ -822,10 +828,17 @@ function habitGuardsInput(
 ): HabitGuardSettings | undefined {
   if (
     input.requestApproval === undefined &&
+    input.readOnly === undefined &&
     input.ifCondition === undefined &&
     input.delaySeconds === undefined
   )
     return undefined;
+  if (input.readOnly !== undefined && typeof input.readOnly !== "boolean")
+    throw new Error("readOnly must be true or false");
+  if (input.readOnly === false && current?.readOnly)
+    throw new Error(
+      "Only the user can let a habit change things, from the habit's page",
+    );
   if (
     input.requestApproval !== undefined &&
     typeof input.requestApproval !== "boolean"
@@ -868,6 +881,7 @@ function habitGuardsInput(
       typeof input.requestApproval === "boolean"
         ? input.requestApproval
         : !!current?.requestApproval,
+    ...(typeof input.readOnly === "boolean" ? { readOnly: input.readOnly } : {}),
     ifCondition,
     delaySeconds,
   };
@@ -1110,6 +1124,12 @@ export async function handleAgentApp(
   host: AgentAppHost,
 ): Promise<unknown> {
   fields(action, input);
+  // A look-only habit's run reads; the app refuses the rest, whatever the
+  // run was told.
+  if (host.isReadOnlyRun?.(source.id) && !READ_ONLY_APP_ACTIONS.has(action))
+    throw new Error(
+      "This habit only looks: it can read but not change anything. Put what should be done in your report instead.",
+    );
   if (action === "computer.read" || action === "computer.act") {
     if (host.isHabitRun?.(source.id)) throw new Error("Scheduled habits cannot use shared application windows");
     if (!host.computer) throw new Error("Application control is unavailable");

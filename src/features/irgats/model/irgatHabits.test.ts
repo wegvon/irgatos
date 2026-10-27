@@ -23,6 +23,8 @@ import {
   newHabit,
   parseHabits,
   QUIET_MARKER,
+  appCliAction,
+  readOnlyStepDecision,
   serializeHabits,
   unseenHabitPosts,
   type Habit,
@@ -348,4 +350,37 @@ it("starts a new habit enabled and due at its next scheduled time", () => {
     nextRunAt: at(7, 9),
   });
   expect(created.id).toBeTruthy();
+});
+
+describe("look-only habits", () => {
+  const step = (kind: string, title: string) => ({
+    id: title,
+    role: "tool" as const,
+    text: title,
+    tool: { title, kind },
+    approval: { requestId: 1 },
+  });
+
+  it("reads the app action out of a CLI call", () => {
+    expect(appCliAction(`"/Applications/Irgatos.app/irgatos" app sessions.list --json '{}'`)).toBe(
+      "sessions.list",
+    );
+    expect(appCliAction("irgatos app mail.draft --input -")).toBe("mail.draft");
+    expect(appCliAction("git status")).toBeUndefined();
+  });
+
+  it("lets reading through and refuses the rest", () => {
+    expect(readOnlyStepDecision(step("read", "Read a.ts"))).toBe("allow");
+    expect(readOnlyStepDecision(step("search", "Search TODO"))).toBe("allow");
+    expect(readOnlyStepDecision(step("execute", "irgatos app sessions.read --json '{}'"))).toBe("allow");
+    expect(readOnlyStepDecision(step("execute", "irgatos app mail.draft --input -"))).toBe("deny");
+    expect(readOnlyStepDecision(step("execute", "rm -rf build"))).toBe("deny");
+    expect(readOnlyStepDecision(step("edit", "Edit a.ts"))).toBe("deny");
+    expect(readOnlyStepDecision(step("agent", "Subagent"))).toBe("deny");
+  });
+
+  it("keeps the flag in habits.json and says so in the run", () => {
+    const looking = habit({ readOnly: true });
+    expect(parseHabits(serializeHabits([looking]))).toEqual([looking]);
+  });
 });
