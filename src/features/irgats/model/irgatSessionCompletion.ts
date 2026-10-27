@@ -350,3 +350,27 @@ export function enqueueIrgatSessionCompletion(
     queueStatus: irgat.queueStatus === "paused" ? "paused" : "active",
   };
 }
+
+/**
+ * Sessions whose current turn reports back to the Irgat that started them.
+ * The Irgat reviews the result and tells the user, so the session's own
+ * "finished" banner would only say the same thing twice.
+ */
+const reportedToIrgat = new Set<string>();
+
+export function expectIrgatReport(sessionId: string): void {
+  reportedToIrgat.add(sessionId);
+}
+
+/** A launch the Irgat's report will not cover after all, such as a rejected one. */
+export function cancelIrgatReport(sessionId: string): void {
+  reportedToIrgat.delete(sessionId);
+}
+
+/**
+ * Whether the turn that just finished is the Irgat's to report. Taking it
+ * clears the mark, so a later turn the user starts there still notifies.
+ */
+export function takeIrgatReport(sessionId: string): boolean {
+  return reportedToIrgat.delete(sessionId);
+}

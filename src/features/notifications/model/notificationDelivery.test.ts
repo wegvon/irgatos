@@ -2,12 +2,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   announceSessionFinished,
+  notifyHabitApproval,
   notifySession,
   saveNotificationsEnabled,
   setWindowFocused,
 } from "./notifications";
 import { updateNotificationPreferences } from "./notificationPreferences";
 import { newSession } from "../../sessions/model/session";
+import { createIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
 
 const { invoke, play } = vi.hoisted(() => ({ invoke: vi.fn(), play: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -104,4 +106,16 @@ it("does not push the chat the Mac is showing", async () => {
   expect(
     invoke.mock.calls.filter(([command]) => command === "web_push_send"),
   ).toEqual([]);
+});
+
+it("asks for a habit's approval with a banner that opens its Irgat's chat", async () => {
+  const irgat = createIrgat();
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(false);
+  saveIrgatSessionId(irgat.id, "irgat-chat");
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(true);
+  const banner = invoke.mock.calls.find(
+    ([command]) => command === "show_notification",
+  )?.[1] as { sessionId: string; body: string };
+  expect(banner.sessionId).toBe("irgat-chat");
+  expect(banner.body).toBe("Approve: run the habit “Morning digest”");
 });
