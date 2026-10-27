@@ -305,6 +305,8 @@ export type WebVoice = {
   /** Read a short summary rather than the whole reply. */
   summary: boolean;
   locale: string;
+  /** The Mac has a Gemini key, so the phone can hold a Live call. */
+  live?: boolean;
 };
 
 export type WebSpokenReply = {
@@ -313,6 +315,27 @@ export type WebSpokenReply = {
   /** A Gemini summary, not an excerpt of the reply. */
   summarized: boolean;
 };
+
+/**
+ * A Live voice call the phone opens itself. The Mac writes the instruction
+ * (SOUL.md, memory, the chat so far) and hands over a one-use Gemini token,
+ * never the key; the call's turns and tool calls come back as `live` writes.
+ */
+export type WebLiveCall = {
+  token: string;
+  model: string;
+  voice: string;
+  localBargeIn: boolean;
+  saveTranscript: boolean;
+  instruction: string;
+  /** An Irgat's chat: the call may add to its memory. */
+  memoryTool: boolean;
+};
+
+/** How work handed off during a call ended, once it has. */
+export type WebLiveDelegation =
+  | { done: false }
+  | { done: true; outcome: string | null };
 
 /** The message the user will likely type next, grey in the phone's composer. */
 export type WebNextPrompt = {

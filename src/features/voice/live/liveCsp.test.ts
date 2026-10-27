@@ -32,4 +32,11 @@ describe("what a Live call needs from the app's sandbox", () => {
     for (const csp of [config.app.security.csp, config.app.security.devCsp])
       expect(directive(csp, "script-src")).toContain("'self'");
   });
+
+  it("lets the phone page open the socket and load the worklet", () => {
+    const rust = readFileSync(`${ROOT}src-tauri/src/web_access.rs`, "utf8");
+    const csp = /const PAGE_CSP: &str = "([^"]+)"/.exec(rust)?.[1] ?? "";
+    expect(directive(csp, "connect-src")).toContain(new URL(LIVE_ENDPOINT).origin);
+    expect(rust).toContain(`"${CAPTURE_WORKLET_URL}",`);
+  });
 });

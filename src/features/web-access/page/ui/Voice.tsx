@@ -9,7 +9,21 @@ import {
   type Speech,
 } from "../voice";
 import { Spinner, useToast } from "./parts";
-import { Mic, Square, VolumeHigh } from "../../../../shared/ui/icons";
+import {
+  AiVoice,
+  CallEnd,
+  Mic,
+  MicOff,
+  Square,
+  VolumeHigh,
+} from "../../../../shared/ui/icons";
+import type { LiveState } from "../../../voice/live/liveSession";
+import {
+  canTalkLive,
+  phoneLive,
+  togglePhoneLive,
+  usePhoneLive,
+} from "../live";
 
 /** The Mac's voice settings; dictation hides when it is off there. */
 export function useVoice(): WebVoice | null {
@@ -190,5 +204,96 @@ export function ReadAloud({ sessionId }: { sessionId: string }) {
       )}
       {label}
     </button>
+  );
+}
+
+const LIVE_LABEL: Record<Exclude<LiveState["phase"], "idle">, string> = {
+  connecting: "Connecting…",
+  listening: "Listening",
+  thinking: "Thinking",
+  speaking: "Speaking",
+  delegating: "Handing it to the agent…",
+  error: "The live call stopped",
+};
+
+/** Whether this chat can start a Live call from the phone. */
+export function useCanTalkLive(): boolean {
+  const voice = useVoice();
+  return !!voice?.live && canTalkLive();
+}
+
+/** Talk with the chat's agent out loud, as with Live voice on the Mac. */
+export function LiveCallButton({ sessionId }: { sessionId: string }) {
+  const state = usePhoneLive(sessionId);
+  const on = state.phase !== "idle" && state.phase !== "error";
+  return (
+    <button
+      type="button"
+      aria-label={on ? "End live call" : "Talk live"}
+      aria-pressed={on}
+      onClick={() => togglePhoneLive(sessionId)}
+      className="primary-action web-press flex size-11 shrink-0 items-center justify-center rounded-full"
+    >
+      {on ? (
+        <CallEnd className="size-5" />
+      ) : (
+        <AiVoice className="size-5" strokeWidth={2} />
+      )}
+    </button>
+  );
+}
+
+/** The call in progress, above the composer: what is said, mute and hang up. */
+export function LiveCallBar({ sessionId }: { sessionId: string }) {
+  const state = usePhoneLive(sessionId);
+  if (state.phase === "idle") return null;
+  const failed = state.phase === "error";
+  const label =
+    state.muted && state.phase === "listening" ? "Muted" : LIVE_LABEL[state.phase];
+  const caption = failed ? state.error : state.caption?.text;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`glass-float mt-2 flex items-center gap-2 rounded-[22px] py-1.5 pl-4 pr-1.5 ${
+        failed ? "shadow-[inset_0_0_0_1.5px_rgb(248_113_113/0.5)]" : ""
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`size-2 shrink-0 rounded-full ${
+          failed
+            ? "bg-red-400"
+            : state.phase === "listening" && !state.muted
+              ? "bg-(--accent)"
+              : "animate-pulse bg-(--accent)"
+        }`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium">{label}</div>
+        {caption ? (
+          <div className="truncate text-[12px] text-(--ink-2)">{caption}</div>
+        ) : null}
+      </div>
+      {failed ? null : (
+        <button
+          type="button"
+          aria-label={state.muted ? "Unmute" : "Mute"}
+          aria-pressed={state.muted}
+          onClick={() => phoneLive().setMuted(!state.muted)}
+          className="web-press flex size-9 shrink-0 items-center justify-center rounded-full text-(--ink-2) active:bg-content/8"
+        >
+          {state.muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </button>
+      )}
+      <button
+        type="button"
+        aria-label={failed ? "Close" : "End live call"}
+        onClick={() => phoneLive().end()}
+        className="web-press flex size-9 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white"
+      >
+        <CallEnd className="size-4.5" />
+      </button>
+    </div>
   );
 }

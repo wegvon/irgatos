@@ -208,8 +208,18 @@ export type GeminiLiveClientOptions = {
   setupTimeoutMs?: number;
 };
 
-export function liveUrl(apiKey: string, endpoint = LIVE_ENDPOINT): string {
-  return `${endpoint}?key=${encodeURIComponent(apiKey)}`;
+/** The method a one-use token opens a call with, instead of a key. */
+export const LIVE_TOKEN_ENDPOINT = `${LIVE_ENDPOINT}Constrained`;
+
+/** One-use tokens the Mac hands a phone look like `auth_tokens/…`. */
+export function isLiveToken(apiKey: string): boolean {
+  return apiKey.startsWith("auth_tokens/");
+}
+
+export function liveUrl(apiKey: string, endpoint?: string): string {
+  if (isLiveToken(apiKey))
+    return `${endpoint ?? LIVE_TOKEN_ENDPOINT}?access_token=${encodeURIComponent(apiKey)}`;
+  return `${endpoint ?? LIVE_ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
 }
 
 /** Close reasons sometimes quote the request; never show the key. */

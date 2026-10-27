@@ -11,6 +11,7 @@ import {
 import type { IrgatFiles } from "../../irgats/model/irgatFiles";
 import { newSession, type Session } from "../../sessions/model/session";
 import { VOICE_SETTINGS_DEFAULTS } from "../../voice/model/voiceSettings";
+import { LIVE_SETTINGS_DEFAULTS } from "../../voice/live/liveSettings";
 import type {
   WebAgents,
   WebAutomations,
@@ -105,6 +106,7 @@ function mac(open: Session[], automations: Automation[] = [automation()]) {
     },
     voice: {
       settings: () => ({ ...VOICE_SETTINGS_DEFAULTS }),
+      liveReady: async () => true,
       summarize: vi.fn(async () => "Kısa özet."),
       parts: vi.fn(async (text: string) => [text]),
       synthesize: vi.fn(async () => "UklGRg=="),
@@ -114,6 +116,13 @@ function mac(open: Session[], automations: Automation[] = [automation()]) {
       nextPrompt: vi.fn(
         async (): Promise<string | null> => "Testleri çalıştır.",
       ),
+    },
+    live: {
+      host: () => null,
+      token: async () => "auth_tokens/t",
+      settings: () => ({ ...LIVE_SETTINGS_DEFAULTS }),
+      instruction: async () => ({ text: "", memoryTool: false }),
+      tools: () => ({ saveNote: async () => ({ created: true }) }),
     },
   };
   const deps: WebAccessDeps = {
