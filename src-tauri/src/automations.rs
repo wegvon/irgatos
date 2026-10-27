@@ -1168,6 +1168,7 @@ pub fn automations_claim_event(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn automation_run_update(
     app: AppHandle,
     window: tauri::Window,
