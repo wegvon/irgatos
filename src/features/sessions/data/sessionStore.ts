@@ -477,12 +477,34 @@ export function knownSessionRevision(sessionId: string): number | undefined {
   return writeBases.get(sessionId)?.revision;
 }
 
-function rememberBase(session: Session, revision: number) {
+/**
+ * A load must not hand the open copy a newer base it never merged: a
+ * window that reads a chat it also has open would otherwise let that open,
+ * older copy overwrite the newer row on its next save.
+ */
+function syncLoadedBase(session: Session, record: SessionRecord) {
+  const revision = record.revision ?? 0;
+  const known = writeBases.get(session.id);
+  if (known && known.revision === revision) {
+    // Same stored copy as the open one: same lineage.
+    session.storeLineage = known.lineage;
+    return;
+  }
+  session.storeLineage = nextLineage();
   writeBases.set(session.id, {
     revision,
     lineage: session.storeLineage,
     blocks: session.blocks,
     header: headerSnapshot(session),
+    ...(known && known.revision < revision
+      ? {
+          stale: {
+            base: known,
+            remote: session,
+            summary: normalizeSummary(summaryFromRecord(record)),
+          },
+        }
+      : {}),
   });
 }
 
@@ -846,8 +868,7 @@ export async function getSession(sessionId: string): Promise<Session | null> {
   );
   if (!record) return null;
   const session = recordToSession(record);
-  session.storeLineage = nextLineage();
-  rememberBase(session, record.revision ?? 0);
+  syncLoadedBase(session, record);
   if (session.irgatTranscript) irgatSavedBlocks.set(sessionId, session.blocks);
   if (session.harness === "claude" && session.providerSessionId) {
     const toolIds = shellPlaceholderIds(session.blocks);

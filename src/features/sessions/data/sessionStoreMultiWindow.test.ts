@@ -164,6 +164,14 @@ describe("one chat open in two windows", () => {
     expect(store.rows.get("chat")!.revision).toBe(2);
   });
 
+  it("reading the chat again does not license the open stale copy", async () => {
+    const { windowB, inB } = await continueInA();
+    // Something in B reads the stored chat (a preview, a search hit).
+    await windowB.getSession("chat");
+    await windowB.upsertSession(inB);
+    expect(storedTexts(store)).toEqual(["hello", "hi", "continue", "done"]);
+  });
+
   it("a later edit in the refreshed window is not undone by the merge", async () => {
     const { windowB, inB } = await continueInA();
     let shown = inB;

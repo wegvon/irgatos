@@ -10,7 +10,7 @@ import {
 
 export const SESSION_SAVED = "irgat:session-saved";
 /** Coalesces the saves a streaming turn makes in another window. */
-const REFRESH_DELAY_MS = 1_000;
+const REFRESH_DELAY_MS = 2_500;
 
 type SessionSaved = { sessionId: string; revision: number; origin: string };
 
