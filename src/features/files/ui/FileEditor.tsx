@@ -34,7 +34,14 @@ import {
 } from "../../../shared/ui/icons";
 import { formatInteger } from "../../../shared/lib/numbers";
 import { minimalSetup } from "codemirror";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from "react";
 import {
   MarkdownViewShell,
   useMarkdownMode,
@@ -57,6 +64,8 @@ import {
 } from "../../../platform/tauri/fs";
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
+import { UnifiedDiffView } from "../../source-control/ui/UnifiedDiffView";
+import { buildUnifiedFile } from "../../source-control/model/unifiedDiff";
 import type { EditorNavigation } from "../../search/model/search";
 import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
@@ -128,6 +137,29 @@ type SaveState =
   | { status: "idle" | "saving" | "saved" }
   | { status: "error"; message: string };
 
+/** The file on disk is not the version these edits started from. */
+class SaveConflict extends Error {
+  constructor(readonly disk: string) {
+    super("The file changed on disk");
+  }
+}
+
+/** What the editor host can ask of the CodeMirror instance it renders. */
+export type EditorControl = { save: () => void; content: () => string };
+
+/**
+ * The editor saves only over the disk version it loaded or last wrote. Any
+ * other content (an agent's edit, another editor's save) is a conflict, for
+ * manual saves as much as autosave.
+ */
+export function saveConflicts(
+  onDisk: string | null,
+  loaded: string | null,
+  next: string,
+): boolean {
+  return onDisk !== null && loaded !== null && onDisk !== loaded && onDisk !== next;
+}
+
 export function FileEditor({
   path,
   cwd,
@@ -172,6 +204,17 @@ export function FileEditor({
   const loadGeneration = useRef(0);
   const dirtyRef = useRef(false);
   const pendingDiskRef = useRef(false);
+  /** Per path, the raw disk content the open edits are based on. */
+  const diskBases = useRef(new Map<string, string>());
+  const pathRef = useRef(path);
+  pathRef.current = path;
+  const forceSaveRef = useRef(false);
+  const conflictRef = useRef(false);
+  const editorControl = useRef<EditorControl | null>(null);
+  const [conflict, setConflict] = useState<{
+    disk: string;
+    comparing: boolean;
+  } | null>(null);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
   onDirtyChangeRef.current = onDirtyChange;
@@ -181,6 +224,7 @@ export function FileEditor({
     // and restore the file's own line endings on save. Feeding CRLF text
     // into the LF document doubles every line (see editorDoc.ts).
     eolRef.current = detectLineEnding(raw);
+    diskBases.current.set(pathRef.current, raw);
     const content = normalizeLineBreaks(raw);
     setLoadState((current) => {
       if (current.status === "ready" && current.content === content) {
@@ -225,6 +269,9 @@ export function FileEditor({
   useEffect(() => {
     dirtyRef.current = false;
     pendingDiskRef.current = false;
+    diskBases.current.delete(path);
+    conflictRef.current = false;
+    setConflict(null);
     let cancelled = false;
     setLoadState({ status: "loading" });
     setSaveState({ status: "idle" });
@@ -327,6 +374,24 @@ export function FileEditor({
     const stop = watchFile(path, () => {
       if (dirtyRef.current) {
         pendingDiskRef.current = true;
+        // Say so now rather than at the next save.
+        void readTextFile(path)
+          .then((onDisk) => {
+            const loaded = diskBases.current.get(path);
+            if (
+              dirtyRef.current &&
+              pathRef.current === path &&
+              loaded !== undefined &&
+              onDisk !== loaded
+            ) {
+              conflictRef.current = true;
+              setConflict((current) => ({
+                disk: onDisk,
+                comparing: current?.comparing ?? false,
+              }));
+            }
+          })
+          .catch(() => undefined);
         return;
       }
       window.clearTimeout(timer);
@@ -345,18 +410,44 @@ export function FileEditor({
       const generation = ++saveGeneration.current;
       setSaveState({ status: "saving" });
       const serializedContent = restoreLineEnding(content, eolRef.current);
-      const operation = saveQueue.current.then(() =>
-        writeTextFile(path, serializedContent),
-      );
+      const force = forceSaveRef.current;
+      forceSaveRef.current = false;
+      const operation = saveQueue.current.then(async () => {
+        if (!force) {
+          // A missing file is recreated as before; only newer content blocks.
+          const onDisk = await readTextFile(path).catch(() => null);
+          const loaded = diskBases.current.get(path) ?? null;
+          if (saveConflicts(onDisk, loaded, serializedContent))
+            throw new SaveConflict(onDisk!);
+        }
+        await writeTextFile(path, serializedContent);
+        diskBases.current.set(path, serializedContent);
+      });
       saveQueue.current = operation.catch(() => {});
       try {
         await operation;
         await syncWatchedMtime(path);
         notifyGitChanged();
+        if (pathRef.current === path) {
+          conflictRef.current = false;
+          setConflict(null);
+        }
         if (generation === saveGeneration.current) {
           setSaveState({ status: "saved" });
         }
       } catch (error) {
+        if (error instanceof SaveConflict) {
+          if (pathRef.current !== path) throw error;
+          conflictRef.current = true;
+          setConflict((current) => ({
+            disk: error.disk,
+            comparing: current?.comparing ?? false,
+          }));
+          if (generation === saveGeneration.current) {
+            setSaveState({ status: "idle" });
+          }
+          throw error;
+        }
         const message = error instanceof Error ? error.message : String(error);
         if (generation === saveGeneration.current) {
           setSaveState({ status: "error", message });
@@ -411,6 +502,24 @@ export function FileEditor({
     [onDirtyChange, path, reloadFromDisk],
   );
 
+  const reloadDiscardingEdits = useCallback(() => {
+    conflictRef.current = false;
+    pendingDiskRef.current = false;
+    setConflict(null);
+    dirtyRef.current = false;
+    onDirtyChange(path, false);
+    // Remounting reads the file again and starts a clean editor.
+    setReloadKey((value) => value + 1);
+  }, [onDirtyChange, path]);
+
+  const overwriteDisk = useCallback(() => {
+    conflictRef.current = false;
+    pendingDiskRef.current = false;
+    setConflict(null);
+    forceSaveRef.current = true;
+    editorControl.current?.save();
+  }, []);
+
   const errorCountChange = useCallback(
     (count: number) => onErrorCountChange?.(path, count),
     [onErrorCountChange, path],
@@ -463,6 +572,21 @@ export function FileEditor({
           changes. Line breaks are normalized in this view.
         </p>
       )}
+      {conflict && (
+        <SaveConflictBar
+          path={path}
+          disk={normalizeLineBreaks(conflict.disk)}
+          comparing={conflict.comparing}
+          mine={() => editorControl.current?.content() ?? ""}
+          onCompare={() =>
+            setConflict((current) =>
+              current && { ...current, comparing: !current.comparing },
+            )
+          }
+          onReload={reloadDiscardingEdits}
+          onOverwrite={overwriteDisk}
+        />
+      )}
       {markdown || svg ? (
         <MarkdownViewShell
           mode={mode}
@@ -510,7 +634,10 @@ export function FileEditor({
                 onDirtyChange={dirtyChange}
                 onErrorCountChange={errorCountChange}
                 onSave={save}
-                canAutosave={() => !pendingDiskRef.current}
+                canAutosave={() =>
+                  !pendingDiskRef.current && !conflictRef.current
+                }
+                controlRef={editorControl}
                 onStageGit={
                   showDiff && gitDiff?.kind === "unstaged"
                     ? stageGit
@@ -534,7 +661,10 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
-          canAutosave={() => !pendingDiskRef.current}
+          canAutosave={() =>
+            !pendingDiskRef.current && !conflictRef.current
+          }
+          controlRef={editorControl}
           onStageGit={
             showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined
           }
@@ -576,6 +706,7 @@ export function CodeMirrorEditor({
   onStageGit,
   onDocChange,
   formatOnSave = true,
+  controlRef,
 }: {
   path: string;
   commentPath: string;
@@ -591,6 +722,7 @@ export function CodeMirrorEditor({
   onStageGit?: (contents: string) => Promise<void>;
   onDocChange?: (content: string) => void;
   formatOnSave?: boolean;
+  controlRef?: MutableRefObject<EditorControl | null>;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -887,6 +1019,11 @@ export function CodeMirrorEditor({
       });
     }
     if (activeRef.current) view.focus();
+    const control: EditorControl = {
+      save: () => void save(),
+      content: () => view.state.doc.toString(),
+    };
+    if (controlRef) controlRef.current = control;
 
     void languageForPath(path).then((extension) => {
       if (!disposed && extension) {
@@ -896,6 +1033,7 @@ export function CodeMirrorEditor({
 
     return () => {
       disposed = true;
+      if (controlRef?.current === control) controlRef.current = null;
       window.clearTimeout(autosaveTimer);
       onErrorCountChangeRef.current(0);
       lockOverscroll(null);
@@ -905,7 +1043,7 @@ export function CodeMirrorEditor({
       setSelectionTarget(null);
       view.destroy();
     };
-  }, [formatOnSave, lockOverscroll, path, showDiff, syncChunkNav]);
+  }, [controlRef, formatOnSave, lockOverscroll, path, showDiff, syncChunkNav]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -1326,4 +1464,71 @@ function isMarkdownPath(path: string): boolean {
   const name = basename(path).toLowerCase();
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
   return [".md", ".mdx", ".markdown"].includes(extension);
+}
+
+function SaveConflictBar({
+  path,
+  disk,
+  comparing,
+  mine,
+  onCompare,
+  onReload,
+  onOverwrite,
+}: {
+  path: string;
+  disk: string;
+  comparing: boolean;
+  mine: () => string;
+  onCompare: () => void;
+  onReload: () => void;
+  onOverwrite: () => void;
+}) {
+  const file = useMemo(() => {
+    if (!comparing) return null;
+    const diff = buildUnifiedFile(disk, mine());
+    return {
+      id: path,
+      path,
+      label: "On disk → your edits",
+      emptyMessage: "Your edits match the file on disk.",
+      additions: diff.additions,
+      deletions: diff.deletions,
+      blocks: diff.blocks,
+    };
+    // `mine` reads the live editor; recompute whenever Compare opens.
+  }, [comparing, disk, path]);
+  const button =
+    "h-6 shrink-0 rounded-md px-2 text-[12px] hover:bg-content/15";
+  return (
+    <div className="shrink-0 border-b border-stroke">
+      <div
+        role="alert"
+        className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-[12px] text-content/75"
+      >
+        <AlertCircle className="size-3.5 shrink-0 text-amber-400" />
+        <span className="min-w-0 flex-1">
+          This file changed on disk after you started editing. Saving now
+          would replace those changes.
+        </span>
+        <button type="button" onClick={onCompare} className={`${button} bg-content/10`}>
+          {comparing ? "Hide comparison" : "Compare"}
+        </button>
+        <button type="button" onClick={onReload} className={`${button} bg-content/10`}>
+          Reload from disk
+        </button>
+        <button
+          type="button"
+          onClick={onOverwrite}
+          className={`${button} ml-2 text-red-400`}
+        >
+          Overwrite
+        </button>
+      </div>
+      {file && (
+        <div className="h-[40vh] min-h-32 border-t border-stroke">
+          <UnifiedDiffView files={[file]} />
+        </div>
+      )}
+    </div>
+  );
 }
