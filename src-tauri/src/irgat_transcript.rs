@@ -503,7 +503,10 @@ mod tests {
             .to_string()
             .starts_with(session_store::STALE_SESSION_WRITE));
         assert_eq!(
-            page(&conn, "shared-irgat", None, None).unwrap().blocks.len(),
+            page(&conn, "shared-irgat", None, None)
+                .unwrap()
+                .blocks
+                .len(),
             4
         );
     }
