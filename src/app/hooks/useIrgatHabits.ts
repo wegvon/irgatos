@@ -9,6 +9,7 @@ import {
   findIrgat,
   listIrgats,
   irgatLook,
+  subscribeIrgats,
 } from "../../features/irgats/model/irgat";
 import { loadIrgatFiles } from "../../features/irgats/model/irgatFiles";
 import {
@@ -442,6 +443,9 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           }
           for (const habit of run) {
             if (stopped) return;
+            // The user may pause the Irgat while an earlier habit runs.
+            if (findIrgat(id)?.paused && !runsWhilePaused([habit]).length)
+              continue;
             await runHabit(id, sessionId, habit.id).catch((error) =>
               console.warn(`Habit "${habit.name}" could not run`, error),
             );
@@ -458,6 +462,15 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
     void tick();
     const timer = window.setInterval(() => void tick(), TICK_MS);
     const stopChecks = subscribeCheckHabitsNow(() => void tick());
+    // A resumed Irgat's waiting habits run now, not at the next minute.
+    const pausedIds = () =>
+      new Set(listIrgats().filter(({ paused }) => paused).map(({ id }) => id));
+    let paused = pausedIds();
+    const stopPauses = subscribeIrgats(() => {
+      const before = paused;
+      paused = pausedIds();
+      if ([...before].some((id) => !paused.has(id))) void tick();
+    });
     // A hold that ends or is lifted lets held habits run right away.
     const holdsSignature = () =>
       usageLimitRegistry
@@ -476,6 +489,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       window.clearInterval(timer);
       for (const wake of wakes.values()) window.clearTimeout(wake);
       stopChecks();
+      stopPauses();
       stopHolds();
       if ((window as OwnedWindow)[OWNER] === owner)
         delete (window as OwnedWindow)[OWNER];
