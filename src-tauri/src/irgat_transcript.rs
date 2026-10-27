@@ -407,6 +407,7 @@ fn upsert_with_mode(
 }
 
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn irgat_session_upsert(
     app: tauri::AppHandle,
     window: tauri::Window,
