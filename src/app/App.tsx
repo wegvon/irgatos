@@ -755,6 +755,7 @@ import {
   writeAgentFile,
 } from "../features/irgats/model/irgatFiles";
 import { useIrgatHabits } from "./hooks/useIrgatHabits";
+import { useIrgatApprovalRules } from "./hooks/useIrgatApprovalRules";
 import { useHabitWebhooks } from "./hooks/useHabitWebhooks";
 import { useHabitApprovals } from "../features/irgats/hooks/useHabitApprovals";
 import { decideHabitApproval } from "../features/irgats/model/habitApprovals";
@@ -11716,6 +11717,22 @@ function Workspace({
     },
     [],
   );
+
+  // What an Irgat's rules settle never reaches the user; a step left to
+  // them is turned down and noted in the chat once the turn ends.
+  useIrgatApprovalRules(sessions, (session, block, decision) => {
+    onApproval(
+      session.id,
+      block.approval!.requestId,
+      decision === "allow" ? "allow" : "deny",
+    );
+    if (decision === "handoff")
+      appendLiveRef.current(session.id, {
+        id: crypto.randomUUID(),
+        role: "system",
+        text: `Left for you: ${block.tool?.title || block.text}. Your rules for this Irgat hand this kind of step to you.`,
+      });
+  });
 
   const onQuestionReply = useCallback(
     (sessionId: string, requestId: number, reply: UserQuestionReply) => {

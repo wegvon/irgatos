@@ -8,6 +8,7 @@ import {
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Popover } from "../../../shared/ui/Popover";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { ChevronRight, Sparkles, StickyNote } from "../../../shared/ui/icons";
 import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
@@ -23,6 +24,15 @@ import {
   type IrgatLook,
 } from "../model/irgat";
 import type { IrgatFiles } from "../model/irgatFiles";
+import {
+  RULE_CATEGORIES,
+  RULE_LEVEL_LABEL,
+  RULE_LEVELS,
+  normalizePreapproved,
+  saveIrgatRules,
+  type IrgatRuleLevel,
+  type IrgatRules,
+} from "../model/irgatRules";
 import { memoryLines } from "../model/irgatMemory";
 import { ConfirmConversationReset } from "./ConfirmReset";
 import { IrgatProjects } from "./IrgatProjects";
@@ -136,6 +146,8 @@ export function IrgatSettings({
         </SettingRow>
       </SettingGroup>
 
+      <RulesGroup irgatId={irgatId} fullAccess={runtimeMode === "full-access"} />
+
       <GroupHeading
         title="Soul and memory"
         description="What it always keeps in mind, and what it has learned."
@@ -215,6 +227,103 @@ export function IrgatSettings({
         </>
       ) : null}
     </div>
+  );
+}
+
+const LEVEL_OPTIONS = RULE_LEVELS.map((level) => ({
+  value: level,
+  label: RULE_LEVEL_LABEL[level],
+}));
+
+/**
+ * When its agent stops to ask before a step: what the app answers for you,
+ * per kind of step. "Ask me" everywhere is how it works without rules.
+ */
+function RulesGroup({
+  irgatId,
+  fullAccess,
+}: {
+  irgatId: string;
+  /** Its chat never stops to ask, so the rules only reach what it starts. */
+  fullAccess: boolean;
+}) {
+  const stored = useSyncExternalStore(subscribeIrgats, () =>
+    JSON.stringify(findIrgat(irgatId)?.rules ?? {}),
+  );
+  const rules = JSON.parse(stored) as IrgatRules;
+  const listed = RULE_CATEGORIES.some(({ id }) => rules[id] === "preapproved");
+  const save = (next: IrgatRules) => saveIrgatRules(irgatId, next);
+  return (
+    <>
+      <GroupHeading
+        title="Rules"
+        description={
+          fullAccess
+            ? "With Full access its own chat never stops to ask, so these apply only to the sessions it starts. Pick another permission mode above to use them in its chat too."
+            : "When it, or a session it started, stops to ask before a step: what to answer for you. The app enforces these, whatever its instructions say."
+        }
+      />
+      <SettingGroup>
+        {RULE_CATEGORIES.map((category) => (
+          <SettingRow
+            key={category.id}
+            label={category.label}
+            description={category.description}
+          >
+            <SearchableSelect
+              label={category.label}
+              value={rules[category.id] ?? "ask"}
+              options={LEVEL_OPTIONS}
+              variant="pill"
+              searchable={false}
+              onChange={(value) =>
+                save({ ...rules, [category.id]: value as IrgatRuleLevel })
+              }
+            />
+          </SettingRow>
+        ))}
+        {listed ? (
+          <PreapprovedList
+            key={stored}
+            entries={rules.preapproved ?? []}
+            onSave={(preapproved) => save({ ...rules, preapproved })}
+          />
+        ) : null}
+      </SettingGroup>
+    </>
+  );
+}
+
+/** What "Only if listed" lets through, one entry per line. */
+function PreapprovedList({
+  entries,
+  onSave,
+}: {
+  entries: string[];
+  onSave: (entries: string[]) => void;
+}) {
+  const [text, setText] = useState(entries.join("\n"));
+  const commit = () => {
+    const next = normalizePreapproved(text.split("\n"));
+    if (next.join("\n") !== entries.join("\n")) onSave(next);
+  };
+  return (
+    <label className="flex flex-col gap-1.5 px-3 py-2.5">
+      <span className="text-[13px] leading-5 text-content/90">Listed</span>
+      <span className="text-[12px] leading-5 text-content/40">
+        One per line: a command it starts with, like “npm test”, or part of a
+        file path, like “docs/”.
+      </span>
+      <textarea
+        aria-label="Listed steps"
+        value={text}
+        rows={4}
+        spellCheck={false}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        className="mt-1 w-full resize-y rounded-md border border-stroke bg-transparent px-2 py-1.5 font-mono text-[12px] leading-5 text-content outline-none focus:bg-content/5"
+      />
+    </label>
   );
 }
 
