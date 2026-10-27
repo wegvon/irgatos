@@ -888,6 +888,7 @@ import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQu
 import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
 import type { AgentRetryRequest } from "../features/agent-tree/ui/AgentTreeView";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
+import { previousConversation } from "../features/automations/model/automationReuse";
 import {
   SECOND_OPINION_TITLE,
   buildSecondOpinionRequest,
@@ -9722,25 +9723,30 @@ function Workspace({
         const eventRun = run.trigger === "event";
         const linkedWorkItem =
           sourceWorkItem ?? linkedWorkItemFromAutomationEvent(run);
-        let session =
-          automation.reuseSession && automation.lastSessionId
-            ? sessionsRef.current.find(
-                (entry) =>
-                  entry.id === automation.lastSessionId &&
-                  entry.harness === automation.harness &&
-                  !entry.busy &&
-                  !entry.worktreeRemoved &&
-                  !automationSessionReservations.current.has(entry.id) &&
-                  (automation.workspaceMode === "current"
-                    ? entry.workspaceMode !== "worktree" &&
-                      !entry.worktreeCwd &&
-                      pathKey(entry.cwd) === pathKey(automation.cwd)
-                    : automation.workspaceMode === "existing"
-                      ? pathKey(sessionWorkCwd(entry)) ===
-                        pathKey(automation.worktreeCwd ?? "")
-                      : false),
+        // Continue the last run: from history when its tab was closed.
+        const previous =
+          automation.reuseSession &&
+          automation.lastSessionId &&
+          automation.workspaceMode !== "worktree"
+            ? await ensureOpenSession(automation.lastSessionId).catch(
+                () => null,
               )
             : undefined;
+        const continuing = previousConversation(
+          automation,
+          previous,
+          automationSessionReservations.current,
+        );
+        if (continuing.kind === "busy") {
+          await updateAutomationRun(run.id, "skipped", {
+            error: continuing.reason,
+          });
+          return;
+        }
+        const startNote =
+          continuing.kind === "new" ? continuing.note : undefined;
+        let session =
+          continuing.kind === "reuse" ? continuing.session : undefined;
 
         if (!session) {
           session = {
@@ -9786,7 +9792,19 @@ function Workspace({
           );
           sessionsRef.current = nextSessions;
           setSessions(nextSessions);
-          if (reveal) {
+          const reusedId = session.id;
+          if (
+            !tabsRef.current.some((tab) =>
+              leafIds(tab.layout).includes(reusedId),
+            )
+          ) {
+            const tab = newTab(reusedId);
+            appendTab(tab, automation.cwd);
+            if (reveal) {
+              setActiveTabId(tab.id);
+              setComposerFocused(false);
+            }
+          } else if (reveal) {
             focusOpenSession(session.id);
           }
         }
@@ -9835,9 +9853,10 @@ function Workspace({
                 : outcome.status === "cancelled"
                   ? "cancelled"
                   : "failed";
+            const error = outcome.error ?? startNote;
             void updateAutomationRun(run.id, status, {
               sessionId: session.id,
-              ...(outcome.error ? { error: outcome.error } : {}),
+              ...(error ? { error } : {}),
             })
               .catch(() => undefined)
               .finally(releaseReservation);
@@ -9852,7 +9871,7 @@ function Workspace({
         if (!releaseAfterSettle) releaseReservation();
       }
     },
-    [appendTab, focusOpenSession, submitSession],
+    [appendTab, ensureOpenSession, focusOpenSession, submitSession],
   );
 
   // Held runs go once their hold ends, or right away on Run anyway.

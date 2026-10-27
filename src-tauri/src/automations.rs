@@ -1001,7 +1001,10 @@ fn get_run(conn: &Connection, run_id: &str) -> Result<Option<AutomationRun>, Str
 fn valid_transition(from: &str, to: &str) -> bool {
     match from {
         "pending" => matches!(to, "failed" | "skipped" | "cancelled"),
-        "running" => matches!(to, "running" | "succeeded" | "failed" | "cancelled"),
+        "running" => matches!(
+            to,
+            "running" | "succeeded" | "failed" | "skipped" | "cancelled"
+        ),
         _ => false,
     }
 }
