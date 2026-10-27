@@ -104,6 +104,26 @@ if [[ -e "$DEST" ]]; then
   [[ "$OLD_ID" == com.irgatos.desktop ]] || exit 1
 fi
 
+# Every build bundle registers com.irgatos.desktop with Launch Services and
+# stays registered after its worktree is deleted. Notification Center can then
+# draw banners with a long-gone bundle's icon, so forget every registration
+# outside /Applications and register the fresh install again.
+refresh_launch_services() {
+  local lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+  [[ -x "$lsregister" ]] || return 0
+  "$lsregister" -dump 2>/dev/null | awk '
+    function flush() { if (id == "com.irgatos.desktop" && path != "") print path; path = ""; id = "" }
+    /^-----/ { flush(); next }
+    /^path:/ { sub(/^path:[ \t]+/, ""); sub(/ \(0x[0-9a-f]+\)$/, ""); path = $0; next }
+    /^identifier:/ { sub(/^identifier:[ \t]+/, ""); sub(/ \(0x[0-9a-f]+\)$/, ""); id = $0; next }
+    END { flush() }
+  ' | sort -u | while IFS= read -r registered; do
+    [[ "$registered" == /Applications/* ]] && continue
+    "$lsregister" -u "$registered" >/dev/null 2>&1 || true
+  done
+  "$lsregister" -f "$1" >/dev/null 2>&1 || true
+}
+
 STAGE="$(mktemp -d /Applications/.irgatos-update.XXXXXX)"
 BACKUP=""
 cleanup() {
@@ -124,6 +144,7 @@ if [[ -e "$DEST" ]]; then
   mv "$DEST" "$BACKUP"
 fi
 mv "$STAGE/Irgatos.app" "$DEST"
+refresh_launch_services "$DEST"
 echo "Irgatos $VERSION kuruldu. Sohbetler ve ayarlar korundu."
 [[ -z "$BACKUP" ]] || echo "Önceki uygulama: $BACKUP"
 open "$DEST"
