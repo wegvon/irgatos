@@ -782,8 +782,7 @@ fn unfinished_runs(conn: &Connection) -> Result<Vec<AutomationRun>, String> {
     let mut runs = Vec::new();
     for row in rows {
         let raw = row.map_err(|error| error.to_string())?;
-        let run: AutomationRun =
-            serde_json::from_str(&raw).map_err(|error| error.to_string())?;
+        let run: AutomationRun = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
         if !is_terminal(&run.status) {
             runs.push(run);
         }
@@ -1602,11 +1601,17 @@ mod tests {
             let mut conn = setup();
             let running = run(&conn, "main", "running");
             let held = run(&conn, "main", "pending");
-            let (due, _) = adopt_runs(&mut conn, "window-2", &live(&["main", "window-2"]), 9)
-                .unwrap();
+            let (due, _) =
+                adopt_runs(&mut conn, "window-2", &live(&["main", "window-2"]), 9).unwrap();
             assert!(due.is_empty());
-            assert_eq!(status(&conn, &running), ("running".into(), Some("main".into())));
-            assert_eq!(status(&conn, &held), ("pending".into(), Some("main".into())));
+            assert_eq!(
+                status(&conn, &running),
+                ("running".into(), Some("main".into()))
+            );
+            assert_eq!(
+                status(&conn, &held),
+                ("pending".into(), Some("main".into()))
+            );
         }
 
         #[test]
@@ -1617,7 +1622,10 @@ mod tests {
             let windows = live(&["window-2", "window-3"]);
             let (due, _) = adopt_runs(&mut conn, "window-2", &windows, 9).unwrap();
             assert_eq!(due.len(), 1);
-            assert_eq!(status(&conn, &held), ("pending".into(), Some("window-2".into())));
+            assert_eq!(
+                status(&conn, &held),
+                ("pending".into(), Some("window-2".into()))
+            );
             assert_eq!(status(&conn, &running).0, "cancelled");
             // The next window finds nothing left to take.
             let (again, _) = adopt_runs(&mut conn, "window-3", &windows, 9).unwrap();
@@ -1629,9 +1637,15 @@ mod tests {
             let mut conn = setup();
             let id = run(&conn, "main", "pending");
             let windows = live(&["main", "window-2"]);
-            assert!(start_run(&mut conn, &id, "window-2", &windows, 9).unwrap().is_none());
-            assert!(start_run(&mut conn, &id, "main", &windows, 9).unwrap().is_some());
-            assert!(start_run(&mut conn, &id, "main", &windows, 9).unwrap().is_none());
+            assert!(start_run(&mut conn, &id, "window-2", &windows, 9)
+                .unwrap()
+                .is_none());
+            assert!(start_run(&mut conn, &id, "main", &windows, 9)
+                .unwrap()
+                .is_some());
+            assert!(start_run(&mut conn, &id, "main", &windows, 9)
+                .unwrap()
+                .is_none());
             assert_eq!(status(&conn, &id).0, "running");
         }
 
@@ -1651,12 +1665,25 @@ mod tests {
             assert_eq!(status(&conn, &id).0, "cancelled");
 
             let pending = run(&conn, "main", "pending");
-            assert!(update_run(&mut conn, &pending, "main", &windows, update("succeeded"), 9).is_err());
+            assert!(update_run(
+                &mut conn,
+                &pending,
+                "main",
+                &windows,
+                update("succeeded"),
+                9
+            )
+            .is_err());
             let other = run(&conn, "main", "running");
-            assert!(
-                update_run(&mut conn, &other, "window-2", &live(&["main", "window-2"]), update("failed"), 9)
-                    .is_err()
-            );
+            assert!(update_run(
+                &mut conn,
+                &other,
+                "window-2",
+                &live(&["main", "window-2"]),
+                update("failed"),
+                9
+            )
+            .is_err());
         }
 
         #[test]
@@ -1675,7 +1702,9 @@ mod tests {
             assert_eq!(status(&conn, &manual.id).0, "pending");
             // Even a run the cancel missed is checked again when it starts.
             let late = run(&conn, "main", "pending");
-            assert!(start_run(&mut conn, &late, "main", &live(&["main"]), 9).unwrap().is_none());
+            assert!(start_run(&mut conn, &late, "main", &live(&["main"]), 9)
+                .unwrap()
+                .is_none());
             assert_eq!(status(&conn, &late).0, "cancelled");
         }
 
