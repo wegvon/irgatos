@@ -85,34 +85,67 @@ export function normalizePreapproved(values: readonly unknown[]): string[] {
   return [...seen].slice(0, PREAPPROVED_MAX);
 }
 
+/** A search that goes to the web rather than through local files. */
+function webStep(block: Block | undefined): boolean {
+  if (!block) return false;
+  return /\bweb|https?:\/\//i.test(`${block.tool?.title ?? ""} ${block.text}`);
+}
+
 /** Which rule a step falls under, from the kind its agent gave it. */
-export function ruleCategory(kind: string | undefined): IrgatRuleCategory {
+export function ruleCategory(
+  kind: string | undefined,
+  block?: Block,
+): IrgatRuleCategory {
   switch (kind) {
     case "execute":
+    // OpenCode's bash tool.
+    case "shell":
       return "execute";
     case "edit":
     case "delete":
     case "move":
       return "edit";
     case "read":
-    case "search":
       return "read";
+    case "search":
+      return webStep(block) ? "other" : "read";
     default:
       return "other";
   }
 }
 
-/** Whether a step is one the user listed: a command's start, or a path. */
+/** Anything that would let one listed command run another after it. */
+const SHELL_CHAINING = /[;&|`<>\n\r]|\$\(/;
+
+/** The command itself, not a readable label some agents show instead. */
+function rawCommand(block: Block): string {
+  const preview = block.tool?.preview;
+  const raw = preview?.kind === "shell" && preview.title ? preview.title : "";
+  return (raw || block.tool?.title || block.text).trim().toLowerCase();
+}
+
+/**
+ * Whether a step is one the user listed: a whole command or its start
+ * (never one chained to another), or files that all sit under a listed path.
+ */
 export function preapprovedStep(block: Block, list: readonly string[]): boolean {
   if (!list.length) return false;
+  if (ruleCategory(block.tool?.kind, block) === "execute") {
+    const command = rawCommand(block);
+    if (SHELL_CHAINING.test(command)) return false;
+    return list.some((entry) => command === entry || command.startsWith(`${entry} `));
+  }
+  const paths = block.tool?.paths?.length
+    ? block.tool.paths
+    : block.tool?.preview?.path
+      ? [block.tool.preview.path]
+      : [];
+  if (paths.length)
+    return paths.every((path) =>
+      list.some((entry) => path.toLowerCase().includes(entry)),
+    );
   const title = (block.tool?.title || block.text).trim().toLowerCase();
-  const path = (block.tool?.preview?.path ?? "").toLowerCase();
-  return list.some(
-    (entry) =>
-      title === entry ||
-      title.startsWith(`${entry} `) ||
-      (!!path && path.includes(entry)),
-  );
+  return list.some((entry) => title === entry || title.startsWith(`${entry} `));
 }
 
 /**
@@ -124,7 +157,7 @@ export function ruleDecision(
   block: Block,
 ): "allow" | "handoff" | "ask" {
   if (!rules) return "ask";
-  const level = rules[ruleCategory(block.tool?.kind)] ?? "ask";
+  const level = rules[ruleCategory(block.tool?.kind, block)] ?? "ask";
   if (level === "allow") return "allow";
   if (level === "handoff") return "handoff";
   if (level === "preapproved")

@@ -94,3 +94,37 @@ it("covers an Irgat's chats and what it started, never the app's own asks", () =
   saveIrgatRules(irgat.id, {});
   expect(findIrgat(irgat.id)).not.toHaveProperty("rules");
 });
+
+it("never lets a listed command or path cover more than it names", () => {
+  const listed = { execute: "preapproved", edit: "preapproved", preapproved: ["npm test", "docs/"] } as const;
+  const rules = parseIrgatRules(listed);
+  expect(ruleDecision(rules, step("execute", "npm test -- --run"))).toBe("allow");
+  expect(ruleDecision(rules, step("execute", "npm test && rm -rf data"))).toBe("ask");
+  expect(ruleDecision(rules, step("execute", "npm test; rm -rf data"))).toBe("ask");
+  expect(ruleDecision(rules, step("execute", "npm test $(rm -rf data)"))).toBe("ask");
+  // OpenCode names its shell steps "shell".
+  expect(ruleDecision(rules, step("shell", "npm test | sh"))).toBe("ask");
+  expect(ruleDecision(rules, step("shell", "npm test"))).toBe("allow");
+  // Codex shows a label; the command behind it decides.
+  const labelled: Block = {
+    ...step("execute", "Read src/App.tsx"),
+    tool: { title: "Read src/App.tsx", kind: "execute", preview: { kind: "shell", title: "npm test" } },
+  };
+  expect(ruleDecision(rules, labelled)).toBe("allow");
+  const several: Block = {
+    ...step("edit", "Edit files", "docs/guide.md"),
+    tool: {
+      title: "Edit files",
+      kind: "edit",
+      preview: { kind: "write", path: "docs/guide.md" },
+      paths: ["docs/guide.md", "src/secret.ts"],
+    },
+  };
+  expect(ruleDecision(rules, several)).toBe("ask");
+});
+
+it("files web searches under everything else, not reading", () => {
+  const rules = parseIrgatRules({ read: "allow", other: "ask" });
+  expect(ruleDecision(rules, step("search", "Grep TODO"))).toBe("allow");
+  expect(ruleDecision(rules, step("search", "WebSearch: irgatos"))).toBe("ask");
+});
