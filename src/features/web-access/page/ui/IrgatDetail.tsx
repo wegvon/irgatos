@@ -497,6 +497,22 @@ function Settings({
       </section>
 
       <section>
+        <Heading>Background work</Heading>
+        <Group>
+          <Row
+            label="Paused"
+            hint="Its habits wait until you resume. You can still chat with it."
+          >
+            <Switch
+              on={irgat.paused}
+              label="Pause"
+              onChange={(on) => void update({ paused: on }, { paused: on })}
+            />
+          </Row>
+        </Group>
+      </section>
+
+      <section>
         <Heading>Sessions it starts</Heading>
         <Group>
           <Row

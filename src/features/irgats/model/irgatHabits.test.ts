@@ -23,6 +23,7 @@ import {
   newHabit,
   parseHabits,
   QUIET_MARKER,
+  runsWhilePaused,
   serializeHabits,
   unseenHabitPosts,
   type Habit,
@@ -348,4 +349,24 @@ it("starts a new habit enabled and due at its next scheduled time", () => {
     nextRunAt: at(7, 9),
   });
   expect(created.id).toBeTruthy();
+});
+
+it("lets only runs started by hand through while the Irgat is paused", () => {
+  const scheduled = habit({ nextRunAt: at(5, 9) });
+  const byHand = habit({
+    id: "h2",
+    runRequested: true,
+    trigger: { source: "manual", at: at(5, 9) },
+  });
+  const webhook = habit({
+    id: "h3",
+    runRequested: true,
+    trigger: { source: "webhook", at: at(5, 9) },
+  });
+  const now = at(5, 9, 5);
+  const { run } = dueHabits([scheduled, byHand, webhook], now);
+  expect(runsWhilePaused(run).map((h) => h.id)).toEqual(["h2"]);
+  expect(habitStarting(scheduled, now, true)).toBe(false);
+  expect(habitStarting(byHand, now, true)).toBe(true);
+  expect(habitStarting(scheduled, now)).toBe(true);
 });

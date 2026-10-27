@@ -20,6 +20,7 @@ import {
   claimHabit,
   clearHabitRun,
   dueHabits,
+  runsWhilePaused,
   HABIT_APPROVAL_WAIT_MS,
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
@@ -409,7 +410,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       running = true;
       checkAgain = false;
       try {
-        for (const { id, sessionId } of listIrgats()) {
+        for (const { id, sessionId, paused } of listIrgats()) {
           if (stopped) return;
           // Habits are set up in its chat, so one never opened has none.
           if (!sessionId) continue;
@@ -419,7 +420,10 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           for (const habit of habits)
             if (habit.delayedUntil != null && habit.delayedUntil > now)
               wakeAt(habit.delayedUntil);
-          const { run, skipped } = dueHabits(habits, now, heldByRegistry);
+          const due = dueHabits(habits, now, heldByRegistry);
+          // A paused Irgat leaves its due habits waiting for the resume.
+          const run = paused ? runsWhilePaused(due.run) : due.run;
+          const skipped = paused ? [] : due.skipped;
           if (!run.length && !skipped.length) continue;
           if (skipped.length) {
             await updateHabits(id, (habits) => {

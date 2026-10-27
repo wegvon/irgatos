@@ -82,6 +82,7 @@ export function HabitPage({
   onToggle,
   onRemove,
   guards,
+  irgatPaused = false,
 }: {
   habit: Habit;
   /** The Irgat's color, for runs that reached the user. */
@@ -92,10 +93,13 @@ export function HabitPage({
   onToggle: () => void;
   onRemove: () => void;
   guards?: HabitPageGuardActions;
+  /** Its Irgat is paused: a due run waits for the resume. */
+  irgatPaused?: boolean;
 }) {
   const runningSince = useHabitRunning(habit.id);
   const now = Date.now();
-  const starting = runningSince == null && habitStarting(habit);
+  const starting =
+    runningSince == null && habitStarting(habit, now, irgatPaused);
   const held = runningSince == null && habitQuotaHeld(habit, now);
   const awaiting = runningSince == null && habitAwaitingApproval(habit, now);
   const delayedUntil =

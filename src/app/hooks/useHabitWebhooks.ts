@@ -49,7 +49,10 @@ export function useHabitWebhooks(enabled = true) {
     void listen<HabitWebhookEvent>(HABIT_WEBHOOK_EVENT, (event) => {
       void fireHabitWebhook(
         event.payload,
-        listIrgats().map(({ id }) => id),
+        // A paused Irgat's triggers are ignored, like a paused habit's.
+        listIrgats()
+          .filter(({ paused }) => !paused)
+          .map(({ id }) => id),
       ).catch((error) =>
         console.warn("Could not start the habit from its trigger", error),
       );

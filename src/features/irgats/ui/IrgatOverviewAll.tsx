@@ -54,6 +54,7 @@ export function IrgatOverviewAll({
   onOpenHabit,
   onNewHabit,
   onOpenTab,
+  irgatPaused = false,
 }: {
   agent: IrgatLook;
   /** Every session it has started, oldest first. */
@@ -77,6 +78,8 @@ export function IrgatOverviewAll({
   onOpenHabit: (id: string) => void;
   onNewHabit: () => void;
   onOpenTab: (tab: OverviewAllTab) => void;
+  /** Its Irgat is paused: due habits wait for the resume. */
+  irgatPaused?: boolean;
 }) {
   const sessionPage = overviewPage(newestFirst(launches), limits.sessions);
   const documentPage = overviewPage(newestFirst(documents), limits.documents);
@@ -192,6 +195,7 @@ export function IrgatOverviewAll({
                     habit={habit}
                     actions={habitActions}
                     onOpen={() => onOpenHabit(habit.id)}
+                    irgatPaused={irgatPaused}
                   />
                 ))}
               </ul>

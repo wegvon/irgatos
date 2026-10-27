@@ -12,6 +12,7 @@ import {
   removeIrgat,
   removeIrgatProject,
   reorderIrgats,
+  setIrgatPaused,
 } from "./irgat";
 import { irgatBackgroundKey, irgatChatBackground } from "./irgatBackground";
 import { saveProjectChatBackgroundSettings } from "../../projects/model/projectChatBackground";
@@ -87,4 +88,13 @@ it("forgets its background along with the Irgat", () => {
   expect(irgatChatBackground(irgat.id)?.path).toBe("/bg/irgat.png");
   removeIrgat(irgat.id);
   expect(irgatChatBackground(irgat.id)).toBeNull();
+});
+
+it("pauses and resumes an Irgat, keeping the flag across reads", () => {
+  const { id } = createIrgat();
+  expect(findIrgat(id)?.paused).toBeUndefined();
+  setIrgatPaused(id, true);
+  expect(listIrgats().find((irgat) => irgat.id === id)?.paused).toBe(true);
+  setIrgatPaused(id, false);
+  expect(findIrgat(id)).not.toHaveProperty("paused");
 });

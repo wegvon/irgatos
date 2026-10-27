@@ -40,6 +40,7 @@ import {
   removeIrgatProject,
   saveIrgatMascot,
   saveIrgatName,
+  setIrgatPaused,
   updateIrgat,
   type Irgat,
 } from "../../irgats/model/irgat";
@@ -475,6 +476,7 @@ export async function handleWebAgents(
         busy: !!session.busy,
         showSessions: irgat.showStartedSessionsInSidebar !== false,
         groupInFolder: irgat.useSidebarFolders === true,
+        paused: irgat.paused === true,
         soul: files.soul,
         memory: memoryLines(files.memory).map((line) => ({
           index: line.index,
@@ -553,6 +555,8 @@ export async function handleWebAgents(
           on ? { ...current, useSidebarFolders: true } : current,
         );
       }
+      if (typeof input.paused === "boolean")
+        setIrgatPaused(irgat.id, input.paused);
       if ("harness" in input || "mode" in input) {
         const session = await irgatSession(host, irgat);
         if ("harness" in input) {

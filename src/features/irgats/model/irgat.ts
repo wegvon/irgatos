@@ -50,6 +50,11 @@ export type Irgat = {
   showStartedSessionsInSidebar?: boolean;
   /** Files the sessions it starts into a sidebar folder named after it. */
   useSidebarFolders?: boolean;
+  /**
+   * Paused by the user: its habits and their triggers wait until it is
+   * resumed. Its chat still answers; a habit run by hand still runs.
+   */
+  paused?: boolean;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -188,6 +193,7 @@ function parseIrgat(value: unknown): Irgat | undefined {
       ? { showStartedSessionsInSidebar: entry.showStartedSessionsInSidebar }
       : {}),
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
+    ...(entry.paused === true ? { paused: true } : {}),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
@@ -212,6 +218,13 @@ function saveRoster(roster: readonly Irgat[]): void {
 
 export function findIrgat(id: string): Irgat | undefined {
   return listIrgats().find((irgat) => irgat.id === id);
+}
+
+/** Pauses or resumes everything the Irgat does on its own. */
+export function setIrgatPaused(id: string, paused: boolean): void {
+  updateIrgat(id, ({ paused: _, ...irgat }) =>
+    paused ? { ...irgat, paused: true } : irgat,
+  );
 }
 
 /** The Irgat whose conversation this is. */
