@@ -330,20 +330,30 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
 
 export function bindResumedSessions(sessions: Session[]): void {
   for (const session of sessions) {
-    if (
-      session.worktreeRemoved ||
-      !session.providerSessionId ||
-      !isLiveHarness(session.harness)
-    )
-      continue;
-    bindHarnessSession(
-      session.harness,
-      session.id,
-      session.providerSessionId,
-      sessionWorkCwd(session),
-      session.providerAccountId,
-      session.blocks,
-    );
+    if (session.worktreeRemoved) continue;
+    if (session.providerSessionId && isLiveHarness(session.harness)) {
+      bindHarnessSession(
+        session.harness,
+        session.id,
+        session.providerSessionId,
+        sessionWorkCwd(session),
+        session.providerAccountId,
+        session.blocks,
+      );
+    }
+    // A provider switch saved before the restart still needs the outgoing
+    // thread: it writes the handoff recap, or takes the chat back on revert.
+    const pending = session.pendingSwitch;
+    if (pending?.fromProviderSessionId && isLiveHarness(pending.from)) {
+      bindHarnessSession(
+        pending.from,
+        session.id,
+        pending.fromProviderSessionId,
+        sessionWorkCwd(session),
+        pending.fromProviderAccountId,
+        session.blocks,
+      );
+    }
   }
 }
 
