@@ -735,6 +735,7 @@ import {
   hiddenFromSidebar,
   isIrgatSession,
   listIrgats,
+  markIrgatIntroduced,
   loadOpenIrgat,
   irgatForSession,
   irgatSessionIds as allIrgatSessionIds,
@@ -759,6 +760,10 @@ import {
 } from "../features/irgats/model/irgatFiles";
 import { useIrgatHabits } from "./hooks/useIrgatHabits";
 import { useIrgatApprovalRules } from "./hooks/useIrgatApprovalRules";
+import {
+  irgatIntroductionPrompt,
+  irgatsToIntroduce,
+} from "../features/irgats/model/irgatIntroduction";
 import { useHabitWebhooks } from "./hooks/useHabitWebhooks";
 import { useHabitApprovals } from "../features/irgats/hooks/useHabitApprovals";
 import { decideHabitApproval } from "../features/irgats/model/habitApprovals";
@@ -10002,6 +10007,24 @@ function Workspace({
   launchQuickSessionRef.current = launchQuickSession;
   const submitSessionRef = useRef(submitSession);
   submitSessionRef.current = submitSession;
+
+  // A new Irgat says hello once its chat is open and idle, wherever it was
+  // made: the rail, the menu-bar chat or the phone.
+  useEffect(() => {
+    for (const { irgat, session, greet } of irgatsToIntroduce(
+      listIrgats(),
+      sessions,
+    )) {
+      markIrgatIntroduced(irgat.id);
+      if (greet)
+        void submitSessionRef.current(
+          session.id,
+          irgatIntroductionPrompt(irgatLook(irgat).name),
+          [],
+          { internal: true },
+        );
+    }
+  }, [sessions]);
   const saveDraftRef = useRef(onSaveDraft);
   saveDraftRef.current = onSaveDraft;
   const ensureOpenSessionRef = useRef(ensureOpenSession);

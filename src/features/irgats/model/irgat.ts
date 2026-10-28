@@ -58,6 +58,8 @@ export type Irgat = {
   paused?: boolean;
   /** How it answers its agents' approvals, per kind of step. */
   rules?: IrgatRules;
+  /** Says hello in its chat once it is first open; cleared once it has. */
+  introduce?: boolean;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -202,6 +204,7 @@ function parseIrgat(value: unknown): Irgat | undefined {
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
     ...(entry.paused === true ? { paused: true } : {}),
     ...withRules(parseIrgatRules(entry.rules)),
+    ...(entry.introduce === true ? { introduce: true } : {}),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
@@ -307,6 +310,7 @@ export function createIrgat(projects: readonly string[] = []): Irgat {
     id: newIrgatId(),
     ...nextIrgatLook(roster),
     projects: uniqueProjects(projects),
+    introduce: true,
   };
   saveRoster([...roster, irgat]);
   return irgat;
@@ -577,4 +581,9 @@ function latest(
     if (match(blocks[i])) return blocks[i];
   }
   return undefined;
+}
+
+/** It has said hello, or the user spoke first: no introduction is due. */
+export function markIrgatIntroduced(id: string): void {
+  updateIrgat(id, ({ introduce: _, ...irgat }) => irgat);
 }
