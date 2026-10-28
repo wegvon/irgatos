@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { RotateCcw, X } from "../../../shared/ui/icons";
 import {
   INTERRUPTION_TITLE,
@@ -13,11 +14,14 @@ export function InterruptedSessionBanner({
   onResume,
   onDismiss,
   variant = "composer",
+  details,
 }: {
   interruption: SessionInterruption;
   onResume: () => void;
   onDismiss?: () => void;
   variant?: "composer" | "irgat";
+  /** What got done and what is left, under the composer notice. */
+  details?: ReactNode;
 }) {
   const title = INTERRUPTION_TITLE[interruption.kind];
   const detail =
@@ -71,6 +75,7 @@ export function InterruptedSessionBanner({
           </button>
         ) : null}
       </div>
+      {variant === "irgat" ? null : details}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { notifyHabitApproval } from "../../features/notifications/model/notifications";
 import type { ControlOutcome } from "../../features/orchestration/model/orchestration";
 import {
   newSession,
@@ -283,6 +284,7 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           await changeHabit(irgatId, habitId, (entry) =>
             askHabitApproval(entry, Date.now()),
           );
+          void notifyHabitApproval(irgatId, latest.name).catch(() => false);
           return false;
         case "check":
           return false;

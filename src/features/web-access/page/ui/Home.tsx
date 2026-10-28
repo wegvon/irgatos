@@ -117,7 +117,7 @@ function Waiting({
       >
         <span className="flex w-full items-center gap-2 text-[13.5px] text-(--ink-2)">
           <Pill tone="amber">
-            {request.kind === "approval" ? "Approval" : "Question"}
+            {request.kind === "approval" ? "Permission" : "Your decision"}
           </Pill>
           <Harness harness={entry.harness} className="size-3.5" />
           <span className="min-w-0 truncate font-medium">{place(entry)}</span>

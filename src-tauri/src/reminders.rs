@@ -390,6 +390,7 @@ pub(crate) fn init(app: &AppHandle) {
                 reminder.title,
                 "Reminder: continue this conversation.".into(),
                 preferences.sound,
+                None,
             ));
         }
     });

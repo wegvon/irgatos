@@ -33,7 +33,10 @@ import {
   type ExplorerMenuItem,
 } from "../../files/ui/ExplorerMenu";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { QuestionForm } from "../../sessions/ui/QuestionForm";
+import { RequestCard } from "./RequestCard";
+import { GoalsView } from "../../goals/ui/GoalsView";
+import type { Goal } from "../../goals/model/goals";
+import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
 import {
   loadTabGroupLabels,
   resolveTabGroupLabel,
@@ -45,7 +48,6 @@ import {
   filterFleet,
   type FleetBucket,
   type FleetEntry,
-  type FleetRequest,
 } from "../model/fleet";
 import {
   FLEET_CARD,
@@ -63,6 +65,12 @@ import {
   filterOutsideClaudeSessions,
   useOutsideClaudeSessions,
 } from "./OutsideClaudeSessions";
+import { useDecisionDeferrals } from "../../notifications/hooks/useDecisionDeferrals";
+import { isDecisionDeferred } from "../../notifications/model/decisionDeferrals";
+import {
+  decisionKey,
+  formatClock,
+} from "../../notifications/model/decisionUrgency";
 
 type Props = {
   /** Every open session across all projects. */
@@ -97,6 +105,17 @@ type Props = {
   ) => void;
   /** Starts the session a failed agent's Retry asks for. */
   onRetryAgent?: (request: AgentRetryRequest) => Promise<void>;
+  /** A fresh chat that joins an existing goal. */
+  onNewGoalChat?: (goal: Goal) => void;
+  /** Opens Fleet on this goal, e.g. from a chat's goal line. */
+  focusGoalId?: string;
+  /** Shows a goal's changes in its chat's diff view. */
+  onOpenGoalChanges?: (sessionId: string, workCwd: string) => void;
+  /** Orchestration runs, whose task lists are a goal's progress. */
+  orchestrationRuns?: readonly OrchestrationRun[];
+  /** Picks a goal's stopped chat back up. */
+  onResumeGoalSession?: (sessionId: string, cause: "interrupted" | "limit") => void;
+  onResumeGoalAtReset?: (sessionId: string, enabled: boolean) => void;
 };
 
 export type FleetRowActions = {
@@ -163,16 +182,21 @@ const BUCKET_TONE: Record<FleetBucket, string> = {
   idle: "text-content/40",
 };
 
-type FleetMode = "sessions" | "agents";
+type FleetMode = "goals" | "sessions" | "agents";
+const FLEET_MODES: readonly FleetMode[] = ["goals", "sessions", "agents"];
+const FLEET_MODE_LABEL: Record<FleetMode, string> = {
+  goals: "Goals",
+  sessions: "Sessions",
+  agents: "Agents",
+};
 const FLEET_MODE_KEY = "irgatos.fleet.mode.v1";
 
 function loadFleetMode(): FleetMode {
   try {
-    return localStorage.getItem(FLEET_MODE_KEY) === "agents"
-      ? "agents"
-      : "sessions";
+    const saved = localStorage.getItem(FLEET_MODE_KEY) as FleetMode | null;
+    return saved && FLEET_MODES.includes(saved) ? saved : "goals";
   } catch {
-    return "sessions";
+    return "goals";
   }
 }
 
@@ -202,11 +226,20 @@ export function FleetView({
   habitApprovals = [],
   onHabitApproval,
   onRetryAgent,
+  onNewGoalChat,
+  focusGoalId,
+  onOpenGoalChanges,
+  orchestrationRuns,
+  onResumeGoalSession,
+  onResumeGoalAtReset,
 }: Props) {
   const now = useMinuteClock();
   const [mode, setModeState] = useState<FleetMode>(() =>
-    sidebar ? "sessions" : loadFleetMode(),
+    sidebar ? "sessions" : focusGoalId ? "goals" : loadFleetMode(),
   );
+  useEffect(() => {
+    if (focusGoalId && !sidebar) setModeState("goals");
+  }, [focusGoalId, sidebar]);
   const setMode = (next: FleetMode) => {
     setModeState(next);
     try {
@@ -216,6 +249,7 @@ export function FleetView({
     }
   };
   const agentsMode = !sidebar && mode === "agents";
+  const goalsMode = !sidebar && mode === "goals";
   const irgatNameOf = useCallback((sessionId: string) => {
     const irgat = irgatForSession(sessionId);
     return irgat ? irgatLook(irgat).name : undefined;
@@ -295,7 +329,9 @@ export function FleetView({
             />
             <span className="shrink-0 text-content">Fleet</span>
             <span className="hidden truncate text-[12px] text-content/40 sm:inline">
-              {fleet.total === 0
+              {goalsMode
+                ? "Every goal, across every project"
+                : fleet.total === 0
                 ? "Every project"
                 : `${fleet.total} ${fleet.total === 1 ? "session" : "sessions"} across every project`}
             </span>
@@ -306,7 +342,7 @@ export function FleetView({
             className="mr-2 flex h-7 shrink-0 items-center rounded-md border border-content/10 p-0.5 text-[12px]"
             data-tauri-drag-region="false"
           >
-            {(["sessions", "agents"] as const).map((option) => (
+            {FLEET_MODES.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -320,11 +356,11 @@ export function FleetView({
                     : "text-content/50 hover:text-content/80"
                 }`}
               >
-                {option === "sessions" ? "Sessions" : "Agents"}
+                {FLEET_MODE_LABEL[option]}
               </button>
             ))}
           </div>
-          {!empty && !agentsMode ? (
+          {(!empty || goalsMode) && !agentsMode ? (
             <label
               className="relative mr-2 flex h-7 w-56 min-w-0 shrink items-center"
               data-tauri-drag-region="false"
@@ -340,8 +376,8 @@ export function FleetView({
                     setQuery("");
                   }
                 }}
-                placeholder="Filter sessions"
-                aria-label="Filter sessions"
+                placeholder={goalsMode ? "Filter goals" : "Filter sessions"}
+                aria-label={goalsMode ? "Filter goals" : "Filter sessions"}
                 spellCheck={false}
                 autoComplete="off"
                 data-tauri-drag-region="false"
@@ -359,6 +395,44 @@ export function FleetView({
           irgatName={irgatNameOf}
           onOpenSession={onOpenSession}
           onRetry={onRetryAgent}
+        />
+      ) : goalsMode ? (
+        <GoalsView
+          sessions={sessions}
+          unseenFinishedIds={unseenFinishedIds}
+          interruptedSessionIds={interruptedSessionIds}
+          query={query}
+          now={now}
+          focusGoalId={focusGoalId}
+          attention={
+            shownHabits.length ? (
+              <ul className="flex flex-col gap-1.5">
+                {shownHabits.map((approval) => (
+                  <li key={`habit:${approval.irgatId}:${approval.habit.id}`}>
+                    <HabitApprovalCard
+                      entry={approval}
+                      now={now}
+                      onOpen={
+                        approval.irgatSessionId
+                          ? () => onOpenSession(approval.irgatSessionId!)
+                          : undefined
+                      }
+                      onDecide={(decision) => onHabitApproval?.(approval, decision)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            ) : undefined
+          }
+          onOpenSession={onOpenSession}
+          onNewGoalChat={onNewGoalChat}
+          onOpenChanges={onOpenGoalChanges}
+          orchestrationRuns={orchestrationRuns}
+          onResumeSession={onResumeGoalSession}
+          onResumeAtReset={onResumeGoalAtReset}
+          onApproval={onApproval}
+          onQuestionReply={onQuestionReply}
+          onQuestionInteraction={onQuestionInteraction}
         />
       ) : empty ? (
         <FleetMessage
@@ -605,6 +679,7 @@ function FleetRow({
             ) : null}
             {entry.worktree ? <FleetChip>worktree</FleetChip> : null}
             {entry.leadId ? <FleetChip>worker</FleetChip> : null}
+            <DeferredChip entry={entry} />
           </span>
           {entry.bucket === "interrupted" ? (
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
@@ -744,6 +819,27 @@ function HabitApprovalCard({
   );
 }
 
+/** A request the user put off from its card: still pending, still here. */
+function DeferredChip({ entry }: { entry: FleetEntry }) {
+  const deferrals = useDecisionDeferrals();
+  const now = Date.now();
+  const deferred = entry.requests
+    .map((request) => deferrals[decisionKey(entry.sessionId, request.kind, request.requestId)])
+    .filter((deferral) => isDecisionDeferred(deferral, now));
+  if (deferred.length === 0) return null;
+  const reminders = deferred
+    .map((deferral) => deferral?.remindAt)
+    .filter((at): at is number => at != null);
+  const title = reminders.length
+    ? `Deferred. Reminder at ${formatClock(Math.min(...reminders))}; not answered yet.`
+    : "Deferred without a reminder; not answered yet.";
+  return (
+    <span title={title} data-fleet-deferred>
+      <FleetChip>later</FleetChip>
+    </span>
+  );
+}
+
 function FleetChip({ children }: { children: ReactNode }) {
   return (
     <span className="shrink-0 rounded bg-content/[0.07] px-1 py-px text-[10px] leading-3 text-content/55">
@@ -773,67 +869,6 @@ function ReviewDetail({ entry }: { entry: FleetEntry }) {
         </span>
       ) : null}
     </span>
-  );
-}
-
-function RequestCard({
-  request,
-  onApproval,
-  onQuestionReply,
-  onQuestionInteraction,
-}: {
-  request: FleetRequest;
-  onApproval: (requestId: number, decision: "allow" | "deny") => void;
-  onQuestionReply: (requestId: number, reply: UserQuestionReply) => void;
-  onQuestionInteraction?: (requestId: number) => void;
-}) {
-  if (request.kind === "question") {
-    return (
-      <div
-        data-fleet-request="question"
-        className="border-t border-stroke px-3 py-2.5"
-      >
-        <QuestionForm
-          prompt={request.prompt}
-          onReply={onQuestionReply}
-          onInteraction={onQuestionInteraction}
-        />
-      </div>
-    );
-  }
-  return (
-    <div
-      data-fleet-request="approval"
-      className="flex flex-col gap-2 border-t border-stroke px-3 py-2 sm:flex-row sm:items-center"
-    >
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
-          <CircleAlert className="size-3.5 shrink-0 text-amber-400" strokeWidth={1.75} />
-          <span className="min-w-0 truncate">{request.label}</span>
-        </span>
-        {request.detail ? (
-          <code className="block max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md bg-content/5 px-2 py-1 font-mono text-[11px] leading-relaxed text-content/70 select-text">
-            {request.detail}
-          </code>
-        ) : null}
-      </span>
-      <span className="flex shrink-0 gap-2">
-        <button
-          type="button"
-          className="flex-1 rounded-md bg-content px-3 py-1 text-[12px] font-medium text-background-base hover:bg-content/80 sm:flex-none"
-          onClick={() => onApproval(request.requestId, "allow")}
-        >
-          Allow
-        </button>
-        <button
-          type="button"
-          className="flex-1 rounded-md bg-content/10 px-3 py-1 text-[12px] font-medium text-content/70 hover:bg-content/20 sm:flex-none"
-          onClick={() => onApproval(request.requestId, "deny")}
-        >
-          Deny
-        </button>
-      </span>
-    </div>
   );
 }
 

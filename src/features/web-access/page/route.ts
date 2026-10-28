@@ -23,6 +23,8 @@ export type Route =
   | { name: "services" }
   /** Fleet's Agent Tree, and Claude Code running outside Irgatos. */
   | { name: "agents" }
+  /** The desktop's Goals: each request with its progress and result. */
+  | { name: "goals" }
   | { name: "automations" }
   | { name: "automation"; id: string }
   /** An Irgat's settings, agents and memory, over the Irgats screen. */
@@ -52,6 +54,7 @@ export type Screen = Extract<
       | "mail"
       | "mailThread"
       | "agents"
+      | "goals"
       | "automations"
       | "inbox"
       | "search"
@@ -90,6 +93,7 @@ export function parseRoute(hash: string): Route {
     case "new":
     case "services":
     case "agents":
+    case "goals":
     case "automations":
       return { name };
     case "automation":
