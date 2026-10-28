@@ -682,6 +682,7 @@ import {
   runCheckCommand,
 } from "../features/sessions/model/completionGate";
 import { useUnseenFinishedSessions } from "../features/sessions/hooks/useUnseenFinishedSessions";
+import { useSessionSync } from "../features/sessions/hooks/useSessionSync";
 import {
   projectAlertsFromSessions,
   type RailAlertCounts,
@@ -5034,6 +5035,16 @@ function Workspace({
       (sessionLoadEpochs.current.get(sessionId) ?? 0) + 1,
     );
   }, []);
+  // A chat open in two windows: merge what the other window saved.
+  const forgetCachedSession = useCallback(
+    (sessionId: string, clean?: Session) => {
+      loadedSessionCache.current.delete(sessionId);
+      // Adopting the stored copy is not a change to save back.
+      if (clean) lastPersisted.current.set(sessionId, persistFingerprint(clean));
+    },
+    [],
+  );
+  useSessionSync(sessionsRef, setSessions, forgetCachedSession);
 
   const loadStoredSession = useCallback(
     (sessionId: string): Promise<Session | null> => {
