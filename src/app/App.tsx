@@ -1027,6 +1027,13 @@ import {
   type ProjectReturnMemory,
 } from "../features/projects/model/projectReturn";
 import {
+  CONTINUE_CONVERSATION_EVENT,
+  focusedConversation,
+  forgetConversations,
+  rememberLastConversation,
+  type ContinueConversationDetail,
+} from "../features/projects/model/lastConversation";
+import {
   planProjectOpenRun,
   type ProjectOpenStep,
 } from "../features/projects/model/projectOpenRun";
@@ -2067,6 +2074,18 @@ function Workspace({
   useEffect(() => {
     readProjectReturnMemory();
   }, [activeTabId, tabs, sessions, readProjectReturnMemory]);
+  // The way back to each project outlives its tabs: closing them to declutter
+  // still leaves "Continue last conversation" on its next blank chat.
+  useEffect(() => {
+    if (windowTransfer) return;
+    const session = focusedConversation(
+      tabs,
+      sessions,
+      activeTabId,
+      isIrgatSession,
+    );
+    if (session) rememberLastConversation(session);
+  }, [activeTabId, tabs, sessions, windowTransfer]);
 
   const tabVisitRef = useRef(emptyTabVisitHistory(activeTabId));
   const tabVisitFromHistoryRef = useRef(false);
@@ -5871,6 +5890,26 @@ function Workspace({
     [openReminderSession],
   );
 
+  // "Continue last conversation" on a blank chat: the remembered chat takes
+  // the blank one's place. One that was deleted elsewhere stops being offered.
+  useEffect(() => {
+    const onContinue = (event: Event) => {
+      const detail = (event as CustomEvent<ContinueConversationDetail>).detail;
+      if (!detail?.sessionId) return;
+      void (async () => {
+        const session = await ensureOpenSession(detail.sessionId);
+        if (!session) {
+          forgetConversations([detail.sessionId]);
+          return;
+        }
+        await onSelectHistorySession(detail.sessionId);
+      })().catch(console.error);
+    };
+    window.addEventListener(CONTINUE_CONVERSATION_EVENT, onContinue);
+    return () =>
+      window.removeEventListener(CONTINUE_CONVERSATION_EVENT, onContinue);
+  }, [ensureOpenSession, onSelectHistorySession]);
+
   useEffect(() => publishLiveSessions(sessions), [sessions]);
 
   const ensureReminderSessionsSaved = useCallback(
@@ -6478,6 +6517,7 @@ function Workspace({
           stop: stopSessionForRemoval,
         });
         const removed = await remover.remove(sessionId);
+        if (removed) forgetConversations([sessionId]);
         if (removed && deleteWorktreePath && seed) {
           try {
             await onRemoveWorktree(seed.cwd, deleteWorktreePath, false);

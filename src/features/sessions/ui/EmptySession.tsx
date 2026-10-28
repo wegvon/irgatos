@@ -20,6 +20,8 @@ type Props = {
   hasChatBackground?: boolean;
   /** Starting points for a first request, shown once a project is open. */
   starters?: ReactNode;
+  /** The way back to the project's last conversation, above the composer. */
+  resume?: ReactNode;
 };
 
 export function EmptySession({
@@ -27,6 +29,7 @@ export function EmptySession({
   composer,
   hasChatBackground,
   starters,
+  resume,
 }: Props) {
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const arcadeEnabled = useSyncExternalStore(
@@ -54,6 +57,7 @@ export function EmptySession({
   return (
     <div
       ref={lockOverscroll}
+      data-empty-session
       className="relative flex h-full min-h-0 overflow-y-auto overscroll-none"
     >
       {arcadeEnabled && !hasChatBackground ? <TerminalGridBackground /> : null}
@@ -70,15 +74,19 @@ export function EmptySession({
             </h1>
           </div>
 
+          {project && resume ? (
+            <div className="pointer-events-auto">{resume}</div>
+          ) : null}
           <div className="pointer-events-auto w-full">{composer}</div>
           {project && starters ? (
             <div className="pointer-events-auto">{starters}</div>
           ) : null}
         </div>
-      ) : project && starters ? (
+      ) : project && (starters || resume) ? (
         // The composer is docked below (a split pane): the starters still
         // sit in the middle of the empty chat.
         <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-1.5 py-12">
+          {resume}
           {starters}
         </div>
       ) : null}
