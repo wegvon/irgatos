@@ -28,6 +28,7 @@ const NO_WEBHOOK: HabitWebhookInfo = { port: null, error: null };
 
 export type HabitGuardsDraft = {
   requestApproval: boolean;
+  readOnly: boolean;
   kind: ConditionKind;
   command: string;
   expression: string;
@@ -46,6 +47,7 @@ export function habitGuardsDraft(habit: Habit): HabitGuardsDraft {
         : "seconds";
   return {
     requestApproval: !!habit.requestApproval,
+    readOnly: !!habit.readOnly,
     kind: habit.ifCondition?.kind ?? "none",
     command: habit.ifCondition?.kind === "shell" ? habit.ifCondition.command : "",
     expression:
@@ -76,13 +78,19 @@ export function habitGuardsFromDraft(
   const error = ifCondition ? habitConditionError(ifCondition) : undefined;
   if (error) return { error };
   return {
-    settings: { requestApproval: draft.requestApproval, ifCondition, delaySeconds },
+    settings: {
+      requestApproval: draft.requestApproval,
+      readOnly: draft.readOnly,
+      ifCondition,
+      delaySeconds,
+    },
   };
 }
 
 function sameDraft(a: HabitGuardsDraft, b: HabitGuardsDraft): boolean {
   return (
     a.requestApproval === b.requestApproval &&
+    a.readOnly === b.readOnly &&
     a.kind === b.kind &&
     (a.kind !== "shell" || a.command.trim() === b.command.trim()) &&
     (a.kind !== "expression" || a.expression.trim() === b.expression.trim()) &&
@@ -161,6 +169,14 @@ export function HabitGuardsSection({
           />
         </button>
       </label>
+
+      <GuardSwitch
+        id={`habit-read-only-${habit.id}`}
+        label="Only look"
+        description="Reads, searches and reports. The app refuses anything that would change something."
+        on={draft.readOnly}
+        onChange={(readOnly) => edit({ readOnly })}
+      />
 
       <div className="flex flex-col gap-1.5">
         <span className="text-content/85">Only run if</span>
@@ -403,5 +419,46 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+function GuardSwitch({
+  id,
+  label,
+  description,
+  on,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  on: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3">
+      <span className="flex flex-col">
+        <span className="text-content/85" id={id}>
+          {label}
+        </span>
+        <span className="text-[11px] text-content/45">{description}</span>
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-labelledby={id}
+        onClick={() => onChange(!on)}
+        className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+          on ? "bg-accent" : "bg-content/20"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform ${
+            on ? "translate-x-[18px]" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </label>
   );
 }

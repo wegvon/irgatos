@@ -185,6 +185,7 @@ function makeHost(reply: string, approve?: { wait: Promise<void> }) {
         }),
     ),
     endApprovals: vi.fn(),
+    respond: vi.fn(),
   };
   return host;
 }

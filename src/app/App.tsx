@@ -790,6 +790,7 @@ import {
   habitPostsContext,
   habitRunIrgat,
   isHabitRun,
+  isReadOnlyHabitRun,
   relayApproval,
   takeRelayedApproval,
   loadHabits,
@@ -9658,6 +9659,10 @@ function Workspace({
       for (const relay of dropRelays(runId))
         decideIrgatBlock(relay.irgatId, relay.blockId, "cancelled");
     },
+    respond: (runId, requestId, decision) => {
+      const run = sessionsRef.current.find((session) => session.id === runId);
+      if (run) respondHarnessApproval(run.harness, run.id, requestId, decision);
+    },
   });
 
   const automationSessionReservations = useRef(new Set<string>());
@@ -12997,6 +13002,7 @@ function Workspace({
               persistSession(updated);
             },
             isHabitRun: (id) => isHabitRun(id),
+            isReadOnlyRun: (id) => isReadOnlyHabitRun(id),
             irgatOf: (id) => {
               const irgat =
                 irgatForSession(id) ?? findIrgat(habitRunIrgat(id) ?? "");

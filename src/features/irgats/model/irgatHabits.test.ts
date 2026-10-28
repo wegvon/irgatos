@@ -26,6 +26,9 @@ import {
   runsWhilePaused,
   habitScheduleLabel,
   nextHabitRunAt,
+  appCliAction,
+  readOnlyStepDecision,
+  readOnlyUnsupported,
   serializeHabits,
   unseenHabitPosts,
   type Habit,
@@ -419,5 +422,53 @@ describe("one-off habits", () => {
       habitSchedule({ kind: "daily", date: "2026-10-28" }),
     ).toThrow("date");
     expect(habitScheduleLabel(once().schedule)).toMatch(/^Once · /);
+  });
+});
+
+describe("look-only habits", () => {
+  const step = (kind: string, title: string) => ({
+    id: title,
+    role: "tool" as const,
+    text: title,
+    tool: { title, kind },
+    approval: { requestId: 1 },
+  });
+
+  it("reads the app action out of a CLI call", () => {
+    expect(appCliAction(`"/Applications/Irgatos.app/irgatos" app sessions.list --json '{}'`)).toBe(
+      "sessions.list",
+    );
+    expect(appCliAction("irgatos app mail.draft --input -")).toBe("mail.draft");
+    expect(appCliAction("git status")).toBeUndefined();
+  });
+
+  it("lets reading through and refuses the rest", () => {
+    expect(readOnlyStepDecision(step("read", "Read a.ts"))).toBe("allow");
+    expect(readOnlyStepDecision(step("search", "Search TODO"))).toBe("allow");
+    expect(readOnlyStepDecision(step("execute", "irgatos app sessions.read --json '{}'"))).toBe("allow");
+    expect(readOnlyStepDecision(step("execute", "irgatos app mail.draft --input -"))).toBe("deny");
+    expect(readOnlyStepDecision(step("execute", "rm -rf build"))).toBe("deny");
+    expect(readOnlyStepDecision(step("edit", "Edit a.ts"))).toBe("deny");
+    expect(readOnlyStepDecision(step("agent", "Subagent"))).toBe("deny");
+  });
+
+  it("refuses a reading call with anything chained to it, and fx habits", () => {
+    for (const command of [
+      "irgatos app sessions.list; rm -rf build",
+      "irgatos app sessions.list && rm -rf build",
+      "irgatos app sessions.list | sh",
+      "irgatos app sessions.list $(rm -rf build)",
+      "irgatos app sessions.list > notes.txt",
+      "irgatos app sessions.list\nrm -rf build",
+    ])
+      expect(readOnlyStepDecision(step("execute", command))).toBe("deny");
+    expect(readOnlyStepDecision(step("shell", "irgatos app sessions.list"))).toBe("allow");
+    expect(readOnlyUnsupported("fx")).toContain("fx does not");
+    expect(readOnlyUnsupported("claude")).toBeNull();
+  });
+
+  it("keeps the flag in habits.json and says so in the run", () => {
+    const looking = habit({ readOnly: true });
+    expect(parseHabits(serializeHabits([looking]))).toEqual([looking]);
   });
 });

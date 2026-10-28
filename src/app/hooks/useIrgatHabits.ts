@@ -25,6 +25,8 @@ import {
   runsWhilePaused,
   HABIT_STOPPED_REASON,
   habitStopRequested,
+  readOnlyStepDecision,
+  readOnlyUnsupported,
   HABIT_APPROVAL_WAIT_MS,
   HABIT_RUN_TIMEOUT_MS,
   habitReport,
@@ -89,6 +91,8 @@ export type IrgatHabitHost = {
   ): void;
   /** Withdraws the run's unanswered approvals from the chat once it ends. */
   endApprovals(runId: string): void;
+  /** Answers one of the run's approvals without asking the user. */
+  respond(runId: string, requestId: number, decision: "allow" | "deny"): void;
 };
 
 const POLL_MS = 2_000;
@@ -129,6 +133,7 @@ async function watchRun(
   );
   let working = 0;
   let waiting = 0;
+  const answered = new Set<number>();
   while (!settled) {
     await Promise.race([turn, new Promise((r) => setTimeout(r, POLL_MS))]);
     if (settled) break;
@@ -140,9 +145,16 @@ async function watchRun(
         .find((session) => session.id === runId)
         ?.blocks.filter((block) => block.approval && !block.approval.decided) ??
       [];
-    for (const block of pending)
-      if (!isRelayed(runId, block.approval!.requestId))
+    for (const block of pending) {
+      const requestId = block.approval!.requestId;
+      // A look-only run never asks: it reads, and anything else is refused.
+      if (habit.readOnly) {
+        if (answered.has(requestId)) continue;
+        answered.add(requestId);
+        host.respond(runId, requestId, readOnlyStepDecision(block));
+      } else if (!isRelayed(runId, requestId))
         host.askApproval(irgatId, habit, runId, block);
+    }
     if (pending.length) waiting += POLL_MS;
     else working += POLL_MS;
     if (working >= HABIT_RUN_TIMEOUT_MS || waiting >= HABIT_APPROVAL_WAIT_MS)
@@ -305,6 +317,16 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
       const host = hostRef.current;
       const irgat = await host.open(irgatSessionId);
       if (!irgat || stopped || !findIrgat(irgatId)) return;
+      const unsupported = readOnlyUnsupported(irgat.harness);
+      if (unsupported) {
+        const planned = (await loadHabits(irgatId)).find((entry) => entry.id === habitId);
+        if (planned?.readOnly) {
+          await changeHabit(irgatId, habitId, (entry) =>
+            skipHabit(entry, Date.now(), unsupported),
+          );
+          return;
+        }
+      }
       if (!(await passGuards(irgatId, habitId, irgat.cwd)) || stopped) return;
       const files = await loadIrgatFiles(irgatId);
       if (stopped || !findIrgat(irgatId)) return;
@@ -334,13 +356,15 @@ export function useIrgatHabits(host: IrgatHabitHost, enabled = true) {
           irgat.harness,
           irgat.cwd,
           irgat.model,
-          "full-access",
+          // A look-only run asks before each step so the app can refuse
+          // what is not reading; other habits run with full access.
+          habit.readOnly ? "supervised" : "full-access",
           irgat.modelSettings,
         ),
         title: `${look.name} · ${habit.name}`,
         ephemeral: true,
       };
-      markHabitRun(run.id, irgatId);
+      markHabitRun(run.id, irgatId, habit.readOnly === true);
       setHabitRunning(habit.id, now, run.id);
       host.add(run);
       let outcome: ControlOutcome;

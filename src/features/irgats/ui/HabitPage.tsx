@@ -270,6 +270,7 @@ export function habitGuardSummary(habit: Habit): string {
   const condition = habit.ifCondition;
   return [
     habit.requestApproval ? "Asks first" : "",
+    habit.readOnly ? "Only looks" : "",
     condition
       ? `If ${condition.kind === "shell" ? condition.command : condition.expression}`
       : "",

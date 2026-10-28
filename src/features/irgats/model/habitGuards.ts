@@ -139,6 +139,8 @@ export function pauseHabit(habit: Habit): Habit {
 
 export type HabitGuardSettings = {
   requestApproval: boolean;
+  /** Left out, it stays as it was. */
+  readOnly?: boolean;
   ifCondition: HabitCondition | null;
   delaySeconds: number;
 };
@@ -169,10 +171,12 @@ export function setHabitGuards(
 ): Habit {
   const {
     requestApproval: _approval,
+    readOnly: _readOnly,
     ifCondition: _condition,
     delaySeconds: _delay,
     ...rest
   } = habit;
+  const readOnly = settings.readOnly ?? habit.readOnly;
   let condition: HabitCondition | undefined;
   if (settings.ifCondition) {
     const error = habitConditionError(settings.ifCondition);
@@ -189,6 +193,7 @@ export function setHabitGuards(
   return {
     ...rest,
     ...(settings.requestApproval ? { requestApproval: true } : {}),
+    ...(readOnly ? { readOnly: true } : {}),
     ...(condition ? { ifCondition: condition } : {}),
     ...(delaySeconds ? { delaySeconds } : {}),
   };
@@ -287,6 +292,12 @@ export async function checkHabitCondition(
       };
     }
   }
+  // A command can change things, which a look-only habit promises not to.
+  if (habit.readOnly)
+    return {
+      kind: "fail",
+      error: "A look-only habit cannot run a shell condition. Use an expression instead.",
+    };
   let result: CheckResult;
   try {
     result = await run(cwd, condition.command, HABIT_CONDITION_TIMEOUT_MS);

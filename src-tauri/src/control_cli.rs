@@ -438,7 +438,9 @@ Actions:
                   Each run is a hidden session that posts to this chat only
                   when it has something worth saying.
                   Optional guards on add or update: "requestApproval":true
-                  waits for the user's Approve first; "delaySeconds":300
+                  waits for the user's Approve first; "readOnly":true makes
+                  every run only look (read, search, report; changes are
+                  refused); "delaySeconds":300
                   waits after it comes due; "ifCondition" skips the run when
                   false, either {"kind":"shell","command":"test -f READY"}
                   (exit 0 runs) or {"kind":"expression","expression":

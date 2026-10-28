@@ -89,6 +89,7 @@ describe("guard drafts", () => {
     expect(habitGuardsFromDraft(draft)).toEqual({
       settings: {
         requestApproval: true,
+        readOnly: false,
         ifCondition: { kind: "expression", expression: "now.hour > 8" },
         delaySeconds: 600,
       },
@@ -137,6 +138,7 @@ describe("HabitGuardsSection", () => {
     await act(async () => button("Save guards").click());
     expect(onSave).toHaveBeenCalledWith({
       requestApproval: true,
+      readOnly: false,
       ifCondition: { kind: "expression", expression: "now.hour >= 9" },
       delaySeconds: 120,
     });
