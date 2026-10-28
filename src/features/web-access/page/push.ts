@@ -101,3 +101,19 @@ export async function resyncPush(): Promise<void> {
   if (current)
     await write("pushSubscribe", current.toJSON() as Record<string, unknown>);
 }
+
+/**
+ * Closes this device's banners for decisions that are no longer pending:
+ * answered here or on the Mac, or expired. Banners of other kinds stay.
+ */
+export async function clearSettledBanners(
+  pending: ReadonlySet<string>,
+): Promise<void> {
+  if (!supported()) return;
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  const shown = (await registration?.getNotifications()) ?? [];
+  for (const notification of shown) {
+    if (notification.tag.startsWith("decision:") && !pending.has(notification.tag))
+      notification.close();
+  }
+}

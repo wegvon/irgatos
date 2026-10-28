@@ -3,7 +3,8 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
 import type { WebInbox } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
-import { resyncPush } from "./push";
+import { clearSettledBanners, resyncPush } from "./push";
+import { decisionKey } from "../../notifications/model/decisionUrgency";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
@@ -167,6 +168,20 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   useEffect(() => {
     if (live) void resyncPush().catch(() => {});
   }, [live]);
+  // Banners for requests settled since they arrived would ask for nothing.
+  const pendingDecisions = (overview.data?.needsYou ?? [])
+    .flatMap((entry) =>
+      entry.requests.map((request) =>
+        decisionKey(entry.sessionId, request.kind, request.requestId),
+      ),
+    )
+    .join("\n");
+  useEffect(() => {
+    if (!overview.data) return;
+    void clearSettledBanners(
+      new Set(pendingDecisions ? pendingDecisions.split("\n") : []),
+    ).catch(() => {});
+  }, [pendingDecisions, overview.data != null]);
   const now = useNow(overview.data?.at);
   const connected = !overview.error;
   const needsYou = overview.data?.needsYou.length ?? 0;

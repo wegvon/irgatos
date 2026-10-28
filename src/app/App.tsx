@@ -16775,6 +16775,7 @@ function Workspace({
             }
             onFocusSession={onOpenApprovalSession}
             onApproval={onApproval}
+            onOpenFleet={onOpenFleet}
           />
           <ReminderNotices
             reminders={sessionReminders.due}

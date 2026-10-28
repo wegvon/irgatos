@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { HARNESS_TITLE, sessionDisplayTitle, type Session } from "../../sessions/model/session";
+import { HARNESS_TITLE, type Session } from "../../sessions/model/session";
 import { loadSoundsEnabled, playCue } from "../../settings/model/sounds";
 import {
   allowsProjectNotification,
@@ -12,6 +12,13 @@ import {
   type NotificationProject,
 } from "./notificationProjects";
 import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
+import {
+  decisionKey,
+  decisionPlace,
+  decisionPlaceLine,
+  decisionUrgency,
+  urgencyLine,
+} from "./decisionNotice";
 
 const KEY = "irgat.notifications";
 
@@ -143,7 +150,7 @@ export function pendingInputNotifications(
     for (const block of session.blocks) {
       if (block.approval && !block.approval.decided) {
         pending.set(
-          JSON.stringify([session.id, "approval", block.approval.requestId]),
+          decisionKey(session.id, "approval", block.approval.requestId),
           {
             session,
             event: { kind: "approval", requestId: block.approval.requestId },
@@ -153,11 +160,7 @@ export function pendingInputNotifications(
     }
     if (session.pendingQuestion) {
       pending.set(
-        JSON.stringify([
-          session.id,
-          "question",
-          session.pendingQuestion.requestId,
-        ]),
+        decisionKey(session.id, "question", session.pendingQuestion.requestId),
         {
           session,
           event: {
@@ -171,7 +174,11 @@ export function pendingInputNotifications(
   return pending;
 }
 
-/** App name, then the session title, then the reply itself. */
+/**
+ * Where the banner comes from, then what it asks. A decision leads with
+ * "project › chat" and says whether the agent waits for it; a finished turn
+ * names the project, then the chat, then the reply itself.
+ */
 export type NotificationText = {
   title: string;
   subtitle: string;
@@ -183,11 +190,12 @@ const BODY_MAX = 240;
 export function notificationText(
   session: Session,
   event: NotificationEvent,
+  now = Date.now(),
 ): NotificationText {
-  const title = "Irgatos";
-  const subtitle = sessionDisplayTitle(session.title, session.harness);
+  const place = decisionPlace(session);
   const harness = HARNESS_TITLE[session.harness];
   if (event !== "finished") {
+    const title = decisionPlaceLine(place);
     if (event.kind === "question") {
       const question =
         session.pendingQuestion?.requestId === event.requestId
@@ -196,7 +204,7 @@ export function notificationText(
       const prompt = question?.title || question?.questions[0]?.prompt;
       return {
         title,
-        subtitle,
+        subtitle: urgencyLine(decisionUrgency("question", question), now),
         body: clip(prompt || `${harness} has a question for you`),
       };
     }
@@ -208,7 +216,7 @@ export function notificationText(
     const what = pending?.tool?.title || pending?.text;
     return {
       title,
-      subtitle,
+      subtitle: urgencyLine(decisionUrgency("approval"), now),
       body: clip(what ? `Approve: ${what}` : `${harness} needs your approval`),
     };
   }
@@ -216,8 +224,10 @@ export function notificationText(
     .reverse()
     .find((block) => block.role === "assistant" && block.text.trim());
   return {
-    title,
-    subtitle,
+    title: place.workspace
+      ? `${place.project} (${place.workspace})`
+      : place.project,
+    subtitle: place.task,
     body: clip((reply && irgatReplyText(reply.text)) || `${harness} finished`),
   };
 }
@@ -250,21 +260,58 @@ export function sessionNotificationProject(
  * Sends the banner when policy allows. Resolves true once the OS accepted it
  * so callers can skip the in-app cue: the OS sound stands in for it. A
  * rejected dispatch resolves false so the cue still plays.
+ *
+ * A decision's banner is tagged with its request, so it can be taken back
+ * once the request is answered, expires or is deferred.
  */
 export async function notifySession(
   session: Session,
   event: NotificationEvent,
   sessionVisible: boolean,
+  options: { reminder?: boolean } = {},
 ): Promise<boolean> {
   if (session.inboxAsk) return false;
   const occurredAt = Date.now();
   const project = sessionNotificationProject(session);
   if (!project) return false;
-  return notifyProjectSession(session, event, sessionVisible, {
+  const subject: NotificationSubject = {
     projectId: project.id,
     category: event === "finished" ? "agentFinished" : "agentInput",
     occurredAt,
-  });
+  };
+  if (event === "finished") {
+    return notifyProjectSession(session, event, sessionVisible, subject);
+  }
+  return deliverNotification(
+    session.id,
+    () => {
+      const text = notificationText(session, event);
+      return options.reminder
+        ? { ...text, subtitle: `Reminder · ${text.subtitle}` }
+        : text;
+    },
+    sessionVisible,
+    subject,
+    decisionKey(session.id, event.kind, event.requestId),
+  );
+}
+
+/** Decisions answered, expired or deferred since the last push to the phone. */
+const retiredForDevices = new Set<string>();
+const RETIRE_MAX = 12;
+
+/**
+ * Takes a decision's banner back from Notification Center, and from phones
+ * with the next push (a push of its own would have to show a banner).
+ */
+export function retireDecisionNotification(tag: string) {
+  void invoke("retire_notification", { tag }).catch(() => {});
+  retiredForDevices.add(tag);
+  // Old phone banners are also cleared when the page opens; keep the push small.
+  for (const old of retiredForDevices) {
+    if (retiredForDevices.size <= RETIRE_MAX) break;
+    retiredForDevices.delete(old);
+  }
 }
 
 /** One policy decision covers both the OS banner and its in-app sound fallback. */
@@ -309,10 +356,13 @@ async function deliverNotification(
   text: () => NotificationText,
   visible: boolean,
   subject: NotificationSubject,
+  tag?: string,
 ): Promise<boolean> {
   if (!allowsProjectNotification(subject)) return false;
   const enabled = loadNotificationsEnabled();
-  if (enabled && !(windowFocused && visible)) pushToDevices(targetId, text());
+  if (tag) retiredForDevices.delete(tag);
+  if (enabled && !(windowFocused && visible))
+    pushToDevices(targetId, text(), tag);
   const decision = shouldNotify({
     enabled,
     permission,
@@ -328,11 +378,33 @@ async function deliverNotification(
       subtitle,
       body,
       sound: loadSoundsEnabled(),
+      tag: tag ?? null,
     });
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * A phone banner has a title and a body only. A decision keeps its
+ * "project › chat" title and leads the body with its urgency; anything else
+ * folds the chat into the title.
+ */
+export function deviceNotificationText(
+  text: NotificationText,
+  decision: boolean,
+): { title: string; body: string } {
+  if (decision) {
+    return {
+      title: text.title,
+      body: text.subtitle ? `${text.subtitle} · ${text.body}` : text.body,
+    };
+  }
+  return {
+    title: text.subtitle ? `${text.title} › ${text.subtitle}` : text.title,
+    body: text.body,
+  };
 }
 
 /** Where a tap on a phone banner lands on the browser-access page. */
@@ -346,12 +418,14 @@ export function webPushUrl(targetId: string): string {
  * Phones and tablets that turned on notifications on the browser-access page
  * get the same banner; the Mac skips this when none subscribed.
  */
-function pushToDevices(targetId: string, text: NotificationText) {
+function pushToDevices(targetId: string, text: NotificationText, tag?: string) {
+  const retire = [...retiredForDevices];
+  retiredForDevices.clear();
   void invoke("web_push_send", {
-    title: text.subtitle || text.title,
-    body: text.body,
+    ...deviceNotificationText(text, !!tag),
     url: webPushUrl(targetId),
-    tag: targetId,
+    tag: tag ?? targetId,
+    retire,
   }).catch(() => {});
 }
 
@@ -367,9 +441,10 @@ export type TerminalAgentNotice = {
 
 export function terminalAgentNotificationText(
   notice: TerminalAgentNotice,
+  projectName = "Irgatos",
 ): NotificationText {
   return {
-    title: "Irgatos",
+    title: projectName,
     subtitle: `${notice.agentLabel} · ${notice.tabLabel}`,
     body:
       notice.event === "blocked"
@@ -392,7 +467,7 @@ export async function notifyTerminalAgent(
   };
   const sent = await deliverNotification(
     notice.targetId,
-    () => terminalAgentNotificationText(notice),
+    () => terminalAgentNotificationText(notice, project.name),
     visible,
     subject,
   );
