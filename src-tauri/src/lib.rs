@@ -290,6 +290,7 @@ pub fn run() {
         .setup(|app| {
             harness::reap_orphaned_harness_processes();
             session_store::init(app.handle())?;
+            automations::init(app.handle());
             control::init(app.handle())?;
             secrets::init(app.handle());
             shared_mcp::init(app.handle())?;
@@ -381,7 +382,8 @@ pub fn run() {
             automations::automations_upsert,
             automations::automations_delete,
             automations::automation_runs_list,
-            automations::automation_runs_recover,
+            automations::automation_runs_adopt,
+            automations::automation_run_start,
             automations::automation_run_now,
             automations::automations_claim_due,
             automations::automations_claim_event,
