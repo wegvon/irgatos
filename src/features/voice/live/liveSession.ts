@@ -73,7 +73,8 @@ export type LiveInstruction = { text: string; memoryTool: boolean };
 
 export type LiveControllerDeps = {
   host: () => LiveHost | null;
-  apiKey: () => Promise<string | null>;
+  /** A Gemini key, or a one-use token for this call. */
+  apiKey: (info: LiveSessionInfo) => Promise<string | null>;
   createClient: (apiKey: string) => ClientLike;
   createEngine: () => EngineLike;
   settings: () => LiveVoiceSettings;
@@ -143,7 +144,7 @@ export class LiveVoiceController {
       const info = host?.session(sessionId);
       if (!host || !info) throw new Error("This chat cannot start a live call");
       this.info = info;
-      const key = await this.deps.apiKey();
+      const key = await this.deps.apiKey(info);
       if (!alive()) return;
       if (!key) throw new Error("Add a Gemini API key in Settings › Voice to talk live");
       const settings = this.deps.settings();

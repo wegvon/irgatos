@@ -37,13 +37,15 @@ const RECV_POLL: Duration = Duration::from_millis(250);
 const PAGE: &str = "web.html";
 /// Files the page loads besides its hashed `/assets/…` bundles; `sw.js` is
 /// the service worker that shows Web Push banners.
-const PUBLIC_FILES: [&str; 4] = [
+const PUBLIC_FILES: [&str; 5] = [
     "/web.webmanifest",
     "/irgat.png",
     "/apple-touch-icon.png",
     "/sw.js",
+    // The microphone worklet of a Live call.
+    "/live-voice-capture.js",
 ];
-const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://generativelanguage.googleapis.com; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
 const READ_ACTIONS: [&str; 23] = [
@@ -109,6 +111,8 @@ const WRITE_ACTIONS: [&str; 36] = [
     "setEffort",
     "setMode",
     "secretApproval",
+    // A Live voice call the phone runs with a one-use Gemini token.
+    "live",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.

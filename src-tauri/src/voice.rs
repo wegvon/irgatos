@@ -22,6 +22,7 @@ use crate::notifications::Permission;
 mod apple;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod audio;
+mod live_token;
 mod next_prompt;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod qwen;
@@ -222,6 +223,18 @@ async fn live_key(app: &AppHandle) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(|| live_env_key(env_value).map(|(_, key)| key))
         .await
         .map_err(|error| error.to_string())
+}
+
+/// A one-use token for a Live call the phone opens itself; the key stays
+/// here. Errors without a key.
+#[tauri::command]
+pub async fn voice_live_token(app: AppHandle) -> Result<String, String> {
+    let Some(key) = live_key(&app).await? else {
+        return Err("Add a Gemini API key on your Mac in Settings › Voice to talk live".into());
+    };
+    tauri::async_runtime::spawn_blocking(move || live_token::create(&key))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 /// A few spoken sentences for an agent reply, written by Gemini with the Live

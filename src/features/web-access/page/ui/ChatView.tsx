@@ -27,7 +27,13 @@ import {
 } from "./ModelControls";
 import { Mascot } from "./Irgats";
 import { RequestBody, SecretApprovalBody } from "./Requests";
-import { DictateButton, ReadAloud } from "./Voice";
+import {
+  DictateButton,
+  LiveCallBar,
+  LiveCallButton,
+  ReadAloud,
+  useCanTalkLive,
+} from "./Voice";
 import {
   Empty,
   Harness,
@@ -902,6 +908,7 @@ function Composer({
     run("stop", () => write("stop", { sessionId: session.id }), "Stopped");
 
   const empty = !text.trim() && !files.uploads.length;
+  const canTalkLive = useCanTalkLive();
   const ghost = useNextPrompt(session);
   const shownGhost = !text && !files.uploads.length ? ghost.text : null;
   const takeGhost = () => {
@@ -937,6 +944,7 @@ function Composer({
         ) : null}
         {session.irgat ? null : <PlanToggle on={plan} onChange={setPlan} />}
       </div>
+      <LiveCallBar sessionId={session.id} />
       <div className="glass-float mt-2 rounded-[28px] p-1.5 focus-within:shadow-[inset_0_0_0_1.5px_var(--accent)]">
         <UploadChips uploads={files.uploads} onRemove={files.remove} />
         <div className="flex items-end gap-1">
@@ -1005,6 +1013,8 @@ function Composer({
                 <Square className="size-4 fill-current" strokeWidth={0} />
               )}
             </button>
+          ) : empty && canTalkLive ? (
+            <LiveCallButton sessionId={session.id} />
           ) : (
             <button
               aria-label="Send"

@@ -24,6 +24,14 @@ import {
   type AutomationRun,
 } from "../../automations/model/automations";
 import { isFreeChatCwd } from "../../freechat/model/freeChat";
+import { liveKeyStatus } from "../../../platform/tauri/liveVoice";
+import { liveHost } from "../../voice/live/liveHost";
+import { loadLiveSettings } from "../../voice/live/liveSettings";
+import { appLiveDeps, liveInstructionFor } from "../../voice/live/liveVoice";
+import {
+  handleRemoteLive,
+  type RemoteLiveDeps,
+} from "../../voice/live/remoteLive";
 import {
   externalClaudeName,
   type ExternalClaudeSession,
@@ -136,6 +144,8 @@ export type WebAgentsDeps = {
   };
   voice: {
     settings: () => VoiceSettings;
+    /** Whether a Gemini key is set for Live calls. */
+    liveReady: () => Promise<boolean>;
     summarize: (text: string, locale: string) => Promise<string | null>;
     parts: (text: string, provider: string) => Promise<string[]>;
     synthesize: (text: string, provider: string) => Promise<string>;
@@ -145,6 +155,8 @@ export type WebAgentsDeps = {
     /** The grey next-message suggestion, shared with the desktop composer. */
     nextPrompt: (reply: Reply, sessionId: string) => Promise<string | null>;
   };
+  /** A Live voice call the phone runs with a one-use token. */
+  live: RemoteLiveDeps;
 };
 
 /** What the main handler shares with these actions. */
@@ -185,6 +197,10 @@ export const webAgentsDefaults: Omit<
   },
   voice: {
     settings: loadVoiceSettings,
+    liveReady: async () => {
+      const status = await liveKeyStatus();
+      return status.stored || !!status.env;
+    },
     summarize: summarizeReply,
     parts: (text, provider) =>
       invoke<string[]>("voice_speech_parts", { text, provider }),
@@ -196,6 +212,13 @@ export const webAgentsDefaults: Omit<
     dictateFinish: (session) =>
       invoke<string>("voice_relay_finish", { session }),
     nextPrompt: (reply, sessionId) => nextPromptFor(reply, sessionId),
+  },
+  live: {
+    host: liveHost,
+    token: () => invoke<string>("voice_live_token"),
+    settings: loadLiveSettings,
+    instruction: liveInstructionFor,
+    tools: (info) => appLiveDeps().tools(info),
   },
 };
 
@@ -230,6 +253,7 @@ export const WEB_AGENTS_WRITES = [
   "dictateStart",
   "dictateChunk",
   "dictateFinish",
+  "live",
 ] as const;
 const ACTIONS = new Set<string>([...WEB_AGENTS_READS, ...WEB_AGENTS_WRITES]);
 
@@ -689,6 +713,7 @@ export async function handleWebAgents(
         dictation: settings.dictation,
         summary: settings.speechSummary,
         locale: settings.locale,
+        live: await deps.voice.liveReady(),
       };
       return result;
     }
@@ -741,6 +766,10 @@ export async function handleWebAgents(
       return {
         text: await deps.voice.dictateFinish(text(input, "session", 200)),
       };
+    case "live": {
+      const session = await host.findSession(input);
+      return handleRemoteLive(input, session.id, deps.live);
+    }
     default:
       throw new Error("Unknown action");
   }
