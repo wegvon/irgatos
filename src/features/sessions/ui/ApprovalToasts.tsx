@@ -25,6 +25,8 @@ import {
 import { retireDecisionNotification } from "../../notifications/model/notifications";
 import { LAYER } from "../../../shared/lib/layers";
 import { HARNESS_TITLE, type Session } from "../model/session";
+import { sessionApprovalBrief } from "../model/approvalBrief";
+import { ApprovalExplainer } from "./ApprovalExplainer";
 import { HarnessIcon } from "./HarnessIcon";
 
 type Notice = PendingApprovalNotice & { session: Session };
@@ -197,6 +199,10 @@ function ApprovalToastCard({
   const { notice, place, urgency, key } = card;
   const { session, label, requestId } = notice;
   const harness = HARNESS_TITLE[session.harness];
+  const brief =
+    notice.kind === "approval" && notice.block
+      ? sessionApprovalBrief(session, notice.block)
+      : undefined;
   const [deferOpen, setDeferOpen] = useState(false);
 
   const openSession = () => onFocusSession(session.id);
@@ -228,7 +234,7 @@ function ApprovalToastCard({
             ) : null}
           </span>
           <span className="shrink-0 text-[11px] text-content/40">
-            {notice.kind === "question" ? "Question" : "Approval"}
+            {notice.kind === "question" ? "Your decision" : "Permission"}
           </span>
         </span>
         <span className="min-w-0 truncate text-[13px] font-semibold leading-snug text-content">
@@ -236,8 +242,16 @@ function ApprovalToastCard({
         </span>
         <UrgencyLine urgency={urgency} now={now} />
         <span className="line-clamp-3 text-[12px] leading-relaxed text-content/70">
-          {label}
+          {brief?.what ?? label}
         </span>
+        {brief ? (
+          <ApprovalExplainer
+            brief={brief}
+            showWhat={false}
+            showTechnical={false}
+            className="text-[11.5px]"
+          />
+        ) : null}
       </button>
       <div className="flex gap-2 border-t border-stroke px-3.5 py-2.5">
         {notice.kind === "question" ? (

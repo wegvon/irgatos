@@ -35,6 +35,7 @@ import { Sheet } from "./ui/Sheet";
 import { SwipeBack } from "./ui/SwipeBack";
 import { Today } from "./ui/Today";
 import { Agents } from "./ui/Agents";
+import { Goals } from "./ui/Goals";
 import { AutomationDetail, Automations } from "./ui/Automations";
 import { IrgatDetail } from "./ui/IrgatDetail";
 import { Inbox, InboxItemSheet, inboxBadge } from "./ui/Inbox";
@@ -50,6 +51,7 @@ import {
 } from "./ui/parts";
 import {
   Bot,
+  CircleDot,
   FolderTree,
   Idea,
   Inbox as InboxIcon,
@@ -358,6 +360,8 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           <Irgats irgats={irgats.data} header={header} wide={wide} />
         ) : name === "mail" ? (
           <MailList header={header} wide={wide} now={now} />
+        ) : name === "goals" ? (
+          <Goals header={header} wide={wide} now={now} />
         ) : name === "agents" ? (
           <Agents header={header} wide={wide} now={now} />
         ) : name === "automations" ? (
@@ -467,6 +471,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Mail"
                   on={screen.name === "mail" || screen.name === "mailThread"}
                   onClick={() => navigate({ name: "mail" })}
+                />
+                <NavItem
+                  icon={<CircleDot className="size-5" />}
+                  label="Goals"
+                  on={screen.name === "goals"}
+                  onClick={() => navigate({ name: "goals" })}
                 />
                 <NavItem
                   icon={<FolderTree className="size-5" />}
@@ -606,6 +616,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 onClick={() => navigate({ name: "mail" })}
               >
                 <Mail className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Goals"
+                on={screen.name === "goals"}
+                onClick={() => navigate({ name: "goals" })}
+              >
+                <CircleDot className="size-[22px]" />
               </RailItem>
               <RailItem
                 label="Agents"

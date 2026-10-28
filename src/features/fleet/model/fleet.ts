@@ -1,3 +1,7 @@
+import {
+  sessionApprovalBrief,
+  type ApprovalBrief,
+} from "../../sessions/model/approvalBrief";
 import { sessionEditPaths } from "../../sessions/model/checkpointEdits";
 import {
   sessionDisplayTitle,
@@ -40,6 +44,8 @@ export type FleetRequest =
       label: string;
       /** The exact command or path, when it adds to the label. */
       detail?: string;
+      /** What it will do, why, its effect and whether it can be undone. */
+      brief?: ApprovalBrief;
     }
   | { kind: "question"; requestId: number; prompt: UserQuestionPrompt };
 
@@ -92,8 +98,9 @@ export type FleetOptions = {
 
 const DETAIL_MAX = 400;
 
-function approvalRequest(block: Block, cwd: string): FleetRequest | null {
+function approvalRequest(block: Block, session: Session): FleetRequest | null {
   if (!block.approval || block.approval.decided) return null;
+  const cwd = sessionWorkCwd(session);
   const label = toolCallLabel(block, cwd);
   const preview = block.tool?.preview;
   const raw =
@@ -106,6 +113,7 @@ function approvalRequest(block: Block, cwd: string): FleetRequest | null {
     kind: "approval",
     requestId: block.approval.requestId,
     label,
+    brief: sessionApprovalBrief(session, block),
     ...(detail && detail !== label
       ? {
           detail:
@@ -122,7 +130,7 @@ export function fleetRequests(session: Session): FleetRequest[] {
   if (session.worktreeRemoved) return [];
   const requests: FleetRequest[] = [];
   for (const block of session.blocks) {
-    const request = approvalRequest(block, sessionWorkCwd(session));
+    const request = approvalRequest(block, session);
     if (request) requests.push(request);
   }
   if (session.pendingQuestion) {

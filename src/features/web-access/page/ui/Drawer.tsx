@@ -12,6 +12,7 @@ import { SearchResults } from "./Search";
 import { WORKSPACE_SCREENS } from "./Workspace";
 import {
   Bot,
+  CircleDot,
   FolderTree,
   Idea,
   Inbox,
@@ -167,6 +168,9 @@ export function Drawer({
             </Tile>
             <Tile label="Mail" onClick={() => navigate({ name: "mail" })}>
               <Mail className="size-[21px]" />
+            </Tile>
+            <Tile label="Goals" onClick={() => navigate({ name: "goals" })}>
+              <CircleDot className="size-[21px]" />
             </Tile>
             <Tile label="Agents" onClick={() => navigate({ name: "agents" })}>
               <FolderTree className="size-[21px]" />
