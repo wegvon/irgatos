@@ -46,3 +46,18 @@ test("explains an empty fleet", async ({ page }) => {
   await page.goto("/tests/browser/fleet.html?state=empty");
   await expect(page.getByText("No agents yet")).toBeVisible();
 });
+
+test("groups work under goals and answers a goal's decision in place", async ({ page }) => {
+  await page.goto("/tests/browser/fleet.html?mode=goals");
+  const attention = page.locator('[data-goal-section="attention"]');
+  await expect(attention).toContainText("npm publish --access public --tag next");
+  await expect(
+    attention.locator("[data-goal]", { hasText: "Publish the 2.4 SDK" }),
+  ).toContainText("1 chat · 1 agent");
+  await attention.getByRole("button", { name: "Allow" }).first().click();
+  await expect(page.locator('[data-goal-section="working"]')).toContainText("Publish the 2.4 SDK");
+  await page.getByRole("button", { name: "Expand Publish the 2.4 SDK" }).click();
+  const detail = page.locator("[data-goal-detail]");
+  await expect(detail).toContainText("Draft the 2.4 release notes");
+  await expect(detail).toContainText("worker");
+});

@@ -11,6 +11,8 @@ import {
   type HarnessId,
   type Session,
 } from "../../src/features/sessions/model/session";
+import { saveGoals } from "../../src/features/goals/model/goalStore";
+import { syncGoals } from "../../src/features/goals/model/goals";
 import "../../src/styles/index.css";
 
 // The real Fleet view over sessions from three projects. Answering a request
@@ -108,6 +110,10 @@ const seed: Session[] = [
   chat("migrate", "codex", "/Users/demo/src/api", "Migrate the billing schema", {
     blocks: [sent(40 * MIN, "Migrate")],
   }),
+  chat("publish-notes", "codex", "/Users/demo/src/sdk", "Draft the 2.4 release notes", {
+    orchestrationLeadId: "publish",
+    blocks: [sent(8 * MIN, "Draft release notes"), { id: "r", role: "assistant", text: "Drafted." }],
+  }),
   chat("docs", "claude", "/Users/demo/src/web", "Explain the deploy script", {
     blocks: [sent(26 * 60 * MIN), { id: "r", role: "assistant", text: "It runs three steps." }],
   }),
@@ -118,6 +124,10 @@ const params = new URLSearchParams(location.search);
 if (params.get("scheme") === "light")
   document.documentElement.classList.add("theme-light");
 const asSidebar = params.get("sidebar") === "1";
+// ?mode=goals opens the Goals tab; the default fixture shows Sessions.
+localStorage.setItem("irgatos.fleet.mode.v1", params.get("mode") ?? "sessions");
+if (params.get("state") !== "empty")
+  saveGoals(syncGoals([], seed, { now, interruptedIds: new Set(["migrate"]) }));
 
 mockWindows("main");
 mockIPC(() => null);
