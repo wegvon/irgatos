@@ -9,14 +9,31 @@ self.addEventListener("push", (event) => {
     data = { body: event.data ? event.data.text() : "" };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "Irgatos", {
-      body: data.body || "",
-      tag: data.tag || undefined,
-      icon: "/irgat.png",
-      data: { url: data.url || "/" },
-    }),
+    closeTagged(Array.isArray(data.retire) ? data.retire : []).then(() =>
+      self.registration.showNotification(data.title || "Irgatos", {
+        body: data.body || "",
+        tag: data.tag || undefined,
+        icon: "/irgat.png",
+        data: { url: data.url || "/" },
+      }),
+    ),
   );
 });
+
+// Banners for questions answered or expired since; the page also clears
+// them when it opens, see web-access/page/push.ts.
+function closeTagged(tags) {
+  if (tags.length === 0) return Promise.resolve();
+  const retired = new Set(tags);
+  return self.registration
+    .getNotifications()
+    .then((shown) => {
+      for (const notification of shown) {
+        if (retired.has(notification.tag)) notification.close();
+      }
+    })
+    .catch(() => {});
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

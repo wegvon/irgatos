@@ -31,8 +31,11 @@ import {
   enqueueIrgatMessage,
 } from "../features/irgats/model/irgatMessaging";
 import {
+  cancelIrgatReport,
   dismissQueuedIrgatSessionCompletion,
   enqueueIrgatSessionCompletion,
+  expectIrgatReport,
+  takeIrgatReport,
   irgatSessionCompletionResult,
   IrgatSessionCompletionBatches,
 } from "../features/irgats/model/irgatSessionCompletion";
@@ -9385,8 +9388,10 @@ function Workspace({
           window.setTimeout(() => {
             const finished = sessionsRef.current.find((s) => s.id === sessionId);
             const visible = sessionId === activeSessionIdRef.current;
-            // A habit's hidden run speaks through its Irgat's chat instead.
-            if (finished && !isHabitRun(sessionId))
+            // A habit's hidden run speaks through its Irgat's chat instead,
+            // and so does a session whose result its Irgat reports.
+            const irgatReports = takeIrgatReport(sessionId);
+            if (finished && !isHabitRun(sessionId) && !irgatReports)
               void announceSessionFinished(finished, visible);
           }, 0);
           notifyReviewChanged(sessionId);
@@ -12453,6 +12458,8 @@ function Workspace({
             sessionId,
             { awaitAcceptance: true },
           );
+          // The Irgat reports this turn; its own banner would repeat it.
+          expectIrgatReport(sessionId);
           return Object.assign(
             (outcome: ControlOutcome) =>
               settle(
@@ -12469,7 +12476,13 @@ function Workspace({
                   ...(external ? { external } : {}),
                 }),
               ),
-            { accept: settle.accept, discard: settle.discard },
+            {
+              accept: settle.accept,
+              discard: () => {
+                cancelIrgatReport(sessionId);
+                settle.discard();
+              },
+            },
           );
         };
         const dismissCompletion = (sessionId: string) => {
@@ -16877,6 +16890,7 @@ function Workspace({
             }
             onFocusSession={onOpenApprovalSession}
             onApproval={onApproval}
+            onOpenFleet={onOpenFleet}
           />
           <ReminderNotices
             reminders={sessionReminders.due}

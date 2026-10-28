@@ -65,6 +65,12 @@ import {
   filterOutsideClaudeSessions,
   useOutsideClaudeSessions,
 } from "./OutsideClaudeSessions";
+import { useDecisionDeferrals } from "../../notifications/hooks/useDecisionDeferrals";
+import { isDecisionDeferred } from "../../notifications/model/decisionDeferrals";
+import {
+  decisionKey,
+  formatClock,
+} from "../../notifications/model/decisionUrgency";
 
 type Props = {
   /** Every open session across all projects. */
@@ -673,6 +679,7 @@ function FleetRow({
             ) : null}
             {entry.worktree ? <FleetChip>worktree</FleetChip> : null}
             {entry.leadId ? <FleetChip>worker</FleetChip> : null}
+            <DeferredChip entry={entry} />
           </span>
           {entry.bucket === "interrupted" ? (
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
@@ -809,6 +816,27 @@ function HabitApprovalCard({
         </span>
       </div>
     </article>
+  );
+}
+
+/** A request the user put off from its card: still pending, still here. */
+function DeferredChip({ entry }: { entry: FleetEntry }) {
+  const deferrals = useDecisionDeferrals();
+  const now = Date.now();
+  const deferred = entry.requests
+    .map((request) => deferrals[decisionKey(entry.sessionId, request.kind, request.requestId)])
+    .filter((deferral) => isDecisionDeferred(deferral, now));
+  if (deferred.length === 0) return null;
+  const reminders = deferred
+    .map((deferral) => deferral?.remindAt)
+    .filter((at): at is number => at != null);
+  const title = reminders.length
+    ? `Deferred. Reminder at ${formatClock(Math.min(...reminders))}; not answered yet.`
+    : "Deferred without a reminder; not answered yet.";
+  return (
+    <span title={title} data-fleet-deferred>
+      <FleetChip>later</FleetChip>
+    </span>
   );
 }
 

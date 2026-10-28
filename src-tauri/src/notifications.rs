@@ -57,6 +57,9 @@ pub async fn request_notification_permission(app: AppHandle) -> Permission {
 /// Resolves only once the platform reports the banner as scheduled: the
 /// frontend skips its own turn-finished cue on success, so returning early
 /// would silence a turn that never got a notification.
+///
+/// `tag` names the request a decision banner asks about, so
+/// `retire_notification` can take it back once the request is settled.
 #[tauri::command]
 pub async fn show_notification(
     app: AppHandle,
@@ -65,8 +68,29 @@ pub async fn show_notification(
     subtitle: String,
     body: String,
     sound: bool,
+    tag: Option<String>,
 ) -> Result<(), String> {
-    platform::show(&app, &session_id, &title, &subtitle, &body, sound).await
+    #[cfg(target_os = "macos")]
+    {
+        platform::show_tagged(&app, &session_id, &title, &subtitle, &body, sound, tag.as_deref())
+            .await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = tag;
+        platform::show(&app, &session_id, &title, &subtitle, &body, sound).await
+    }
+}
+
+/// Removes every banner sent with `tag` from Notification Center: the
+/// question was answered, expired or put off, so the banner asks for nothing.
+/// Elsewhere banners close on their own and this does nothing.
+#[tauri::command]
+pub fn retire_notification(tag: String) {
+    #[cfg(target_os = "macos")]
+    platform::retire(&tag);
+    #[cfg(not(target_os = "macos"))]
+    let _ = tag;
 }
 
 /// Opens the app's page in the OS notification settings, where the user can
@@ -80,7 +104,7 @@ pub fn open_notification_settings(app: AppHandle) -> Result<(), String> {
 mod platform {
     use std::cell::RefCell;
     use std::ptr::NonNull;
-    use std::sync::mpsc;
+    use std::sync::{mpsc, Mutex};
     use std::time::Duration;
 
     use block2::RcBlock;
@@ -214,7 +238,7 @@ mod platform {
     /// handler says. Authorization is settled before this runs, so an
     /// undetermined status never turns a finished turn into a system prompt.
     fn start_show(
-        session_id: &str,
+        identifier: &str,
         title: &str,
         subtitle: &str,
         body: &str,
@@ -228,7 +252,7 @@ mod platform {
         if sound {
             content.setSound(Some(&UNNotificationSound::defaultSound()));
         }
-        let identifier = NSString::from_str(&request_identifier(session_id));
+        let identifier = NSString::from_str(identifier);
         let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
             &identifier,
             &content,
@@ -249,13 +273,56 @@ mod platform {
         rx
     }
 
-    pub(super) async fn show(
+    /// Request identifiers of delivered decision banners, by request tag.
+    static TAGGED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
+    /// Older entries belong to banners the user has long cleared.
+    const TAGGED_MAX: usize = 200;
+
+    fn remember_tag(tag: &str, identifier: String) {
+        if let Ok(mut tagged) = TAGGED.lock() {
+            tagged.push((tag.to_string(), identifier));
+            let excess = tagged.len().saturating_sub(TAGGED_MAX);
+            tagged.drain(..excess);
+        }
+    }
+
+    fn take_tagged(tag: &str) -> Vec<String> {
+        let Ok(mut tagged) = TAGGED.lock() else {
+            return Vec::new();
+        };
+        let mut taken = Vec::new();
+        tagged.retain(|(entry, identifier)| {
+            if entry == tag {
+                taken.push(identifier.clone());
+                false
+            } else {
+                true
+            }
+        });
+        taken
+    }
+
+    pub(super) fn retire(tag: &str) {
+        let identifiers = take_tagged(tag);
+        if identifiers.is_empty() {
+            return;
+        }
+        let identifiers: Vec<Retained<NSString>> =
+            identifiers.iter().map(|id| NSString::from_str(id)).collect();
+        let identifiers = NSArray::from_retained_slice(&identifiers);
+        let center = UNUserNotificationCenter::currentNotificationCenter();
+        center.removeDeliveredNotificationsWithIdentifiers(&identifiers);
+        center.removePendingNotificationRequestsWithIdentifiers(&identifiers);
+    }
+
+    pub(super) async fn show_tagged(
         _app: &AppHandle,
         session_id: &str,
         title: &str,
         subtitle: &str,
         body: &str,
         sound: bool,
+        tag: Option<&str>,
     ) -> Result<(), String> {
         // Asked here rather than trusted from the frontend, whose cached
         // permission goes stale when alerts are switched off in System
@@ -263,12 +330,17 @@ mod platform {
         if wait(query_permission(), Some(DISPATCH_TIMEOUT)).await != Some(Permission::Granted) {
             return Err("notifications are not authorized".into());
         }
-        wait(
-            start_show(session_id, title, subtitle, body, sound),
+        let identifier = request_identifier(session_id);
+        let result = wait(
+            start_show(&identifier, title, subtitle, body, sound),
             Some(DISPATCH_TIMEOUT),
         )
         .await
-        .unwrap_or_else(|| Err("notification dispatch timed out".into()))
+        .unwrap_or_else(|| Err("notification dispatch timed out".into()));
+        if let (Ok(()), Some(tag)) = (&result, tag) {
+            remember_tag(tag, identifier);
+        }
+        result
     }
 
     pub(super) fn open_settings(app: &AppHandle) -> Result<(), String> {
@@ -362,6 +434,19 @@ mod platform {
         use super::*;
         use objc2::runtime::AnyProtocol;
         use objc2::{sel, ClassType};
+
+        #[test]
+        fn retiring_a_tag_takes_only_its_banners() {
+            remember_tag("decision:a:approval:1", "session:a/1".into());
+            remember_tag("decision:a:approval:2", "session:a/2".into());
+            remember_tag("decision:a:approval:1", "session:a/3".into());
+            assert_eq!(
+                take_tagged("decision:a:approval:1"),
+                vec!["session:a/1".to_string(), "session:a/3".to_string()]
+            );
+            assert!(take_tagged("decision:a:approval:1").is_empty());
+            assert_eq!(take_tagged("decision:a:approval:2"), vec!["session:a/2".to_string()]);
+        }
 
         #[test]
         fn identifier_round_trips_the_session() {

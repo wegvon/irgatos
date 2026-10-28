@@ -3,6 +3,10 @@ import type { FleetRequest } from "../../../fleet/model/fleet";
 import type { WebBlock } from "../../model/protocol";
 import type { UserQuestion } from "../../../sessions/model/userQuestion";
 import { write } from "../client";
+import {
+  decisionUrgency,
+  urgencyLine,
+} from "../../../notifications/model/decisionUrgency";
 import { Spinner, primaryButton, secondaryButton, useAction } from "./parts";
 import { Check, CheckCheck, X } from "../../../../shared/ui/icons";
 
@@ -10,10 +14,31 @@ type Props = { sessionId: string; request: FleetRequest };
 
 /** Allow or deny, or answer a question, right where the request shows. */
 export function RequestBody({ sessionId, request }: Props) {
-  return request.kind === "approval" ? (
-    <Approval sessionId={sessionId} request={request} />
-  ) : (
-    <QuestionForm sessionId={sessionId} request={request} />
+  return (
+    <div className="flex flex-col gap-2">
+      <RequestUrgency request={request} />
+      {request.kind === "approval" ? (
+        <Approval sessionId={sessionId} request={request} />
+      ) : (
+        <QuestionForm sessionId={sessionId} request={request} />
+      )}
+    </div>
+  );
+}
+
+/** Whether the agent waits for this answer, and until when, as on the Mac. */
+function RequestUrgency({ request }: { request: FleetRequest }) {
+  const urgency = decisionUrgency(
+    request.kind,
+    request.kind === "question" ? request.prompt : undefined,
+  );
+  return (
+    <div
+      data-request-urgency={urgency.blocking ? "blocking" : "optional"}
+      className={`text-[13px] font-medium ${urgency.blocking ? "text-amber-500" : "text-(--ink-2)"}`}
+    >
+      {urgencyLine(urgency)}
+    </div>
   );
 }
 

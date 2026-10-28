@@ -13,11 +13,14 @@ import {
   type Session,
 } from "../../sessions/model/session";
 import {
+  cancelIrgatReport,
   dismissQueuedIrgatSessionCompletion,
   enqueueIrgatSessionCompletion,
   irgatSessionCompletionMessage,
   irgatSessionCompletionResult,
   IrgatSessionCompletionBatches,
+  expectIrgatReport,
+  takeIrgatReport,
 } from "./irgatSessionCompletion";
 
 const options = {
@@ -267,4 +270,14 @@ describe("Irgat session completion notifications", () => {
     expect(message.text).toContain("app sessions.read");
     expect(message.text.length).toBeLessThan(13_000);
   });
+});
+
+it("leaves a reported turn's banner to the Irgat, once", () => {
+  expectIrgatReport("child");
+  expect(takeIrgatReport("child")).toBe(true);
+  // The user's next turn there notifies as usual.
+  expect(takeIrgatReport("child")).toBe(false);
+  expectIrgatReport("rejected");
+  cancelIrgatReport("rejected");
+  expect(takeIrgatReport("rejected")).toBe(false);
 });
