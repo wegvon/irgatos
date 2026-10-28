@@ -31,6 +31,10 @@ export type InsertSessionReferenceRequest = {
 export type InsertSessionMessageRequest = {
   targetSessionId: string;
   text: string;
+  /** Replace the whole draft instead of appending to it. */
+  replace?: boolean;
+  /** Move focus to the composer once the text is in. */
+  focus?: boolean;
   /** Set by the mounted composer that took the message. */
   handled?: boolean;
 };
@@ -87,8 +91,13 @@ export function insertSessionReference(
 export function insertSessionMessageIntoComposer(
   targetSessionId: string,
   text: string,
+  options: { replace?: boolean; focus?: boolean } = {},
 ): void {
-  const detail: InsertSessionMessageRequest = { targetSessionId, text };
+  const detail: InsertSessionMessageRequest = {
+    targetSessionId,
+    text,
+    ...options,
+  };
   if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent<InsertSessionMessageRequest>(
@@ -100,7 +109,9 @@ export function insertSessionMessageIntoComposer(
   if (detail.handled) return;
   setComposerDraft(
     targetSessionId,
-    appendToDraft(getComposerDraft(targetSessionId) ?? "", text),
+    options.replace
+      ? text
+      : appendToDraft(getComposerDraft(targetSessionId) ?? "", text),
   );
 }
 

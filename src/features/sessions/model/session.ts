@@ -474,6 +474,21 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
     "Allow commands, edits, and supported MCP confirmations in non-plan turns without prompts.",
 };
 
+/** Providers without an AI reviewer run "Auto" as a fixed allow-list. */
+const NO_REVIEWER_AUTO_HINT: Partial<Record<HarnessId, string>> = {
+  cursor:
+    "Cursor has no AI reviewer: reads and edits run, commands and other actions ask.",
+};
+
+/** The access hint, worded for what this provider actually does. */
+export function runtimeModeHint(mode: RuntimeMode, harness?: HarnessId): string {
+  if (mode === "auto" && harness) {
+    const hint = NO_REVIEWER_AUTO_HINT[harness];
+    if (hint) return hint;
+  }
+  return RUNTIME_MODE_HINT[mode];
+}
+
 export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {

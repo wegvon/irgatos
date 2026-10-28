@@ -1,4 +1,5 @@
 import {
+  chmod,
   cp,
   lstat,
   mkdir,
@@ -344,15 +345,21 @@ export class WorkspaceCommands {
       );
     const { root, relative: rel } = await this.locate(input);
     const path = workspacePath(root, rel);
-    if (await stat(path).then((info) => info.isDirectory(), () => false))
+    const existing = await stat(path).catch(() => null);
+    if (existing?.isDirectory())
       throw new Error("Cannot save text to a directory.");
-    // Replace atomically, as the local command does.
+    // Replace atomically, as the local command does, keeping the file's
+    // permissions: an executable script must stay executable.
     const temporary = `${path}.irgat-${process.pid}-${Date.now()}`;
-    await writeFile(temporary, content, "utf8");
-    await rename(temporary, path).catch(async (reason) => {
+    try {
+      await writeFile(temporary, content, "utf8");
+      // chmod, not writeFile's mode, so the umask cannot drop bits.
+      if (existing) await chmod(temporary, existing.mode & 0o7777);
+      await rename(temporary, path);
+    } catch (reason) {
       await rm(temporary, { force: true });
       throw reason;
-    });
+    }
   }
 
   private async statFiles(input: unknown): Promise<FileMtime[]> {

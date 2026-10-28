@@ -1242,7 +1242,21 @@ function toolEnrichmentDelay(live: Live): number {
   return 1_000;
 }
 
-function pickAutoOption(
+/**
+ * Cursor's ACP has no AI reviewer, so "auto" cannot review a command's
+ * content. It approves only reads and file edits and asks for everything else.
+ */
+const CURSOR_AUTO_KINDS = new Set([
+  "read",
+  "search",
+  "edit",
+  "delete",
+  "move",
+  "think",
+]);
+
+/** Exported for tests. */
+export function pickAutoOption(
   runtimeMode: RuntimeMode,
   kind: string | undefined,
   optionIds: string[],
@@ -1250,6 +1264,7 @@ function pickAutoOption(
   if (optionIds.length === 0) return null;
   const tool = (kind ?? "").toLowerCase();
   if (runtimeMode === "supervised") return null;
+  if (runtimeMode === "auto" && !CURSOR_AUTO_KINDS.has(tool)) return null;
   if (
     runtimeMode === "auto-accept-edits" &&
     (tool === "execute" || tool === "other")

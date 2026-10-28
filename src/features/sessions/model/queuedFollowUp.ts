@@ -37,3 +37,40 @@ export async function deliverQueuedFollowUp<T>(options: {
   options.delivered();
   return true;
 }
+
+export const STALE_FOLLOW_UP_ERROR =
+  "Not sent: the turn it was meant for ended. Retry to send it now.";
+
+/**
+ * A normal chat's Steer: bound to the turn it was aimed at and unsent until the
+ * provider accepts it. Preparation (attachments, prompt) can take long enough
+ * for that turn to be stopped and replaced, so the turn is checked again after
+ * it and a stale or rejected message is handed back as unsent, never delivered.
+ */
+export async function steerFollowUp<T>(options: {
+  isCurrentTurn: () => boolean;
+  prepare: () => Promise<T>;
+  steer: (prepared: T) => Promise<void>;
+  delivered: () => void;
+  unsent: (error: string) => void;
+}): Promise<boolean> {
+  try {
+    const prepared = await options.prepare();
+    if (!options.isCurrentTurn()) {
+      options.unsent(STALE_FOLLOW_UP_ERROR);
+      return false;
+    }
+    await options.steer(prepared);
+  } catch (error) {
+    options.unsent(
+      options.isCurrentTurn()
+        ? error instanceof Error
+          ? error.message
+          : String(error)
+        : STALE_FOLLOW_UP_ERROR,
+    );
+    return false;
+  }
+  options.delivered();
+  return true;
+}
