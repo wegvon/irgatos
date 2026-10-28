@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
-import { forgetHarnessSession } from "../../integrations/harness/core/registry";
+import {
+  bindHarnessSession,
+  forgetHarnessSession,
+  isLiveHarness,
+} from "../../integrations/harness/core/registry";
 import { killAllChildren } from "../../integrations/harness/core/child";
 import { newSession } from "../../features/sessions/model/session";
 import { newTab } from "../../features/workspace/model/layout";
 import {
   askQuitConfirmation,
+  bindResumedSessions,
   closeBusyWindow,
   commitQuit,
   confirmReload,
@@ -508,5 +513,37 @@ describe("remembering the terminal dock side across restarts", () => {
     const { handleQuitRequested } = await import("./appLifecycle");
     await handleQuitRequested();
     expect(await lastSavedDockSide()).toBe("left");
+  });
+});
+
+describe("resuming a chat with a saved provider switch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isLiveHarness).mockReturnValue(true);
+  });
+
+  it("binds the outgoing thread so it can write the handoff recap", () => {
+    const session = {
+      ...newSession("codex", "/repo"),
+      blocks: [{ id: "u1", role: "user" as const, text: "Fix it" }],
+      pendingSwitch: {
+        from: "claude" as const,
+        fromModel: "opus",
+        fromSettings: {},
+        fromProviderSessionId: "claude-thread-1",
+        fromProviderAccountId: "account-work",
+      },
+    };
+    bindResumedSessions([session]);
+    // The new provider has no thread yet; only the outgoing one is bound.
+    expect(bindHarnessSession).toHaveBeenCalledTimes(1);
+    expect(bindHarnessSession).toHaveBeenCalledWith(
+      "claude",
+      session.id,
+      "claude-thread-1",
+      "/repo",
+      "account-work",
+      session.blocks,
+    );
   });
 });

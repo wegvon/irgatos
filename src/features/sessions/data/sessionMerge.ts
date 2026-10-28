@@ -33,6 +33,7 @@ const HEADER_KEYS = [
   "linkedWorkItem",
   "automationId",
   "sidebarHidden",
+  "pendingSwitch",
 ] as const satisfies readonly (keyof Session)[];
 
 /**
