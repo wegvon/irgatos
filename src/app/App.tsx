@@ -675,6 +675,7 @@ import { ReminderNotices } from "../features/sessions/ui/ReminderNotices";
 import { InboxResurfaceNotices } from "../features/inbox/ui/InboxResurfaceNotices";
 import {
   cancelCheckCommand,
+  completionGateStatus,
   createCompletionGateController,
   gateAppliesToTurn,
   loadProjectGate,
@@ -12290,6 +12291,14 @@ function Workspace({
         setModel: onModelChange,
         setMode: onRuntimeModeChange,
       },
+    },
+    goals: {
+      runs: orchestrator.snapshot,
+      gateStatus: completionGateStatus,
+      resume: (sessionId, cause) =>
+        cause === "limit"
+          ? onUsageLimitResume(sessionId)
+          : onResumeInterrupted(sessionId),
     },
   };
   useEffect(() => connectWebAccess(() => webAccessDeps.current!), []);

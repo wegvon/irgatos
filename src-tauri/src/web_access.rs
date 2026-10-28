@@ -46,7 +46,7 @@ const PUBLIC_FILES: [&str; 4] = [
 const PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 /// Reads relayed with GET; everything else changes state and needs POST.
-const READ_ACTIONS: [&str; 23] = [
+const READ_ACTIONS: [&str; 24] = [
     "overview",
     "session",
     "projects",
@@ -71,8 +71,10 @@ const READ_ACTIONS: [&str; 23] = [
     "history",
     "models",
     "branches",
+    // The desktop's Goals: each request with its progress and result.
+    "goals",
 ];
-const WRITE_ACTIONS: [&str; 35] = [
+const WRITE_ACTIONS: [&str; 37] = [
     "upload",
     "send",
     "approval",
@@ -108,6 +110,8 @@ const WRITE_ACTIONS: [&str; 35] = [
     "setEffort",
     "setMode",
     "secretApproval",
+    "goalDone",
+    "goalResume",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.
