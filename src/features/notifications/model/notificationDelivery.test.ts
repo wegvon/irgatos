@@ -2,6 +2,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   announceSessionFinished,
+  notifyHabitApproval,
   notifySession,
   retireDecisionNotification,
   saveNotificationsEnabled,
@@ -9,6 +10,7 @@ import {
 } from "./notifications";
 import { updateNotificationPreferences } from "./notificationPreferences";
 import { newSession } from "../../sessions/model/session";
+import { createIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
 
 const { invoke, play } = vi.hoisted(() => ({ invoke: vi.fn(), play: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -161,4 +163,18 @@ it("marks a deferred request's second banner as a reminder", async () => {
   expect(
     invoke.mock.calls.find(([command]) => command === "show_notification")?.[1],
   ).toMatchObject({ subtitle: "Reminder · Waiting for your answer" });
+});
+
+it("asks for a habit's approval with a banner that opens its Irgat's chat", async () => {
+  const irgat = createIrgat();
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(false);
+  saveIrgatSessionId(irgat.id, "irgat-chat");
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(true);
+  const banner = invoke.mock.calls.find(
+    ([command]) => command === "show_notification",
+  )?.[1] as { sessionId: string; title: string; subtitle: string; body: string };
+  expect(banner.sessionId).toBe("irgat-chat");
+  expect(banner.title).toMatch(/ › Morning digest$/);
+  expect(banner.subtitle).toBe("Waiting for your answer");
+  expect(banner.body).toBe("Approve: run the habit “Morning digest”");
 });

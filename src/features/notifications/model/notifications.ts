@@ -11,7 +11,11 @@ import {
   knownNotificationProject,
   type NotificationProject,
 } from "./notificationProjects";
-import { irgatForSession, irgatLook } from "../../irgats/model/irgat";
+import {
+  findIrgat,
+  irgatForSession,
+  irgatLook,
+} from "../../irgats/model/irgat";
 import {
   decisionKey,
   decisionPlace,
@@ -312,6 +316,32 @@ export function retireDecisionNotification(tag: string) {
     if (retiredForDevices.size <= RETIRE_MAX) break;
     retiredForDevices.delete(old);
   }
+}
+
+/**
+ * A habit waits for the user's go-ahead before it runs: a decision only they
+ * can make, so it gets a banner like any other approval. A tap opens the
+ * Irgat's chat, where the habit's card holds Approve and Skip.
+ */
+export async function notifyHabitApproval(
+  irgatId: string,
+  habitName: string,
+): Promise<boolean> {
+  const irgat = findIrgat(irgatId);
+  if (!irgat?.sessionId) return false;
+  const name = irgatLook(irgat).name;
+  const project = irgatNotificationProject(irgat.id, name);
+  return deliverNotification(
+    irgat.sessionId,
+    () => ({
+      title: `${name} › ${habitName}`,
+      subtitle: urgencyLine(decisionUrgency("approval")),
+      body: clip(`Approve: run the habit “${habitName}”`),
+    }),
+    false,
+    { projectId: project.id, category: "agentInput", occurredAt: Date.now() },
+    `habit:${irgat.id}:${habitName}`,
+  );
 }
 
 /** One policy decision covers both the OS banner and its in-app sound fallback. */

@@ -33,12 +33,6 @@ import {
   type ExplorerMenuItem,
 } from "../../files/ui/ExplorerMenu";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { useDecisionDeferrals } from "../../notifications/hooks/useDecisionDeferrals";
-import { isDecisionDeferred } from "../../notifications/model/decisionDeferrals";
-import {
-  decisionKey,
-  formatClock,
-} from "../../notifications/model/decisionUrgency";
 import { QuestionForm } from "../../sessions/ui/QuestionForm";
 import {
   loadTabGroupLabels,
@@ -69,6 +63,12 @@ import {
   filterOutsideClaudeSessions,
   useOutsideClaudeSessions,
 } from "./OutsideClaudeSessions";
+import { useDecisionDeferrals } from "../../notifications/hooks/useDecisionDeferrals";
+import { isDecisionDeferred } from "../../notifications/model/decisionDeferrals";
+import {
+  decisionKey,
+  formatClock,
+} from "../../notifications/model/decisionUrgency";
 
 type Props = {
   /** Every open session across all projects. */
