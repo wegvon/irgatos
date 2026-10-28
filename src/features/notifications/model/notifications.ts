@@ -15,7 +15,9 @@ import {
   findIrgat,
   irgatForSession,
   irgatLook,
+  listIrgats,
 } from "../../irgats/model/irgat";
+import { irgatRulesFor, ruledApprovals } from "../../irgats/model/irgatRules";
 
 const KEY = "irgat.notifications";
 
@@ -142,10 +144,19 @@ export function pendingInputNotifications(
   sessions: Session[],
 ): Map<string, PendingInputNotification> {
   const pending = new Map<string, PendingInputNotification>();
+  const ruledIrgats = listIrgats().some((irgat) => irgat.rules);
   for (const session of sessions) {
     if (session.inboxAsk) continue;
+    // An Irgat's rules answer these at once; there is nothing to ask.
+    const ruled = ruledIrgats
+      ? new Set(
+          ruledApprovals(session, irgatRulesFor(session)).map(
+            ({ block }) => block.id,
+          ),
+        )
+      : undefined;
     for (const block of session.blocks) {
-      if (block.approval && !block.approval.decided) {
+      if (block.approval && !block.approval.decided && !ruled?.has(block.id)) {
         pending.set(
           JSON.stringify([session.id, "approval", block.approval.requestId]),
           {

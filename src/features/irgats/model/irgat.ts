@@ -20,6 +20,7 @@ import {
   projectMascot,
 } from "../../projects/model/projectMascots";
 import { removeIrgatBackground } from "./irgatBackground";
+import { parseIrgatRules, type IrgatRules } from "./irgatRules";
 import { collectRailProjects, loadRecents } from "../../projects/model/recents";
 
 /** The project palette's colors, plus indigo for a Irgat's ninth preset. */
@@ -55,6 +56,8 @@ export type Irgat = {
    * resumed. Its chat still answers; a habit run by hand still runs.
    */
   paused?: boolean;
+  /** How it answers its agents' approvals, per kind of step. */
+  rules?: IrgatRules;
   /** Superseded by SOUL.md; only read once, to seed it. */
   instructions?: string;
   /**
@@ -151,6 +154,10 @@ function newIrgatId(): string {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function withRules(rules: IrgatRules | undefined): { rules?: IrgatRules } {
+  return rules ? { rules } : {};
+}
+
 function parseIrgat(value: unknown): Irgat | undefined {
   const entry = record(value);
   if (typeof entry.id !== "string" || !/^[A-Za-z0-9-]+$/.test(entry.id))
@@ -194,6 +201,7 @@ function parseIrgat(value: unknown): Irgat | undefined {
       : {}),
     ...(entry.useSidebarFolders === true ? { useSidebarFolders: true } : {}),
     ...(entry.paused === true ? { paused: true } : {}),
+    ...withRules(parseIrgatRules(entry.rules)),
     ...(instructions ? { instructions } : {}),
     ...(legacyProject ? { legacyProject } : {}),
   };
