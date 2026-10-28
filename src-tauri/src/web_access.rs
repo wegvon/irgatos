@@ -74,7 +74,7 @@ const READ_ACTIONS: [&str; 23] = [
     "models",
     "branches",
 ];
-const WRITE_ACTIONS: [&str; 36] = [
+const WRITE_ACTIONS: [&str; 37] = [
     "upload",
     "send",
     "approval",
