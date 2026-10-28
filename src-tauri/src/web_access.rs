@@ -76,7 +76,7 @@ const READ_ACTIONS: [&str; 24] = [
     // The desktop's Goals: each request with its progress and result.
     "goals",
 ];
-const WRITE_ACTIONS: [&str; 39] = [
+const WRITE_ACTIONS: [&str; 40] = [
     "upload",
     "send",
     "approval",
@@ -117,6 +117,7 @@ const WRITE_ACTIONS: [&str; 39] = [
     "live",
     "goalDone",
     "goalResume",
+    "reviewMark",
 ];
 
 /// Feed, Notes, Board and Artifacts, as the desktop rail shows them.

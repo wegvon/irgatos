@@ -3,8 +3,17 @@ import {
   useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { orchestrator } from "../../orchestration/model/orchestration";
+import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
+import {
+  markReview,
+  useReviewMarks,
+  type ReviewMark,
+} from "../model/reviewMarks";
+import { FleetTeamPanel } from "./FleetTeam";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -36,7 +45,6 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { RequestCard } from "./RequestCard";
 import { GoalsView } from "../../goals/ui/GoalsView";
 import type { Goal } from "../../goals/model/goals";
-import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
 import {
   loadTabGroupLabels,
   resolveTabGroupLabel,
@@ -263,10 +271,36 @@ export function FleetView({
     x: number;
     y: number;
   } | null>(null);
+  const reviews = useReviewMarks();
+  const runs = useSyncExternalStore(
+    orchestrator.subscribe,
+    orchestrator.snapshot,
+    orchestrator.snapshot,
+  );
+  // The last "Mark reviewed", so a slip of the mouse can be taken back.
+  const [lastReviewed, setLastReviewed] = useState<{
+    sessionId: string;
+    title: string;
+    turnAt: number;
+    previous?: ReviewMark["state"];
+  } | null>(null);
+  const review = (entry: FleetEntry, state: ReviewMark["state"] | null) => {
+    if (state === "reviewed")
+      setLastReviewed({
+        sessionId: entry.sessionId,
+        title: entry.title,
+        turnAt: entry.turnAt,
+        previous: entry.reviewLater ? "later" : undefined,
+      });
+    else setLastReviewed(null);
+    markReview(entry.sessionId, entry.turnAt, state);
+  };
   const fleet = useMemo(() => {
     const labels = loadTabGroupLabels();
     return buildFleet(sessions, {
       now,
+      reviews,
+      runs,
       unseenFinishedIds,
       interruptedIds: interruptedSessionIds,
       irgatName: (sessionId) => {
@@ -276,7 +310,7 @@ export function FleetView({
       projectLabel: (cwd) =>
         resolveTabGroupLabel(projectKey(cwd), labels, projectName(cwd)),
     });
-  }, [interruptedSessionIds, now, sessions, unseenFinishedIds]);
+  }, [interruptedSessionIds, now, reviews, runs, sessions, unseenFinishedIds]);
   const shown = useMemo(() => filterFleet(fleet, query), [fleet, query]);
   const filtering = query.trim().length > 0;
   const shownHabits = useMemo(
@@ -496,6 +530,30 @@ export function FleetView({
                       {count}
                     </span>
                   </button>
+                  {open && bucket === "review" && lastReviewed ? (
+                    <p
+                      data-fleet-reviewed-undo=""
+                      className="flex items-center gap-2 pl-6 text-[12px] text-content/45"
+                    >
+                      <span className="min-w-0 truncate">
+                        Marked “{lastReviewed.title}” reviewed.
+                      </span>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded px-1.5 py-0.5 text-content/70 hover:bg-content/10 hover:text-content"
+                        onClick={() => {
+                          markReview(
+                            lastReviewed.sessionId,
+                            lastReviewed.turnAt,
+                            lastReviewed.previous ?? null,
+                          );
+                          setLastReviewed(null);
+                        }}
+                      >
+                        Undo
+                      </button>
+                    </p>
+                  ) : null}
                   {open ? (
                     count === 0 ? (
                       <p className="pl-6 text-[12px] text-content/35">
@@ -527,6 +585,11 @@ export function FleetView({
                             <FleetRow
                               entry={entry}
                               now={now}
+                              run={runs.find(
+                                (run) => run.leadId === entry.sessionId,
+                              )}
+                              onOpenSession={onOpenSession}
+                              onReview={(state) => review(entry, state)}
                               actions={actions}
                               onMenu={(x, y) => setMenu({ entry, x, y })}
                               onOpen={() => onOpenSession(entry.sessionId)}
@@ -592,6 +655,9 @@ export function FleetView({
 function FleetRow({
   entry,
   now,
+  run,
+  onOpenSession,
+  onReview,
   actions,
   onMenu,
   onOpen,
@@ -601,6 +667,10 @@ function FleetRow({
 }: {
   entry: FleetEntry;
   now: number;
+  run?: OrchestrationRun;
+  onOpenSession?: (sessionId: string) => void;
+  /** Review marks; absent where a row cannot be marked. */
+  onReview?: (state: ReviewMark["state"] | null) => void;
   actions?: FleetRowActions;
   onMenu: (x: number, y: number) => void;
   onOpen: () => void;
@@ -680,6 +750,7 @@ function FleetRow({
             {entry.worktree ? <FleetChip>worktree</FleetChip> : null}
             {entry.leadId ? <FleetChip>worker</FleetChip> : null}
             <DeferredChip entry={entry} />
+            {entry.reviewLater ? <FleetChip>later</FleetChip> : null}
           </span>
           {entry.bucket === "interrupted" ? (
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
@@ -715,6 +786,50 @@ function FleetRow({
           onQuestionInteraction={onQuestionInteraction}
         />
       ))}
+      {entry.team && onOpenSession ? (
+        <FleetTeamPanel
+          leadId={entry.sessionId}
+          team={entry.team}
+          run={run}
+          onOpenSession={onOpenSession}
+        />
+      ) : null}
+      {entry.bucket === "review" && onReview ? (
+        <div
+          data-fleet-review={entry.sessionId}
+          className="flex flex-wrap items-center gap-1.5 border-t border-stroke px-3 py-1.5"
+        >
+          <span className="mr-auto min-w-0 truncate text-[11px] text-content/40">
+            {entry.reviewLater
+              ? "Put aside. It stays here until you mark it reviewed."
+              : "Stays here until you mark it reviewed."}
+          </span>
+          {entry.reviewLater ? (
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-[11px] text-content/60 hover:bg-content/10 hover:text-content"
+              onClick={() => onReview(null)}
+            >
+              Back to the top
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-[11px] text-content/60 hover:bg-content/10 hover:text-content"
+              onClick={() => onReview("later")}
+            >
+              Review later
+            </button>
+          )}
+          <button
+            type="button"
+            className="rounded bg-content/10 px-2 py-0.5 text-[11px] font-medium text-content/80 hover:bg-content/20 hover:text-content"
+            onClick={() => onReview("reviewed")}
+          >
+            Mark reviewed
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }
