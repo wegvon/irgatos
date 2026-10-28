@@ -783,6 +783,7 @@ import {
   writeAgentFile,
 } from "../features/irgats/model/irgatFiles";
 import { useIrgatHabits } from "./hooks/useIrgatHabits";
+import { ensureMainIrgat } from "../features/irgats/model/mainIrgat";
 import { useIrgatApprovalRules } from "./hooks/useIrgatApprovalRules";
 import {
   irgatIntroductionPrompt,
@@ -9735,6 +9736,11 @@ function Workspace({
       }),
     [],
   );
+
+  // The main Irgat follows every project that comes onto the rail.
+  useEffect(() => {
+    void ensureMainIrgat(projectCwd).catch(() => undefined);
+  }, [projectCwd, recents]);
 
   useLightpandaAutostart();
   useHabitWebhooks();
