@@ -189,9 +189,19 @@ fn unsubscribe(app: &AppHandle, endpoint: &str) -> Result<Value, String> {
 }
 
 /// Sends the banner to every subscribed device in the background; a device
-/// the push service no longer knows is forgotten.
+/// the push service no longer knows is forgotten. `retire` lists earlier
+/// banners (by tag) whose question was settled since: the service worker
+/// closes them, since a push of their own would have to show a banner.
 #[tauri::command]
-pub fn web_push_send(app: AppHandle, title: String, body: String, url: String, tag: String) {
+pub fn web_push_send(
+    app: AppHandle,
+    title: String,
+    body: String,
+    url: String,
+    tag: String,
+    retire: Option<Vec<String>>,
+) {
+    let retire = retire.unwrap_or_default();
     let Ok(dir) = data_dir(&app) else {
         return;
     };
@@ -209,7 +219,7 @@ pub fn web_push_send(app: AppHandle, title: String, body: String, url: String, t
             };
             (key, subscriptions)
         };
-        let payload = payload(&title, &body, &url, &tag);
+        let payload = payload(&title, &body, &url, &tag, &retire);
         let gone: Vec<String> = subscriptions
             .iter()
             .filter(|sub| match deliver(&key, sub, &payload) {
@@ -233,14 +243,26 @@ pub fn web_push_send(app: AppHandle, title: String, body: String, url: String, t
     });
 }
 
-fn payload(title: &str, body: &str, url: &str, tag: &str) -> Vec<u8> {
+fn payload(title: &str, body: &str, url: &str, tag: &str, retire: &[String]) -> Vec<u8> {
     let mut body = body.to_string();
+    // Closing old banners matters less than the new one, so they go first.
+    let mut retire: Vec<&String> = retire.iter().collect();
     loop {
-        let bytes = json!({ "title": title, "body": body, "url": url, "tag": tag })
-            .to_string()
-            .into_bytes();
-        if bytes.len() <= MAX_PAYLOAD || body.is_empty() {
+        let bytes = json!({
+            "title": title,
+            "body": body,
+            "url": url,
+            "tag": tag,
+            "retire": retire,
+        })
+        .to_string()
+        .into_bytes();
+        if bytes.len() <= MAX_PAYLOAD || (body.is_empty() && retire.is_empty()) {
             return bytes;
+        }
+        if !retire.is_empty() {
+            retire.remove(0);
+            continue;
         }
         let keep = body.chars().count() * 3 / 4;
         body = body.chars().take(keep).collect::<String>() + "…";
@@ -466,10 +488,23 @@ mod tests {
     #[test]
     fn keeps_the_payload_inside_one_record() {
         let long = "ş".repeat(5000);
-        assert!(payload("Irgatos", &long, "/", "t").len() <= MAX_PAYLOAD);
-        let short = payload("Irgatos", "done", "/#/chat/a", "a");
+        assert!(payload("Irgatos", &long, "/", "t", &[]).len() <= MAX_PAYLOAD);
+        let short = payload("Irgatos", "done", "/#/chat/a", "a", &[]);
         let value: Value = serde_json::from_slice(&short).unwrap();
         assert_eq!(value["url"], "/#/chat/a");
+    }
+
+    #[test]
+    fn retired_tags_ride_along_but_never_crowd_out_the_banner() {
+        let retire = vec!["decision:a:approval:1".to_string()];
+        let value: Value =
+            serde_json::from_slice(&payload("t", "b", "/", "x", &retire)).unwrap();
+        assert_eq!(value["retire"][0], "decision:a:approval:1");
+        let many: Vec<String> = (0..400).map(|n| format!("decision:s:question:{n}")).collect();
+        let bytes = payload("t", "keep me", "/", "x", &many);
+        assert!(bytes.len() <= MAX_PAYLOAD);
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["body"], "keep me");
     }
 
     #[test]

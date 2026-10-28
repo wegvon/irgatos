@@ -54,3 +54,38 @@ it("labels a combined report without exposing the app prompt", () => {
   expect(markup).toContain("3 sessions finished");
   expect(markup).not.toContain("Irgatos completion notification");
 });
+
+it("never offers Steer on a queued plan and offers Retry on a failed row", () => {
+  const container = document.createElement("div");
+  container.innerHTML = renderToStaticMarkup(
+    createElement(MessageQueue, {
+      messages: [
+        {
+          id: "plan",
+          text: "Plan the migration",
+          attachments: [],
+          intent: "plan",
+        },
+        {
+          id: "failed",
+          text: "Use TypeScript",
+          attachments: [],
+          error: "Rejected",
+        },
+      ],
+      status: "paused",
+      onSteer: vi.fn(),
+    }),
+  );
+  const [planSteer, retry] = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button"),
+  ).filter(
+    (button) =>
+      /Steer|Retry/.test(button.textContent ?? "") &&
+      !button.closest("div.border-b"),
+  );
+  expect(planSteer.textContent).toContain("Steer");
+  expect(planSteer.disabled).toBe(true);
+  expect(retry.textContent).toContain("Retry");
+  expect(retry.disabled).toBe(false);
+});

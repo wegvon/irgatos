@@ -474,6 +474,21 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
     "Allow commands, edits, and supported MCP confirmations in non-plan turns without prompts.",
 };
 
+/** Providers without an AI reviewer run "Auto" as a fixed allow-list. */
+const NO_REVIEWER_AUTO_HINT: Partial<Record<HarnessId, string>> = {
+  cursor:
+    "Cursor has no AI reviewer: reads and edits run, commands and other actions ask.",
+};
+
+/** The access hint, worded for what this provider actually does. */
+export function runtimeModeHint(mode: RuntimeMode, harness?: HarnessId): string {
+  if (mode === "auto" && harness) {
+    const hint = NO_REVIEWER_AUTO_HINT[harness];
+    if (hint) return hint;
+  }
+  return RUNTIME_MODE_HINT[mode];
+}
+
 export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {
@@ -496,6 +511,12 @@ export type Session = {
   blocks: Block[];
   /** Irgat-only database window. Older blocks are fetched separately by the viewer. */
   irgatTranscript?: { before: number | null; firstBlockId: string | null };
+  /**
+   * Which stored copy this in-memory session descends from. Set when the
+   * store loads or rebases it, never persisted; a snapshot from an older
+   * lineage is merged onto the newer stored copy before it can be written.
+   */
+  storeLineage?: string;
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /** The provider has accepted this turn and can take live follow-ups. */

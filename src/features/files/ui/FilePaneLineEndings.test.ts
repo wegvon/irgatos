@@ -237,6 +237,9 @@ describe("file editor line endings", () => {
         writes.push(args!);
         if (writes.length === 1) await firstWrite;
       }
+      // Each file keeps its own disk content: the queued save checks it.
+      const saved = writes.findLast((write) => write.path === args?.path);
+      if (command === "read_text_file" && saved) return saved.content;
       return defaultInvoke(command, args);
     });
 

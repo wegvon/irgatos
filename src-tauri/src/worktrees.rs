@@ -362,7 +362,7 @@ fn checkout_state_matches(source: &Path, target: &Path) -> bool {
     })
 }
 
-fn create_seeded(root: &Path, branch: &str) -> Result<Worktree, String> {
+pub(crate) fn create_seeded(root: &Path, branch: &str) -> Result<Worktree, String> {
     if let Some(tree) = list(root)?
         .into_iter()
         .find(|tree| tree.branch.as_deref() == Some(branch))
@@ -503,7 +503,7 @@ fn check_removal(root: &Path, path: &Path, force: bool, has_terminals: bool) -> 
     Ok(())
 }
 
-fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
+pub(crate) fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
     let tree = removal_target(root, path)?;
     let mut args = vec!["worktree", "remove"];
     if force {

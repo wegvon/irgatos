@@ -182,7 +182,7 @@ describe("shouldNotify", () => {
 });
 
 describe("notificationText", () => {
-  it("leads with the app, then the session title, then the reply", () => {
+  it("leads with the project, then the session title, then the reply", () => {
     const session = chat({
       blocks: [
         { id: "u1", role: "user", text: "hello" },
@@ -194,7 +194,7 @@ describe("notificationText", () => {
       ],
     });
     expect(notificationText(session, "finished")).toEqual({
-      title: "Irgatos",
+      title: "a",
       subtitle: "Fix the sidebar",
       body: "Done. Sidebar fixed.",
     });
@@ -228,10 +228,51 @@ describe("notificationText", () => {
       ],
     });
     expect(notificationText(session, { kind: "approval", requestId: 1 })).toEqual({
-      title: "Irgatos",
-      subtitle: "Fix the sidebar",
+      title: "a › Fix the sidebar",
+      subtitle: "Waiting for your answer",
       body: "Approve: Run npm test",
     });
+  });
+
+  it("names the worktree a decision runs in", () => {
+    const session = chat({
+      worktreeCwd: "/tmp/a-worktrees/login",
+      branch: "fix/login",
+      blocks: [
+        { id: "p1", role: "tool", text: "Run it", approval: { requestId: 1 } },
+      ],
+    });
+    expect(
+      notificationText(session, { kind: "approval", requestId: 1 }).title,
+    ).toBe("a (fix/login) › Fix the sidebar");
+  });
+
+  it("marks a timed question optional and gives its deadline", () => {
+    const now = new Date(2026, 9, 28, 14, 0).getTime();
+    const session = chat({
+      pendingQuestion: {
+        requestId: 3,
+        autoResolveAt: now + 4 * 60_000,
+        questions: [
+          {
+            id: "q",
+            prompt: "Keep the old API?",
+            multiSelect: false,
+            allowCustom: false,
+            options: [],
+          },
+        ],
+      },
+    });
+    const text = notificationText(
+      session,
+      { kind: "question", requestId: 3 },
+      now,
+    );
+    expect(text.subtitle).toMatch(
+      /^Optional — continues without an answer at (14|02).04( PM)? \(in 4 min\)$/,
+    );
+    expect(text.body).toBe("Keep the old API?");
   });
 
   it("names the requested question", () => {
@@ -250,8 +291,8 @@ describe("notificationText", () => {
       },
     });
     expect(notificationText(session, { kind: "question", requestId: 2 })).toEqual({
-      title: "Irgatos",
-      subtitle: "Fix the sidebar",
+      title: "a › Fix the sidebar",
+      subtitle: "Waiting for your answer",
       body: "Which database?",
     });
   });

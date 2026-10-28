@@ -13,7 +13,14 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import {
+  differsFromCurrent,
+  recommendArrangement,
+  type Arrangement,
+} from "../../goals/model/arrangement";
+import { ArrangementHint } from "../../goals/ui/ArrangementHint";
+import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -299,6 +306,8 @@ type Props = {
   lastTurnRecall?: LastTurnRecall | null;
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
+  /** The queued row being delivered right now; locked until it settles. */
+  sendingQueuedMessageId?: string;
   usageLimit?: UsageLimit;
   /** Account the session runs on, for the provider's quota-hold banner. */
   providerAccountId?: string;
@@ -354,6 +363,10 @@ type Props = {
   onUsageLimitResume?: () => void;
   onUsageLimitResumeAtReset?: (enabled: boolean) => void;
   onUsageLimitDismiss?: () => void;
+  /** What got done and what is left, shown under the usage limit notice. */
+  usageLimitDetails?: ReactNode;
+  /** First message of a new chat: suggest how to run it from what is typed. */
+  suggestArrangement?: boolean;
   onOpenFile?: (path: string) => void;
   onDraftChange?: (text: string) => void;
   onRecallLastTurnReady?: (recall: () => void) => void;
@@ -472,6 +485,7 @@ export function Composer({
   editLastTurnSupported = false,
   lastTurnRecall = null,
   queuedMessages = [],
+  sendingQueuedMessageId,
   queueStatus,
   usageLimit,
   providerAccountId,
@@ -515,6 +529,8 @@ export function Composer({
   onUsageLimitResume,
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
+  usageLimitDetails,
+  suggestArrangement = false,
   onOpenFile,
   onDraftChange,
   onRecallLastTurnReady,
@@ -852,6 +868,51 @@ export function Composer({
     orchestrationSelected || leadingMode?.name === ORCHESTRATOR_COMMAND.name;
   const draftActive = draftSelected || leadingMode?.name === DRAFT_COMMAND.name;
   const planActive = planSelected || leadingMode?.name === PLAN_COMMAND.name;
+
+  const [arrangementDismissed, setArrangementDismissed] = useState(false);
+  const canWorktree =
+    !remote && !!onWorkspaceModeChange && !!resolvedWorktreeBase;
+  const deferredDraft = useDeferredValue(draft);
+  const arrangement = useMemo(() => {
+    if (!suggestArrangement || arrangementDismissed || busy) return undefined;
+    if (draftActive || operatorActive || leadingMode) return undefined;
+    const suggestion = recommendArrangement(deferredDraft, {
+      canPlan: !remote || !!remoteFeatures?.plan,
+      canOrchestrate: !remote && !hideTopBar,
+      canWorktree,
+    });
+    return suggestion &&
+      differsFromCurrent(suggestion, {
+        mode: planActive ? "plan" : orchestrationActive ? "orchestrate" : "direct",
+        worktree: workspaceMode === "worktree",
+      })
+      ? suggestion
+      : undefined;
+  }, [
+    suggestArrangement,
+    arrangementDismissed,
+    busy,
+    draftActive,
+    operatorActive,
+    leadingMode,
+    deferredDraft,
+    remote,
+    remoteFeatures?.plan,
+    hideTopBar,
+    canWorktree,
+    planActive,
+    orchestrationActive,
+    workspaceMode,
+  ]);
+  const applyArrangement = (next: Arrangement) => {
+    setPlanSelected(next.mode === "plan");
+    setOrchestrationSelected(next.mode === "orchestrate");
+    setOperatorSelected(false);
+    setDraftSelected(false);
+    if (next.worktree && canWorktree && workspaceMode !== "worktree")
+      onWorkspaceModeChange?.("worktree", resolvedWorktreeBase);
+    ref.current?.focus();
+  };
 
   /** Turning a mode off also drops its leading command from the text. */
   const clearLeadingMode = (name: string) => {
@@ -1441,13 +1502,16 @@ export function Composer({
       if (!el || detail?.targetSessionId !== sessionId || detail.handled)
         return;
       detail.handled = true;
-      const next = appendToDraft(el.value, detail.text);
+      const next = detail.replace
+        ? detail.text
+        : appendToDraft(el.value, detail.text);
       el.value = next;
       resizeComposer(el);
       el.setSelectionRange(next.length, next.length);
       setDraft(next);
       onDraftChange?.(next);
       syncHasValue(next, attachmentsRef.current);
+      if (detail.focus) el.focus();
     };
     window.addEventListener(INSERT_SESSION_MESSAGE_EVENT, onInsert);
     return () =>
@@ -2110,6 +2174,7 @@ export function Composer({
           onResume={onUsageLimitResume}
           onResumeAtReset={onUsageLimitResumeAtReset}
           onDismiss={onUsageLimitDismiss}
+          details={usageLimitDetails}
         />
       ) : hideQuotaHold ? null : (
         <SessionProviderHold
@@ -2123,6 +2188,7 @@ export function Composer({
       <MessageQueue
         messages={queuedMessages}
         status={queueStatus}
+        sendingId={sendingQueuedMessageId}
         notice={
           !usageLimit && !hideQuotaHold && onRunQueueAnyway ? (
             <QueuedHoldNotice
@@ -2875,6 +2941,7 @@ export function Composer({
                 {!compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
+                    harness={harness}
                     busy={busy}
                     onChange={onRuntimeModeChange}
                     onClose={() => ref.current?.focus()}
@@ -2929,6 +2996,13 @@ export function Composer({
           />
         ) : null}
       </div>
+      {arrangement ? (
+        <ArrangementHint
+          arrangement={arrangement}
+          onUse={() => applyArrangement(arrangement)}
+          onDismiss={() => setArrangementDismissed(true)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -158,6 +158,28 @@ describe("AgentTranscript collapsed work", () => {
     expect(compound).toContain("Allow</button>");
   });
 
+  it("says what an approval changes and whether it can be undone", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AgentTranscript, {
+        blocks: [
+          { id: "user", role: "user", text: "Clean up" },
+          {
+            id: "call",
+            role: "tool",
+            text: "rm -rf build",
+            tool: { kind: "execute", status: "pending" },
+            approval: { requestId: 3 },
+          },
+        ],
+        busy: true,
+        onApproval: () => {},
+      }),
+    );
+    expect(markup).toContain('data-approval-brief="high"');
+    expect(markup).toContain("Removes files from disk.");
+    expect(markup).toContain("No, unless the files are committed in git");
+  });
+
   it("keeps a failed Irgatos call compact until its error is opened", () => {
     const markup = render([
       { id: "user", role: "user", text: "/irgat list notes" },

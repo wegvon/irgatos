@@ -2,12 +2,15 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   announceSessionFinished,
+  notifyHabitApproval,
   notifySession,
+  retireDecisionNotification,
   saveNotificationsEnabled,
   setWindowFocused,
 } from "./notifications";
 import { updateNotificationPreferences } from "./notificationPreferences";
 import { newSession } from "../../sessions/model/session";
+import { createIrgat, saveIrgatSessionId } from "../../irgats/model/irgat";
 
 const { invoke, play } = vi.hoisted(() => ({ invoke: vi.fn(), play: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -104,4 +107,74 @@ it("does not push the chat the Mac is showing", async () => {
   expect(
     invoke.mock.calls.filter(([command]) => command === "web_push_send"),
   ).toEqual([]);
+});
+
+it("tags a decision banner with its request and takes it back once settled", async () => {
+  const session = newSession("claude", "/work/app");
+  session.title = "Fix login";
+  session.blocks = [
+    {
+      id: "p1",
+      role: "tool",
+      text: "Run npm test",
+      tool: { title: "Run npm test" },
+      approval: { requestId: 7 },
+    },
+  ];
+  expect(
+    await notifySession(session, { kind: "approval", requestId: 7 }, false),
+  ).toBe(true);
+  const tag = `decision:${session.id}:approval:7`;
+  expect(
+    invoke.mock.calls.find(([command]) => command === "show_notification")?.[1],
+  ).toMatchObject({
+    title: "app › Fix login",
+    subtitle: "Waiting for your answer",
+    body: "Approve: Run npm test",
+    tag,
+  });
+  expect(
+    invoke.mock.calls.find(([command]) => command === "web_push_send")?.[1],
+  ).toMatchObject({
+    title: "app › Fix login",
+    body: "Waiting for your answer · Approve: Run npm test",
+    tag,
+    retire: [],
+  });
+
+  retireDecisionNotification(tag);
+  expect(invoke).toHaveBeenCalledWith("retire_notification", { tag });
+  // The phone hears about it with the next push, which shows a banner anyway.
+  invoke.mockClear();
+  await notifySession(session, "finished", false);
+  expect(
+    invoke.mock.calls.find(([command]) => command === "web_push_send")?.[1],
+  ).toMatchObject({ retire: [tag] });
+});
+
+it("marks a deferred request's second banner as a reminder", async () => {
+  const session = newSession("claude", "/work/app");
+  session.blocks = [
+    { id: "p1", role: "tool", text: "Deploy", approval: { requestId: 1 } },
+  ];
+  await notifySession(session, { kind: "approval", requestId: 1 }, false, {
+    reminder: true,
+  });
+  expect(
+    invoke.mock.calls.find(([command]) => command === "show_notification")?.[1],
+  ).toMatchObject({ subtitle: "Reminder · Waiting for your answer" });
+});
+
+it("asks for a habit's approval with a banner that opens its Irgat's chat", async () => {
+  const irgat = createIrgat();
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(false);
+  saveIrgatSessionId(irgat.id, "irgat-chat");
+  expect(await notifyHabitApproval(irgat.id, "Morning digest")).toBe(true);
+  const banner = invoke.mock.calls.find(
+    ([command]) => command === "show_notification",
+  )?.[1] as { sessionId: string; title: string; subtitle: string; body: string };
+  expect(banner.sessionId).toBe("irgat-chat");
+  expect(banner.title).toMatch(/ › Morning digest$/);
+  expect(banner.subtitle).toBe("Waiting for your answer");
+  expect(banner.body).toBe("Approve: run the habit “Morning digest”");
 });

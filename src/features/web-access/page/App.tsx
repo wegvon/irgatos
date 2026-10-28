@@ -3,7 +3,8 @@ import type { IdeasState } from "../../ideas/model/ideas";
 import type { WebIrgats, WebOverview, WebServices } from "../model/protocol";
 import type { WebInbox } from "../model/protocol";
 import { SignedOut, onSignedOut, read, usePoll } from "./client";
-import { resyncPush } from "./push";
+import { clearSettledBanners, resyncPush } from "./push";
+import { decisionKey } from "../../notifications/model/decisionUrgency";
 import { navigate, openSheet, useRoute, type Screen } from "./route";
 import { applyAppearance, useMediaQuery } from "./theme";
 import { ChatView } from "./ui/ChatView";
@@ -34,6 +35,7 @@ import { Sheet } from "./ui/Sheet";
 import { SwipeBack } from "./ui/SwipeBack";
 import { Today } from "./ui/Today";
 import { Agents } from "./ui/Agents";
+import { Goals } from "./ui/Goals";
 import { AutomationDetail, Automations } from "./ui/Automations";
 import { IrgatDetail } from "./ui/IrgatDetail";
 import { Inbox, InboxItemSheet, inboxBadge } from "./ui/Inbox";
@@ -49,6 +51,7 @@ import {
 } from "./ui/parts";
 import {
   Bot,
+  CircleDot,
   FolderTree,
   Idea,
   Inbox as InboxIcon,
@@ -167,6 +170,20 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
   useEffect(() => {
     if (live) void resyncPush().catch(() => {});
   }, [live]);
+  // Banners for requests settled since they arrived would ask for nothing.
+  const pendingDecisions = (overview.data?.needsYou ?? [])
+    .flatMap((entry) =>
+      entry.requests.map((request) =>
+        decisionKey(entry.sessionId, request.kind, request.requestId),
+      ),
+    )
+    .join("\n");
+  useEffect(() => {
+    if (!overview.data) return;
+    void clearSettledBanners(
+      new Set(pendingDecisions ? pendingDecisions.split("\n") : []),
+    ).catch(() => {});
+  }, [pendingDecisions, overview.data != null]);
   const now = useNow(overview.data?.at);
   const connected = !overview.error;
   const needsYou = overview.data?.needsYou.length ?? 0;
@@ -343,6 +360,8 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
           <Irgats irgats={irgats.data} header={header} wide={wide} />
         ) : name === "mail" ? (
           <MailList header={header} wide={wide} now={now} />
+        ) : name === "goals" ? (
+          <Goals header={header} wide={wide} now={now} />
         ) : name === "agents" ? (
           <Agents header={header} wide={wide} now={now} />
         ) : name === "automations" ? (
@@ -452,6 +471,12 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                   label="Mail"
                   on={screen.name === "mail" || screen.name === "mailThread"}
                   onClick={() => navigate({ name: "mail" })}
+                />
+                <NavItem
+                  icon={<CircleDot className="size-5" />}
+                  label="Goals"
+                  on={screen.name === "goals"}
+                  onClick={() => navigate({ name: "goals" })}
                 />
                 <NavItem
                   icon={<FolderTree className="size-5" />}
@@ -591,6 +616,13 @@ export function WebApp({ triedToken }: { triedToken: boolean }) {
                 onClick={() => navigate({ name: "mail" })}
               >
                 <Mail className="size-[22px]" />
+              </RailItem>
+              <RailItem
+                label="Goals"
+                on={screen.name === "goals"}
+                onClick={() => navigate({ name: "goals" })}
+              >
+                <CircleDot className="size-[22px]" />
               </RailItem>
               <RailItem
                 label="Agents"
