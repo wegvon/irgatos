@@ -1,6 +1,30 @@
 import { useSyncExternalStore } from "react";
 import { HARNESSES, type HarnessId } from "../../sessions/model/session";
 import { GOAL_TITLE_MAX, type Goal, type GoalLink, type GoalLinkRole } from "./goals";
+import { MAX_CRITERIA, type CriterionVerdict, type GoalCriterion } from "./criteria";
+
+const VERDICTS: readonly CriterionVerdict[] = ["met", "unmet", "unverified"];
+
+function parseCriteria(value: unknown): GoalCriterion[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: GoalCriterion[] = [];
+  for (const item of value.slice(0, MAX_CRITERIA)) {
+    if (!item || typeof item !== "object") continue;
+    const raw = item as Record<string, unknown>;
+    const text = typeof raw.text === "string" ? raw.text.trim() : "";
+    if (!text) continue;
+    const verdict = VERDICTS.includes(raw.verdict as CriterionVerdict)
+      ? (raw.verdict as CriterionVerdict)
+      : undefined;
+    const evidence = typeof raw.evidence === "string" ? raw.evidence : undefined;
+    items.push({
+      text,
+      ...(verdict ? { verdict } : {}),
+      ...(evidence ? { evidence } : {}),
+    });
+  }
+  return items.length ? items : undefined;
+}
 
 /**
  * Goals live in local storage, one list for every window. Writes go through
@@ -65,6 +89,10 @@ export function parseGoals(value: unknown): Goal[] {
       : [];
     const scope = str(raw.scope);
     const doneAt = num(raw.doneAt);
+    const criteria = parseCriteria(raw.criteria);
+    const criteriaAt = num(raw.criteriaAt);
+    const criteriaFrom = str(raw.criteriaFrom);
+    const checkedAt = num(raw.checkedAt);
     goals.push({
       id,
       title: (str(raw.title) ?? "").slice(0, GOAL_TITLE_MAX) || "Untitled goal",
@@ -75,6 +103,11 @@ export function parseGoals(value: unknown): Goal[] {
       createdAt: num(raw.createdAt) ?? 0,
       updatedAt: num(raw.updatedAt) ?? 0,
       ...(doneAt ? { doneAt } : {}),
+      ...(criteria ? { criteria } : {}),
+      ...(criteria && criteriaAt ? { criteriaAt } : {}),
+      ...(criteria && criteriaFrom ? { criteriaFrom } : {}),
+      ...(criteria && raw.criteriaEdited === true ? { criteriaEdited: true } : {}),
+      ...(criteria && checkedAt ? { checkedAt } : {}),
       links,
     });
   }
@@ -171,6 +204,31 @@ export function setGoalDone(goalId: string, done: boolean): void {
   updateGoal(goalId, (goal) => {
     const { doneAt: _old, ...rest } = goal;
     return done ? { ...rest, doneAt: Date.now() } : rest;
+  });
+}
+
+/**
+ * The user's own criteria, one per line. They replace the agent's, clear old
+ * verdicts, and reach the goal's chats on their next message.
+ */
+export function setGoalCriteria(goalId: string, lines: readonly string[]): void {
+  const criteria = lines
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "").trim())
+    .filter(Boolean)
+    .slice(0, MAX_CRITERIA)
+    .map((text) => ({ text: text.slice(0, 300) }));
+  updateGoal(goalId, (goal) => {
+    const {
+      criteria: _criteria,
+      criteriaAt: _at,
+      criteriaFrom: _from,
+      criteriaEdited: _edited,
+      checkedAt: _checked,
+      ...rest
+    } = goal;
+    return criteria.length
+      ? { ...rest, criteria, criteriaAt: Date.now(), criteriaEdited: true }
+      : rest;
   });
 }
 

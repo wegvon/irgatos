@@ -1,5 +1,12 @@
 import { markReview, useReviewMarks } from "../../fleet/model/reviewMarks";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { basename } from "../../../platform/tauri/fs";
 import { projectName } from "../../../shared/lib/paths";
@@ -7,7 +14,9 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  Eye,
   FileDiff,
+  Globe,
   GitBranch,
   GitPullRequest,
   LoaderCircle,
@@ -28,13 +37,47 @@ import { formatLiveElapsed } from "../../sessions/model/liveAgents";
 import type { Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import {
+  completionGateStatus,
+  subscribeCompletionGateStatus,
+} from "../../sessions/model/completionGate";
+import { requestOpenArtifact } from "../../artifacts/model/openArtifact";
+import { OPEN_BROWSER_URL_EVENT } from "../../source-control/model/worktreeEnv";
+import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
+import {
+  goalProgressSummary,
+  progressHeadline,
+  type GoalProgressSummary,
+  type ProgressItem,
+} from "../model/progress";
+import {
+  recoveryBrief,
+  type RecoveryBrief,
+  type RecoveryCause,
+} from "../model/recovery";
+import { RecoveryDetails } from "./RecoveryDetails";
+import { sessionInterruption } from "../../sessions/model/sessionInterruption";
+import { isLiveHarness } from "../../../integrations/harness/core/registry";
+import {
+  goalResult,
+  type GoalCheckRun,
+  type GoalPreview,
+  type GoalResult,
+} from "../model/result";
 import {
   removeGoal,
   renameGoal,
+  setGoalCriteria,
   setGoalDone,
   setGoalScope,
   useGoals,
 } from "../model/goalStore";
+import {
+  criteriaSummary,
+  type CriterionVerdict,
+  type GoalCriterion,
+} from "../model/criteria";
 import {
   GOAL_STATE_LABEL,
   filterGoalViews,
@@ -61,6 +104,13 @@ type Props = {
   onOpenSession: (sessionId: string) => void;
   /** A fresh conversation that joins the goal instead of starting its own. */
   onNewGoalChat?: (goal: Goal) => void;
+  /** The delivering chat's changes, as supporting detail. */
+  onOpenChanges?: (sessionId: string, workCwd: string) => void;
+  /** Orchestration runs, whose task lists are a goal's progress. */
+  orchestrationRuns?: readonly OrchestrationRun[];
+  /** Picks a stopped chat back up: Resume, or Resume at reset after a limit. */
+  onResumeSession?: (sessionId: string, cause: RecoveryCause) => void;
+  onResumeAtReset?: (sessionId: string, enabled: boolean) => void;
   onApproval: (
     sessionId: string,
     requestId: number,
@@ -112,14 +162,24 @@ export function GoalsView({
   sidebar = false,
   onOpenSession,
   onNewGoalChat,
+  onOpenChanges,
+  orchestrationRuns,
+  onResumeSession,
+  onResumeAtReset,
   onApproval,
   onQuestionReply,
   onQuestionInteraction,
 }: Props) {
   const goals = useGoals();
   const reviews = useReviewMarks();
+  // Completion Gate results live outside the sessions; redraw when they move.
+  const [gateVersion, gateChanged] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => subscribeCompletionGateStatus(gateChanged), []);
+  const byId = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  );
   const views = useMemo(() => {
-    const byId = new Map(sessions.map((session) => [session.id, session]));
     return sortGoalViews(
       goals.map((goal) =>
         goalView(goal, byId, {
@@ -130,7 +190,7 @@ export function GoalsView({
         }),
       ),
     );
-  }, [goals, interruptedSessionIds, now, reviews, sessions, unseenFinishedIds]);
+  }, [byId, goals, interruptedSessionIds, now, reviews, unseenFinishedIds]);
   const shown = useMemo(() => filterGoalViews(views, query), [views, query]);
   const filtering = query.trim().length > 0;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
@@ -225,7 +285,13 @@ export function GoalsView({
                     >
                       <GoalCard
                         view={view}
+                        sessionsById={byId}
+                        orchestrationRuns={orchestrationRuns}
+                        onResumeSession={onResumeSession}
+                        onResumeAtReset={onResumeAtReset}
+                        gateVersion={gateVersion}
                         now={now}
+                        onOpenChanges={onOpenChanges}
                         expanded={expanded.has(view.goal.id)}
                         onToggle={() => toggle(setExpanded, view.goal.id)}
                         onOpenSession={onOpenSession}
@@ -267,6 +333,12 @@ function primarySession(view: GoalView): GoalMemberView | undefined {
 
 function GoalCard({
   view,
+  sessionsById,
+  orchestrationRuns,
+  onResumeSession,
+  onResumeAtReset,
+  gateVersion,
+  onOpenChanges,
   now,
   expanded,
   onToggle,
@@ -277,6 +349,12 @@ function GoalCard({
   onQuestionInteraction,
 }: {
   view: GoalView;
+  sessionsById: ReadonlyMap<string, Session>;
+  orchestrationRuns?: readonly OrchestrationRun[];
+  onResumeSession?: Props["onResumeSession"];
+  onResumeAtReset?: Props["onResumeAtReset"];
+  gateVersion: number;
+  onOpenChanges?: Props["onOpenChanges"];
   now: number;
   expanded: boolean;
   onToggle: () => void;
@@ -292,7 +370,29 @@ function GoalCard({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const chats = view.members.filter((member) => member.link.role !== "worker").length;
   const workers = view.members.length - chats;
-  const progress = progressText(view);
+  const summary = useMemo(
+    () => goalProgressSummary(view, sessionsById, orchestrationRuns, now),
+    [now, orchestrationRuns, sessionsById, view],
+  );
+  // The state label already says when it needs the user.
+  const headline = goal.doneAt
+    ? undefined
+    : progressHeadline({ ...summary, decisions: 0 });
+  const progress = headline ?? progressText(view);
+  const criteria = criteriaSummary(goal.criteria);
+  const recovery = useMemo(
+    () => goalRecovery(view, sessionsById, now),
+    [now, sessionsById, view],
+  );
+  const result = useMemo(
+    () =>
+      view.state === "working" || view.state === "needsYou"
+        ? undefined
+        : goalResult(view, sessionsById, { gateStatus: completionGateStatus }),
+    // The gate's results are read through its version.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view, sessionsById, gateVersion],
+  );
   const primary = primarySession(view);
   const files = view.editedPaths.length;
   return (
@@ -304,7 +404,7 @@ function GoalCard({
       }}
       className={`${FLEET_CARD} ${waiting ? FLEET_CARD_WAITING : FLEET_CARD_CALM}`}
     >
-      <div className={`${FLEET_CARD_HEAD} !pr-32`}>
+      <div className={`${FLEET_CARD_HEAD} ${result && !expanded && view.state === "review" ? "!pr-44" : "!pr-32"}`}>
         <button
           type="button"
           onClick={onToggle}
@@ -351,6 +451,13 @@ function GoalCard({
               </span>
             ) : null}
             {progress ? <Dot>{progress}</Dot> : null}
+            {criteria?.checked ? (
+              <Dot>
+                <span className={criteria.met === criteria.total ? "text-emerald-400/90" : "text-amber-400/90"}>
+                  {criteria.met} of {criteria.total} criteria met
+                </span>
+              </Dot>
+            ) : null}
             <Dot>{projectName(goal.cwd)}</Dot>
             {view.branches[0] ? (
               <span className="flex min-w-0 shrink items-center gap-1">
@@ -364,7 +471,7 @@ function GoalCard({
               {workers ? ` · ${workers} ${workers === 1 ? "agent" : "agents"}` : ""}
             </Dot>
           </span>
-          {view.state === "interrupted" || view.state === "failed" ? (
+          {(view.state === "interrupted" || view.state === "failed") && !recovery ? (
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
               <RotateCcw className="size-3 shrink-0" />
               <span className="truncate">
@@ -404,6 +511,15 @@ function GoalCard({
         <span className="pr-1 text-[11px] tabular-nums text-content/35">
           {formatLiveElapsed(view.lastActivityAt, now)} ago
         </span>
+        {result && !expanded && view.state === "review" ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="h-6 rounded px-1.5 text-[11px] font-medium text-accent hover:bg-content/10"
+          >
+            Review
+          </button>
+        ) : null}
         {primary ? (
           <button
             type="button"
@@ -425,6 +541,15 @@ function GoalCard({
           <MoreHorizontal className="size-3.5" />
         </button>
       </span>
+      {recovery && !goal.doneAt ? (
+        <RecoveryPanel
+          recovery={recovery}
+          showTitle={view.members.length > 1}
+          onResume={onResumeSession}
+          onResumeAtReset={onResumeAtReset}
+          onOpen={() => onOpenSession(recovery.sessionId)}
+        />
+      ) : null}
       {view.requests.map(({ sessionId, sessionTitle, request }) => (
         <div key={`${sessionId}:${request.kind}:${request.requestId}`}>
           {sessionId !== primary?.link.sessionId ? (
@@ -445,7 +570,14 @@ function GoalCard({
         </div>
       ))}
       {expanded ? (
-        <GoalDetail view={view} onOpenSession={onOpenSession} onNewChat={onNewChat} />
+        <GoalDetail
+          view={view}
+          result={result}
+          progress={summary}
+          onOpenSession={onOpenSession}
+          onNewChat={onNewChat}
+          onOpenChanges={onOpenChanges}
+        />
       ) : null}
       {menu ? (
         <ExplorerMenu
@@ -518,12 +650,18 @@ function memberStatus(member: GoalMemberView): string {
 
 function GoalDetail({
   view,
+  result,
+  progress,
   onOpenSession,
   onNewChat,
+  onOpenChanges,
 }: {
   view: GoalView;
+  result?: GoalResult;
+  progress?: GoalProgressSummary;
   onOpenSession: (sessionId: string) => void;
   onNewChat?: () => void;
+  onOpenChanges?: (sessionId: string, workCwd: string) => void;
 }) {
   const { goal } = view;
   const [editingScope, setEditingScope] = useState(false);
@@ -532,6 +670,33 @@ function GoalDetail({
   const showRequest = request && request !== goal.title;
   return (
     <div data-goal-detail className="flex flex-col gap-3 border-t border-stroke px-3 py-2.5 text-[12px]">
+      {progress &&
+      !goal.doneAt &&
+      (progress.remaining.length || progress.blocked.length || (!result && progress.done.length)) ? (
+        <ProgressSection progress={progress} onOpenSession={onOpenSession} />
+      ) : null}
+      {result?.summary ? (
+        <DetailSection title="Delivered">
+          <div className="max-h-48 overflow-y-auto pr-1 text-content/80">
+            <AgentMarkdown text={result.summary} className="text-[12px] leading-relaxed" cwd={result.workCwd} />
+          </div>
+        </DetailSection>
+      ) : null}
+      <CriteriaSection goalId={goal.id} criteria={goal.criteria} />
+      {result?.checks.length ? <ChecksSection checks={result.checks} /> : null}
+      {result?.previews.length ? <PreviewsSection previews={result.previews} /> : null}
+      {result?.limitations.length ? (
+        <DetailSection title="Known limitations">
+          <ul className="flex flex-col gap-0.5" data-goal-limitations>
+            {result.limitations.map((item, index) => (
+              <li key={index} className="flex min-w-0 items-start gap-2 text-content/70">
+                <span className="mt-px w-3 shrink-0 text-center text-amber-400">!</span>
+                <span className="min-w-0 leading-5">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
       <DetailSection title="Scope">
         {editingScope ? (
           <InlineEdit
@@ -595,8 +760,8 @@ function GoalDetail({
           </button>
         ) : null}
       </DetailSection>
-      {view.editedPaths.length || view.artifacts || view.pullRequests.length || view.worktrees.length ? (
-        <DetailSection title="Results">
+      {view.editedPaths.length || view.pullRequests.length || view.worktrees.length ? (
+        <DetailSection title="Changes">
           {view.pullRequests.map((pr) => (
             <button
               key={pr.url}
@@ -613,15 +778,24 @@ function GoalDetail({
           {view.editedPaths.length ? (
             <span className="flex min-w-0 items-start gap-1.5 px-1 text-content/60">
               <FileDiff className="mt-0.5 size-3 shrink-0 text-accent" />
-              <span className="min-w-0 break-words font-mono text-[11px] text-content/55">
-                {view.editedPaths.slice(0, 8).map((path) => basename(path)).join(", ")}
-                {view.editedPaths.length > 8 ? `, +${view.editedPaths.length - 8}` : ""}
+              <span className="min-w-0 break-words">
+                <span className="text-content/70">
+                  {view.editedPaths.length} {view.editedPaths.length === 1 ? "file" : "files"} changed
+                </span>{" "}
+                <span className="font-mono text-[11px] text-content/45">
+                  {view.editedPaths.slice(0, 6).map((path) => basename(path)).join(", ")}
+                  {view.editedPaths.length > 6 ? `, +${view.editedPaths.length - 6}` : ""}
+                </span>
               </span>
-            </span>
-          ) : null}
-          {view.artifacts ? (
-            <span className="px-1 text-content/55">
-              {view.artifacts} {view.artifacts === 1 ? "artifact" : "artifacts"} saved
+              {result && onOpenChanges ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenChanges(result.sessionId, result.workCwd)}
+                  className="ml-auto shrink-0 rounded px-1.5 text-[11px] text-content/50 hover:bg-content/[0.06] hover:text-content"
+                >
+                  View changes
+                </button>
+              ) : null}
             </span>
           ) : null}
           {view.worktrees.length ? (
@@ -635,14 +809,340 @@ function GoalDetail({
   );
 }
 
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+type GoalRecovery = {
+  sessionId: string;
+  title: string;
+  cause: RecoveryCause;
+  brief: RecoveryBrief;
+  /** A usage limit with a reset still ahead. */
+  resetsAt?: number;
+  resumeAtReset?: boolean;
+};
+
+/** The first of the goal's chats that stopped short and can be picked up. */
+function goalRecovery(
+  view: GoalView,
+  sessionsById: ReadonlyMap<string, Session>,
+  now: number,
+): GoalRecovery | undefined {
+  for (const member of view.members) {
+    if (!member.open) continue;
+    const session = sessionsById.get(member.link.sessionId);
+    if (!session || session.busy) continue;
+    const cause: RecoveryCause | undefined = session.usageLimit
+      ? "limit"
+      : sessionInterruption(session)
+        ? "interrupted"
+        : undefined;
+    if (!cause) continue;
+    const brief = recoveryBrief(session, cause, {
+      goal: view.goal,
+      now,
+      nativeResume: isLiveHarness(session.harness),
+    });
+    if (!brief) continue;
+    const resetsAt = session.usageLimit?.resetsAt;
+    return {
+      sessionId: session.id,
+      title: member.link.title,
+      cause,
+      brief,
+      ...(resetsAt && resetsAt > now ? { resetsAt } : {}),
+      ...(session.usageLimit?.resumeAtReset ? { resumeAtReset: true } : {}),
+    };
+  }
+  return undefined;
+}
+
+/** What stopped, what is safe, and the one step that carries on. */
+function RecoveryPanel({
+  recovery,
+  showTitle,
+  onResume,
+  onResumeAtReset,
+  onOpen,
+}: {
+  recovery: GoalRecovery;
+  showTitle: boolean;
+  onResume?: Props["onResumeSession"];
+  onResumeAtReset?: Props["onResumeAtReset"];
+  onOpen: () => void;
+}) {
+  const limit = recovery.cause === "limit";
+  const waiting = limit && recovery.resetsAt != null;
+  const button =
+    "rounded-md px-3 py-1 text-[12px] font-medium";
+  return (
+    <div
+      data-goal-recovery={recovery.cause}
+      className={`flex flex-col gap-2 border-t border-stroke px-3 py-2 ${limit ? "bg-amber-400/[0.04]" : "bg-rose-400/[0.04]"}`}
+    >
+      <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
+        <RotateCcw className={`size-3.5 shrink-0 ${limit ? "text-amber-400" : "text-rose-400"}`} />
+        <span className="min-w-0 truncate">
+          {limit ? "Stopped at a usage limit" : "Stopped before it finished"}
+          {showTitle ? <span className="text-content/45"> · {recovery.title}</span> : null}
+        </span>
+      </span>
+      <RecoveryDetails brief={recovery.brief} tone={limit ? "amber" : "rose"} framed={false} />
+      <span className="flex flex-wrap gap-2">
+        {waiting ? (
+          <button
+            type="button"
+            disabled={!onResumeAtReset}
+            onClick={() => onResumeAtReset?.(recovery.sessionId, !recovery.resumeAtReset)}
+            className={`${button} ${recovery.resumeAtReset ? "bg-content/10 text-amber-400" : "bg-content text-background-base hover:bg-content/80"}`}
+          >
+            {recovery.resumeAtReset ? "Resuming at reset" : "Resume at reset"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={!onResume}
+            onClick={() => onResume?.(recovery.sessionId, recovery.cause)}
+            className={`${button} bg-content text-background-base hover:bg-content/80`}
+          >
+            Resume
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`${button} bg-content/10 text-content/70 hover:bg-content/20`}
+        >
+          {limit ? "Pick another model" : "Open chat"}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Done, left and stuck, as one list across every chat and worker. */
+function ProgressSection({
+  progress,
+  onOpenSession,
+}: {
+  progress: GoalProgressSummary;
+  onOpenSession: (sessionId: string) => void;
+}) {
+  const [allDone, setAllDone] = useState(false);
+  const DONE_SHOWN = 4;
+  const done = allDone ? progress.done : progress.done.slice(-DONE_SHOWN);
+  const hidden = progress.done.length - done.length;
+  const row = (item: ProgressItem, mark: ReactNode, tone: string) => (
+    <li key={`${item.sessionId ?? ""}:${item.text}`}>
+      <button
+        type="button"
+        disabled={!item.sessionId}
+        onClick={() => item.sessionId && onOpenSession(item.sessionId)}
+        className="flex w-full min-w-0 items-start gap-2 rounded-md px-0.5 text-left enabled:hover:bg-content/[0.04]"
+      >
+        <span className={`mt-px grid h-5 w-3 shrink-0 place-items-center ${tone}`}>{mark}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className="leading-5 text-content/80">{item.text}</span>
+          {item.detail ? (
+            <span className="truncate text-[11px] leading-4 text-content/45">{item.detail}</span>
+          ) : null}
+        </span>
+      </button>
+    </li>
+  );
+  return (
+    <DetailSection
+      title={progress.source === "workers" ? "Progress across agents" : "Progress"}
+      action={
+        progress.decisions ? (
+          <span className="text-[11px] text-amber-400">
+            {progress.decisions} {progress.decisions === 1 ? "decision" : "decisions"} waiting on you
+          </span>
+        ) : null
+      }
+    >
+      <ul className="flex flex-col gap-0.5" data-goal-progress>
+        {hidden > 0 ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => setAllDone(true)}
+              className="px-5 text-[11px] text-content/40 hover:text-content/70"
+            >
+              {hidden} more done
+            </button>
+          </li>
+        ) : null}
+        {done.map((item) => row(item, "✓", "text-emerald-400"))}
+        {progress.blocked.map((item) => row(item, "!", "text-rose-400"))}
+        {progress.remaining.map((item) =>
+          row(
+            item,
+            item.active ? <LoaderCircle className="size-3 animate-spin" /> : "○",
+            item.active ? "text-sky-400/90" : "text-content/30",
+          ),
+        )}
+      </ul>
+    </DetailSection>
+  );
+}
+
+const CHECK_MARK: Record<GoalCheckRun["state"], { mark: string; tone: string; label: string }> = {
+  passed: { mark: "✓", tone: "text-emerald-400", label: "Passed" },
+  failed: { mark: "✗", tone: "text-rose-400", label: "Failed" },
+  running: { mark: "…", tone: "text-content/40", label: "Running" },
+};
+
+/** Tests, builds and the Completion Gate that ran on the delivery. */
+function ChecksSection({ checks }: { checks: readonly GoalCheckRun[] }) {
+  return (
+    <DetailSection title="Checks">
+      <ul className="flex flex-col gap-0.5" data-goal-checks>
+        {checks.map((check) => {
+          const mark = CHECK_MARK[check.state];
+          return (
+            <li key={`${check.gate ? "gate" : "run"}:${check.label}`} className="flex min-w-0 items-center gap-2">
+              <span aria-label={mark.label} className={`w-3 shrink-0 text-center ${mark.tone}`}>
+                {mark.mark}
+              </span>
+              {check.gate ? (
+                <span className="shrink-0 text-content/75">{check.label}</span>
+              ) : null}
+              <span className="min-w-0 truncate font-mono text-[11px] text-content/55" title={check.command ?? check.label}>
+                {check.gate ? check.command : check.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </DetailSection>
+  );
+}
+
+/** What the user can look at instead of the code. */
+function PreviewsSection({ previews }: { previews: readonly GoalPreview[] }) {
+  return (
+    <DetailSection title="Look at it">
+      <div className="flex flex-wrap gap-1.5" data-goal-previews>
+        {previews.map((preview) => (
+          <button
+            key={preview.key}
+            type="button"
+            title={preview.url ?? preview.artifact?.path ?? preview.title}
+            onClick={() => {
+              if (preview.artifact) requestOpenArtifact(preview.artifact, true);
+              else if (preview.url)
+                window.dispatchEvent(new CustomEvent<string>(OPEN_BROWSER_URL_EVENT, { detail: preview.url }));
+            }}
+            className="flex min-w-0 max-w-[16rem] items-center gap-1.5 rounded-md border border-content/10 bg-content/[0.03] px-2 py-1 text-[11.5px] text-content/75 hover:border-content/20 hover:text-content"
+          >
+            {preview.kind === "url" ? (
+              <Globe className="size-3 shrink-0 opacity-70" />
+            ) : (
+              <Eye className="size-3 shrink-0 opacity-70" />
+            )}
+            <span className="truncate">{preview.title}</span>
+          </button>
+        ))}
+      </div>
+    </DetailSection>
+  );
+}
+
+function DetailSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-content/35">
-        {title}
+      <span className="flex items-center gap-2">
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-content/35">
+          {title}
+        </span>
+        {action ? <span className="ml-auto">{action}</span> : null}
       </span>
       {children}
     </div>
+  );
+}
+
+const VERDICT_MARK: Record<CriterionVerdict, { mark: string; tone: string; label: string }> = {
+  met: { mark: "✓", tone: "text-emerald-400", label: "Met" },
+  unmet: { mark: "✗", tone: "text-rose-400", label: "Not met" },
+  unverified: { mark: "?", tone: "text-amber-400", label: "Not verified" },
+};
+
+/** When the goal counts as done, and how the last delivery measured up. */
+function CriteriaSection({
+  goalId,
+  criteria,
+}: {
+  goalId: string;
+  criteria?: readonly GoalCriterion[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const text = (criteria ?? []).map((criterion) => criterion.text).join("\n");
+  return (
+    <DetailSection
+      title="Done when"
+      action={
+        !editing ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded px-1 text-[11px] text-content/40 hover:bg-content/[0.06] hover:text-content/75"
+          >
+            Edit
+          </button>
+        ) : null
+      }
+    >
+      {editing ? (
+        <InlineEdit
+          multiline
+          value={text}
+          label="Completion criteria, one per line"
+          placeholder="One criterion per line"
+          onDone={(value) => {
+            setEditing(false);
+            if (value != null && value.trim() !== text.trim())
+              setGoalCriteria(goalId, value.split("\n"));
+          }}
+        />
+      ) : criteria?.length ? (
+        <ul className="flex flex-col gap-1" data-goal-criteria>
+          {criteria.map((criterion, index) => {
+            const verdict = criterion.verdict ? VERDICT_MARK[criterion.verdict] : undefined;
+            return (
+              <li key={index} className="flex min-w-0 items-start gap-2">
+                <span
+                  aria-label={verdict?.label ?? "Not checked yet"}
+                  className={`mt-px w-3 shrink-0 text-center text-[12px] leading-5 ${verdict?.tone ?? "text-content/30"}`}
+                >
+                  {verdict?.mark ?? "·"}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="leading-5 text-content/80">{criterion.text}</span>
+                  {criterion.evidence ? (
+                    <span className="text-[11px] leading-4 text-content/45">{criterion.evidence}</span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="self-start rounded-md text-left text-content/35 hover:text-content/60"
+        >
+          The agent sets these out when it starts. Add your own
+        </button>
+      )}
+    </DetailSection>
   );
 }
 

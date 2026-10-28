@@ -354,6 +354,8 @@ type Props = {
   onUsageLimitResume?: () => void;
   onUsageLimitResumeAtReset?: (enabled: boolean) => void;
   onUsageLimitDismiss?: () => void;
+  /** What got done and what is left, shown under the usage limit notice. */
+  usageLimitDetails?: ReactNode;
   onOpenFile?: (path: string) => void;
   onDraftChange?: (text: string) => void;
   onRecallLastTurnReady?: (recall: () => void) => void;
@@ -515,6 +517,7 @@ export function Composer({
   onUsageLimitResume,
   onUsageLimitResumeAtReset,
   onUsageLimitDismiss,
+  usageLimitDetails,
   onOpenFile,
   onDraftChange,
   onRecallLastTurnReady,
@@ -2110,6 +2113,7 @@ export function Composer({
           onResume={onUsageLimitResume}
           onResumeAtReset={onUsageLimitResumeAtReset}
           onDismiss={onUsageLimitDismiss}
+          details={usageLimitDetails}
         />
       ) : hideQuotaHold ? null : (
         <SessionProviderHold

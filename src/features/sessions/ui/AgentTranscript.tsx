@@ -73,6 +73,7 @@ import type { IrgatSpawnedSession } from "../model/session";
 import { LaunchedSessionCard } from "../../irgats/ui/LaunchedSessionCard";
 import type { MessageDelivery } from "../../irgats/model/irgatMessaging";
 import { irgatReactionBlocks } from "../../irgats/model/irgatReaction";
+import { goalCriteriaBlocks } from "../../goals/model/criteria";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
   isHarnessAuthError,
@@ -342,10 +343,11 @@ function AgentTranscriptComponent({
 }: Props) {
   const isIrgatChat = !!agentMascot;
   const blocks = useMemo(() => {
-    // A Irgat's reaction sits on the message it answers, not in a bubble.
+    // A Irgat's reaction sits on the message it answers, not in a bubble;
+    // a goal's tagged criteria read as plain lists.
     const chatBlocks = isIrgatChat
       ? irgatReactionBlocks(sourceBlocks)
-      : sourceBlocks;
+      : goalCriteriaBlocks(sourceBlocks);
     if (!harness || !supportsHarnessLogin(harness)) return chatBlocks;
     const visibleBlocks = chatBlocks.filter(
       (block) =>

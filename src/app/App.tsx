@@ -540,6 +540,10 @@ import { linkSessionToGoal } from "../features/goals/model/goalStore";
 import type { Goal } from "../features/goals/model/goals";
 import { OPEN_GOAL_EVENT } from "../features/goals/ui/GoalLine";
 import {
+  planGoalContext,
+  recordGoalContext,
+} from "../features/goals/model/goalContext";
+import {
   ADD_TO_CHAT_EVENT,
   appendComposerInsert,
   requestAddToChat,
@@ -8129,6 +8133,10 @@ function Workspace({
       const irgatFirstTurn =
         irgat &&
         !current.blocks.some((block) => block.role === "user" && !block.draft);
+      // A goal's first turn sets out its completion criteria.
+      const goalFirstTurn = !current.blocks.some(
+        (block) => block.role === "user" && !block.draft && !block.internal,
+      );
       const promptText = operatorCommand.matched
         ? operatorCommand.text.trim() ||
           "Explain what you can do in Irgatos with the app CLI."
@@ -9182,6 +9190,18 @@ function Workspace({
                   force: !!editedResend,
                 });
           if (standingPlan.context) appContext.push(standingPlan.context);
+          // The goal this chat works on: what done means, and how to report it.
+          const goalPlan =
+            rawCommand ||
+            proposalDraft ||
+            irgat ||
+            current.ephemeral ||
+            current.inboxAsk ||
+            isFreeChatSession(current) ||
+            orchestrator.forSession(sessionId)
+              ? {}
+              : planGoalContext(sessionId, goalFirstTurn);
+          if (goalPlan.context) appContext.push(goalPlan.context);
           if (operatorCommand.matched || handAgent) {
             const cli = `${shellPath(await invoke<string>("app_cli_path"))} app`;
             appContext.push(
@@ -9243,6 +9263,8 @@ function Workspace({
               adhdPlan.state,
             );
           }
+          if (goalPlan.version && !providerFailureSeen)
+            recordGoalContext(sessionId, goalPlan.version);
           if (standingPlan.version && !providerFailureSeen) {
             recordStandingPrompt(
               sessionId,
@@ -13872,6 +13894,34 @@ function Workspace({
     if (!fleetViewOpen) setFleetGoalFocus(undefined);
   }, [fleetViewOpen]);
 
+  // A goal's "View changes": open its chat, then its changes once it is active.
+  const [goalChangesRequest, setGoalChangesRequest] = useState<{
+    sessionId: string;
+    cwd: string;
+    at: number;
+  } | null>(null);
+  const onOpenGoalChanges = useCallback(
+    (sessionId: string, workCwd: string) => {
+      setGoalChangesRequest({ sessionId, cwd: workCwd, at: Date.now() });
+      onOpenFleetSession(sessionId);
+    },
+    [onOpenFleetSession],
+  );
+  useEffect(() => {
+    if (!goalChangesRequest) return;
+    // A chat that never opened does not get its diff later by surprise.
+    if (Date.now() - goalChangesRequest.at > 10_000) {
+      setGoalChangesRequest(null);
+      return;
+    }
+    if (activeSessionId !== goalChangesRequest.sessionId) return;
+    setGoalChangesRequest(null);
+    onOpenDiff(undefined, {
+      sessionId: goalChangesRequest.sessionId,
+      cwd: goalChangesRequest.cwd,
+    });
+  }, [activeSessionId, goalChangesRequest, onOpenDiff]);
+
   // A fresh chat in the goal's project that joins the goal on its first send.
   const onNewGoalChat = useCallback(
     (goal: Goal) => {
@@ -16626,6 +16676,14 @@ function Workspace({
                   onOpenSession={onOpenFleetSession}
                   onRetryAgent={onRetryAgent}
                   onNewGoalChat={onNewGoalChat}
+                  onOpenGoalChanges={onOpenGoalChanges}
+                  orchestrationRuns={orchestrationRuns}
+                  onResumeGoalSession={(sessionId, cause) =>
+                    cause === "limit"
+                      ? onUsageLimitResume(sessionId)
+                      : onResumeInterrupted(sessionId)
+                  }
+                  onResumeGoalAtReset={onUsageLimitResumeAtReset}
                   focusGoalId={fleetGoalFocus}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}

@@ -107,6 +107,11 @@ import { sessionInterruption } from "../model/sessionInterruption";
 import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
 import { AgentRunCard } from "./AgentRunCard";
 import { GoalLine } from "../../goals/ui/GoalLine";
+import { RecoveryDetails } from "../../goals/ui/RecoveryDetails";
+import { recoveryBrief } from "../../goals/model/recovery";
+import { useGoals } from "../../goals/model/goalStore";
+import { goalForSession } from "../../goals/model/goals";
+import { isLiveHarness } from "../../../integrations/harness/core/registry";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import {
   textQuestion,
@@ -466,11 +471,39 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const remote = remoteSession;
   const interruption =
     !remote && onResumeInterrupted ? sessionInterruption(session) : undefined;
+  // What got done, what is safe and what is left, under either notice.
+  const goals = useGoals();
+  const goal = goalForSession(goals, session.id);
+  const interruptionBrief = useMemo(
+    () =>
+      interruption
+        ? recoveryBrief(session, "interrupted", {
+            goal,
+            nativeResume: isLiveHarness(session.harness),
+          })
+        : undefined,
+    // The brief follows the transcript, not every streamed token elsewhere.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [interruption?.blockId, session.blocks, session.queuedMessages, goal],
+  );
+  const limitBrief = useMemo(
+    () =>
+      session.usageLimit && !session.busy
+        ? recoveryBrief(session, "limit", { goal })
+        : undefined,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session.usageLimit, session.busy, session.blocks, session.queuedMessages, goal],
+  );
   const interruptionBanner = (variant: "composer" | "irgat") =>
     interruption && onResumeInterrupted ? (
       <InterruptedSessionBanner
         interruption={interruption}
         variant={variant}
+        details={
+          interruptionBrief ? (
+            <RecoveryDetails brief={interruptionBrief} tone="rose" />
+          ) : undefined
+        }
         onResume={() => onResumeInterrupted(session.id)}
         onDismiss={
           onDismissInterrupted
@@ -938,6 +971,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       onResumeQueue={() => onResumeQueue(session.id)}
       usageLimit={session.usageLimit}
+      usageLimitDetails={
+        limitBrief ? <RecoveryDetails brief={limitBrief} tone="amber" /> : undefined
+      }
       modelLeading={
         remote ? undefined : (
           <UsageChips
