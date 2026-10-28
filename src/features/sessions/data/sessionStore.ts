@@ -44,6 +44,7 @@ import type {
   PlanBlockMeta,
   QueuedMessage,
   MessageQueueStatus,
+  PendingHarnessSwitch,
   TurnModel,
   TurnMetrics,
 } from "../model/session";
@@ -94,6 +95,7 @@ type SessionRecord = {
   title: string;
   providerSessionId?: string | null;
   providerAccountId?: string | null;
+  pendingSwitch?: unknown;
   blocks: Block[];
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
@@ -119,6 +121,7 @@ type SessionUpsertPayload = {
   title: string;
   providerSessionId?: string;
   providerAccountId?: string;
+  pendingSwitch?: PendingHarnessSwitch;
   blocks: Block[];
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
@@ -155,6 +158,7 @@ function persistableMeta(
   includeQueue = true,
 ): Omit<SessionUpsertPayload, "blocks"> {
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
+  const pendingSwitch = sanitizePendingSwitch(session.pendingSwitch);
   const queuedMessages = includeQueue
     ? sanitizeQueuedMessages(session.queuedMessages)
     : [];
@@ -179,6 +183,9 @@ function persistableMeta(
     ...(session.providerAccountId && isPersistableId(session.providerAccountId)
       ? { providerAccountId: session.providerAccountId }
       : {}),
+    // Saved with the new provider so a restart before the next send still
+    // hands the conversation over instead of starting the new provider cold.
+    ...(pendingSwitch ? { pendingSwitch } : {}),
     ...(session.context ? { contextUsed: session.context.used } : {}),
     ...(session.context?.window
       ? { contextWindow: session.context.window }
@@ -1132,6 +1139,30 @@ function sanitizeStringRecord(
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
+/** Ids must pass Rust `validate_id` later, when the switch is reverted or sent. */
+export function sanitizePendingSwitch(
+  value: unknown,
+): PendingHarnessSwitch | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (!(HARNESSES as unknown[]).includes(record.from)) return undefined;
+  if (typeof record.fromModel !== "string") return undefined;
+  const id = (raw: unknown) =>
+    typeof raw === "string" && isPersistableId(raw) ? raw : undefined;
+  const fromProviderSessionId = id(record.fromProviderSessionId);
+  const fromProviderAccountId = id(record.fromProviderAccountId);
+  return {
+    from: record.from as HarnessId,
+    fromModel: record.fromModel,
+    fromSettings: sanitizeStringRecord(record.fromSettings) ?? {},
+    ...(fromProviderSessionId ? { fromProviderSessionId } : {}),
+    ...(fromProviderAccountId ? { fromProviderAccountId } : {}),
+    ...(record.skipOutgoingRecap === true ? { skipOutgoingRecap: true } : {}),
+  };
+}
+
 function sanitizeTimestamp(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -1513,6 +1544,7 @@ function recordToSession(record: SessionRecord): Session {
     : [];
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
   const queuedMessages = sanitizeQueuedMessages(record.queuedMessages);
+  const pendingSwitch = sanitizePendingSwitch(record.pendingSwitch);
   return {
     id: record.id,
     sidebarHidden: record.sidebarHidden === true || undefined,
@@ -1544,6 +1576,7 @@ function recordToSession(record: SessionRecord): Session {
     ...(record.providerAccountId
       ? { providerAccountId: record.providerAccountId }
       : {}),
+    ...(pendingSwitch ? { pendingSwitch } : {}),
     ...(record.branch ? { branch: record.branch } : {}),
     ...(record.worktreeCwd ? { worktreeCwd: record.worktreeCwd } : {}),
     ...(record.worktreeRemoved ? { worktreeRemoved: true } : {}),

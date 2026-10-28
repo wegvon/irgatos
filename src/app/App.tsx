@@ -86,6 +86,7 @@ import {
   orchestrationProjectCwd,
   orchestrator,
   shellPath,
+  workerRuntimeMode,
   workspaceIdentity,
   type ControlOutcome,
 } from "../features/orchestration/model/orchestration";
@@ -172,6 +173,8 @@ import {
   assertWorktreeFilesClosed,
   createOrchestrationWorktree,
   createWorktree,
+  describeWorkerEnvironment,
+  prepareWorkerEnvironment,
   detachSessionWorktree,
   checkWorktreeRemoval,
   listWorktrees,
@@ -455,12 +458,14 @@ import {
   beginSessionTurn,
   finishSessionTurn,
   applySessionCheckpoint,
+  beginWorkerCheckpoint,
   captureSessionCheckpoint,
   forgetSessionCheckpoint,
   flushSessionCheckpoint,
   keepSessionChanges,
   notifyReviewChanged,
   prepareSessionCheckpoint,
+  reviewWorkerCheckpoint,
   sessionCheckpointCleanupSafe,
 } from "../features/sessions/model/checkpoint";
 import { notifyDirsChanged } from "../features/files/model/fileTree";
@@ -602,10 +607,16 @@ import {
 import {
   canDispatchQueuedHead,
   canSteerQueuedHead,
+  canSteerQueuedMessage,
+  keepUnsentMessage,
+  retryUnsentMessages,
   dequeueQueuedMessage,
   queuedMessageForSubmit,
 } from "../features/sessions/model/messageQueue";
-import { deliverQueuedFollowUp } from "../features/sessions/model/queuedFollowUp";
+import {
+  deliverQueuedFollowUp,
+  steerFollowUp,
+} from "../features/sessions/model/queuedFollowUp";
 import {
   USAGE_LIMIT_RESUME_GRACE_MS,
   resumeUsageLimitedSession,
@@ -5094,20 +5105,7 @@ function Workspace({
         (session) => session.id === sessionId,
       );
       if (appeared) return appeared;
-      if (
-        !restored.worktreeRemoved &&
-        restored.providerSessionId &&
-        isLiveHarness(restored.harness)
-      ) {
-        bindHarnessSession(
-          restored.harness,
-          restored.id,
-          restored.providerSessionId,
-          sessionWorkCwd(restored),
-          restored.providerAccountId,
-          restored.blocks,
-        );
-      }
+      bindResumedSessions([restored]);
       lastPersisted.current.set(restored.id, persistFingerprint(restored));
       if (!sessionsRef.current.some((session) => session.id === restored.id)) {
         const next = [...sessionsRef.current, restored];
@@ -8281,6 +8279,8 @@ function Workspace({
                   : "queue"
                 : (options?.followUpBehavior ?? loadFollowUpBehavior());
         if (followUpBehavior === "queue") {
+          // A queued row is already in the queue; queuing it again duplicates it.
+          if (options?.queuedMessageId) return false;
           setSessions((prev) =>
             prev.map((s) =>
               s.id === sessionId
@@ -8321,30 +8321,51 @@ function Workspace({
         dismissNoticesForContinuedSession(sessionId);
         const visible = displayAttachments(attachments);
         const cards = userTurnCards(noteCard);
-        const nextSessions = sessionsRef.current.map((s) => {
-          if (s.id !== sessionId) return s;
-          let next: Session = {
+        // Bound to this turn and kept unsent until the provider accepts it.
+        const gen = turnGen.current.get(sessionId);
+        const queuedId = options?.queuedMessageId;
+        const unsent: QueuedMessage = (queuedId &&
+          current.queuedMessages?.find((entry) => entry.id === queuedId)) || {
+          id: crypto.randomUUID(),
+          text,
+          attachments,
+          noteCard,
+          handoffCard,
+          intent,
+        };
+        let steerBlockId: string | undefined;
+        const change = (update: (session: Session) => Session) => {
+          const next = sessionsRef.current.map((session) =>
+            session.id === sessionId ? update(session) : session,
+          );
+          sessionsRef.current = next;
+          setSessions(next);
+        };
+        change((s) => {
+          const next: Session = {
             ...s,
             inboxCard: rawCommand ? s.inboxCard : undefined,
             noteCard: rawCommand ? s.noteCard : undefined,
             handoffCard: rawCommand ? s.handoffCard : undefined,
           };
-          if (options?.queuedMessageId) {
-            next = dequeueQueuedMessage(next, options.queuedMessageId);
-          }
-          return appendSteerUser(next, submittedText, visible, cards);
+          // A queued row stays in the queue, locked, until it is accepted.
+          if (queuedId) return { ...next, sendingQueuedMessageId: queuedId };
+          const shown = appendSteerUser(next, submittedText, visible, cards);
+          steerBlockId = shown.blocks[shown.blocks.length - 1]?.id;
+          return shown;
         });
-        sessionsRef.current = nextSessions;
-        setSessions(nextSessions);
-        void (async () => {
-          try {
-            const prepared = await prepareAttachments(attachments);
-            const prompt = await preparePrompt(harnessText, {
+        void steerFollowUp({
+          isCurrentTurn: () => turnGen.current.get(sessionId) === gen,
+          prepare: async () => ({
+            attachments: await prepareAttachments(attachments),
+            text: await preparePrompt(harnessText, {
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
-            });
-            await steerHarnessTurn({
+            }),
+          }),
+          steer: (prepared) =>
+            steerHarnessTurn({
               harness: current.harness,
               sessionId,
               cwd: initialWorkCwd,
@@ -8352,22 +8373,42 @@ function Workspace({
               modelSettings: current.modelSettings,
               text: inboxAskPrompt(
                 rawCommand ? undefined : current.inboxAsk,
-                prompt,
+                prepared.text,
               ),
-              attachments: prepared,
+              attachments: prepared.attachments,
+            }),
+          delivered: () => {
+            if (!queuedId) return;
+            change((s) =>
+              appendSteerUser(
+                {
+                  ...dequeueQueuedMessage(s, queuedId),
+                  sendingQueuedMessageId:
+                    s.sendingQueuedMessageId === queuedId
+                      ? undefined
+                      : s.sendingQueuedMessageId,
+                },
+                submittedText,
+                visible,
+                cards,
+              ),
+            );
+          },
+          unsent: (error) => {
+            change((s) => {
+              // Removed from the queue while sending: the user let it go.
+              if (queuedId && !s.queuedMessages?.some((m) => m.id === queuedId))
+                return { ...s, sendingQueuedMessageId: undefined };
+              const withoutBubble = steerBlockId
+                ? {
+                    ...s,
+                    blocks: s.blocks.filter((block) => block.id !== steerBlockId),
+                  }
+                : s;
+              return keepUnsentMessage(withoutBubble, unsent, error);
             });
-          } catch (error: unknown) {
-            const message =
-              error instanceof Error
-                ? error.message
-                : `${current.harness} could not steer the active turn`;
-            enqueueHarnessEvent(sessionId, {
-              type: "session.error",
-              message,
-            });
-            flushHarnessEvents();
-          }
-        })();
+          },
+        });
         return true;
       }
 
@@ -9295,7 +9336,10 @@ function Workspace({
                   ? completeHandoff(s, wrap.text)
                   : s;
                 // A command owns its arguments; deliver the recap with the next chat prompt.
-                return rawCommand ? ready : consumeHandoff(ready);
+                // A failed turn keeps it pending so the retry still carries it.
+                return rawCommand || providerFailureSeen
+                  ? ready
+                  : consumeHandoff(ready);
               }),
             );
           }
@@ -10395,18 +10439,25 @@ function Workspace({
   const onSteerQueuedMessage = useCallback(
     (sessionId: string, messageId: string) => {
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      const message = session
-        ? queuedMessageForSubmit(session, messageId, "steer")
-        : undefined;
-      if (!session || !message) return;
-      if (message.intent === "orchestrate" && session.busy) {
+      const queued = session?.queuedMessages?.find(
+        (entry) => entry.id === messageId,
+      );
+      if (session?.busy && queued && !canSteerQueuedMessage(queued)) {
         enqueueHarnessEvent(sessionId, {
           type: "status",
-          text: "Orchestration planning will start after the current turn finishes.",
+          text:
+            queued.intent === "orchestrate"
+              ? "Orchestration planning will start after the current turn finishes."
+              : "The plan will start after the current turn finishes.",
         });
         flushHarnessEvents();
         return;
       }
+      if (session?.sendingQueuedMessageId === messageId) return;
+      const message = session
+        ? queuedMessageForSubmit(session, messageId, "steer")
+        : undefined;
+      if (!session || !message) return;
       onSubmit(sessionId, message.text, message.attachments, {
         followUpBehavior: "steer",
         queuedMessageId: message.id,
@@ -10423,7 +10474,9 @@ function Workspace({
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
       if (
         !session ||
-        (session.busy && !irgatForSession(sessionId)) ||
+        (session.busy &&
+          !irgatForSession(sessionId) &&
+          !session.queuedMessages?.some((message) => message.error)) ||
         session.queueStatus !== "paused" ||
         !session.queuedMessages?.length
       ) {
@@ -10444,6 +10497,15 @@ function Workspace({
                     })),
                   }
               : entry,
+          ),
+        );
+        return;
+      }
+      // A message the provider never accepted: Retry sends it, not a continue.
+      if (session.queuedMessages.some((message) => message.error)) {
+        setSessions((prev) =>
+          prev.map((entry) =>
+            entry.id === sessionId ? retryUnsentMessages(entry) : entry,
           ),
         );
         return;
@@ -11824,6 +11886,7 @@ function Workspace({
           (session) => session.id === run.leadId,
         );
         if (!lead) throw new Error("Lead session is unavailable");
+        let created: Worktree | undefined;
         const workspace =
           task.workspacePolicy === "shared"
             ? workspaceIdentity(projectCwd, leadCheckoutCwd)
@@ -11847,110 +11910,139 @@ function Workspace({
               : await createOrchestrationWorktree(
                   leadCheckoutCwd,
                   orchestrationWorktreeBranchName(task.id),
-                ).then((tree) =>
-                  workspaceIdentity(
+                ).then((tree) => {
+                  created = tree;
+                  return workspaceIdentity(
                     projectCwd,
                     tree.path,
                     tree.branch ?? undefined,
-                  ),
-                );
+                  );
+                });
         const checkoutCwd = workspace.checkoutCwd;
-        const scratchDir = await invoke<string>("control_attach_worker", {
-          leadId: run.leadId,
-          sessionId: task.sessionId,
-        });
-        const existing = sessionsRef.current.find(
-          (session) => session.id === task.sessionId,
-        );
-        if (existing) {
-          if (
-            existing.harness !== task.harness ||
-            existing.model !== task.model ||
-            !sameProjectPath(existing.cwd, projectCwd) ||
-            (!existing.worktreeRemoved &&
-              !sameProjectPath(sessionWorkCwd(existing), checkoutCwd))
-          )
-            throw new Error(
-              "This worker's configuration changed. Restore its approved harness, model and project before retrying.",
-            );
-          // The lead's runtime mode governs its agents, including across a
-          // change mid-run: auto stays auto, supervised asks the lead.
-          const synced = {
-            ...existing,
-            cwd: projectCwd,
-            worktreeCwd: sameProjectPath(projectCwd, checkoutCwd)
-              ? undefined
-              : checkoutCwd,
-            branch: workspace.branch,
-            worktreeRemoved: false,
-            runtimeMode: lead.runtimeMode,
-            orchestrationLeadId: run.leadId,
-          };
-          await upsertSession(synced);
-          const next = sessionsRef.current.map((session) =>
-            session.id === synced.id ? synced : session,
+        try {
+          // Before the worker's first turn: a runnable checkout, then the
+          // baseline its changes are integrated from.
+          let environment: string | undefined;
+          if (task.workspacePolicy !== "shared") {
+            environment =
+              describeWorkerEnvironment(
+                await prepareWorkerEnvironment(leadCheckoutCwd, checkoutCwd),
+              ) || undefined;
+            await beginWorkerCheckpoint(task.sessionId, checkoutCwd);
+          }
+          const scratchDir = await invoke<string>("control_attach_worker", {
+            leadId: run.leadId,
+            sessionId: task.sessionId,
+          });
+          const existing = sessionsRef.current.find(
+            (session) => session.id === task.sessionId,
           );
-          sessionsRef.current = next;
-          setSessions(next);
-          return { scratchDir, workspace };
-        }
-        const restored = await getSession(task.sessionId);
-        if (
-          restored &&
-          (restored.harness !== task.harness || restored.model !== task.model)
-        )
-          throw new Error(
-            "The saved worker no longer matches its approved model. Create a new assignment.",
-          );
-        const fresh = {
-          ...newSession(task.harness, projectCwd, task.model, lead.runtimeMode),
-          ...(sameProjectPath(projectCwd, checkoutCwd)
-            ? {}
-            : { worktreeCwd: checkoutCwd, branch: workspace.branch }),
-          ...(task.modelSettings
-            ? {
-                modelSettings: mergeModelSettings(
-                  resolveModel(task.harness, task.model),
-                  task.modelSettings,
-                ),
-              }
-            : {}),
-        };
-        const base = restored
-          ? {
-              ...restored,
-              busy: false,
+          if (existing) {
+            if (
+              existing.harness !== task.harness ||
+              existing.model !== task.model ||
+              !sameProjectPath(existing.cwd, projectCwd) ||
+              (!existing.worktreeRemoved &&
+                !sameProjectPath(sessionWorkCwd(existing), checkoutCwd))
+            )
+              throw new Error(
+                "This worker's configuration changed. Restore its approved harness, model and project before retrying.",
+              );
+            // The lead's runtime mode governs its agents, including across a
+            // change mid-run: auto stays auto, supervised asks the lead. Full
+            // access is capped so a worker stays inside its own checkout.
+            const synced = {
+              ...existing,
               cwd: projectCwd,
               worktreeCwd: sameProjectPath(projectCwd, checkoutCwd)
                 ? undefined
                 : checkoutCwd,
-              branch: sameProjectPath(projectCwd, checkoutCwd)
-                ? undefined
-                : workspace.branch,
+              branch: workspace.branch,
               worktreeRemoved: false,
-              runtimeMode: lead.runtimeMode,
-            }
-          : {
-              ...fresh,
-              id: task.sessionId,
-              title: task.title,
+              runtimeMode: workerRuntimeMode(lead.runtimeMode),
+              orchestrationLeadId: run.leadId,
             };
-        const worker = { ...base, orchestrationLeadId: run.leadId };
-        if (worker.providerSessionId)
-          bindHarnessSession(
-            worker.harness,
-            worker.id,
-            worker.providerSessionId,
-            sessionWorkCwd(worker),
-            worker.providerAccountId,
-            worker.blocks,
-          );
-        await upsertSession(worker);
-        const next = [...sessionsRef.current, worker];
-        sessionsRef.current = next;
-        setSessions(next);
-        // Workers belong to the lead's agent panel; no workspace tab is created.
-        return { scratchDir, workspace };
+            await upsertSession(synced);
+            const next = sessionsRef.current.map((session) =>
+              session.id === synced.id ? synced : session,
+            );
+            sessionsRef.current = next;
+            setSessions(next);
+            return { scratchDir, workspace, environment };
+          }
+          const restored = await getSession(task.sessionId);
+          if (
+            restored &&
+            (restored.harness !== task.harness || restored.model !== task.model)
+          )
+            throw new Error(
+              "The saved worker no longer matches its approved model. Create a new assignment.",
+            );
+          const fresh = {
+            ...newSession(task.harness, projectCwd, task.model, workerRuntimeMode(lead.runtimeMode)),
+            ...(sameProjectPath(projectCwd, checkoutCwd)
+              ? {}
+              : { worktreeCwd: checkoutCwd, branch: workspace.branch }),
+            ...(task.modelSettings
+              ? {
+                  modelSettings: mergeModelSettings(
+                    resolveModel(task.harness, task.model),
+                    task.modelSettings,
+                  ),
+                }
+              : {}),
+          };
+          const base = restored
+            ? {
+                ...restored,
+                busy: false,
+                cwd: projectCwd,
+                worktreeCwd: sameProjectPath(projectCwd, checkoutCwd)
+                  ? undefined
+                  : checkoutCwd,
+                branch: sameProjectPath(projectCwd, checkoutCwd)
+                  ? undefined
+                  : workspace.branch,
+                worktreeRemoved: false,
+                runtimeMode: workerRuntimeMode(lead.runtimeMode),
+              }
+            : {
+                ...fresh,
+                id: task.sessionId,
+                title: task.title,
+              };
+          const worker = { ...base, orchestrationLeadId: run.leadId };
+          if (worker.providerSessionId)
+            bindHarnessSession(
+              worker.harness,
+              worker.id,
+              worker.providerSessionId,
+              sessionWorkCwd(worker),
+              worker.providerAccountId,
+              worker.blocks,
+            );
+          await upsertSession(worker);
+          const next = [...sessionsRef.current, worker];
+          sessionsRef.current = next;
+          setSessions(next);
+          // Workers belong to the lead's agent panel; no workspace tab is created.
+          return { scratchDir, workspace, environment };
+        } catch (error) {
+          // A checkout this call created has no owner until it returns.
+          if (created) {
+            await removeOrchestrationWorktree(leadCheckoutCwd, created.path)
+              .then(() =>
+                created!.branch
+                  ? removeOrchestrationBranch(leadCheckoutCwd, created!.branch)
+                  : undefined,
+              )
+              .then(() => forgetSessionCheckpoint(task.sessionId))
+              .catch((cleanup) =>
+                console.error("Could not remove a failed worker checkout", cleanup),
+              );
+          }
+          throw error;
+        }
       },
       integrateWorker: async (run, task) => {
         const fromCwd = task.workspace?.checkoutCwd;
@@ -11987,8 +12079,17 @@ function Workspace({
           task.sessionId,
           fromCwd,
           orchestrationCheckoutCwd(run),
+          task.files,
         );
       },
+      reviewWorker: (_run, task) =>
+        task.workspace
+          ? reviewWorkerCheckpoint(
+              task.sessionId,
+              task.workspace.checkoutCwd,
+              task.files,
+            )
+          : Promise.resolve(null),
       cleanupWorker: async (run, task, onlyIfUnchanged) => {
         const workspace = task.workspace;
         if (!workspace || workspace.kind !== "worktree") return true;
@@ -12024,6 +12125,7 @@ function Workspace({
             task.sessionId,
             path,
             orchestrationCheckoutCwd(run),
+            task.files,
           );
         }
 

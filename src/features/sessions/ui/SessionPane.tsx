@@ -74,6 +74,7 @@ import {
   subscribeTranscriptJump,
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
+import { ChatStarters } from "./ChatStarters";
 import { ChatNamePrompt } from "../../irgats/ui/ChatNamePrompt";
 import {
   chatNamePromptDismissed,
@@ -958,6 +959,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onPlaceInFolder={(target) => onPlaceSessionInFolder(session.id, target)}
       queuedMessages={session.queuedMessages}
       queueStatus={session.queueStatus}
+      sendingQueuedMessageId={session.sendingQueuedMessageId}
       onDeleteQueuedMessage={(messageId) =>
         onDeleteQueuedMessage(session.id, messageId)
       }
@@ -1162,6 +1164,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
               ) : (
                 <EmptySession
                   cwd={session.cwd}
+                  starters={
+                    remote || freeChat ? undefined : (
+                      <ChatStarters sessionId={session.id} />
+                    )
+                  }
                   hasChatBackground={Boolean(
                     projectBackground || globalBackgroundPath,
                   )}

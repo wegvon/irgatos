@@ -3,10 +3,13 @@ import { appendPreparingHandoff } from "./handoff";
 import {
   canDispatchQueuedHead,
   canSteerQueuedHead,
+  canSteerQueuedMessage,
   dequeueQueuedMessage,
   isEditingQueuedHead,
   queuedHead,
+  keepUnsentMessage,
   queuedMessageForSubmit,
+  retryUnsentMessages,
 } from "./messageQueue";
 import { newSession, type QueuedMessage, type Session } from "./session";
 
@@ -173,5 +176,54 @@ describe("queuedMessageForSubmit", () => {
       queuedMessageForSubmit(chat({ queueStatus: "paused" }), "a", "steer")?.id,
     ).toBe("a");
     expect(queuedMessageForSubmit(chat(), "missing", "steer")).toBeUndefined();
+  });
+});
+
+describe("unsent follow-ups", () => {
+  it("keeps a queued row in place with its identity and an error", () => {
+    const session = chat({ busy: true, sendingQueuedMessageId: "a" });
+    const kept = keepUnsentMessage(session, queued("a", "first"), "Rejected");
+    expect(kept.queuedMessages?.map((m) => [m.id, m.text, m.error])).toEqual([
+      ["a", "first", "Rejected"],
+      ["b", "second", undefined],
+    ]);
+    expect(kept.queueStatus).toBe("paused");
+    expect(kept.sendingQueuedMessageId).toBeUndefined();
+  });
+
+  it("adds a typed follow-up that never reached the provider", () => {
+    const kept = keepUnsentMessage(chat(), queued("typed", "Also"), "Ended");
+    expect(kept.queuedMessages?.map((m) => m.id)).toEqual(["a", "b", "typed"]);
+    expect(kept.queuedMessages?.[2].error).toBe("Ended");
+  });
+
+  it("Retry clears errors and lets the queue send again", () => {
+    const failed = keepUnsentMessage(chat(), queued("a", "first"), "Rejected");
+    expect(canDispatchQueuedHead(failed)).toBe(false);
+    const retried = retryUnsentMessages(failed);
+    expect(retried.queueStatus).toBe("active");
+    expect(retried.queuedMessages?.every((m) => !m.error)).toBe(true);
+    expect(canDispatchQueuedHead(retried)).toBe(true);
+  });
+
+  it("does not start a new turn with a row that is still being steered", () => {
+    expect(canDispatchQueuedHead(chat({ sendingQueuedMessageId: "a" }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("queued plans", () => {
+  const plan: QueuedMessage = { ...queued("plan", "Plan it"), intent: "plan" };
+
+  it("cannot steer a busy turn", () => {
+    const session = chat({ busy: true, queuedMessages: [plan] });
+    expect(canSteerQueuedMessage(plan)).toBe(false);
+    expect(queuedMessageForSubmit(session, "plan", "steer")).toBeUndefined();
+  });
+
+  it("can still be sent explicitly once the agent is idle", () => {
+    const session = chat({ queuedMessages: [plan] });
+    expect(queuedMessageForSubmit(session, "plan", "steer")).toBe(plan);
   });
 });

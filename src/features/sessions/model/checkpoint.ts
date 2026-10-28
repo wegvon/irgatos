@@ -176,18 +176,48 @@ export function sessionCheckpointStatus(
   );
 }
 
-/** Apply one isolated worker's captured delta to its lead checkout. */
+/**
+ * Apply one isolated worker's captured delta to its lead checkout. With
+ * `scopes`, any change outside those project-relative paths refuses the
+ * whole integration.
+ */
 export function applySessionCheckpoint(
   sessionId: string,
   fromCwd: string,
   toCwd: string,
+  scopes?: string[],
 ): Promise<CheckpointApplyResult> {
   return enqueueCheckpoint(sessionId, () =>
     invoke<CheckpointApplyResult>("session_checkpoint_apply", {
       sessionId,
       fromCwd,
       toCwd,
+      ...(scopes ? { scopes } : {}),
     }),
+  );
+}
+
+/** Record an isolated worker checkout before its first turn. */
+export function beginWorkerCheckpoint(
+  sessionId: string,
+  cwd: string,
+): Promise<void> {
+  return enqueueCheckpoint(sessionId, () =>
+    invoke<void>("session_checkpoint_worker_begin", { sessionId, cwd }),
+  );
+}
+
+/** Every change in a worker checkout, compared with its write scope. */
+export function reviewWorkerCheckpoint(
+  sessionId: string,
+  cwd: string,
+  scopes: string[],
+): Promise<{ files: string[]; outOfScope: string[] } | null> {
+  return enqueueCheckpoint(sessionId, () =>
+    invoke<{ files: string[]; outOfScope: string[] } | null>(
+      "session_checkpoint_worker_review",
+      { sessionId, cwd, scopes },
+    ),
   );
 }
 

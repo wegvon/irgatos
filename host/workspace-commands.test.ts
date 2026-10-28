@@ -1,10 +1,12 @@
 import { execFileSync } from "node:child_process";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -282,5 +284,35 @@ it.skipIf(process.platform === "win32")(
         paths: ["dir-link/secret.txt"],
       }),
     ).rejects.toThrow();
+  },
+);
+
+it.skipIf(process.platform === "win32")(
+  "keeps an edited script's permissions when saving it",
+  async () => {
+    const { commands, repo } = fixture();
+    const { cwd, write } = repo();
+    write("run.sh", "#!/bin/sh\necho old\n");
+    chmodSync(join(cwd, "run.sh"), 0o755);
+    write("private.txt", "secret\n");
+    chmodSync(join(cwd, "private.txt"), 0o600);
+    await commands.run("write_text_file", {
+      path: join(cwd, "run.sh"),
+      content: "#!/bin/sh\necho new\n",
+    });
+    await commands.run("write_text_file", {
+      path: join(cwd, "private.txt"),
+      content: "still secret\n",
+    });
+    await commands.run("write_text_file", {
+      path: join(cwd, "fresh.txt"),
+      content: "new file\n",
+    });
+    expect(readFileSync(join(cwd, "run.sh"), "utf8")).toBe(
+      "#!/bin/sh\necho new\n",
+    );
+    expect(statSync(join(cwd, "run.sh")).mode & 0o777).toBe(0o755);
+    expect(statSync(join(cwd, "private.txt")).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(cwd, "fresh.txt"), "utf8")).toBe("new file\n");
   },
 );
