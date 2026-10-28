@@ -127,6 +127,23 @@ export function replyBrowserAgent(
   });
 }
 
+/** An agent's `browser.*` action on this window's Browser, as it starts. */
+export type BrowserAgentActing = { sessionId: string; action: string };
+
+export function listenBrowserAgentActing(
+  handler: (notice: BrowserAgentActing) => void,
+): Promise<() => void> {
+  return getCurrentWebviewWindow().listen<BrowserAgentActing>(
+    "browser-agent-acting",
+    (event) => handler(event.payload),
+  );
+}
+
+/** The user takes this window's Browser over from agents, or hands it back. */
+export function setBrowserAgentHold(held: boolean) {
+  return invoke<void>("browser_set_agent_hold", { heldNow: held });
+}
+
 /** Which native view agents act on, e.g. the active tab's. */
 export function setBrowserAgentView(id: string) {
   return invoke<void>("browser_set_agent_view", { id });

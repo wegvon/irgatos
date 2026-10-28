@@ -14,11 +14,14 @@ import {
   currentBrowserTabs,
   subscribeBrowserTabs,
 } from "../features/browser/model/browserTabs";
+import { noteBrowserAgentActing } from "../features/browser/model/browserTakeover";
 import {
   browserAction,
   browserPageExcerpt,
+  listenBrowserAgentActing,
   listenBrowserAgentRequests,
   replyBrowserAgent,
+  setBrowserAgentHold,
   setBrowserAgentView,
 } from "../platform/tauri/browser";
 import { readIrgatConversation } from "../features/irgats/model/irgatConversation";
@@ -1622,6 +1625,16 @@ function Workspace({
       if (disposed) stop();
       else unlisten = stop;
     });
+    // A reload starts with the Browser handed back, so the bar and the
+    // native hold always agree.
+    void setBrowserAgentHold(false).catch(() => undefined);
+    let unlistenActing: (() => void) | undefined;
+    void listenBrowserAgentActing((notice) =>
+      noteBrowserAgentActing(notice.sessionId, notice.action),
+    ).then((stop) => {
+      if (disposed) stop();
+      else unlistenActing = stop;
+    });
     let agentView = "";
     const syncView = () => {
       const { activeId } = currentBrowserTabs();
@@ -1634,6 +1647,7 @@ function Workspace({
     return () => {
       disposed = true;
       unlisten?.();
+      unlistenActing?.();
       stopTabs();
     };
   }, []);
@@ -2352,6 +2366,10 @@ function Workspace({
   const freeChat = freeChatId
     ? sessions.find((session) => session.id === freeChatId)
     : undefined;
+  // Who the Browser panel says is using its page.
+  const browserAgentName = (sessionId: string) =>
+    irgatForSession(sessionId)?.name ??
+    sessionsRef.current.find((session) => session.id === sessionId)?.title;
   const browserShown =
     browserOpen &&
     !searchViewOpen &&
@@ -16419,6 +16437,7 @@ function Workspace({
                           visible={browserShown}
                           onClose={() => setBrowserOpen(false)}
                           openRequest={browserRequest}
+                          agentName={browserAgentName}
                         />,
                             browserHost,
                           )
