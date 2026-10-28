@@ -18,9 +18,16 @@ type Props = {
   cwd: string;
   composer?: ReactNode;
   hasChatBackground?: boolean;
+  /** Starting points for a first request, shown once a project is open. */
+  starters?: ReactNode;
 };
 
-export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
+export function EmptySession({
+  cwd,
+  composer,
+  hasChatBackground,
+  starters,
+}: Props) {
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const arcadeEnabled = useSyncExternalStore(
     subscribeGridArcadeEnabled,
@@ -64,6 +71,15 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
           </div>
 
           <div className="pointer-events-auto w-full">{composer}</div>
+          {project && starters ? (
+            <div className="pointer-events-auto">{starters}</div>
+          ) : null}
+        </div>
+      ) : project && starters ? (
+        // The composer is docked below (a split pane): the starters still
+        // sit in the middle of the empty chat.
+        <div className="relative z-10 mx-auto flex w-full max-w-4xl flex-1 flex-col justify-center px-1.5 py-12">
+          {starters}
         </div>
       ) : null}
     </div>
