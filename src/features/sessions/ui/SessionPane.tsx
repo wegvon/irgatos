@@ -924,6 +924,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onPlaceInFolder={(target) => onPlaceSessionInFolder(session.id, target)}
       queuedMessages={session.queuedMessages}
       queueStatus={session.queueStatus}
+      sendingQueuedMessageId={session.sendingQueuedMessageId}
       onDeleteQueuedMessage={(messageId) =>
         onDeleteQueuedMessage(session.id, messageId)
       }

@@ -299,6 +299,8 @@ type Props = {
   lastTurnRecall?: LastTurnRecall | null;
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
+  /** The queued row being delivered right now; locked until it settles. */
+  sendingQueuedMessageId?: string;
   usageLimit?: UsageLimit;
   /** Account the session runs on, for the provider's quota-hold banner. */
   providerAccountId?: string;
@@ -472,6 +474,7 @@ export function Composer({
   editLastTurnSupported = false,
   lastTurnRecall = null,
   queuedMessages = [],
+  sendingQueuedMessageId,
   queueStatus,
   usageLimit,
   providerAccountId,
@@ -2126,6 +2129,7 @@ export function Composer({
       <MessageQueue
         messages={queuedMessages}
         status={queueStatus}
+        sendingId={sendingQueuedMessageId}
         notice={
           !usageLimit && !hideQuotaHold && onRunQueueAnyway ? (
             <QueuedHoldNotice
@@ -2878,6 +2882,7 @@ export function Composer({
                 {!compact && harness !== "fx" ? (
                   <AccessPicker
                     value={runtimeMode}
+                    harness={harness}
                     busy={busy}
                     onChange={onRuntimeModeChange}
                     onClose={() => ref.current?.focus()}
