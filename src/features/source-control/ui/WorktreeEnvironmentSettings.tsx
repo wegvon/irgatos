@@ -16,6 +16,7 @@ export function WorktreeEnvironmentSettings({ project }: { project: string }) {
   const [loadError, setLoadError] = useState<string>();
   const [portRange, setPortRange] = useState("");
   const [setup, setSetup] = useState("");
+  const [dev, setDev] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string>();
@@ -24,6 +25,7 @@ export function WorktreeEnvironmentSettings({ project }: { project: string }) {
     setSettings(next);
     setPortRange(formatPortRange(next.effective.portRange));
     setSetup(next.effective.setup ?? "");
+    setDev(next.effective.dev ?? "");
   };
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function WorktreeEnvironmentSettings({ project }: { project: string }) {
 
   const inherited = inheritedConfig(settings);
   const save = async () => {
-    const form = localConfigFromForm(portRange, setup, inherited);
+    const form = localConfigFromForm(portRange, setup, inherited, dev);
     if (!form.config) {
       setError(form.error);
       return;
@@ -132,12 +134,34 @@ export function WorktreeEnvironmentSettings({ project }: { project: string }) {
             className="min-h-14 resize-y rounded-md border border-content/10 bg-content/5 px-2 py-1.5 font-mono text-[12px] outline-none focus:border-content/25"
           />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[12px] text-content/70">
+            Development command
+          </span>
+          <input
+            value={dev}
+            onChange={(event) => {
+              setDev(event.target.value);
+              setSaved(false);
+            }}
+            spellCheck={false}
+            placeholder="npm run dev"
+            aria-label="Development command"
+            className="h-8 rounded-md border border-content/10 bg-content/5 px-2 font-mono text-[12px] outline-none focus:border-content/25"
+          />
+          <span className="text-[11px] text-content/40">
+            Never run on its own. After a restart, terminals show whether it is
+            running and offer “Start development environment”.
+          </span>
+        </label>
         <p className="text-[11px] text-content/40">
           {settings.sharedPath ? (
             <>
               Team defaults come from{" "}
               <span className="break-all">{prettyCwd(settings.sharedPath)}</span>
-              {settings.shared.setup || settings.shared.portRange
+              {settings.shared.setup ||
+              settings.shared.portRange ||
+              settings.shared.dev
                 ? "; values you change here apply to this clone only."
                 : " when it exists. Changes here apply to this clone only."}
             </>

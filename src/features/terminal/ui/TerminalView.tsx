@@ -1,5 +1,5 @@
 import { Terminal } from "@xterm/xterm";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getPtyStatus,
   killPty,
@@ -37,6 +37,7 @@ import {
   liveScreenLines,
   type TerminalAgentWatcher,
 } from "../model/agentDetection/watcher";
+import { RestoredTerminalBar } from "./RestoredTerminalBar";
 import "@xterm/xterm/css/xterm.css";
 
 type Props = {
@@ -46,6 +47,8 @@ type Props = {
   /** Tab label, carried with the terminal's agent status. */
   label?: string;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
+  /** Reopened after a restart: a new shell, not the one that was running. */
+  restored?: boolean;
 };
 
 function cssColor(expr: string, fallback: string): string {
@@ -172,7 +175,15 @@ function oscColors() {
   };
 }
 
-export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
+export function TerminalView({
+  id,
+  cwd,
+  active,
+  label,
+  onMetaChange,
+  restored = false,
+}: Props) {
+  const [restoredBar, setRestoredBar] = useState(restored);
   const outerRef = useRef<HTMLDivElement>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -518,6 +529,13 @@ export function TerminalView({ id, cwd, active, label, onMetaChange }: Props) {
       className="irgat-terminal flex h-full w-full min-h-0 min-w-0 flex-col"
       onMouseDown={() => termRef.current?.focus()}
     >
+      {restoredBar ? (
+        <RestoredTerminalBar
+          ptyId={id}
+          cwd={cwd}
+          onDismiss={() => setRestoredBar(false)}
+        />
+      ) : null}
       <div
         ref={hostRef}
         className="irgat-terminal-host min-h-0 min-w-0 flex-1 overflow-hidden"

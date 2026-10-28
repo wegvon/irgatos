@@ -75,6 +75,7 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import { ChatStarters } from "./ChatStarters";
+import { ContinueConversation } from "./ContinueConversation";
 import { ChatNamePrompt } from "../../irgats/ui/ChatNamePrompt";
 import {
   chatNamePromptDismissed,
@@ -1167,6 +1168,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   starters={
                     remote || freeChat ? undefined : (
                       <ChatStarters sessionId={session.id} />
+                    )
+                  }
+                  resume={
+                    remote || freeChat ? undefined : (
+                      <ContinueConversation
+                        sessionId={session.id}
+                        cwd={session.cwd}
+                      />
                     )
                   }
                   hasChatBackground={Boolean(

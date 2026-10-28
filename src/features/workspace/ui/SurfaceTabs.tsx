@@ -152,7 +152,9 @@ export function surfaceTabPresentation(
       name,
       label: name,
       iconName: "AGENT",
-      tooltip: `${name} — orchestration agent`,
+      tooltip: file.restored
+        ? `${name} — orchestration agent · saved transcript, not running`
+        : `${name} — orchestration agent`,
     };
   }
 
@@ -190,7 +192,9 @@ export function surfaceTabPresentation(
     tooltip: isPlanTab(file)
       ? name
       : terminal
-        ? `${name} — ${file.cwd}`
+        ? file.restored
+          ? `${name} — ${file.cwd} · new shell, earlier commands were not re-run`
+          : `${name} — ${file.cwd}`
         : review
           ? `${file.path} (Working Tree)`
           : file.path,

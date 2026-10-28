@@ -267,6 +267,7 @@ export function ProjectTerminalDock({
               cwd={file.cwd}
               active={focused && file.id === dock.pane.activeFileId}
               label={terminalTabLabel(file)}
+              restored={file.restored}
               onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
             />
           </div>

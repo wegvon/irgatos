@@ -244,25 +244,19 @@ describe("collectWorkspaceSnapshot", () => {
     expect(snapshot.projectTerminals).toEqual([]);
   });
 
-  it("drops agent tabs, and the pane holding only them", () => {
+  it("keeps agent tabs and reopens them as saved views with their transcript", () => {
     const file = newFileTab("/tmp/a/README.md", "/tmp/a");
     const agent = newAgentTab("Audit the UI", "/tmp/a", {
       sessionId: "worker",
       leadId: "s1",
       harness: "codex",
     });
-    const mixed = newAgentTab("Audit the engine", "/tmp/a", {
-      sessionId: "worker-2",
-      leadId: "s1",
-      harness: "codex",
-    });
     const tab = {
       ...newTab("s1"),
       id: "t1",
       layout: splitPane(newTab("s1").layout, "s1", "right", "e1"),
       editorPanes: [
-        { id: "e1", files: [agent], activeFileId: agent.id },
-        { id: "e2", files: [file, mixed], activeFileId: mixed.id },
+        { id: "e1", files: [file, agent], activeFileId: agent.id },
       ],
     };
     const snapshot = collectWorkspaceSnapshot(
@@ -272,35 +266,46 @@ describe("collectWorkspaceSnapshot", () => {
       "/tmp/a",
       new Map(),
     );
-    const panes = snapshot.tabs[0]!.editorPanes;
-    // The agent-only pane is gone along with its leaf; the mixed one keeps its
-    // file and falls back to it as the active tab.
-    expect(panes.map((pane) => pane.id)).toEqual(["e2"]);
-    expect(panes[0]!.files.map((entry) => entry.path)).toEqual([
-      "/tmp/a/README.md",
+    const saved = snapshot.tabs[0]!.editorPanes[0]!;
+    expect(saved.files.map((entry) => entry.agent ?? null)).toEqual([
+      null,
+      { sessionId: "worker", leadId: "s1", harness: "codex" },
     ]);
-    expect(panes[0]!.activeFileId).toBe(file.id);
-    expect(leafIds(snapshot.tabs[0]!.layout)).toEqual(["s1"]);
+    expect(saved.activeFileId).toBe(agent.id);
+    // Nothing on disk says "restored": that is only true right after a restart.
+    expect(JSON.stringify(snapshot)).not.toContain("restored");
+
+    const worker = {
+      ...newSession("codex", "/tmp/a", "gpt", "supervised"),
+      id: "worker",
+      orchestrationLeadId: "s1",
+    };
+    const workspace = hydrateWorkspaceSnapshot(
+      snapshot,
+      new Map([["worker", worker]]),
+    )!;
+    const files = workspace.tabs[0]!.editorPanes[0]!.files;
+    expect(files.map((entry) => !!entry.restored)).toEqual([false, true]);
+    expect(workspace.sessions.map((session) => session.id)).toContain("worker");
+    expect(workspace.sessions.find((s) => s.id === "worker")?.busy).toBe(false);
   });
 
-  it("drops artifact tabs, which only the live registry can fill", () => {
-    const file = newFileTab("/tmp/a/README.md", "/tmp/a");
+  it("keeps artifact tabs with the conversation that made them", () => {
     const artifact = newArtifactTab(
-      { id: "snippet:s1:b1:0", title: "Landing page", fileName: "landing.html" },
-      "/tmp/a",
-    );
-    const lone = newArtifactTab(
-      { id: "file:/tmp/a/x.ts", title: "x.ts", fileName: "x.ts" },
+      {
+        id: "snippet:s1:b1:0",
+        title: "Landing page",
+        fileName: "landing.html",
+        sessionId: "s1",
+        sessionTitle: "Build the landing page",
+      },
       "/tmp/a",
     );
     const tab = {
       ...newTab("s1"),
       id: "t1",
       layout: splitPane(newTab("s1").layout, "s1", "right", "e1"),
-      editorPanes: [
-        { id: "e1", files: [lone], activeFileId: lone.id },
-        { id: "e2", files: [file, artifact], activeFileId: artifact.id },
-      ],
+      editorPanes: [{ id: "e1", files: [artifact], activeFileId: artifact.id }],
     };
     const snapshot = collectWorkspaceSnapshot(
       [tab],
@@ -309,12 +314,58 @@ describe("collectWorkspaceSnapshot", () => {
       "/tmp/a",
       new Map(),
     );
-    const panes = snapshot.tabs[0]!.editorPanes;
-    expect(panes.map((pane) => pane.id)).toEqual(["e2"]);
-    expect(panes[0]!.files.map((entry) => entry.path)).toEqual([
-      "/tmp/a/README.md",
-    ]);
-    expect(panes[0]!.activeFileId).toBe(file.id);
+    expect(snapshot.tabs[0]!.editorPanes[0]!.files[0]!.artifact).toEqual(
+      artifact.artifact,
+    );
+    const restored = hydrateWorkspaceSnapshot(snapshot, new Map())!.tabs[0]!
+      .editorPanes[0]!.files[0]!;
+    expect(restored).toMatchObject({ restored: true, artifact: artifact.artifact });
+  });
+
+  it("reopens terminals as new shells, flagged only in memory", () => {
+    const dock = createProjectTerminal("/tmp/a", newTerminalFile("/tmp/a"));
+    const snapshot = collectWorkspaceSnapshot(
+      [newTab("s1")],
+      [],
+      "",
+      "/tmp/a",
+      new Map(),
+      [dock],
+    );
+    expect(JSON.stringify(snapshot)).not.toContain("restored");
+    const workspace = hydrateWorkspaceSnapshot(snapshot, new Map())!;
+    expect(
+      workspace.projectTerminals?.[0]?.pane.files.every((file) => file.restored),
+    ).toBe(true);
+  });
+
+  it("drops a saved agent tab whose source is damaged", () => {
+    const raw = {
+      tabs: [
+        {
+          id: "t1",
+          layout: { type: "leaf", id: "s1" },
+          focusedId: "s1",
+          editorPanes: [
+            {
+              id: "e1",
+              activeFileId: "f1",
+              files: [
+                { id: "f1", path: "Agent", cwd: "/tmp/a", agent: { leadId: "s1" } },
+                { id: "f2", path: "/tmp/a/x.ts", cwd: "/tmp/a" },
+              ],
+            },
+          ],
+        },
+      ],
+      sessions: [],
+      activeTabId: "t1",
+      projectCwd: "/tmp/a",
+      projectTerminals: [],
+    };
+    const files = hydrateWorkspaceSnapshot(raw as never, new Map())!.tabs[0]!
+      .editorPanes[0]!.files;
+    expect(files.map((entry) => entry.id)).toEqual(["f2"]);
   });
 
   it("round-trips a unified Changes tab", () => {
