@@ -14,7 +14,13 @@ test("approves and answers waiting agents without leaving the fleet", async ({ p
   const needs = bucket(page, "needsYou");
   await expect(needs.locator("[data-fleet-session]")).toHaveCount(2);
   await expect(page.locator("[data-fleet-needs-you]")).toHaveText("2");
+  await expect(needs).toContainText("Publish or deploy");
+  await expect(needs).toContainText("Hard to undo: it is already out");
+  await expect(needs).toContainText("Next I'll publish 2.4 to npm under the next tag");
+  await expect(needs).not.toContainText("npm publish --access public --tag next");
+  await needs.getByRole("button", { name: "Technical details" }).click();
   await expect(needs).toContainText("npm publish --access public --tag next");
+  await expect(needs).toContainText("Your decision");
   await expect(bucket(page, "review")).toContainText("2 files changed");
   await expect(bucket(page, "running")).toContainText("Restyle the marketing header");
 
@@ -50,7 +56,7 @@ test("explains an empty fleet", async ({ page }) => {
 test("groups work under goals and answers a goal's decision in place", async ({ page }) => {
   await page.goto("/tests/browser/fleet.html?mode=goals");
   const attention = page.locator('[data-goal-section="attention"]');
-  await expect(attention).toContainText("npm publish --access public --tag next");
+  await expect(attention).toContainText("Publish or deploy");
   await expect(
     attention.locator("[data-goal]", { hasText: "Publish the 2.4 SDK" }),
   ).toContainText("1 chat · 1 agent");

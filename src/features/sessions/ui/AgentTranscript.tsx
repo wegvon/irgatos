@@ -18,6 +18,8 @@ import {
   Wrench,
   X,
 } from "../../../shared/ui/icons";
+import { approvalBrief } from "../model/approvalBrief";
+import { ApprovalExplainer } from "./ApprovalExplainer";
 import {
   memo,
   startTransition,
@@ -4624,7 +4626,7 @@ function ActivityToolRow({
         </div>
       )}
       {pending ? (
-        <ApprovalControls block={block} onApproval={onApproval} />
+        <ApprovalControls block={block} cwd={cwd} onApproval={onApproval} />
       ) : null}
       {errorOpen && errorDetail ? (
         <pre
@@ -4711,7 +4713,7 @@ function IrgatCallRow({
           {call.command}
         </pre>
       ) : null}
-      <ApprovalControls block={block} onApproval={onApproval} />
+      <ApprovalControls block={block} explain={false} onApproval={onApproval} />
     </div>
   );
 }
@@ -4886,7 +4888,7 @@ function ToolCall({
             />
           </div>
         )}
-        <ApprovalControls block={block} onApproval={onApproval} />
+        <ApprovalControls block={block} cwd={cwd} onApproval={onApproval} />
       </div>
     );
   }
@@ -4936,7 +4938,7 @@ function ToolCall({
           {expanded}
         </pre>
       ) : null}
-      <ApprovalControls block={block} onApproval={onApproval} />
+      <ApprovalControls block={block} cwd={cwd} onApproval={onApproval} />
     </div>
   );
 }
@@ -5077,14 +5079,31 @@ function ToolCallIcon({ state }: { state: ToolCallState }) {
 
 function ApprovalControls({
   block,
+  cwd,
+  explain = true,
   onApproval,
 }: {
   block: Block;
+  cwd?: string;
+  /** Plain-words effect and undo line above the buttons. */
+  explain?: boolean;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
   const approval = block.approval;
   if (!approval || approval.decided || !onApproval) return null;
+  const brief =
+    explain && !block.irgatProjectAccess ? approvalBrief(block, { cwd }) : undefined;
   return (
+    <>
+    {brief ? (
+      <ApprovalExplainer
+        brief={brief}
+        showWhat={false}
+        showWhy={false}
+        showTechnical={false}
+        className="mt-1.5"
+      />
+    ) : null}
     <div className="mt-1.5 flex gap-2">
       <button
         type="button"
@@ -5101,6 +5120,7 @@ function ApprovalControls({
         {block.irgatProjectAccess ? "Reddet" : "Deny"}
       </button>
     </div>
+    </>
   );
 }
 

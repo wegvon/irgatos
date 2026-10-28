@@ -88,7 +88,7 @@ it("lists a goal with its worker's approval and answers it in place", () => {
   const props = render(sessions);
   const attention = container.querySelector<HTMLElement>('[data-goal-section="attention"]')!;
   expect(attention.textContent).toContain("Ship the new onboarding");
-  expect(attention.textContent).toContain("npm run e2e");
+  expect(attention.textContent).toContain("Run the tests");
   expect(attention.textContent).toContain("1 chat · 1 agent");
   const allow = [...attention.querySelectorAll("button")].find((b) => b.textContent === "Allow")!;
   act(() => allow.click());

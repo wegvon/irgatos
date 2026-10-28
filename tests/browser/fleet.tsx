@@ -55,6 +55,11 @@ const seed: Session[] = [
     blocks: [
       sent(9 * MIN),
       {
+        id: "say-publish",
+        role: "assistant",
+        text: "The build and tests pass. Next I'll publish 2.4 to npm under the next tag so you can try it.",
+      },
+      {
         id: "ask-publish",
         role: "tool",
         text: "Run npm publish",

@@ -12,6 +12,8 @@ import {
   sessionDisplayTitle,
   type Session,
 } from "../model/session";
+import { sessionApprovalBrief } from "../model/approvalBrief";
+import { ApprovalExplainer } from "./ApprovalExplainer";
 import { HarnessIcon } from "./HarnessIcon";
 
 type Notice = PendingApprovalNotice & { session: Session };
@@ -90,6 +92,10 @@ function ApprovalToastCard({
   const { session, label, requestId } = notice;
   const title = sessionDisplayTitle(session.title, session.harness);
   const harness = HARNESS_TITLE[session.harness];
+  const brief =
+    notice.kind === "approval" && notice.block
+      ? sessionApprovalBrief(session, notice.block)
+      : undefined;
 
   const openSession = () => onFocusSession(session.id);
 
@@ -110,12 +116,20 @@ function ApprovalToastCard({
           </span>
           <span className="flex shrink-0 items-center gap-1 text-[11px] text-amber-400">
             <CircleAlert className="size-3.5" strokeWidth={1.75} />
-            <span>{notice.kind === "question" ? "Question" : "Approval"}</span>
+            <span>{notice.kind === "question" ? "Your decision" : "Permission"}</span>
           </span>
         </span>
         <span className="line-clamp-3 text-[12px] leading-relaxed text-content/70">
-          {label}
+          {brief?.what ?? label}
         </span>
+        {brief ? (
+          <ApprovalExplainer
+            brief={brief}
+            showWhat={false}
+            showTechnical={false}
+            className="text-[11.5px]"
+          />
+        ) : null}
         <span className="text-[11px] text-content/40">{harness}</span>
       </button>
       {notice.kind === "question" ? null : (

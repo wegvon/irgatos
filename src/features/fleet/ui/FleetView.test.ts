@@ -71,7 +71,7 @@ function render(sessions: Session[], handlers: Partial<Parameters<typeof FleetVi
 const bucket = (name: string) =>
   container.querySelector<HTMLElement>(`[data-fleet-bucket="${name}"]`)!;
 
-it("shows the exact command waiting for approval and answers it inline", () => {
+it("explains an approval, keeps the exact command a click away and answers it inline", () => {
   const props = render([
     chat("ask", "/work/api", "Publish the SDK", {
       busy: true,
@@ -92,6 +92,12 @@ it("shows the exact command waiting for approval and answers it inline", () => {
   ]);
   const needs = bucket("needsYou");
   expect(needs.textContent).toContain("Publish the SDK");
+  // Plain words first: what it does and whether it can be undone.
+  expect(needs.textContent).toContain("Publish or deploy");
+  expect(needs.textContent).toContain("Hard to undo");
+  expect(needs.textContent).not.toContain("npm publish --tag next");
+  const details = [...needs.querySelectorAll("button")].find((b) => b.textContent === "Technical details")!;
+  act(() => details.click());
   expect(needs.textContent).toContain("npm publish --tag next");
   expect(needs.textContent).toContain("release");
   expect(needs.textContent).toContain("worktree");
