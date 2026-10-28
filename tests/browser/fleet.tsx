@@ -92,7 +92,11 @@ const seed: Session[] = [
       sent(12 * MIN),
       edit("/Users/demo/src/api/src/limiter.ts"),
       edit("/Users/demo/src/api/src/limiter.test.ts"),
-      { id: "r", role: "assistant", text: "Fixed the window reset." },
+      {
+        id: "r",
+        role: "assistant",
+        text: "Fixed the window reset.\n\n<completion_criteria>\n- A client blocked at the limit can call again once its window ends\n- Existing limiter tests still pass\n- No change to the limits users see\n</completion_criteria>\n\n<criteria_check>\n- [met] A client blocked at the limit can call again once its window ends — new test resets after 60s\n- [met] Existing limiter tests still pass — 42 passed\n- [unverified] No change to the limits users see — needs a look at the dashboard\n</criteria_check>",
+      },
     ],
   }),
   chat("header", "cursor", "/Users/demo/src/web", "Restyle the marketing header", {

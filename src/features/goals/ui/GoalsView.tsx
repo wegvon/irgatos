@@ -30,10 +30,16 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   removeGoal,
   renameGoal,
+  setGoalCriteria,
   setGoalDone,
   setGoalScope,
   useGoals,
 } from "../model/goalStore";
+import {
+  criteriaSummary,
+  type CriterionVerdict,
+  type GoalCriterion,
+} from "../model/criteria";
 import {
   GOAL_STATE_LABEL,
   filterGoalViews,
@@ -290,6 +296,7 @@ function GoalCard({
   const chats = view.members.filter((member) => member.link.role !== "worker").length;
   const workers = view.members.length - chats;
   const progress = progressText(view);
+  const criteria = criteriaSummary(goal.criteria);
   const primary = primarySession(view);
   const files = view.editedPaths.length;
   return (
@@ -348,6 +355,13 @@ function GoalCard({
               </span>
             ) : null}
             {progress ? <Dot>{progress}</Dot> : null}
+            {criteria?.checked ? (
+              <Dot>
+                <span className={criteria.met === criteria.total ? "text-emerald-400/90" : "text-amber-400/90"}>
+                  {criteria.met} of {criteria.total} criteria met
+                </span>
+              </Dot>
+            ) : null}
             <Dot>{projectName(goal.cwd)}</Dot>
             {view.branches[0] ? (
               <span className="flex min-w-0 shrink items-center gap-1">
@@ -508,6 +522,7 @@ function GoalDetail({
   const showRequest = request && request !== goal.title;
   return (
     <div data-goal-detail className="flex flex-col gap-3 border-t border-stroke px-3 py-2.5 text-[12px]">
+      <CriteriaSection goalId={goal.id} criteria={goal.criteria} />
       <DetailSection title="Scope">
         {editingScope ? (
           <InlineEdit
@@ -611,14 +626,103 @@ function GoalDetail({
   );
 }
 
-function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+function DetailSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-content/35">
-        {title}
+      <span className="flex items-center gap-2">
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.04em] text-content/35">
+          {title}
+        </span>
+        {action ? <span className="ml-auto">{action}</span> : null}
       </span>
       {children}
     </div>
+  );
+}
+
+const VERDICT_MARK: Record<CriterionVerdict, { mark: string; tone: string; label: string }> = {
+  met: { mark: "✓", tone: "text-emerald-400", label: "Met" },
+  unmet: { mark: "✗", tone: "text-rose-400", label: "Not met" },
+  unverified: { mark: "?", tone: "text-amber-400", label: "Not verified" },
+};
+
+/** When the goal counts as done, and how the last delivery measured up. */
+function CriteriaSection({
+  goalId,
+  criteria,
+}: {
+  goalId: string;
+  criteria?: readonly GoalCriterion[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const text = (criteria ?? []).map((criterion) => criterion.text).join("\n");
+  return (
+    <DetailSection
+      title="Done when"
+      action={
+        !editing ? (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="rounded px-1 text-[11px] text-content/40 hover:bg-content/[0.06] hover:text-content/75"
+          >
+            Edit
+          </button>
+        ) : null
+      }
+    >
+      {editing ? (
+        <InlineEdit
+          multiline
+          value={text}
+          label="Completion criteria, one per line"
+          placeholder="One criterion per line"
+          onDone={(value) => {
+            setEditing(false);
+            if (value != null && value.trim() !== text.trim())
+              setGoalCriteria(goalId, value.split("\n"));
+          }}
+        />
+      ) : criteria?.length ? (
+        <ul className="flex flex-col gap-1" data-goal-criteria>
+          {criteria.map((criterion, index) => {
+            const verdict = criterion.verdict ? VERDICT_MARK[criterion.verdict] : undefined;
+            return (
+              <li key={index} className="flex min-w-0 items-start gap-2">
+                <span
+                  aria-label={verdict?.label ?? "Not checked yet"}
+                  className={`mt-px w-3 shrink-0 text-center text-[12px] leading-5 ${verdict?.tone ?? "text-content/30"}`}
+                >
+                  {verdict?.mark ?? "·"}
+                </span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="leading-5 text-content/80">{criterion.text}</span>
+                  {criterion.evidence ? (
+                    <span className="text-[11px] leading-4 text-content/45">{criterion.evidence}</span>
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="self-start rounded-md text-left text-content/35 hover:text-content/60"
+        >
+          The agent sets these out when it starts. Add your own
+        </button>
+      )}
+    </DetailSection>
   );
 }
 

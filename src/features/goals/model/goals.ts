@@ -17,6 +17,11 @@ import {
   type TaskListItem,
 } from "../../sessions/model/session";
 import { pathKey } from "../../../shared/lib/paths";
+import {
+  applyCriteriaCheck,
+  criteriaInBlocks,
+  type GoalCriterion,
+} from "./criteria";
 
 /**
  * A goal is the user's outcome, kept apart from the conversations that work on
@@ -57,6 +62,16 @@ export type Goal = {
   updatedAt: number;
   /** The user called it done. */
   doneAt?: number;
+  /** When the goal is done, in plain sentences, with the latest verdicts. */
+  criteria?: GoalCriterion[];
+  /** When the current criteria were set; older checks do not apply. */
+  criteriaAt?: number;
+  /** The chat whose reply set them, absent when the user wrote them. */
+  criteriaFrom?: string;
+  /** The user wrote or changed them; agents' later lists do not replace them. */
+  criteriaEdited?: boolean;
+  /** When the agent last checked delivery against them. */
+  checkedAt?: number;
   links: GoalLink[];
 };
 
@@ -271,7 +286,72 @@ export function syncGoals(
     goal.links[at] = fresh;
     changed = true;
   }
+  for (let index = 0; index < next.length; index++) {
+    const updated = syncCriteria(next[index], byId);
+    if (updated !== next[index]) {
+      next[index] = updated;
+      changed = true;
+    }
+  }
   return changed ? next : goals;
+}
+
+function sameCriteria(
+  a: readonly GoalCriterion[] | undefined,
+  b: readonly GoalCriterion[] | undefined,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every(
+    (item, index) =>
+      item.text === b[index].text &&
+      item.verdict === b[index].verdict &&
+      item.evidence === b[index].evidence,
+  );
+}
+
+/** Take the newest criteria and check the goal's loaded chats wrote. */
+function syncCriteria(
+  goal: Goal,
+  sessionsById: ReadonlyMap<string, Session>,
+): Goal {
+  let criteria: { items: string[]; at: number; from: string } | undefined;
+  let check: { items: NonNullable<ReturnType<typeof criteriaInBlocks>["check"]>; at: number } | undefined;
+  for (const link of goal.links) {
+    // Workers and launched chats judge their own slice, not the goal.
+    if (link.role !== "main" && link.role !== "chat") continue;
+    const session = sessionsById.get(link.sessionId);
+    if (!session) continue;
+    const found = criteriaInBlocks(session.blocks);
+    if (found.criteria && (!criteria || found.at >= criteria.at))
+      criteria = { items: found.criteria, at: found.at, from: session.id };
+    if (found.check && (!check || found.at >= check.at))
+      check = { items: found.check, at: found.at };
+  }
+  let next = goal;
+  if (
+    criteria &&
+    !goal.criteriaEdited &&
+    criteria.at >= (goal.criteriaAt ?? 0) &&
+    !sameCriteria(
+      goal.criteria?.map(({ text }) => ({ text })),
+      criteria.items.map((text) => ({ text })),
+    )
+  ) {
+    next = {
+      ...next,
+      criteria: criteria.items.map((text) => ({ text })),
+      criteriaAt: criteria.at,
+      criteriaFrom: criteria.from,
+      checkedAt: undefined,
+    };
+  }
+  if (check && next.criteria?.length && check.at >= (next.criteriaAt ?? 0)) {
+    const checked = applyCriteriaCheck(next.criteria, check.items);
+    if (!sameCriteria(checked, next.criteria) || next.checkedAt !== check.at)
+      next = { ...next, criteria: checked, checkedAt: check.at };
+  }
+  return next;
 }
 
 /** The goal a conversation works on, if any. */
