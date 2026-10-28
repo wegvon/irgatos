@@ -288,6 +288,12 @@ async function loadResumedWorkspaceOnce(): Promise<ResumedWorkspace | null> {
     for (const stub of snapshot.sessions) ids.add(stub.id);
     for (const tab of snapshot.tabs) {
       for (const id of leafIds(tab.layout)) ids.add(id);
+      // Saved worker views reopen on their stored transcript.
+      for (const pane of tab.editorPanes) {
+        for (const file of pane.files) {
+          if (file.agent) ids.add(file.agent.sessionId);
+        }
+      }
     }
   }
   for (const ref of refs) ids.add(ref.sessionId);

@@ -4,11 +4,11 @@ import {
 } from "../../sessions/model/inFlight";
 import {
   closeLeaf,
-  isAgentTab,
-  isArtifactTab,
   isTerminalTab,
   leafIds,
   newTab,
+  type AgentTabSource,
+  type ArtifactTabSource,
   type CommitTabSource,
   type EditorPane,
   type FilePaneTab,
@@ -92,7 +92,7 @@ export function collectWorkspaceSnapshot(
       .filter((id) => !keptIds.has(id)),
   );
   const snapshot = withoutInboxSessions({
-    tabs: withoutAgentTabs(kept)
+    tabs: kept
       .map(sanitizeTab)
       .filter((tab): tab is WorkspaceTab => tab != null),
     sessions: sessions
@@ -144,41 +144,6 @@ function parseProjectReturnTargets(raw: unknown): ProjectReturnMemory {
     memory.set(pathKey(projectPath), remembered.trim());
   }
   return memory;
-}
-
-const isLiveOnlyTab = (file: FilePaneTab) =>
-  isAgentTab(file) || isArtifactTab(file);
-
-/**
- * Agent tabs watch a live worker, and a run does not outlive the window that
- * started it; artifact tabs read the live artifact registry. Dropping them in
- * `sanitizeFile` would strand an empty pane and cost the whole workspace tab
- * on restore, so the pane is closed here instead.
- */
-function withoutAgentTabs(tabs: WorkspaceTab[]): WorkspaceTab[] {
-  return tabs.flatMap((tab) => {
-    if (!tab.editorPanes.some((pane) => pane.files.some(isLiveOnlyTab)))
-      return [tab];
-    let remaining: WorkspaceTab | null = tab;
-    const panes: EditorPane[] = [];
-    for (const pane of tab.editorPanes) {
-      const files = pane.files.filter((file) => !isLiveOnlyTab(file));
-      if (files.length === pane.files.length) {
-        panes.push(pane);
-      } else if (files.length === 0) {
-        remaining = remaining && closeLeaf(remaining, pane.id);
-      } else {
-        panes.push({
-          ...pane,
-          files,
-          activeFileId: files.some((file) => file.id === pane.activeFileId)
-            ? pane.activeFileId
-            : files[0].id,
-        });
-      }
-    }
-    return remaining ? [{ ...remaining, editorPanes: panes }] : [];
-  });
 }
 
 /** Also removes tabs saved by the earlier, persistent Inbox implementation. */
@@ -318,7 +283,12 @@ export function hydrateWorkspaceSnapshot(
         }),
       );
     }
-    tabs.push(tab);
+    // A worker's saved transcript comes back with its tab; the worker itself
+    // does not, so the view says so instead of looking live.
+    for (const pane of tab.editorPanes) {
+      for (const file of pane.files) if (file.agent) take(file.agent.sessionId);
+    }
+    tabs.push(markRestoredTab(tab));
   }
 
   for (const id of interruptedIds) {
@@ -342,7 +312,10 @@ export function hydrateWorkspaceSnapshot(
     sessions: [...sessions.values()],
     activeTabId,
     projectCwd,
-    projectTerminals: parsed.projectTerminals,
+    projectTerminals: parsed.projectTerminals.map((dock) => ({
+      ...dock,
+      pane: markRestoredPane(dock.pane),
+    })),
     projectReturnMemory: reconcileProjectReturn({
       memory: parseProjectReturnTargets(parsed.projectReturnTargets),
       tabs,
@@ -350,6 +323,29 @@ export function hydrateWorkspaceSnapshot(
       activeTabId,
     }),
     lastDockSide: parsed.lastDockSide,
+  };
+}
+
+/** Views whose process does not survive a restart: workers, artifacts, shells. */
+function isProcessView(file: FilePaneTab): boolean {
+  return !!(file.agent || file.artifact || file.terminal);
+}
+
+function markRestoredPane(pane: EditorPane): EditorPane {
+  if (!pane.files.some(isProcessView)) return pane;
+  return {
+    ...pane,
+    files: pane.files.map((file) =>
+      isProcessView(file) ? { ...file, restored: true } : file,
+    ),
+  };
+}
+
+function markRestoredTab(tab: WorkspaceTab): WorkspaceTab {
+  return {
+    ...tab,
+    editorPanes: tab.editorPanes.map(markRestoredPane),
+    terminalPanes: (tab.terminalPanes ?? []).map(markRestoredPane),
   };
 }
 
@@ -573,6 +569,25 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   const sessionChanges = sanitizeSessionChanges(value.sessionChanges);
   const hasRemoteFile = "remoteFile" in value;
   const remoteFile = sanitizeRemoteFile(value.remoteFile);
+  const hasAgent = "agent" in value && value.agent != null;
+  const agent = sanitizeAgent(value.agent);
+  const hasArtifact = "artifact" in value && value.artifact != null;
+  const artifact = sanitizeArtifact(value.artifact);
+  if (hasAgent && !agent) return null;
+  if (hasArtifact && !artifact) return null;
+  if (
+    (agent || artifact) &&
+    (value.plan != null ||
+      releaseNotes ||
+      commit ||
+      sessionChanges ||
+      remoteFile ||
+      value.review === true ||
+      value.changes === true ||
+      value.terminal === true ||
+      (agent && artifact))
+  )
+    return null;
   if (hasReleaseNotes && !releaseNotes) return null;
   if (hasCommit && !commit) return null;
   if (hasSessionChanges && !sessionChanges) return null;
@@ -630,6 +645,8 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
       ? { projectCwd: value.projectCwd }
       : {}),
     ...(plan ? { plan } : {}),
+    ...(agent ? { agent } : {}),
+    ...(artifact ? { artifact } : {}),
     ...(releaseNotes ? { releaseNotes } : {}),
     ...(commit ? { commit } : {}),
     ...(sessionChanges ? { sessionChanges, review: true } : {}),
@@ -640,6 +657,33 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
       : {}),
     ...(value.terminal === true ? { terminal: true } : {}),
     ...(value.preview === true ? { preview: true } : {}),
+  };
+}
+
+function sanitizeAgent(raw: unknown): AgentTabSource | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  const harness = asHarness(value.harness);
+  if (typeof value.sessionId !== "string" || !value.sessionId) return undefined;
+  if (typeof value.leadId !== "string" || !value.leadId) return undefined;
+  if (!harness) return undefined;
+  return { sessionId: value.sessionId, leadId: value.leadId, harness };
+}
+
+function sanitizeArtifact(raw: unknown): ArtifactTabSource | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.id !== "string" || !value.id) return undefined;
+  return {
+    id: value.id,
+    title: typeof value.title === "string" ? value.title : "",
+    fileName: typeof value.fileName === "string" ? value.fileName : "",
+    ...(typeof value.sessionId === "string" && value.sessionId
+      ? { sessionId: value.sessionId }
+      : {}),
+    ...(typeof value.sessionTitle === "string" && value.sessionTitle
+      ? { sessionTitle: value.sessionTitle }
+      : {}),
   };
 }
 

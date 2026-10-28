@@ -7662,6 +7662,10 @@ function Workspace({
             id: artifact.id,
             title: artifact.title,
             fileName: artifactFileName(artifact),
+            ...(artifact.sessionId ? { sessionId: artifact.sessionId } : {}),
+            ...(artifact.sessionTitle
+              ? { sessionTitle: artifact.sessionTitle }
+              : {}),
           },
           cwd,
         ),
