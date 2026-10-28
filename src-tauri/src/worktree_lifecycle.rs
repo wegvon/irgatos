@@ -105,11 +105,15 @@ pub struct WorktreeConfig {
     pub port_range: Option<[u16; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup: Option<String>,
+    /// Starts the development environment (a dev server, say). Only ever run
+    /// when the user asks for it, in a terminal they can see.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dev: Option<String>,
 }
 
 impl WorktreeConfig {
     fn is_empty(&self) -> bool {
-        self.port_range.is_none() && self.setup.is_none()
+        self.port_range.is_none() && self.setup.is_none() && self.dev.is_none()
     }
 
     /// Local fields win; an empty local setup turns the shared one off.
@@ -124,6 +128,11 @@ impl WorktreeConfig {
                 .clone()
                 .or_else(|| shared.setup.clone())
                 .filter(|setup| !setup.trim().is_empty()),
+            dev: local
+                .dev
+                .clone()
+                .or_else(|| shared.dev.clone())
+                .filter(|dev| !dev.trim().is_empty()),
         }
     }
 }
@@ -165,6 +174,10 @@ fn validate_port_range(start: u64, end: u64) -> Result<[u16; 2], String> {
 }
 
 fn setup_from_value(value: &Value) -> Result<Option<String>, String> {
+    command_from_value(value, "setup")
+}
+
+fn command_from_value(value: &Value, field: &str) -> Result<Option<String>, String> {
     match value {
         Value::Null => Ok(None),
         Value::String(text) => Ok(Some(text.trim().to_owned())),
@@ -174,13 +187,13 @@ fn setup_from_value(value: &Value) -> Result<Option<String>, String> {
                 .map(|item| {
                     item.as_str()
                         .map(|step| step.trim().to_owned())
-                        .ok_or_else(|| "setup steps must be strings".to_string())
+                        .ok_or_else(|| format!("{field} steps must be strings"))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let steps: Vec<_> = steps.into_iter().filter(|step| !step.is_empty()).collect();
             Ok(Some(steps.join(" && ")))
         }
-        _ => Err("setup should be a command or a list of commands".into()),
+        _ => Err(format!("{field} should be a command or a list of commands")),
     }
 }
 
@@ -197,6 +210,10 @@ pub(crate) fn parse_config(text: &str) -> Result<WorktreeConfig, String> {
         setup: match map.get("setup") {
             None => None,
             Some(setup) => setup_from_value(setup)?,
+        },
+        dev: match map.get("dev") {
+            None => None,
+            Some(dev) => command_from_value(dev, "dev")?,
         },
     })
 }
@@ -292,6 +309,7 @@ fn save_local(location: &GitLocation, local: WorktreeConfig) -> Result<WorktreeS
             None => None,
         },
         setup: local.setup.map(|setup| setup.trim().to_owned()),
+        dev: local.dev.map(|dev| dev.trim().to_owned()),
     };
     let path = location.common_dir.join(LOCAL_CONFIG);
     if local.is_empty() {
@@ -333,6 +351,18 @@ pub(crate) fn pick_port(
     (0..size)
         .map(|step| start + ((offset + step) % size) as u16)
         .find(|port| !taken.contains(port) && is_free(*port))
+}
+
+/// The project's development command and the checkout it belongs to.
+pub(crate) fn dev_command(path: &Path) -> Option<(PathBuf, String)> {
+    let location = locate(path)?;
+    let command = settings_for(&location).effective.dev?;
+    Some((location.root, command))
+}
+
+/// Something is serving on this port.
+pub(crate) fn port_in_use(port: u16) -> bool {
+    !port_is_free(port)
 }
 
 /// Nothing answers on loopback and the port can be bound. Connecting catches
@@ -773,7 +803,8 @@ mod tests {
             config,
             WorktreeConfig {
                 port_range: Some([6000, 6001]),
-                setup: None
+                setup: None,
+                dev: None
             }
         );
 
@@ -786,6 +817,7 @@ mod tests {
         let shared = WorktreeConfig {
             port_range: Some([4300, 4399]),
             setup: Some("npm ci".into()),
+            dev: None,
         };
         assert_eq!(
             WorktreeConfig::merged(&shared, &WorktreeConfig::default()),
@@ -794,12 +826,14 @@ mod tests {
         let local = WorktreeConfig {
             port_range: None,
             setup: Some(String::new()),
+            dev: None,
         };
         assert_eq!(
             WorktreeConfig::merged(&shared, &local),
             WorktreeConfig {
                 port_range: Some([4300, 4399]),
-                setup: None
+                setup: None,
+                dev: None
             }
         );
         assert_eq!(
@@ -868,6 +902,7 @@ mod tests {
             WorktreeConfig {
                 port_range: Some([5100, 5199]),
                 setup: Some("  pnpm install --offline ".into()),
+                dev: None,
             },
         )
         .unwrap();
@@ -884,7 +919,8 @@ mod tests {
             &location,
             WorktreeConfig {
                 port_range: Some([10, 1]),
-                setup: None
+                setup: None,
+                dev: None
             }
         )
         .is_err());

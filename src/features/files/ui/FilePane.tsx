@@ -229,6 +229,7 @@ function FilePaneComponent({
                   cwd={file.cwd}
                   active={focused && file.id === pane.activeFileId}
                   label={terminalTabLabel(file)}
+                  restored={file.restored}
                   onMetaChange={(patch) =>
                     onTerminalMetaChange?.(file.id, patch)
                   }

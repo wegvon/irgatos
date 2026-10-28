@@ -322,6 +322,23 @@ describe("collectWorkspaceSnapshot", () => {
     expect(restored).toMatchObject({ restored: true, artifact: artifact.artifact });
   });
 
+  it("reopens terminals as new shells, flagged only in memory", () => {
+    const dock = createProjectTerminal("/tmp/a", newTerminalFile("/tmp/a"));
+    const snapshot = collectWorkspaceSnapshot(
+      [newTab("s1")],
+      [],
+      "",
+      "/tmp/a",
+      new Map(),
+      [dock],
+    );
+    expect(JSON.stringify(snapshot)).not.toContain("restored");
+    const workspace = hydrateWorkspaceSnapshot(snapshot, new Map())!;
+    expect(
+      workspace.projectTerminals?.[0]?.pane.files.every((file) => file.restored),
+    ).toBe(true);
+  });
+
   it("drops a saved agent tab whose source is damaged", () => {
     const raw = {
       tabs: [

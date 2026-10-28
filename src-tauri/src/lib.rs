@@ -17,6 +17,7 @@ mod control;
 pub mod control_cli;
 mod cursor_store;
 mod cursor_usage;
+mod dev_environment;
 mod devin_config;
 mod devin_usage;
 mod external_claude;
@@ -493,6 +494,7 @@ pub fn run() {
             worktree_lifecycle::worktree_port,
             worktree_lifecycle::worktree_setup_status,
             worktree_lifecycle::worktree_setup_run,
+            dev_environment::dev_environment_status,
             check_command::check_command_run,
             check_command::check_command_cancel,
             habit_webhook::habit_webhook_sync,
