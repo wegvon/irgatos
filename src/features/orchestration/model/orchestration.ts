@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { HARNESSES, type HarnessId, type Session } from "../../sessions/model/session";
+import {
+  HARNESSES,
+  type HarnessId,
+  type RuntimeMode,
+  type Session,
+} from "../../sessions/model/session";
 import { pathKey } from "../../../shared/lib/paths";
 import type { ApprovalDecision, HarnessEvent } from "../../../integrations/harness/core/types";
 import { pendingApprovalForSession } from "../../notifications/model/approvalToast";
@@ -45,7 +50,11 @@ export type ControlOutcome = {
 export type WorkerPreparation = {
   scratchDir?: string;
   workspace: OrchestrationWorkspace;
+  /** What the app prepared in the checkout, told to the worker. */
+  environment?: string;
 };
+/** Every change in a worker checkout, including shell writes. */
+export type WorkerReview = { files: string[]; outOfScope: string[] };
 export type OrchestrationHost = {
   session(id: string): Session | undefined;
   sessions(): Session[];
@@ -58,6 +67,11 @@ export type OrchestrationHost = {
     run: OrchestrationRun,
     task: OrchestrationTask,
   ): Promise<{ files: string[]; alreadyApplied: number }>;
+  /** Null when the checkout has no recorded baseline to compare against. */
+  reviewWorker?(
+    run: OrchestrationRun,
+    task: OrchestrationTask,
+  ): Promise<WorkerReview | null>;
   /** Returns false when unreviewed changes require the worktree to be kept. */
   cleanupWorker(
     run: OrchestrationRun,
@@ -156,6 +170,9 @@ export const sameCheckout = (a: string, b: string) =>
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+const scopeEscape = (task: OrchestrationTask, paths: string[]) =>
+  `${task.title} changed files outside its assignment: ${listed(paths)}. Its result was not accepted and its checkout was retained; other independent work continues. Inspect the change. Retry with corrected project-relative files only if the write is genuinely required, otherwise send a correction within the existing scope or cancel the task.`;
+
 const recoveryTurn = (reason: string) =>
   `Continue the existing assignment from its retained worker checkout. The previous turn was stopped because the orchestration run was interrupted: ${reason}\n\nInspect the current files and prior conversation before acting. Preserve completed work, do not repeat destructive or external operations, remain inside the assigned write scope, run the remaining focused checks, and report what was already done versus what you completed now.`;
 
@@ -167,11 +184,24 @@ export function workerTurnPrompt(
   prompt: string,
   files: string[],
   scratchDir?: string,
+  environment?: string,
 ): string {
   const scratch = scratchDir
     ? ` Temporary helpers and test output may be written in your private scratch directory: ${JSON.stringify(scratchDir)}. TMPDIR, TMP and TEMP point there. Use this directory for scratch files; do not write elsewhere outside the project. Deliver final changes in your assigned project files.`
     : "";
-  return `${prompt}\n\n<irgat_assignment>\nYou are a worker managed by an Irgatos lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. Your assigned write scope is: ${files.join(", ")}.${scratch} Read other files as needed, but do not edit outside your scope. If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. Do not spawn agents, create worktrees, switch branches, stage, commit, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, but Git finalization remains the lead's responsibility after integration. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</irgat_assignment>`;
+  const prepared = environment
+    ? ` Irgatos prepared this checkout before you started: ${environment}. Run the project's checks with what is already installed; if a dependency is still missing, report it as a blocker.`
+    : "";
+  return `${prompt}\n\n<irgat_assignment>\nYou are a worker managed by an Irgatos lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. Your assigned write scope is: ${files.join(", ")}. Every change in your checkout is compared with this scope before the lead can accept it, including files written by shell commands.${scratch}${prepared} Read other files as needed, but do not edit outside your scope. If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. Do not spawn agents, create worktrees, switch branches, stage, commit, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, but Git finalization remains the lead's responsibility after integration. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</irgat_assignment>`;
+}
+
+/**
+ * Workers follow the lead's mode, except full access: a worker's sandbox and
+ * approvals stay bounded to its own checkout, and anything broader is asked
+ * of the lead.
+ */
+export function workerRuntimeMode(mode: RuntimeMode): RuntimeMode {
+  return mode === "full-access" ? "auto" : mode;
 }
 
 /** Task text a person should see: the assignment envelope stays in the send. */
@@ -1266,6 +1296,19 @@ export class Orchestrator {
               throw new Error(
                 "This worker's isolated checkout is unavailable. Its changes were not accepted.",
               );
+            const review = await this.host!.reviewWorker?.(
+              this.run(run.leadId)!,
+              target,
+            );
+            if (review?.outOfScope.length) {
+              const reason = scopeEscape(target, review.outOfScope);
+              await this.patchTask(run.leadId, target.id, {
+                status: "blocked",
+                accepted: false,
+                error: reason,
+              });
+              throw new Error(reason);
+            }
             await this.patchDispatch(run.leadId, dispatchId, {
               stage: "integration_started",
               cleanupError: undefined,
@@ -1539,12 +1582,15 @@ export class Orchestrator {
               activeRun,
               activeTask,
             );
-            if (
-              this.run(run.leadId)?.status !== "active" ||
-              this.run(run.leadId)?.tasks.find((entry) => entry.id === task.id)
-                ?.status !== "running"
-            )
+            if (!this.dispatchLive(run.leadId, task.id, dispatchId)) {
+              await this.releaseLateWorker(
+                activeRun,
+                activeTask,
+                dispatchId,
+                prepared,
+              );
               continue;
+            }
             const preparedRun = this.run(run.leadId)!;
             const writeScopes = await this.store.scopes(
               prepared.workspace.checkoutCwd,
@@ -1573,16 +1619,20 @@ export class Orchestrator {
                   : entry,
               ),
             });
-            if (
-              this.run(run.leadId)?.status !== "active" ||
-              this.run(run.leadId)?.tasks.find((entry) => entry.id === task.id)
-                ?.status !== "running"
-            )
+            if (!this.dispatchLive(run.leadId, task.id, dispatchId)) {
+              await this.releaseLateWorker(
+                activeRun,
+                activeTask,
+                dispatchId,
+                prepared,
+              );
               continue;
+            }
             const prompt = workerTurnPrompt(
               task.recoveryPrompt ?? task.prompt,
               task.files,
               prepared.scratchDir,
+              prepared.environment,
             );
             this.host.submit(task.sessionId, prompt, (outcome) => {
               void this.settle(run.leadId, task.id, outcome, dispatchId).catch(
@@ -1621,6 +1671,63 @@ export class Orchestrator {
       }
     }
   }
+  private dispatchLive(leadId: string, taskId: string, dispatchId: string) {
+    const run = this.run(leadId);
+    const task = run?.tasks.find((entry) => entry.id === taskId);
+    return (
+      run?.status === "active" &&
+      task?.status === "running" &&
+      task.activeDispatchId === dispatchId
+    );
+  }
+  /**
+   * A worker checkout can finish preparing after its task was cancelled, the
+   * run stopped or paused, or the lead deleted. Record it on the task so it
+   * stays owned, then remove it when nothing will resume in it.
+   */
+  private async releaseLateWorker(
+    run: OrchestrationRun,
+    task: OrchestrationTask,
+    dispatchId: string,
+    prepared: WorkerPreparation,
+  ) {
+    const current = this.run(run.leadId);
+    const owner = current?.tasks.find((entry) => entry.id === task.id);
+    if (!current || !owner) {
+      // Nothing else knows about this checkout any more.
+      await this.host
+        ?.cleanupWorker(
+          run,
+          { ...task, workspace: prepared.workspace, scratchDir: prepared.scratchDir },
+          true,
+        )
+        .catch((error) =>
+          console.error("Could not remove a late orchestration worker", error),
+        );
+      return;
+    }
+    if (!owner.workspace)
+      await this.commit({
+        ...current,
+        tasks: current.tasks.map((entry) =>
+          entry.id === task.id
+            ? {
+                ...entry,
+                workspace: prepared.workspace,
+                scratchDir: prepared.scratchDir,
+              }
+            : entry,
+        ),
+        dispatches: (current.dispatches ?? []).map((dispatch) =>
+          dispatch.id === dispatchId
+            ? { ...dispatch, workspace: prepared.workspace, updatedAt: Date.now() }
+            : dispatch,
+        ),
+      });
+    // Resume continues an interrupted task in its retained checkout.
+    if (owner.status === "interrupted" || owner.status === "running") return;
+    await this.cleanupUnchangedWorker(run.leadId, task.id);
+  }
   private async settle(
     leadId: string,
     taskId: string,
@@ -1646,6 +1753,34 @@ export class Orchestrator {
       task.activeDispatchId !== dispatchId
     )
       return;
+    // Shell commands report no structured writes, so compare the checkout
+    // itself with the assignment before the lead can review the result.
+    let status: OrchestrationTask["status"] = outcome.status;
+    let error = outcome.error;
+    if (
+      outcome.status === "completed" &&
+      task.workspacePolicy !== "shared" &&
+      task.workspace &&
+      this.host?.reviewWorker
+    ) {
+      try {
+        const review = await this.host.reviewWorker(this.run(leadId)!, task);
+        if (review?.outOfScope.length) {
+          status = "blocked";
+          error = scopeEscape(task, review.outOfScope);
+        }
+      } catch (reason) {
+        status = "blocked";
+        error = `Could not compare ${task.title}'s changes with its assignment: ${messageOf(reason)}. Its checkout was retained; send it another turn or cancel it.`;
+      }
+      task = this.run(leadId)?.tasks.find((entry) => entry.id === taskId);
+      if (
+        !task ||
+        task.status !== "running" ||
+        task.activeDispatchId !== dispatchId
+      )
+        return;
+    }
     this.writeChecks.delete(dispatchId);
     const run = this.run(leadId)!;
     await this.commit({
@@ -1654,9 +1789,9 @@ export class Orchestrator {
         entry.id === taskId
           ? {
               ...entry,
-              status: outcome.status,
+              status,
               result: outcome.text.slice(-20_000),
-              error: outcome.error,
+              error,
               recoveryPrompt: undefined,
               delivered: false,
               accepted: false,
@@ -1669,11 +1804,11 @@ export class Orchestrator {
         dispatch.id === dispatchId
           ? {
               ...dispatch,
-              state: outcome.status,
+              state: status as OrchestrationDispatch["state"],
               stage: "settled",
               updatedAt: Date.now(),
               result: outcome.text.slice(-20_000),
-              error: outcome.error,
+              error,
             }
           : dispatch,
       ),

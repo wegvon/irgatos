@@ -9,6 +9,8 @@ import {
   type OrchestrationHost,
   type OrchestrationRun,
   shellPath,
+  workerRuntimeMode,
+  type WorkerPreparation,
 } from "./orchestration";
 import { newSession } from "../../sessions/model/session";
 import type { OrchestrationProposal } from "./orchestrationPlan";
@@ -1444,5 +1446,174 @@ describe("local orchestration", () => {
     });
     expect(f.manager.submissionError("other")).toContain("active orchestrator");
     expect(f.manager.submissionError("lead")).toBeNull();
+  });
+});
+
+describe("worker reliability", () => {
+  const completeFirst = async (f: ReturnType<typeof setup>) => {
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledOnce());
+    const task = f.tasks()[0];
+    f.completions.get(task.sessionId)!({ status: "completed", text: "Done" });
+    return task;
+  };
+
+  it("blocks a result whose shell commands changed files outside the scope", async () => {
+    const f = setup();
+    f.host.reviewWorker = vi.fn(async () => ({
+      files: ["src/a/x.ts", "README.md"],
+      outOfScope: ["README.md"],
+    }));
+    await f.start();
+    await f.delegate(["src/a"]);
+    const task = await completeFirst(f);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("blocked"));
+    expect(f.tasks()[0].error).toContain(
+      "changed files outside its assignment: README.md",
+    );
+    expect(f.tasks()[0].workspace?.checkoutCwd).toBe(`/worktrees/${task.id}`);
+    expect(f.manager.run("lead")?.dispatches?.[0].state).toBe("blocked");
+    await expect(f.call("review", { taskId: task.id })).rejects.toThrow(
+      "Only a completed result can be accepted",
+    );
+    expect(f.host.integrateWorker).not.toHaveBeenCalled();
+  });
+
+  it("checks the actual changes again when the lead accepts a result", async () => {
+    const f = setup();
+    const review = vi
+      .fn()
+      .mockResolvedValueOnce({ files: ["src/a/x.ts"], outOfScope: [] })
+      .mockResolvedValueOnce({
+        files: ["src/a/x.ts", "package.json"],
+        outOfScope: ["package.json"],
+      });
+    f.host.reviewWorker = review;
+    await f.start();
+    await f.delegate(["src/a"]);
+    const task = await completeFirst(f);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await expect(f.call("review", { taskId: task.id })).rejects.toThrow(
+      "outside its assignment: package.json",
+    );
+    expect(f.tasks()[0]).toMatchObject({ status: "blocked", accepted: false });
+    expect(f.host.integrateWorker).not.toHaveBeenCalled();
+    expect(f.host.cleanupWorker).not.toHaveBeenCalled();
+  });
+
+  it("never accepts a result it could not compare with the scope", async () => {
+    const f = setup();
+    f.host.reviewWorker = vi.fn(async () => {
+      throw new Error("git failed");
+    });
+    await f.start();
+    await f.delegate(["src/a"]);
+    await completeFirst(f);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("blocked"));
+    expect(f.tasks()[0].error).toContain("git failed");
+  });
+
+  const pendingPreparation = (f: ReturnType<typeof setup>) => {
+    let finish!: () => void;
+    const create = f.host.createWorker;
+    f.host.createWorker = vi.fn(
+      (run, task) =>
+        new Promise<WorkerPreparation>((resolve) => {
+          finish = () => resolve(create(run, task));
+        }),
+    );
+    return { finish: () => finish() };
+  };
+
+  it("removes a worktree that finishes preparing after its task was cancelled", async () => {
+    const f = setup();
+    const preparing = pendingPreparation(f);
+    await f.start();
+    await f.delegate(["src/a"]);
+    await vi.waitFor(() => expect(f.host.createWorker).toHaveBeenCalledOnce());
+    const task = f.tasks()[0];
+
+    await f.call("cancel", { taskId: task.id });
+    expect(f.host.cleanupWorker).not.toHaveBeenCalled();
+    preparing.finish();
+
+    await vi.waitFor(() =>
+      expect(f.host.cleanupWorker).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: task.id,
+          workspace: expect.objectContaining({
+            checkoutCwd: `/worktrees/${task.id}`,
+          }),
+        }),
+        true,
+      ),
+    );
+    await vi.waitFor(() => expect(f.tasks()[0].workspace).toBeUndefined());
+    expect(f.tasks()[0].status).toBe("cancelled");
+    expect(f.host.submit).not.toHaveBeenCalledWith(
+      task.sessionId,
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("keeps ownership of a late worktree that could not be removed", async () => {
+    const f = setup();
+    const preparing = pendingPreparation(f);
+    vi.mocked(f.host.cleanupWorker).mockResolvedValue(false);
+    await f.start();
+    await f.delegate(["src/a"]);
+    await vi.waitFor(() => expect(f.host.createWorker).toHaveBeenCalledOnce());
+    const task = f.tasks()[0];
+    await f.manager.stopRun("lead");
+    preparing.finish();
+    await vi.waitFor(() => expect(f.host.cleanupWorker).toHaveBeenCalled());
+    // Still recorded, so finish/stop report it instead of losing it.
+    expect(f.tasks()[0].workspace?.checkoutCwd).toBe(`/worktrees/${task.id}`);
+    expect(f.saved.get("lead")?.tasks[0].workspace?.checkoutCwd).toBe(
+      `/worktrees/${task.id}`,
+    );
+  });
+
+  it("removes a late worktree whose lead was deleted", async () => {
+    const f = setup();
+    const preparing = pendingPreparation(f);
+    await f.start();
+    await f.delegate(["src/a"]);
+    await vi.waitFor(() => expect(f.host.createWorker).toHaveBeenCalledOnce());
+    const task = f.tasks()[0];
+    await f.manager.deleteSession("lead", async () => {
+      f.saved.delete("lead");
+    });
+    preparing.finish();
+    await vi.waitFor(() =>
+      expect(f.host.cleanupWorker).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          id: task.id,
+          workspace: expect.objectContaining({
+            checkoutCwd: `/worktrees/${task.id}`,
+          }),
+        }),
+        true,
+      ),
+    );
+  });
+
+  it("caps worker permissions at the worker's own checkout", () => {
+    expect(workerRuntimeMode("full-access")).toBe("auto");
+    expect(workerRuntimeMode("auto")).toBe("auto");
+    expect(workerRuntimeMode("supervised")).toBe("supervised");
+  });
+
+  it("tells the worker what was prepared and that shell writes are checked", () => {
+    const sent = workerTurnPrompt(
+      "Fix it.",
+      ["src/a"],
+      undefined,
+      "dependencies copied from the lead checkout (node_modules)",
+    );
+    expect(sent).toContain("node_modules");
+    expect(sent).toContain("including files written by shell commands");
   });
 });
