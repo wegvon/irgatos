@@ -6,6 +6,8 @@ import { pathKey } from "../../../shared/lib/paths";
 export type WorktreeConfig = {
   portRange?: [number, number];
   setup?: string;
+  /** Starts the development environment; run only from "Start development environment". */
+  dev?: string;
 };
 
 export type WorktreeSettings = {
@@ -90,6 +92,7 @@ export function inheritedConfig(settings: WorktreeSettings): WorktreeConfig {
   return {
     portRange: settings.shared.portRange ?? settings.defaultPortRange,
     setup: settings.shared.setup,
+    dev: settings.shared.dev,
   };
 }
 
@@ -101,6 +104,7 @@ export function localConfigFromForm(
   portRange: string,
   setup: string,
   inherited: WorktreeConfig,
+  dev?: string,
 ): { config?: WorktreeConfig; error?: string } {
   const parsed = parsePortRangeInput(portRange);
   if (parsed.error) return { error: parsed.error };
@@ -111,6 +115,10 @@ export function localConfigFromForm(
   const command = setup.trim();
   // An empty override is how a clone turns a committed setup command off.
   if (command !== (inherited.setup ?? "").trim()) config.setup = command;
+  const devCommand = dev?.trim();
+  if (devCommand !== undefined && devCommand !== (inherited.dev ?? "").trim()) {
+    config.dev = devCommand;
+  }
   return { config };
 }
 
@@ -168,3 +176,16 @@ export function setupSummary(event: WorktreeSetupEvent): string {
   const code = event.exitCode == null ? "" : ` (exit ${event.exitCode})`;
   return `Setup failed${code}: ${event.command}`;
 }
+
+export type DevEnvironmentStatus = {
+  /** The project's development command; absent when none is set. */
+  command?: string | null;
+  root?: string | null;
+  running: boolean;
+  pid?: number | null;
+  port?: number | null;
+};
+
+/** Whether the project's development command is running in its checkout. */
+export const devEnvironmentStatus = (cwd: string) =>
+  invoke<DevEnvironmentStatus>("dev_environment_status", { cwd });

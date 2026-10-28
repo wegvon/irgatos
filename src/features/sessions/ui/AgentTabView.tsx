@@ -15,6 +15,7 @@ import {
   type Session,
 } from "../model/session";
 import { noteTitle, saveNoteOnce } from "../../notes";
+import { requestOpenReferencedSession } from "../model/sessionReferenceEvents";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
 
 /**
@@ -31,12 +32,18 @@ export function AgentTabView({
   visible,
   focused = visible,
   onOpenFile,
+  leadId,
+  restored = false,
 }: {
   title: string;
   session?: Session;
   visible: boolean;
   focused?: boolean;
   onOpenFile?: (path: string) => void;
+  /** The orchestrator's conversation, where the worker's work is summarised. */
+  leadId?: string;
+  /** Reopened after a restart: a saved transcript, not a running worker. */
+  restored?: boolean;
 }) {
   const navigateBlockRef = useRef<
     ((blockId: string | null, query?: string) => boolean) | null
@@ -101,19 +108,57 @@ export function AgentTabView({
     },
     [session?.cwd, session?.id],
   );
+  const openLead = leadId
+    ? () => requestOpenReferencedSession({ sessionId: leadId })
+    : undefined;
   if (!session) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
-        <p className="max-w-sm text-[12px] leading-5 text-content/45">
-          This agent is no longer running. Its work is summarised in the
-          orchestrator's conversation.
-        </p>
+        <div className="flex max-w-sm flex-col items-center gap-2">
+          <p
+            role="status"
+            className="text-[12px] leading-5 text-content/45"
+          >
+            {restored
+              ? "This view was saved before Irgatos restarted, but the agent's transcript could not be found. Its work is summarised in the orchestrator's conversation."
+              : "This agent is no longer running. Its work is summarised in the orchestrator's conversation."}
+          </p>
+          {openLead ? (
+            <OpenConversationButton onClick={openLead}>
+              Open the orchestrator's conversation
+            </OpenConversationButton>
+          ) : null}
+        </div>
       </div>
     );
   }
+  // A restored worker is a record of what it did; it only runs again if its
+  // orchestrator picks the run back up.
+  const savedOnly = restored && !session.busy;
   const model = findModel(session.model)?.name ?? session.model;
   return (
     <div data-agent-tab className="flex h-full min-h-0 flex-col">
+      {savedOnly ? (
+        <div
+          data-restored-view
+          role="status"
+          className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-stroke bg-content/[0.03] px-3 py-1.5 font-sans text-[11.5px] text-content/60"
+        >
+          <span>
+            Restored after a restart: this is the saved transcript. The agent is
+            not running.
+          </span>
+          {openLead ? (
+            <button
+              type="button"
+              onClick={openLead}
+              className="ml-auto shrink-0 underline decoration-content/25 underline-offset-2 hover:text-content"
+            >
+              Open orchestrator
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="@container relative min-h-0 flex-1">
         <AgentTranscript
           blocks={session.blocks}
@@ -141,9 +186,29 @@ export function AgentTabView({
           {model} · {HARNESS_TITLE[session.harness]}
         </span>
         <span className="ml-auto shrink-0">
-          Run by the orchestrator · read-only
+          {savedOnly
+            ? "Saved transcript · not running"
+            : "Run by the orchestrator · read-only"}
         </span>
       </footer>
     </div>
+  );
+}
+
+function OpenConversationButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-md border border-content/15 px-2.5 py-1 text-[12px] text-content/75 transition-colors hover:bg-content/7 hover:text-content"
+    >
+      {children}
+    </button>
   );
 }

@@ -57,6 +57,9 @@ export type ArtifactTabSource = {
   title: string;
   /** For the tab's file-type icon. */
   fileName: string;
+  /** Conversation that produced it: where to find it again after a restart. */
+  sessionId?: string;
+  sessionTitle?: string;
 };
 
 export type SessionChangesSource = {
@@ -80,10 +83,15 @@ export type FilePaneTab = {
   sessionChanges?: SessionChangesSource;
   /** Historical commit review (unified diff, read-only). */
   commit?: CommitTabSource;
-  /** Read-only transcript of an orchestration worker. Live only — not persisted. */
+  /** Read-only transcript of an orchestration worker. Reopens as a saved view. */
   agent?: AgentTabSource;
-  /** Artifact viewer. Live only — not persisted. */
+  /** Artifact viewer. Reopens as a saved view. */
   artifact?: ArtifactTabSource;
+  /**
+   * Reopened from the saved workspace after a restart: the view is back, the
+   * process behind it (worker, shell command) is not. Live only — not persisted.
+   */
+  restored?: boolean;
   terminal?: boolean;
   /** Foreground command when it isn't the shell. Live only — not persisted. */
   foreground?: string;

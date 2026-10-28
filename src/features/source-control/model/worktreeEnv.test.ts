@@ -85,6 +85,24 @@ describe("local worktree overrides", () => {
     });
   });
 
+  it("stores the development command only when it changes", () => {
+    const inherited = {
+      portRange: [4100, 4199] as [number, number],
+      dev: "npm run dev",
+    };
+    expect(localConfigFromForm("", "", inherited, " npm run dev ")).toEqual({
+      config: {},
+    });
+    expect(localConfigFromForm("", "", inherited, "pnpm dev")).toEqual({
+      config: { dev: "pnpm dev" },
+    });
+    expect(localConfigFromForm("", "", inherited, "")).toEqual({
+      config: { dev: "" },
+    });
+    // Callers that do not show the field leave it alone.
+    expect(localConfigFromForm("", "", inherited)).toEqual({ config: {} });
+  });
+
   it("saves an empty setup to turn a committed command off", () => {
     expect(
       localConfigFromForm("", "  ", { portRange: [4100, 4199], setup: "npm ci" }),

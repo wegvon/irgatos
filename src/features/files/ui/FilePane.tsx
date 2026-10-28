@@ -205,9 +205,14 @@ function FilePaneComponent({
                   visible={file.id === pane.activeFileId}
                   focused={focused && file.id === pane.activeFileId}
                   onOpenFile={onOpenFile}
+                  leadId={file.agent.leadId}
+                  restored={file.restored}
                 />
               ) : isArtifactTab(file) ? (
-                <ArtifactSurface source={file.artifact} />
+                <ArtifactSurface
+                  source={file.artifact}
+                  restored={file.restored}
+                />
               ) : isPlanTab(file) ? (
                 <PlanSurface
                   file={file}
@@ -224,6 +229,7 @@ function FilePaneComponent({
                   cwd={file.cwd}
                   active={focused && file.id === pane.activeFileId}
                   label={terminalTabLabel(file)}
+                  restored={file.restored}
                   onMetaChange={(patch) =>
                     onTerminalMetaChange?.(file.id, patch)
                   }

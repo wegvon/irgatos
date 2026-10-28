@@ -17,6 +17,7 @@ mod control;
 pub mod control_cli;
 mod cursor_store;
 mod cursor_usage;
+mod dev_environment;
 mod devin_config;
 mod devin_usage;
 mod external_claude;
@@ -502,6 +503,7 @@ pub fn run() {
             check_command::check_command_run,
             check_command::check_command_cancel,
             habit_webhook::habit_webhook_sync,
+            dev_environment::dev_environment_status,
             worktrees::git_orchestration_worktree_create,
             worktrees::git_worktree_rename_branch,
             worktrees::git_worktree_check_remove,
