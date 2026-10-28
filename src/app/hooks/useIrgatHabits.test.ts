@@ -68,8 +68,13 @@ const { approveHabit } = await import(
 );
 const { shouldPersistSession } =
   await import("../../features/sessions/data/sessionStore");
-const { checkHabitsNow, relayApproval } =
-  await import("../../features/irgats/model/irgatHabits");
+const {
+  checkHabitsNow,
+  habitRunSessionId,
+  habitRunningSince,
+  relayApproval,
+  stopHabitRun,
+} = await import("../../features/irgats/model/irgatHabits");
 const { loadIrgatFiles } = await import("../../features/irgats/model/irgatFiles");
 
 let root: Root;
@@ -581,4 +586,39 @@ it("hands a webhook payload to the run", async () => {
   );
   await vi.waitFor(() => expect(stored[0].lastOutcome).toBe("quiet"));
   expect(stored[0].trigger).toBeUndefined();
+});
+
+it("stops a run the user asks to stop and records it as stopped", async () => {
+  vi.useFakeTimers();
+  const hold = deferred();
+  const host = setup("PR review complete.");
+  host.run.mockImplementationOnce(async () => {
+    await hold.promise;
+    return { status: "completed", text: "PR review complete." };
+  });
+  try {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(host.run).toHaveBeenCalledTimes(1);
+    const runId = host.add.mock.calls[0][0].id;
+    expect(habitRunSessionId("h1")).toBe(runId);
+
+    stopHabitRun("h1");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(host.remove).toHaveBeenCalledWith(runId);
+    expect(host.post).not.toHaveBeenCalled();
+    expect(stored[0]).toMatchObject({ lastOutcome: "skipped" });
+    expect(stored[0].runs?.[0]).toMatchObject({
+      outcome: "skipped",
+      reason: "You stopped this run.",
+    });
+    expect(habitRunningSince("h1")).toBeUndefined();
+    expect(habitRunSessionId("h1")).toBeUndefined();
+  } finally {
+    await act(async () => hold.resolve());
+    vi.useRealTimers();
+  }
 });

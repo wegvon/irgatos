@@ -790,6 +790,9 @@ function habitView(habit: Habit) {
     schedule: habitScheduleLabel(habit.schedule),
     enabled: habit.enabled,
     nextRun: habit.enabled ? new Date(habit.nextRunAt).toLocaleString() : null,
+    ...(habit.finishedAt != null
+      ? { finished: new Date(habit.finishedAt).toLocaleString() }
+      : {}),
     ...(habitRunningSince(habit.id) != null ? { running: true } : {}),
     ...(habit.requestApproval ? { requestApproval: true } : {}),
     ...(habit.ifCondition ? { ifCondition: habit.ifCondition } : {}),
@@ -944,9 +947,12 @@ async function handleHabits(
             ? {}
             : { enabled: input.enabled as boolean }),
         };
-        // A new schedule, or turning it back on, counts from now.
-        if (patch.schedule || (next.enabled && !current.enabled))
+        // A new schedule, or turning it back on, counts from now, and a
+        // one-off set up again is no longer done.
+        if (patch.schedule || (next.enabled && !current.enabled)) {
           next.nextRunAt = nextHabitRunAt(next.schedule, now.getTime());
+          delete next.finishedAt;
+        }
         return {
           habits: list.map((entry) => (entry.id === next.id ? next : entry)),
           result: next,

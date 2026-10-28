@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   WebIrgatDetail,
+  WebIrgatHabit,
   WebIrgatOptions,
 } from "../../model/protocol";
 import { read, usePoll, write } from "../client";
@@ -19,6 +20,7 @@ import {
 } from "./parts";
 import {
   ChevronDown,
+  Clock,
   FolderTree,
   MessageSquare,
   Plus,
@@ -26,11 +28,12 @@ import {
   X,
 } from "../../../../shared/ui/icons";
 
-type Tab = "settings" | "agents" | "memory";
+type Tab = "settings" | "agents" | "habits" | "memory";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
   { id: "agents", label: "Agents" },
+  { id: "habits", label: "Habits" },
   { id: "memory", label: "Memory" },
 ];
 
@@ -118,7 +121,7 @@ export function IrgatDetail({
   const detail = usePoll(
     `irgat:${id}`,
     () => read<WebIrgatDetail>("irgat", { irgatId: id }),
-    () => (tab === "agents" ? 3000 : 8000),
+    () => (tab === "agents" || tab === "habits" ? 3000 : 8000),
   );
   const options = usePoll(
     "irgatOptions",
@@ -261,6 +264,11 @@ export function IrgatDetail({
                 {irgat.agents.length}
               </span>
             ) : null}
+            {entry.id === "habits" && irgat.habits.length ? (
+              <span className="ml-1 tabular-nums text-(--ink-3)">
+                {irgat.habits.length}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -298,10 +306,160 @@ export function IrgatDetail({
             turn.
           </Empty>
         )
+      ) : tab === "habits" ? (
+        irgat.habits.length ? (
+          <HabitList
+            habits={irgat.habits}
+            busy={busy}
+            onCommand={(habit, command, done) =>
+              void run(`habit:${habit.id}:${command}`, async () => {
+                await write("irgatHabit", {
+                  irgatId: id,
+                  habitId: habit.id,
+                  command,
+                });
+                detail.reload();
+              }, done)
+            }
+          />
+        ) : (
+          <Empty
+            icon={
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-content/6 text-(--ink-3)">
+                <Clock className="size-7" />
+              </span>
+            }
+            title="No habits yet"
+          >
+            Ask {irgat.name} in its chat to put work on a schedule, like a
+            morning digest, or to do something once at a set time.
+          </Empty>
+        )
       ) : (
         <Memory irgat={irgat} onChanged={detail.reload} />
       )}
     </div>
+  );
+}
+
+type HabitCommand = "run" | "pause" | "resume" | "stop" | "approve" | "skip";
+
+const HABIT_OUTCOME: Record<
+  NonNullable<WebIrgatHabit["last"]>["outcome"],
+  string
+> = {
+  posted: "Messaged you",
+  quiet: "Nothing to report",
+  failed: "Couldn't finish",
+  skipped: "Skipped",
+};
+
+const habitTime = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** What the habit is up to, under its name. */
+function habitLine(habit: WebIrgatHabit): string {
+  switch (habit.state) {
+    case "running":
+      return "Running now";
+    case "approval":
+      return "Waiting for your approval";
+    case "paused":
+      return `Paused · ${habit.schedule}`;
+    case "finished":
+      return habit.finishedAt
+        ? `Done · ${habitTime.format(habit.finishedAt)}`
+        : "Done";
+    case "scheduled":
+      return habit.nextRunAt
+        ? `${habit.schedule} · next ${habitTime.format(habit.nextRunAt)}`
+        : habit.schedule;
+  }
+}
+
+/**
+ * Its habits as on the Mac's Habits tab: what is running or waiting on you
+ * first, then what is scheduled, paused and done, each with its last run.
+ */
+function HabitList({
+  habits,
+  busy,
+  onCommand,
+}: {
+  habits: WebIrgatHabit[];
+  busy: string | null;
+  onCommand: (habit: WebIrgatHabit, command: HabitCommand, done?: string) => void;
+}) {
+  const button = (
+    habit: WebIrgatHabit,
+    command: HabitCommand,
+    label: string,
+    done?: string,
+  ) => (
+    <button
+      key={command}
+      disabled={busy === `habit:${habit.id}:${command}`}
+      onClick={() => onCommand(habit, command, done)}
+      className={
+        command === "approve"
+          ? "primary-action web-press inline-flex h-9 items-center rounded-full px-4 text-[14px] font-semibold"
+          : "web-press inline-flex h-9 items-center rounded-full bg-content/8 px-4 text-[14px] font-semibold text-(--ink) disabled:opacity-40"
+      }
+    >
+      {label}
+    </button>
+  );
+  return (
+    <Group>
+      {habits.map((habit) => (
+        <div
+          key={habit.id}
+          data-web-habit={habit.state}
+          className="flex flex-col gap-2 px-4 py-3"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-[15px] text-(--ink)">
+              {habit.name}
+            </div>
+            <div
+              className={`text-[12.5px] leading-snug ${
+                habit.state === "approval"
+                  ? "text-amber-500 dark:text-amber-300"
+                  : "text-(--ink-3)"
+              }`}
+            >
+              {habitLine(habit)}
+            </div>
+            {habit.last && habit.state !== "running" ? (
+              <div className="mt-1 line-clamp-2 text-[12.5px] leading-snug text-(--ink-2)">
+                {HABIT_OUTCOME[habit.last.outcome]}
+                {habit.last.detail ? ` · ${habit.last.detail}` : ""}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {habit.state === "approval"
+              ? [
+                  button(habit, "approve", "Approve", "Approved"),
+                  button(habit, "skip", "Skip", "Skipped this run"),
+                ]
+              : habit.state === "running"
+                ? [button(habit, "stop", "Stop", "Stopping")]
+                : [
+                    button(habit, "run", "Run now", "Starting on your Mac"),
+                    habit.state === "scheduled"
+                      ? button(habit, "pause", "Pause")
+                      : habit.state === "paused"
+                        ? button(habit, "resume", "Resume")
+                        : null,
+                  ]}
+          </div>
+        </div>
+      ))}
+    </Group>
   );
 }
 

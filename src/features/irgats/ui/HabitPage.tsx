@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Pause, Play, Trash2, Zap } from "../../../shared/ui/icons";
+import { Pause, Play, Square, Trash2, Zap } from "../../../shared/ui/icons";
 import { IconButton } from "../../../app/shell/TitleBar";
 import { PageHeader } from "./irgatPanelParts";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
@@ -20,11 +20,14 @@ import {
   habitRunningSince,
   habitScheduleLabel,
   habitStarting,
+  habitStopRequested,
+  stopHabitRun,
   subscribeHabitsRunning,
   type Habit,
   type HabitRun,
 } from "../model/irgatHabits";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId, Session } from "../../sessions/model/session";
+import { IrgatActivityTrail } from "../../sessions/ui/AgentTranscript";
 import { HeldWorkNotice } from "../../quotas/ui/HeldWorkNotice";
 
 const dayTime = new Intl.DateTimeFormat(undefined, {
@@ -83,6 +86,7 @@ export function HabitPage({
   onRemove,
   guards,
   irgatPaused = false,
+  runSession,
 }: {
   habit: Habit;
   /** The Irgat's color, for runs that reached the user. */
@@ -95,6 +99,8 @@ export function HabitPage({
   guards?: HabitPageGuardActions;
   /** Its Irgat is paused: a due run waits for the resume. */
   irgatPaused?: boolean;
+  /** The hidden session of the run in progress, to watch its steps live. */
+  runSession?: Session;
 }) {
   const runningSince = useHabitRunning(habit.id);
   const now = Date.now();
@@ -117,6 +123,7 @@ export function HabitPage({
       data-habit-page={habit.id}
     >
       <PageHeader title={habit.name} onBack={onBack}>
+        {runningSince != null ? <StopRunButton habitId={habit.id} /> : null}
         <IconButton
           label={
             runningSince != null
@@ -132,16 +139,18 @@ export function HabitPage({
         >
           <Zap className="size-3.5" strokeWidth={1.75} />
         </IconButton>
-        <IconButton
-          label={habit.enabled ? "Pause" : "Resume"}
-          onClick={onToggle}
-        >
-          {habit.enabled ? (
-            <Pause className="size-3.5" strokeWidth={1.75} />
-          ) : (
-            <Play className="size-3.5" strokeWidth={1.75} />
-          )}
-        </IconButton>
+        {habit.finishedAt == null ? (
+          <IconButton
+            label={habit.enabled ? "Pause" : "Resume"}
+            onClick={onToggle}
+          >
+            {habit.enabled ? (
+              <Pause className="size-3.5" strokeWidth={1.75} />
+            ) : (
+              <Play className="size-3.5" strokeWidth={1.75} />
+            )}
+          </IconButton>
+        ) : null}
         <IconButton label="Remove" onClick={onRemove}>
           <Trash2 className="size-3.5" strokeWidth={1.75} />
         </IconButton>
@@ -150,7 +159,11 @@ export function HabitPage({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         <dl className="flex flex-col gap-0.5 px-4 py-3 text-[12px]">
           <Row label="Runs">
-            {habit.enabled ? habitScheduleLabel(habit.schedule) : "Paused"}
+            {habit.finishedAt != null
+              ? `${habitScheduleLabel(habit.schedule)} · done ${when(habit.finishedAt, now)}`
+              : habit.enabled
+                ? habitScheduleLabel(habit.schedule)
+                : "Paused"}
           </Row>
           {guardSummary ? <Row label="Guards">{guardSummary}</Row> : null}
           {awaiting ? (
@@ -219,6 +232,18 @@ export function HabitPage({
               />
             </Section>
           </>
+        ) : null}
+
+        {runningSince != null && runSession ? (
+          <Section title="Working on it now">
+            <div className="px-1" data-habit-live-trail>
+              <IrgatActivityTrail
+                blocks={runSession.blocks}
+                live
+                cwd={runSession.cwd}
+              />
+            </div>
+          </Section>
         ) : null}
 
         <Section title="Recent runs">
@@ -290,6 +315,30 @@ export function RunningFor({ since }: { since: number }) {
     return () => window.clearInterval(timer);
   }, []);
   return <span className="tabular-nums">{duration(now - since)}</span>;
+}
+
+/** Whether the user asked the habit's run to stop and it has not yet. */
+export function useHabitStopping(habitId: string): boolean {
+  return useSyncExternalStore(subscribeHabitsRunning, () =>
+    habitStopRequested(habitId),
+  );
+}
+
+/**
+ * Stops the run in progress. The run notices within a couple of seconds;
+ * until then the button says it is stopping.
+ */
+export function StopRunButton({ habitId }: { habitId: string }) {
+  const stopping = useHabitStopping(habitId);
+  return (
+    <IconButton
+      label={stopping ? "Stopping…" : "Stop this run"}
+      disabled={stopping}
+      onClick={() => stopHabitRun(habitId)}
+    >
+      <Square className="size-3.5" strokeWidth={1.75} />
+    </IconButton>
+  );
 }
 
 function RunningRow({ since }: { since: number }) {

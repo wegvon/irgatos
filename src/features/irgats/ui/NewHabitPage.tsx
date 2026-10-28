@@ -11,11 +11,18 @@ import { when } from "./HabitPage";
 import { AutoTextarea, PageHeader, Property, Section } from "./irgatPanelParts";
 
 const KINDS = [
+  { value: "once", label: "Once" },
   { value: "daily", label: "Daily" },
   { value: "weekdays", label: "Weekdays" },
   { value: "weekly", label: "Weekly" },
   { value: "hourly", label: "Hourly" },
 ] as const;
+
+/** Today's local date, "YYYY-MM-DD", where a one-off starts. */
+function today(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 const DAYS = AUTOMATION_WEEKDAYS.map((label, value) => ({
   value: String(value),
@@ -155,13 +162,33 @@ function ScheduleFields({
         options={KINDS}
         variant="pill"
         searchable={false}
-        onChange={(value) =>
+        onChange={(value) => {
+          const { date, ...rest } = schedule;
           onChange({
-            ...schedule,
+            ...rest,
             scheduleKind: value as HabitSchedule["scheduleKind"],
-          })
-        }
+            // Only a one-off has a date.
+            ...(value === "once" ? { date: date ?? today() } : {}),
+          });
+        }}
       />
+      {kind === "once" ? (
+        <>
+          <span className="text-content/45">on</span>
+          <input
+            type="date"
+            aria-label="Date"
+            value={schedule.date ?? today()}
+            min={today()}
+            required
+            onChange={(event) => {
+              if (event.target.value)
+                onChange({ ...schedule, date: event.target.value });
+            }}
+            className="h-7 rounded-md bg-content/10 px-2 text-[12px] text-content outline-none hover:bg-content/[0.14] focus-visible:bg-content/[0.14]"
+          />
+        </>
+      ) : null}
       {kind === "weekly" ? (
         <>
           <span className="text-content/45">on</span>

@@ -290,6 +290,27 @@ export type WebIrgatDetail = {
   soul: string;
   memory: { index: number; text: string; date?: string; struck: boolean }[];
   agents: WebAgent[];
+  /** What it does on its own, as its Habits tab on the Mac lists it. */
+  habits: WebIrgatHabit[];
+};
+
+/** One of an Irgat's habits, with what the phone can do to it. */
+export type WebIrgatHabit = {
+  id: string;
+  name: string;
+  /** "Weekdays at 9:00 AM", "Once · Tue, Oct 28 at 2:30 PM". */
+  schedule: string;
+  state: "running" | "approval" | "scheduled" | "paused" | "finished";
+  /** Epoch ms of the next run, while one is scheduled. */
+  nextRunAt?: number;
+  /** When a one-off ran. */
+  finishedAt?: number;
+  last?: {
+    at: number;
+    outcome: "posted" | "quiet" | "failed" | "skipped";
+    /** What it told the user, or why it failed or was skipped. */
+    detail?: string;
+  };
 };
 
 /** What an Irgat's settings can pick from. */
