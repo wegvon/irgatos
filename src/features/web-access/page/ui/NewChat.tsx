@@ -23,13 +23,28 @@ import {
   ArrowUp,
   FileDiff,
   Folder,
+  FolderTree,
   GitBranch,
   GitPullRequest,
   Idea,
   MessageSquare,
+  Sparkles,
   Terminal,
+  Wrench,
 } from "../../../../shared/ui/icons";
 import { DictateButton } from "./Voice";
+import {
+  CHAT_STARTERS,
+  CHAT_STARTER_FILE_HINT_PLAIN,
+  draftWithStarter,
+  type ChatStarterId,
+} from "../../../sessions/model/chatStarters";
+
+const STARTER_ICONS: Record<ChatStarterId, ReactNode> = {
+  explain: <FolderTree className="size-3.5" />,
+  fix: <Wrench className="size-3.5" />,
+  build: <Sparkles className="size-3.5" />,
+};
 
 const SUGGESTIONS: { text: string; icon: ReactNode }[] = [
   {
@@ -222,23 +237,50 @@ export function NewChat({
             <p className="mt-2 max-w-[30ch] text-[15px] leading-snug text-(--ink-2)">
               Start an agent on your Mac. Say what to do, pick where it works.
             </p>
-            <div className="mt-6 flex flex-col items-center gap-2.5">
-              {SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion.text}
-                  onClick={() => {
-                    setText(suggestion.text);
-                    field.current?.focus();
-                  }}
-                  className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
-                >
-                  <span className="flex size-6 items-center justify-center text-(--ink-2)">
-                    {suggestion.icon}
-                  </span>
-                  {suggestion.text}
-                </button>
-              ))}
-            </div>
+            {cwd ? (
+              // A project is picked: offer the same starting points as the
+              // desktop's empty chat. A pick fills the box, never sends.
+              <>
+                <div className="mt-6 flex flex-col items-center gap-2.5">
+                  {CHAT_STARTERS.map((starter) => (
+                    <button
+                      key={starter.id}
+                      onClick={() => {
+                        setText(draftWithStarter(text, starter));
+                        field.current?.focus();
+                      }}
+                      className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
+                    >
+                      <span className="flex size-6 items-center justify-center text-(--ink-2)">
+                        {STARTER_ICONS[starter.id]}
+                      </span>
+                      {starter.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-4 max-w-[32ch] text-[13px] leading-snug text-(--ink-2)">
+                  {CHAT_STARTER_FILE_HINT_PLAIN}
+                </p>
+              </>
+            ) : (
+              <div className="mt-6 flex flex-col items-center gap-2.5">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion.text}
+                    onClick={() => {
+                      setText(suggestion.text);
+                      field.current?.focus();
+                    }}
+                    className="glass web-press inline-flex h-10 items-center gap-2 rounded-full pl-2 pr-4 text-[14px] font-medium text-(--ink)"
+                  >
+                    <span className="flex size-6 items-center justify-center text-(--ink-2)">
+                      {suggestion.icon}
+                    </span>
+                    {suggestion.text}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
