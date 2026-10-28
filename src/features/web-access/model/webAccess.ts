@@ -124,6 +124,11 @@ import {
   type WebAgentsDeps,
 } from "./webAccessAgents";
 import {
+  handleWebGoals,
+  isWebGoalsAction,
+  type WebGoalsDeps,
+} from "./webAccessGoals";
+import {
   handleWorkspaceAction,
   type WorkspaceDeps,
 } from "./webAccessWorkspace";
@@ -259,6 +264,8 @@ export type WebAccessDeps = {
   lookups?: WebLookupDeps;
   /** Feed, Notes, Board and Artifacts; the app's own stores when left out. */
   workspace?: WorkspaceDeps;
+  /** Goals: orchestration runs, gate results and Resume, from the app. */
+  goals?: Omit<WebGoalsDeps, "sessions">;
 };
 
 type IrgatHost = Parameters<typeof ensureIrgatSession>[1];
@@ -1294,6 +1301,16 @@ export async function handleWebAccess(
       return { read: true };
     }
     default: {
+      if (isWebGoalsAction(action))
+        return handleWebGoals(
+          {
+            interruptedIds: deps.agents?.interruptedIds,
+            ...deps.goals,
+            sessions: deps.sessions,
+          },
+          action,
+          input,
+        );
       if (isWebAgentsAction(action))
         return handleWebAgents(
           { ...deps, findSession: (given) => findSession(deps, given) },

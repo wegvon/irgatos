@@ -14,6 +14,7 @@ export function UsageLimitNotice({
   variant = "composer",
   providerName,
   modelPicker,
+  details,
 }: {
   limit: UsageLimit;
   onResume?: () => void;
@@ -22,6 +23,8 @@ export function UsageLimitNotice({
   variant?: "composer" | "irgat";
   providerName?: string;
   modelPicker?: ReactNode;
+  /** What got done and what is left, under the composer notice. */
+  details?: ReactNode;
 }) {
   const [now, setNow] = useState(Date.now);
   const waiting = limit.resetsAt != null && limit.resetsAt > now;
@@ -109,6 +112,7 @@ export function UsageLimitNotice({
           </div>
         </div>
       ) : null}
+      {variant === "irgat" ? null : details}
     </div>
   );
 }

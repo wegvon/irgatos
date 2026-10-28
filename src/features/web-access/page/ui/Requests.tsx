@@ -3,6 +3,10 @@ import type { FleetRequest } from "../../../fleet/model/fleet";
 import type { WebBlock } from "../../model/protocol";
 import type { UserQuestion } from "../../../sessions/model/userQuestion";
 import { write } from "../client";
+import {
+  decisionUrgency,
+  urgencyLine,
+} from "../../../notifications/model/decisionUrgency";
 import { Spinner, primaryButton, secondaryButton, useAction } from "./parts";
 import { Check, CheckCheck, X } from "../../../../shared/ui/icons";
 
@@ -10,10 +14,31 @@ type Props = { sessionId: string; request: FleetRequest };
 
 /** Allow or deny, or answer a question, right where the request shows. */
 export function RequestBody({ sessionId, request }: Props) {
-  return request.kind === "approval" ? (
-    <Approval sessionId={sessionId} request={request} />
-  ) : (
-    <QuestionForm sessionId={sessionId} request={request} />
+  return (
+    <div className="flex flex-col gap-2">
+      <RequestUrgency request={request} />
+      {request.kind === "approval" ? (
+        <Approval sessionId={sessionId} request={request} />
+      ) : (
+        <QuestionForm sessionId={sessionId} request={request} />
+      )}
+    </div>
+  );
+}
+
+/** Whether the agent waits for this answer, and until when, as on the Mac. */
+function RequestUrgency({ request }: { request: FleetRequest }) {
+  const urgency = decisionUrgency(
+    request.kind,
+    request.kind === "question" ? request.prompt : undefined,
+  );
+  return (
+    <div
+      data-request-urgency={urgency.blocking ? "blocking" : "optional"}
+      className={`text-[13px] font-medium ${urgency.blocking ? "text-amber-500" : "text-(--ink-2)"}`}
+    >
+      {urgencyLine(urgency)}
+    </div>
   );
 }
 
@@ -45,10 +70,33 @@ function Approval({
       <div className="text-[15px] leading-snug">
         <span className="text-(--ink-2)">Wants to </span>
         <span className="font-semibold text-(--ink)">
-          {lowerFirst(request.label)}
+          {lowerFirst(request.brief?.what ?? request.label)}
         </span>
       </div>
-      {request.detail ? (
+      {request.brief ? (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13.5px] leading-snug text-(--ink-2)">
+          {request.brief.why ? (
+            <>
+              <dt className="text-(--ink-3)">Why</dt>
+              <dd className="italic">{request.brief.why}</dd>
+            </>
+          ) : null}
+          <dt className="text-(--ink-3)">Effect</dt>
+          <dd>{request.brief.impact}</dd>
+          <dt className="text-(--ink-3)">Undo</dt>
+          <dd className={request.brief.reversible === "no" ? "text-rose-500" : ""}>
+            {request.brief.undo}
+          </dd>
+        </dl>
+      ) : null}
+      {request.detail && request.brief ? (
+        <details className="text-[13px] text-(--ink-3)">
+          <summary className="cursor-pointer select-none">Technical details</summary>
+          <pre className="web-selectable mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[16px] bg-content/6 px-3.5 py-3 font-mono text-[13px] leading-relaxed text-(--ink) shadow-[inset_0_0_0_1px_var(--hairline)]">
+            {request.detail}
+          </pre>
+        </details>
+      ) : request.detail ? (
         <pre className="web-selectable max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[16px] bg-content/6 px-3.5 py-3 font-mono text-[13px] leading-relaxed text-(--ink) shadow-[inset_0_0_0_1px_var(--hairline)]">
           {request.detail}
         </pre>

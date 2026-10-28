@@ -348,6 +348,7 @@ pub fn run() {
             notifications::notification_permission,
             notifications::request_notification_permission,
             notifications::show_notification,
+            notifications::retire_notification,
             notifications::open_notification_settings,
             voice::voice_status,
             voice::voice_request_access,

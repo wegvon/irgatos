@@ -645,3 +645,66 @@ export type WebMailThread = {
   /** The latest reply draft, e.g. one an agent saved. */
   draft?: string;
 };
+
+/** One line of a goal's progress: a step, a worker's task or a stuck chat. */
+export type WebGoalItem = {
+  text: string;
+  detail?: string;
+  sessionId?: string;
+  active?: boolean;
+};
+
+/** The desktop's Goals view, one goal with what its card and Review show. */
+export type WebGoal = {
+  id: string;
+  title: string;
+  /** The goal's state, as `GoalState`. */
+  state:
+    | "needsYou"
+    | "interrupted"
+    | "failed"
+    | "working"
+    | "review"
+    | "idle"
+    | "done";
+  stateLabel: string;
+  request: string;
+  project: string;
+  branch?: string;
+  /** "2 done · 1 left", or the agents' or steps' count. */
+  progress?: string;
+  activity?: string;
+  chats: number;
+  agents: number;
+  files: number;
+  /** The chat a tap on the card opens. */
+  sessionId?: string;
+  at: number;
+  requests: { sessionId: string; sessionTitle: string; request: FleetRequest }[];
+  done: WebGoalItem[];
+  remaining: WebGoalItem[];
+  blocked: WebGoalItem[];
+  criteria: { text: string; verdict?: "met" | "unmet" | "unverified" }[];
+  result?: {
+    sessionId: string;
+    summary?: string;
+    checks: { label: string; state: "passed" | "failed" | "running"; gate?: boolean }[];
+    limitations: string[];
+    links: { title: string; url: string }[];
+    /** Saved artifacts, by title; they open on the Mac. */
+    artifacts: string[];
+  };
+  recovery?: {
+    sessionId: string;
+    cause: "interrupted" | "limit";
+    done: string[];
+    kept: string[];
+    left: string[];
+    next: string;
+    resetsAt?: number;
+  };
+  /** The user marked it done. */
+  finished: boolean;
+};
+
+export type WebGoals = { goals: WebGoal[]; at: number };
