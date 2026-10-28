@@ -73,3 +73,15 @@ test("reviews a delivered goal without reading code", async ({ page }) => {
   await expect(detail.locator("[data-goal-limitations]")).toContainText("stay blocked");
   await expect(detail).toContainText("2 files changed");
 });
+
+test("keeps one progress summary across a coordinated goal's agents", async ({ page }) => {
+  await page.goto("/tests/browser/fleet.html?mode=goals");
+  const card = page.locator("[data-goal]", { hasText: "Publish the 2.4 SDK" });
+  await expect(card).toContainText("1 done · 2 left");
+  await page.getByRole("button", { name: "Expand Publish the 2.4 SDK" }).click();
+  const progress = card.locator("[data-goal-progress]");
+  await expect(progress).toContainText("Draft the 2.4 release notes");
+  await expect(progress).toContainText("Bump package versions");
+  await expect(progress).toContainText("Waiting on earlier tasks");
+  await expect(card).toContainText("1 decision waiting on you");
+});

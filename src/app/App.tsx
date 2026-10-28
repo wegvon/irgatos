@@ -16583,6 +16583,7 @@ function Workspace({
                   onRetryAgent={onRetryAgent}
                   onNewGoalChat={onNewGoalChat}
                   onOpenGoalChanges={onOpenGoalChanges}
+                  orchestrationRuns={orchestrationRuns}
                   focusGoalId={fleetGoalFocus}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}

@@ -43,6 +43,13 @@ import {
 } from "../../sessions/model/completionGate";
 import { requestOpenArtifact } from "../../artifacts/model/openArtifact";
 import { OPEN_BROWSER_URL_EVENT } from "../../source-control/model/worktreeEnv";
+import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
+import {
+  goalProgressSummary,
+  progressHeadline,
+  type GoalProgressSummary,
+  type ProgressItem,
+} from "../model/progress";
 import {
   goalResult,
   type GoalCheckRun,
@@ -90,6 +97,8 @@ type Props = {
   onNewGoalChat?: (goal: Goal) => void;
   /** The delivering chat's changes, as supporting detail. */
   onOpenChanges?: (sessionId: string, workCwd: string) => void;
+  /** Orchestration runs, whose task lists are a goal's progress. */
+  orchestrationRuns?: readonly OrchestrationRun[];
   onApproval: (
     sessionId: string,
     requestId: number,
@@ -142,6 +151,7 @@ export function GoalsView({
   onOpenSession,
   onNewGoalChat,
   onOpenChanges,
+  orchestrationRuns,
   onApproval,
   onQuestionReply,
   onQuestionInteraction,
@@ -260,6 +270,7 @@ export function GoalsView({
                       <GoalCard
                         view={view}
                         sessionsById={byId}
+                        orchestrationRuns={orchestrationRuns}
                         gateVersion={gateVersion}
                         now={now}
                         onOpenChanges={onOpenChanges}
@@ -305,6 +316,7 @@ function primarySession(view: GoalView): GoalMemberView | undefined {
 function GoalCard({
   view,
   sessionsById,
+  orchestrationRuns,
   gateVersion,
   onOpenChanges,
   now,
@@ -318,6 +330,7 @@ function GoalCard({
 }: {
   view: GoalView;
   sessionsById: ReadonlyMap<string, Session>;
+  orchestrationRuns?: readonly OrchestrationRun[];
   gateVersion: number;
   onOpenChanges?: Props["onOpenChanges"];
   now: number;
@@ -335,7 +348,15 @@ function GoalCard({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const chats = view.members.filter((member) => member.link.role !== "worker").length;
   const workers = view.members.length - chats;
-  const progress = progressText(view);
+  const summary = useMemo(
+    () => goalProgressSummary(view, sessionsById, orchestrationRuns, now),
+    [now, orchestrationRuns, sessionsById, view],
+  );
+  // The state label already says when it needs the user.
+  const headline = goal.doneAt
+    ? undefined
+    : progressHeadline({ ...summary, decisions: 0 });
+  const progress = headline ?? progressText(view);
   const criteria = criteriaSummary(goal.criteria);
   const result = useMemo(
     () =>
@@ -496,6 +517,7 @@ function GoalCard({
         <GoalDetail
           view={view}
           result={result}
+          progress={summary}
           onOpenSession={onOpenSession}
           onNewChat={onNewChat}
           onOpenChanges={onOpenChanges}
@@ -573,12 +595,14 @@ function memberStatus(member: GoalMemberView): string {
 function GoalDetail({
   view,
   result,
+  progress,
   onOpenSession,
   onNewChat,
   onOpenChanges,
 }: {
   view: GoalView;
   result?: GoalResult;
+  progress?: GoalProgressSummary;
   onOpenSession: (sessionId: string) => void;
   onNewChat?: () => void;
   onOpenChanges?: (sessionId: string, workCwd: string) => void;
@@ -590,6 +614,11 @@ function GoalDetail({
   const showRequest = request && request !== goal.title;
   return (
     <div data-goal-detail className="flex flex-col gap-3 border-t border-stroke px-3 py-2.5 text-[12px]">
+      {progress &&
+      !goal.doneAt &&
+      (progress.remaining.length || progress.blocked.length || (!result && progress.done.length)) ? (
+        <ProgressSection progress={progress} onOpenSession={onOpenSession} />
+      ) : null}
       {result?.summary ? (
         <DetailSection title="Delivered">
           <div className="max-h-48 overflow-y-auto pr-1 text-content/80">
@@ -721,6 +750,73 @@ function GoalDetail({
         </DetailSection>
       ) : null}
     </div>
+  );
+}
+
+/** Done, left and stuck, as one list across every chat and worker. */
+function ProgressSection({
+  progress,
+  onOpenSession,
+}: {
+  progress: GoalProgressSummary;
+  onOpenSession: (sessionId: string) => void;
+}) {
+  const [allDone, setAllDone] = useState(false);
+  const DONE_SHOWN = 4;
+  const done = allDone ? progress.done : progress.done.slice(-DONE_SHOWN);
+  const hidden = progress.done.length - done.length;
+  const row = (item: ProgressItem, mark: ReactNode, tone: string) => (
+    <li key={`${item.sessionId ?? ""}:${item.text}`}>
+      <button
+        type="button"
+        disabled={!item.sessionId}
+        onClick={() => item.sessionId && onOpenSession(item.sessionId)}
+        className="flex w-full min-w-0 items-start gap-2 rounded-md px-0.5 text-left enabled:hover:bg-content/[0.04]"
+      >
+        <span className={`mt-px grid h-5 w-3 shrink-0 place-items-center ${tone}`}>{mark}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className="leading-5 text-content/80">{item.text}</span>
+          {item.detail ? (
+            <span className="truncate text-[11px] leading-4 text-content/45">{item.detail}</span>
+          ) : null}
+        </span>
+      </button>
+    </li>
+  );
+  return (
+    <DetailSection
+      title={progress.source === "workers" ? "Progress across agents" : "Progress"}
+      action={
+        progress.decisions ? (
+          <span className="text-[11px] text-amber-400">
+            {progress.decisions} {progress.decisions === 1 ? "decision" : "decisions"} waiting on you
+          </span>
+        ) : null
+      }
+    >
+      <ul className="flex flex-col gap-0.5" data-goal-progress>
+        {hidden > 0 ? (
+          <li>
+            <button
+              type="button"
+              onClick={() => setAllDone(true)}
+              className="px-5 text-[11px] text-content/40 hover:text-content/70"
+            >
+              {hidden} more done
+            </button>
+          </li>
+        ) : null}
+        {done.map((item) => row(item, "✓", "text-emerald-400"))}
+        {progress.blocked.map((item) => row(item, "!", "text-rose-400"))}
+        {progress.remaining.map((item) =>
+          row(
+            item,
+            item.active ? <LoaderCircle className="size-3 animate-spin" /> : "○",
+            item.active ? "text-sky-400/90" : "text-content/30",
+          ),
+        )}
+      </ul>
+    </DetailSection>
   );
 }
 

@@ -36,6 +36,7 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { RequestCard } from "./RequestCard";
 import { GoalsView } from "../../goals/ui/GoalsView";
 import type { Goal } from "../../goals/model/goals";
+import type { OrchestrationRun } from "../../orchestration/model/orchestrationState";
 import {
   loadTabGroupLabels,
   resolveTabGroupLabel,
@@ -104,6 +105,8 @@ type Props = {
   focusGoalId?: string;
   /** Shows a goal's changes in its chat's diff view. */
   onOpenGoalChanges?: (sessionId: string, workCwd: string) => void;
+  /** Orchestration runs, whose task lists are a goal's progress. */
+  orchestrationRuns?: readonly OrchestrationRun[];
 };
 
 export type FleetRowActions = {
@@ -217,6 +220,7 @@ export function FleetView({
   onNewGoalChat,
   focusGoalId,
   onOpenGoalChanges,
+  orchestrationRuns,
 }: Props) {
   const now = useMinuteClock();
   const [mode, setModeState] = useState<FleetMode>(() =>
@@ -412,6 +416,7 @@ export function FleetView({
           onOpenSession={onOpenSession}
           onNewGoalChat={onNewGoalChat}
           onOpenChanges={onOpenGoalChanges}
+          orchestrationRuns={orchestrationRuns}
           onApproval={onApproval}
           onQuestionReply={onQuestionReply}
           onQuestionInteraction={onQuestionInteraction}

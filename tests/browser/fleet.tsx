@@ -13,6 +13,7 @@ import {
 } from "../../src/features/sessions/model/session";
 import { saveGoals } from "../../src/features/goals/model/goalStore";
 import { syncGoals } from "../../src/features/goals/model/goals";
+import type { OrchestrationRun } from "../../src/features/orchestration/model/orchestrationState";
 import "../../src/styles/index.css";
 
 // The real Fleet view over sessions from three projects. Answering a request
@@ -162,6 +163,35 @@ function settle(sessions: Session[], id: string, requestId: number): Session[] {
   );
 }
 
+// The SDK release is coordinated: one worker done, one running, one queued.
+const task = (id: string, title: string, status: string, patch: object = {}) => ({
+  id,
+  sessionId: id,
+  title,
+  harness: "claude",
+  model: "m",
+  prompt: "",
+  files: [],
+  scopes: [],
+  dependsOn: [],
+  status,
+  accepted: status === "completed",
+  result: "",
+  delivered: false,
+  ...patch,
+});
+const runs = [
+  {
+    leadId: "publish",
+    status: "active",
+    tasks: [
+      task("publish-notes", "Draft the 2.4 release notes", "completed", { result: "Notes cover 14 changes and 2 breaking ones" }),
+      task("publish-bump", "Bump package versions", "running"),
+      task("publish-tag", "Tag and push the release", "queued", { dependsOn: ["publish-bump"] }),
+    ],
+  },
+] as unknown as OrchestrationRun[];
+
 function Fixture() {
   const state = new URLSearchParams(location.search).get("state");
   const [sessions, setSessions] = useState(state === "empty" ? [] : seed);
@@ -184,6 +214,7 @@ function Fixture() {
         sessions={sessions}
         unseenFinishedIds={new Set(["limiter"])}
         interruptedSessionIds={new Set(["migrate"])}
+        orchestrationRuns={runs}
         onClose={() => {}}
         onOpenSession={(id) => events.push(`open:${id}`)}
         onApproval={(id, requestId, decision) => {
