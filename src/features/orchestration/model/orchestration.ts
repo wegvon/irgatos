@@ -24,7 +24,9 @@ import {
   type OrchestrationRun,
   type OrchestrationTask,
   type OrchestrationWorkspace,
+  type WorkerGuidance,
 } from "./orchestrationState";
+import { taskWaitReason, waitForLead } from "./orchestrationWaiting";
 
 export {
   orchestrationCheckoutCwd,
@@ -40,6 +42,7 @@ export type {
   OrchestrationTask,
   OrchestrationWorkspace,
   TaskStatus,
+  WorkerGuidance,
   WorkspacePolicy,
 } from "./orchestrationState";
 export type ControlOutcome = {
@@ -169,6 +172,77 @@ export const sameCheckout = (a: string, b: string) =>
   pathKey(a.replace(/\\/g, "/")) === pathKey(b.replace(/\\/g, "/"));
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
+
+const GUIDANCE_KEPT = 10;
+
+const steeredGuidance = (note: string) =>
+  `The user sent you guidance through the Irgatos lead:\n${note}\n\nApply it within your assigned task and write scope. If it conflicts with the assignment, finish what is safe and report the conflict.`;
+
+/** Notes that wait for this worker's next start, added to its prompt. */
+export function withPendingGuidance(
+  prompt: string,
+  guidance: readonly WorkerGuidance[] = [],
+): string {
+  const notes = guidance.filter(
+    (entry) => entry.status === "pending" && entry.via === "prompt",
+  );
+  if (!notes.length) return prompt;
+  return `${prompt}\n\nGuidance from the user for this task, relayed by the lead:\n${notes
+    .map((entry) => `- ${entry.text}`)
+    .join("\n")}`;
+}
+
+const GUIDANCE_ROUTE: Record<NonNullable<WorkerGuidance["via"]>, string> = {
+  worker: "delivered to the running worker",
+  prompt: "added to its prompt when it starts",
+  lead: "not delivered: the worker had already stopped",
+};
+
+/** Guidance the lead has not been told about yet. Failed notes stay quiet. */
+function unheardGuidance(run: OrchestrationRun) {
+  return run.tasks.flatMap((task) =>
+    (task.guidance ?? [])
+      .filter((note) => !note.leadNotified && note.status !== "failed")
+      // A steer still in flight is reported once its outcome is known.
+      .filter((note) => !(note.via === "worker" && note.status === "pending"))
+      .map((note) => ({ task, note })),
+  );
+}
+
+type HeardNote = ReturnType<typeof unheardGuidance>[number];
+
+function markHeard(
+  guidance: WorkerGuidance[] | undefined,
+  notes: HeardNote[],
+): WorkerGuidance[] | undefined {
+  const ids = new Set(notes.map(({ note }) => note.id));
+  return guidance?.map((note) =>
+    ids.has(note.id)
+      ? {
+          ...note,
+          leadNotified: true,
+          // A stopped worker's note is in the lead's hands now.
+          ...(note.via === "lead" ? { status: "delivered" as const } : {}),
+        }
+      : note,
+  );
+}
+
+function markUnheard(
+  guidance: WorkerGuidance[] | undefined,
+  notes: HeardNote[],
+): WorkerGuidance[] | undefined {
+  const ids = new Set(notes.map(({ note }) => note.id));
+  return guidance?.map((note) =>
+    ids.has(note.id)
+      ? {
+          ...note,
+          leadNotified: false,
+          ...(note.via === "lead" ? { status: "pending" as const } : {}),
+        }
+      : note,
+  );
+}
 
 const scopeEscape = (task: OrchestrationTask, paths: string[]) =>
   `${task.title} changed files outside its assignment: ${listed(paths)}. Its result was not accepted and its checkout was retained; other independent work continues. Inspect the change. Retry with corrected project-relative files only if the write is genuinely required, otherwise send a correction within the existing scope or cancel the task.`;
@@ -963,16 +1037,8 @@ export class Orchestrator {
     run: OrchestrationRun,
     task: OrchestrationTask,
   ): string | undefined {
-    if (task.status !== "queued") return undefined;
-    const dependency = run.tasks.find(
-      (entry) => task.dependsOn.includes(entry.id) && !entry.accepted,
-    );
-    if (dependency) return `Waiting for review: ${dependency.title}`;
-    const owner = run.tasks.find(
-      (entry) => activeTask(entry) && scopesOverlap(entry.scopes, task.scopes),
-    );
-    if (owner) return `Waiting for files: ${owner.title}`;
-    return "Waiting for a worker slot";
+    const reason = taskWaitReason(run, task);
+    return reason && waitForLead(reason);
   }
   private async execute(
     run: OrchestrationRun,
@@ -1628,8 +1694,17 @@ export class Orchestrator {
               );
               continue;
             }
+            const startGuidance = (
+              this.run(run.leadId)?.tasks.find((entry) => entry.id === task.id)
+                ?.guidance ?? []
+            ).filter(
+              (entry) => entry.status === "pending" && entry.via === "prompt",
+            );
             const prompt = workerTurnPrompt(
-              task.recoveryPrompt ?? task.prompt,
+              withPendingGuidance(
+                task.recoveryPrompt ?? task.prompt,
+                startGuidance,
+              ),
               task.files,
               prepared.scratchDir,
               prepared.environment,
@@ -1646,6 +1721,10 @@ export class Orchestrator {
               await this.patchDispatch(run.leadId, dispatchId, {
                 state: "running",
                 stage: "turn_submitted",
+              });
+            for (const entry of startGuidance)
+              await this.patchGuidance(run.leadId, task.id, entry.id, {
+                status: "delivered",
               });
           } catch (error) {
             await this.settle(
@@ -1842,6 +1921,19 @@ export class Orchestrator {
               activeDispatchId: undefined,
               recoveryPrompt: undefined,
               ...(dispatchId ? { lastDispatchId: dispatchId } : {}),
+              ...(entry.guidance?.some((note) => note.status === "pending")
+                ? {
+                    guidance: entry.guidance.map((note) =>
+                      note.status === "pending"
+                        ? {
+                            ...note,
+                            status: "failed" as const,
+                            error: `${entry.title} was cancelled before it got this.`,
+                          }
+                        : note,
+                    ),
+                  }
+                : {}),
             }
           : entry,
       ),
@@ -1859,6 +1951,74 @@ export class Orchestrator {
     if (dispatchId) this.writeChecks.delete(dispatchId);
     await this.cleanupUnchangedWorker(leadId, taskId);
     void this.pump();
+  }
+  /**
+   * The user's guidance for one worker. It never bypasses the lead: a running
+   * worker gets it steered into its turn, a queued one gets it in its start
+   * prompt, and a stopped one is left to the lead to act on. The lead hears
+   * about every note on its next turn.
+   */
+  async guide(
+    leadId: string,
+    taskId: string,
+    guidance: string,
+  ): Promise<WorkerGuidance> {
+    const note = guidance.trim().slice(0, 8_000);
+    if (!note) throw new Error("Write the guidance before sending it.");
+    const run = this.run(leadId);
+    const task = run?.tasks.find((entry) => entry.id === taskId);
+    if (!run || !task)
+      throw new Error("This agent is no longer part of a live run.");
+    const ended = run.status === "stopped" || run.status === "finished";
+    const entry: WorkerGuidance = {
+      id: crypto.randomUUID(),
+      text: note,
+      at: Date.now(),
+      ...(ended || task.status === "cancelled" || task.status === "cancelling"
+        ? {
+            status: "failed" as const,
+            leadNotified: true,
+            error: ended
+              ? `The run has ${run.status}.`
+              : `${task.title} was cancelled.`,
+          }
+        : task.status === "queued"
+          ? { status: "pending" as const, via: "prompt" as const }
+          : task.status === "running" && run.status === "active"
+            ? { status: "pending" as const, via: "worker" as const }
+            : { status: "pending" as const, via: "lead" as const }),
+    };
+    await this.patchTask(leadId, taskId, {
+      guidance: [...(task.guidance ?? []), entry].slice(-GUIDANCE_KEPT),
+    });
+    if (entry.via === "worker") {
+      try {
+        await this.host!.steer(task.sessionId, steeredGuidance(note));
+        Object.assign(entry, { status: "delivered" });
+      } catch (error) {
+        Object.assign(entry, { status: "failed", error: messageOf(error) });
+      }
+      await this.patchGuidance(leadId, taskId, entry.id, {
+        status: entry.status,
+        error: entry.error,
+      });
+    }
+    this.sync();
+    return entry;
+  }
+  private async patchGuidance(
+    leadId: string,
+    taskId: string,
+    id: string,
+    patch: Partial<WorkerGuidance>,
+  ) {
+    const task = this.run(leadId)?.tasks.find((entry) => entry.id === taskId);
+    if (!task?.guidance?.some((entry) => entry.id === id)) return;
+    await this.patchTask(leadId, taskId, {
+      guidance: task.guidance.map((entry) =>
+        entry.id === id ? { ...entry, ...patch } : entry,
+      ),
+    });
   }
   private async interruptTask(leadId: string, taskId: string, reason: string) {
     const task = this.run(leadId)?.tasks.find((entry) => entry.id === taskId);
@@ -2121,7 +2281,8 @@ export class Orchestrator {
       const blocked = this.blockedKeys(run).filter(
         (key) => !announced.has(key),
       );
-      if (!results.length && !blocked.length) continue;
+      if (!results.length && !blocked.length && !unheardGuidance(run).length)
+        continue;
       this.waking.add(run.leadId);
       // Let session state settle before checking idle; never interrupt user input.
       setTimeout(() => {
@@ -2149,7 +2310,8 @@ export class Orchestrator {
               const key = pending && `${task.id}:${pending.requestId}`;
               return key && !seen.has(key) ? [{ task, pending, key }] : [];
             });
-            if (!results.length && !waiting.length) return;
+            const notes = unheardGuidance(current);
+            if (!results.length && !waiting.length && !notes.length) return;
             if (current.continuations >= 20) {
               await this.pause(
                 run.leadId,
@@ -2161,11 +2323,14 @@ export class Orchestrator {
               ...current,
               continuations: current.continuations + 1,
               lastPauseReason: undefined,
-              tasks: current.tasks.map((task) =>
-                results.some((item) => item.id === task.id)
+              tasks: current.tasks.map((task) => {
+                const next = results.some((item) => item.id === task.id)
                   ? { ...task, delivered: true }
-                  : task,
-              ),
+                  : task;
+                return notes.some((note) => note.task.id === task.id)
+                  ? { ...next, guidance: markHeard(next.guidance, notes) }
+                  : next;
+              }),
             });
             this.announced.set(
               run.leadId,
@@ -2187,12 +2352,21 @@ export class Orchestrator {
                   }`,
               )
               .join("\n\n");
+            const guidance = notes
+              .map(
+                ({ task, note }) =>
+                  `${task.id} — ${task.title} (${GUIDANCE_ROUTE[note.via ?? "lead"]}): ${note.text}`,
+              )
+              .join("\n\n");
             const body = [
               current.lastPauseReason
                 ? `Previous interruption: ${current.lastPauseReason}\nInterrupted workers were continued from their retained checkouts. Inspect their results normally before review. Policy-blocked tasks were not restarted; correct or explicitly re-scope those tasks before retrying them. Dependent validation remains queued until its prerequisites pass review.`
                 : "",
               results.length
                 ? `Worker results are ready. Review the work, request corrections through the CLI when needed, and finish the original task.\n\n${summary}`
+                : "",
+              notes.length
+                ? `The user sent guidance to specific workers from Irgatos. Keep the plan consistent with it; when a worker had already stopped, decide whether to message, retry or re-plan it.\n\n${guidance}`
                 : "",
               waiting.length
                 ? `These agents are blocked waiting on you. Decide each one with respond or answer; they stay stopped until you do. Judge it against the task you assigned, and ask the user in this conversation only when the call is genuinely theirs to make.\n\n${asks}`
@@ -2208,11 +2382,14 @@ export class Orchestrator {
                     "Lead continuation was interrupted. Its agents were stopped; review and resume.",
                   (current) => ({
                     ...current,
-                    tasks: current.tasks.map((task) =>
-                      results.some((item) => item.id === task.id)
+                    tasks: current.tasks.map((task) => {
+                      const next = results.some((item) => item.id === task.id)
                         ? { ...task, delivered: false }
-                        : task,
-                    ),
+                        : task;
+                      return notes.some((note) => note.task.id === task.id)
+                        ? { ...next, guidance: markUnheard(next.guidance, notes) }
+                        : next;
+                    }),
                   }),
                 ).catch(console.error);
               } else this.sync();

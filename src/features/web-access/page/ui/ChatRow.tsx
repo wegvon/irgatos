@@ -1,4 +1,8 @@
-import type { FleetEntry } from "../../../fleet/model/fleet";
+import {
+  teamCountsLabel,
+  type FleetEntry,
+} from "../../../fleet/model/fleet";
+import { write } from "../client";
 import { ago, basename, plural } from "../format";
 import { navigate } from "../route";
 import {
@@ -24,7 +28,10 @@ export function subtitle(entry: FleetEntry): string {
       return "Asked you a question";
     }
     case "running":
-      return entry.activity ?? "Working…";
+      // A lead with workers says how its team is doing, like desktop Fleet.
+      return entry.team
+        ? `${entry.activity ?? "Working…"} · ${teamCountsLabel(entry.team.counts)}`
+        : (entry.activity ?? "Working…");
     case "review": {
       const parts = [];
       if (entry.editedPaths.length)
@@ -47,6 +54,41 @@ const open = (entry: FleetEntry) =>
  * edge while it waits on you and the status in a small chip.
  */
 export function ChatCard({ entry, now }: { entry: FleetEntry; now: number }) {
+  // A result stays in Ready to review until it is marked, as on desktop.
+  if (entry.bucket !== "review") return <ChatCardBody entry={entry} now={now} />;
+  const mark = (state: "reviewed" | "later" | null) =>
+    void write("reviewMark", {
+      sessionId: entry.sessionId,
+      turnAt: entry.turnAt,
+      state,
+    }).catch(console.error);
+  return (
+    <div data-web-review={entry.sessionId} className="flex flex-col gap-1.5">
+      <ChatCardBody entry={entry} now={now} />
+      <span className="flex items-center justify-end gap-2 px-1">
+        {entry.reviewLater ? (
+          <span className="mr-auto text-[12px] text-(--ink-3)">Put aside</span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => mark(entry.reviewLater ? null : "later")}
+          className="web-press rounded-full px-3 py-1.5 text-[13px] font-medium text-(--ink-2)"
+        >
+          {entry.reviewLater ? "Back to the top" : "Review later"}
+        </button>
+        <button
+          type="button"
+          onClick={() => mark("reviewed")}
+          className="web-press glass rounded-full px-3 py-1.5 text-[13px] font-semibold text-(--ink)"
+        >
+          Mark reviewed
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function ChatCardBody({ entry, now }: { entry: FleetEntry; now: number }) {
   const tone = BUCKET_TONE[entry.bucket];
   const idle = entry.bucket === "idle";
   const files = entry.bucket === "review" ? entry.editedPaths.slice(0, 3) : [];

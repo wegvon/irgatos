@@ -13,6 +13,15 @@ import {
 } from "./OrchestrationActions";
 import { Check, ChevronDown, ChevronRight, CircleAlert } from "../../../shared/ui/icons";
 import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
+import { taskWaitReason } from "../model/orchestrationWaiting";
+import {
+  CancelTaskControl,
+  WorkerGuidanceButton,
+  WorkerGuidanceForm,
+  WorkerGuidanceLog,
+  WorkerWaitLine,
+  canGuide,
+} from "./WorkerControls";
 
 export function OrchestrationSidebarAgents({
   leadId,
@@ -30,6 +39,8 @@ export function OrchestrationSidebarAgents({
   );
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
+  // One guidance box at a time, opened from the row it targets.
+  const [guiding, setGuiding] = useState<string>();
   // Rows expand independently, so several agents can be watched side by side.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -50,6 +61,17 @@ export function OrchestrationSidebarAgents({
       return next;
     });
     if (isOpen && revealed === sessionId) workers.inspect(null);
+  };
+  // "Show <blocker>" opens the blocking row and brings it into view.
+  const reveal = (sessionId: string) => {
+    setExpanded((current) =>
+      current.has(sessionId) ? current : new Set(current).add(sessionId),
+    );
+    requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-orchestration-agent="${CSS.escape(sessionId)}"]`)
+        ?.scrollIntoView({ block: "nearest" }),
+    );
   };
   // A saved run has no live entry, so the card stays read-only after a reload.
   const run = runs.find((entry) => entry.leadId === leadId);
@@ -111,7 +133,8 @@ export function OrchestrationSidebarAgents({
           const live = run?.tasks.find(
             (entry) => entry.sessionId === task.sessionId,
           );
-          const label = orchestrationTaskLabel(task, summary);
+          const wait = run && live ? taskWaitReason(run, live) : undefined;
+          const label = orchestrationTaskLabel(task, summary, wait);
           const working =
             summary.live && task.status === "running" && !task.needsInput;
           // A saved provider model may not be in this window's catalog yet.
@@ -161,7 +184,8 @@ export function OrchestrationSidebarAgents({
                     task.needsInput ||
                     task.status === "failed" ||
                     task.status === "blocked" ||
-                    task.status === "interrupted"
+                    task.status === "interrupted" ||
+                    (summary.live && wait?.stuck)
                       ? "text-amber-400"
                       : working
                         ? "text-accent"
@@ -173,7 +197,8 @@ export function OrchestrationSidebarAgents({
                   {task.needsInput ||
                   task.status === "failed" ||
                   task.status === "blocked" ||
-                  task.status === "interrupted" ? (
+                  task.status === "interrupted" ||
+                  (summary.live && wait?.stuck) ? (
                     <CircleAlert className="size-3" strokeWidth={1.75} />
                   ) : working ? (
                     <TerminalSpinner className="inline-block w-3 select-none text-center text-[11px] leading-none text-accent" />
@@ -199,6 +224,17 @@ export function OrchestrationSidebarAgents({
                   {live?.error && (
                     <p className="text-[11px] text-red-400">{live.error}</p>
                   )}
+                  {summary.live && wait && (
+                    <WorkerWaitLine reason={wait} onReveal={reveal} />
+                  )}
+                  {live && <WorkerGuidanceLog task={live} />}
+                  {run && live && guiding === live.id && (
+                    <WorkerGuidanceForm
+                      leadId={leadId}
+                      task={live}
+                      onClose={() => setGuiding(undefined)}
+                    />
+                  )}
                   <div className="flex flex-wrap items-center gap-1">
                     {workers.openDetails && (
                       <button
@@ -217,19 +253,23 @@ export function OrchestrationSidebarAgents({
                         See details
                       </button>
                     )}
-                    {live && ["queued", "running"].includes(live.status) && (
-                      <button
-                        type="button"
-                        className={solidAction}
+                    {run && live && canGuide(run, live) && guiding !== live.id && (
+                      <WorkerGuidanceButton
+                        open={false}
+                        onToggle={() => setGuiding(live.id)}
+                      />
+                    )}
+                    {run && live && ["queued", "running"].includes(live.status) && (
+                      <CancelTaskControl
+                        run={run}
+                        task={live}
                         disabled={pending}
-                        onClick={() =>
+                        onCancel={() =>
                           void perform(() =>
                             orchestrator.cancelTask(leadId, live.id),
                           )
                         }
-                      >
-                        Cancel task
-                      </button>
+                      />
                     )}
                   </div>
                 </div>

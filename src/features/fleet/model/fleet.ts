@@ -10,6 +10,16 @@ import { toolCallLabel } from "../../sessions/model/transcriptActivity";
 import type { UserQuestionPrompt } from "../../sessions/model/userQuestion";
 import { pathKey, projectName } from "../../../shared/lib/paths";
 import { isFreeChatCwd } from "../../freechat/model/freeChatPath";
+import type {
+  OrchestrationRun,
+  TaskStatus,
+} from "../../orchestration/model/orchestrationState";
+import {
+  taskWaitReason,
+  waitLabel,
+  type WaitReason,
+} from "../../orchestration/model/orchestrationWaiting";
+import type { ReviewMarks } from "./reviewMarks";
 
 /** Attention list order: what blocks on the user first. */
 export const FLEET_BUCKETS = [
@@ -29,7 +39,11 @@ export const FLEET_BUCKET_LABEL: Record<FleetBucket, string> = {
   idle: "Idle",
 };
 
-/** A finished turn with changes stays reviewable this long after it is seen. */
+/**
+ * Before explicit review tracking, a finished turn with changes stayed
+ * reviewable this long after it was seen. Turns from before tracking started
+ * still use it; newer results wait for "Mark reviewed".
+ */
 export const REVIEW_WINDOW_MS = 2 * 60 * 60 * 1000;
 
 export type FleetRequest =
@@ -69,9 +83,127 @@ export type FleetEntry = {
   artifacts: number;
   /** The user has not looked at this session since its turn finished. */
   unseen: boolean;
+  /** When the last turn finished: the turn a review mark is for. */
+  turnAt: number;
+  /** In Ready to review, put aside with "Review later". */
+  reviewLater?: boolean;
+  /** Workers of the orchestration run this session leads. */
+  team?: FleetTeam;
   /** Last activity, for ordering within a bucket. */
   at: number;
 };
+
+export type FleetTeamMember = {
+  sessionId: string;
+  taskId: string;
+  title: string;
+  harness: HarnessId;
+  model: string;
+  status: TaskStatus;
+  /** Row status: "Working", "Waiting on review", "Needs input", … */
+  label: string;
+  needsInput: boolean;
+  /** Why a queued worker has not started. */
+  wait?: WaitReason;
+  /** What a working agent is doing now. */
+  activity?: string;
+};
+
+export type FleetTeamCounts = {
+  working: number;
+  waiting: number;
+  needsInput: number;
+  done: number;
+  stopped: number;
+};
+
+export type FleetTeam = {
+  runStatus: OrchestrationRun["status"];
+  members: FleetTeamMember[];
+  counts: FleetTeamCounts;
+  /** Some worker is still working or waiting to start. */
+  active: boolean;
+};
+
+const TEAM_LABEL: Record<TaskStatus, string> = {
+  queued: "Queued",
+  running: "Working",
+  cancelling: "Stopping",
+  completed: "Done",
+  failed: "Failed",
+  blocked: "Needs review",
+  interrupted: "Interrupted",
+  cancelled: "Cancelled",
+};
+
+/** The run's workers as Fleet shows them, from the live run. */
+export function fleetTeam(
+  run: OrchestrationRun,
+  sessionOf: (id: string) => Session | undefined,
+): FleetTeam {
+  const counts: FleetTeamCounts = {
+    working: 0,
+    waiting: 0,
+    needsInput: 0,
+    done: 0,
+    stopped: 0,
+  };
+  const members = run.tasks.map((task): FleetTeamMember => {
+    const session = sessionOf(task.sessionId);
+    const needsInput = !!session && fleetRequests(session).length > 0;
+    const wait = taskWaitReason(run, task);
+    if (needsInput) counts.needsInput += 1;
+    else if (task.status === "running" || task.status === "cancelling")
+      counts.working += 1;
+    else if (task.status === "queued") counts.waiting += 1;
+    else if (task.status === "completed") counts.done += 1;
+    else counts.stopped += 1;
+    return {
+      sessionId: task.sessionId,
+      taskId: task.id,
+      title: task.title,
+      harness: task.harness,
+      model: task.model,
+      status: task.status,
+      label: needsInput
+        ? "Needs input"
+        : wait
+          ? waitLabel(wait)
+          : TEAM_LABEL[task.status],
+      needsInput,
+      ...(wait ? { wait } : {}),
+      ...(task.status === "running" && session?.busy && !needsInput
+        ? { activity: fleetActivity(session) }
+        : {}),
+    };
+  });
+  return {
+    runStatus: run.status,
+    members,
+    counts,
+    active:
+      run.status === "active" &&
+      members.some(
+        (member) =>
+          member.status === "running" ||
+          member.status === "cancelling" ||
+          member.status === "queued",
+      ),
+  };
+}
+
+/** "3 working · 1 waiting", for a collapsed team. */
+export function teamCountsLabel(counts: FleetTeamCounts): string {
+  return [
+    counts.needsInput ? `${counts.needsInput} needs input` : "",
+    counts.working ? `${counts.working} working` : "",
+    counts.waiting ? `${counts.waiting} waiting` : "",
+    counts.stopped ? `${counts.stopped} stopped` : "",
+    counts.done ? `${counts.done} done` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 export type Fleet = Record<FleetBucket, FleetEntry[]> & {
   /** Sessions in Needs you; the rail badge shows this. */
@@ -87,6 +219,12 @@ export type FleetOptions = {
   irgatName?: (sessionId: string) => string | undefined;
   /** Display label for a project path, e.g. a renamed tab group. */
   projectLabel?: (cwd: string) => string;
+  /** Explicit review marks; without them the old unread/two-hour rule applies. */
+  reviews?: ReviewMarks;
+  /** Live orchestration runs, so a lead lists its team. */
+  runs?: readonly OrchestrationRun[];
+  /** Resolves worker sessions for a team; built by `buildFleet`. */
+  sessionOf?: (id: string) => Session | undefined;
   now?: number;
 };
 
@@ -214,14 +352,32 @@ export function fleetEntry(
     : lastTurnArtifacts(session.blocks, turn.start);
   const recent =
     unseen || (turn.finishedAt > 0 && now - turn.finishedAt <= REVIEW_WINDOW_MS);
+  const result =
+    turn.finishedAt > 0 && (editedPaths.length > 0 || artifacts > 0);
+  const mark = options.reviews?.marks[session.id];
+  // A mark is for one turn; a newer turn with changes is outstanding again.
+  const marked = mark && mark.turnAt === turn.finishedAt ? mark.state : undefined;
+  const tracked =
+    !!options.reviews && result && turn.finishedAt >= options.reviews.since;
+  const toReview =
+    marked !== "reviewed" &&
+    (tracked ||
+      marked === "later" ||
+      // An unread reply is waiting to be read even when it changed nothing.
+      unseen ||
+      (recent && result));
+  const run = options.runs?.find((entry) => entry.leadId === session.id);
+  const team =
+    run && run.tasks.length
+      ? fleetTeam(run, options.sessionOf ?? (() => undefined))
+      : undefined;
   const bucket: FleetBucket = requests.length
     ? "needsYou"
-    : session.busy
+    : session.busy || team?.active
       ? "running"
       : options.interruptedIds?.has(session.id)
         ? "interrupted"
-        : // An unread reply is waiting to be read even when it changed nothing.
-          unseen || (recent && (editedPaths.length > 0 || artifacts > 0))
+        : toReview
           ? "review"
           : "idle";
   const workCwd = sessionWorkCwd(session);
@@ -247,10 +403,19 @@ export function fleetEntry(
       ? { leadId: session.orchestrationLeadId }
       : {}),
     requests,
-    ...(bucket === "running" ? { activity: fleetActivity(session) } : {}),
+    ...(bucket === "running"
+      ? {
+          activity: session.busy
+            ? fleetActivity(session)
+            : `Supervising ${team!.members.length} ${team!.members.length === 1 ? "agent" : "agents"}`,
+        }
+      : {}),
     editedPaths,
     artifacts,
     unseen,
+    turnAt: turn.finishedAt,
+    ...(bucket === "review" && marked === "later" ? { reviewLater: true } : {}),
+    ...(team ? { team } : {}),
     at: Math.max(turn.finishedAt, lastBlockTime(session.blocks)),
   };
 }
@@ -279,6 +444,8 @@ export function buildFleet(
     total: 0,
   };
   const seen = new Set<string>();
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  options = { ...options, sessionOf: (id) => byId.get(id) };
   for (const session of sessions) {
     if (seen.has(session.id)) continue;
     seen.add(session.id);
@@ -291,7 +458,11 @@ export function buildFleet(
   fleet.needsYou.sort((a, b) => a.at - b.at);
   for (const bucket of ["interrupted", "review", "running", "idle"] as const) {
     fleet[bucket].sort(
-      (a, b) => Number(b.unseen) - Number(a.unseen) || b.at - a.at,
+      (a, b) =>
+        // Put-aside reviews sink below the ones still to look at.
+        Number(!!a.reviewLater) - Number(!!b.reviewLater) ||
+        Number(b.unseen) - Number(a.unseen) ||
+        b.at - a.at,
     );
   }
   fleet.needsYouCount = fleet.needsYou.length;
@@ -317,6 +488,7 @@ export function filterFleet(fleet: Fleet, query: string): Fleet {
       entry.projectLabel,
       entry.branch ?? "",
       entry.activity ?? "",
+      ...(entry.team?.members.map((member) => member.title) ?? []),
       ...entry.requests.map((request) =>
         request.kind === "approval"
           ? `${request.label}\n${request.detail ?? ""}`

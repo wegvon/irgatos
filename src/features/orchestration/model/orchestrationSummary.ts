@@ -1,4 +1,5 @@
 import type { OrchestrationRun, TaskStatus } from "./orchestration";
+import { waitLabel, type WaitReason } from "./orchestrationWaiting";
 import { sessionNeedsInput, type HarnessId, type Session } from "../../sessions/model/session";
 
 /** Small history projection; never includes prompts, results or credentials. */
@@ -38,8 +39,11 @@ export function summarizeOrchestration(
 export function orchestrationTaskLabel(
   task: OrchestrationSummary["tasks"][number],
   summary: OrchestrationSummary,
+  /** The live reason a queued task waits; replaces a bare "Queued". */
+  wait?: WaitReason,
 ): string {
   if (task.needsInput) return "Needs input";
+  if (wait && summary.live && task.status === "queued") return waitLabel(wait);
   if (
     !summary.live &&
     ["running", "cancelling", "queued"].includes(task.status)

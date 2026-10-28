@@ -1,3 +1,4 @@
+import type { ReviewMarks } from "../../fleet/model/reviewMarks";
 import { sessionParents, sessionAgent } from "../../agent-tree/model/agentTree";
 import type { AgentStatus } from "../../agent-tree/model/agentTree";
 import {
@@ -349,10 +350,14 @@ export type GoalView = {
   worktrees: string[];
   unseen: boolean;
   lastActivityAt: number;
+  /** Chats whose finished result keeps this goal in Ready to review. */
+  toReview: { sessionId: string; turnAt: number }[];
 };
 
 export type GoalViewOptions = {
   now?: number;
+  /** Explicit review marks, so a goal leaves review only when marked. */
+  reviews?: ReviewMarks;
   unseenFinishedIds?: ReadonlySet<string>;
   interruptedIds?: ReadonlySet<string>;
 };
@@ -392,6 +397,7 @@ export function goalView(
   let progress: GoalProgress | undefined;
   let unseen = false;
   let review = false;
+  const toReview: GoalView["toReview"] = [];
   let lastActivityAt = goal.createdAt;
   for (const link of goal.links) {
     const session = sessionsById.get(link.sessionId);
@@ -430,8 +436,12 @@ export function goalView(
       now: options.now,
       unseenFinishedIds: options.unseenFinishedIds,
       interruptedIds: options.interruptedIds,
+      reviews: options.reviews,
     });
-    if (entry?.bucket === "review") review = true;
+    if (entry?.bucket === "review") {
+      review = true;
+      toReview.push({ sessionId: session.id, turnAt: entry.turnAt });
+    }
     lastActivityAt = Math.max(lastActivityAt, lastActivity(session));
     if (link.role === "main" || !progress) {
       const items = latestTaskList(session);
@@ -484,6 +494,7 @@ export function goalView(
     worktrees: [...worktrees],
     unseen,
     lastActivityAt,
+    toReview,
   };
 }
 

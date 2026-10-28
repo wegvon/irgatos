@@ -1,3 +1,4 @@
+import { markReview, useReviewMarks } from "../../fleet/model/reviewMarks";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { basename } from "../../../platform/tauri/fs";
@@ -116,6 +117,7 @@ export function GoalsView({
   onQuestionInteraction,
 }: Props) {
   const goals = useGoals();
+  const reviews = useReviewMarks();
   const views = useMemo(() => {
     const byId = new Map(sessions.map((session) => [session.id, session]));
     return sortGoalViews(
@@ -124,10 +126,11 @@ export function GoalsView({
           now,
           unseenFinishedIds,
           interruptedIds: interruptedSessionIds,
+          reviews,
         }),
       ),
     );
-  }, [goals, interruptedSessionIds, now, sessions, unseenFinishedIds]);
+  }, [goals, interruptedSessionIds, now, reviews, sessions, unseenFinishedIds]);
   const shown = useMemo(() => filterGoalViews(views, query), [views, query]);
   const filtering = query.trim().length > 0;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
@@ -373,6 +376,27 @@ function GoalCard({
           ) : null}
           {view.state === "review" || (view.state === "done" && files) ? (
             <ResultLine view={view} />
+          ) : null}
+          {view.state === "review" && view.toReview.length ? (
+            <span
+              data-goal-review={goal.id}
+              className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-content/40"
+            >
+              <span className="min-w-0 truncate">
+                Stays here until you mark it reviewed.
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  view.toReview.forEach(({ sessionId, turnAt }) =>
+                    markReview(sessionId, turnAt, "reviewed"),
+                  )
+                }
+                className="shrink-0 rounded bg-content/10 px-1.5 py-px text-content/75 hover:bg-content/20 hover:text-content"
+              >
+                Mark reviewed
+              </button>
+            </span>
           ) : null}
         </span>
       </div>
