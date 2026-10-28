@@ -911,6 +911,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? !remoteSessionStarted
           : (isEmpty || !!session.workspaceMode) && !session.worktreeCwd)
       }
+      suggestArrangement={isEmpty && !session.inboxAsk && !draftBlock}
       workspaceMode={session.workspaceMode}
       worktreeBase={session.worktreeBase}
       onWorkspaceModeChange={(mode, base) =>

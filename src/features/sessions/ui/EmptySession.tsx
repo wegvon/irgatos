@@ -61,6 +61,9 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
             >
               {title}
             </h1>
+            <p className="mt-0.5 text-[12.5px] text-content/45">
+              Describe the result you want. Irgatos suggests how to run it.
+            </p>
           </div>
 
           <div className="pointer-events-auto w-full">{composer}</div>
