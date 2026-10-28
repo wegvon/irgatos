@@ -106,6 +106,7 @@ import { SessionProviderHold } from "../../quotas/ui/ProviderHoldBanner";
 import { sessionInterruption } from "../model/sessionInterruption";
 import { InterruptedSessionBanner } from "./InterruptedSessionBanner";
 import { AgentRunCard } from "./AgentRunCard";
+import { GoalLine } from "../../goals/ui/GoalLine";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import {
   textQuestion,
@@ -1525,6 +1526,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 </>
               ) : (
                 <>
+                  {!session.inboxAsk && !session.ephemeral ? (
+                    <GoalLine sessionId={session.id} />
+                  ) : null}
                   {!session.inboxAsk && !session.ephemeral ? (
                     <AgentRunCard
                       session={session}

@@ -535,6 +535,10 @@ import {
 } from "../features/workspace/model/workspaceTabGroups";
 import { applyAddToChatRequest } from "../features/sessions/model/addChatToWorkspace";
 import { newWorkspaceSession } from "./model/newWorkspaceSession";
+import { useGoalSync } from "../features/goals/model/useGoalSync";
+import { linkSessionToGoal } from "../features/goals/model/goalStore";
+import type { Goal } from "../features/goals/model/goals";
+import { OPEN_GOAL_EVENT } from "../features/goals/ui/GoalLine";
 import {
   ADD_TO_CHAT_EVENT,
   appendComposerInsert,
@@ -2710,6 +2714,7 @@ function Workspace({
     // The roster is read through its snapshot.
     [irgatsSnap],
   );
+  useGoalSync(promptableSessions, irgatSessionIds, interruptedSessionIds);
   // How many replies each Irgat has that the user has not read, for the rail.
   const irgatReplies = useUnseenReplyCounts(
     irgatSessionIds,
@@ -13802,6 +13807,43 @@ function Workspace({
     setFleetViewOpen(false);
   }, []);
 
+  // A chat's goal line opens Fleet on that goal.
+  const [fleetGoalFocus, setFleetGoalFocus] = useState<string>();
+  useEffect(() => {
+    const onOpenGoal = (event: Event) => {
+      const goalId = (event as CustomEvent<{ goalId?: string }>).detail?.goalId;
+      if (!goalId) return;
+      setFleetGoalFocus(goalId);
+      onOpenFleet();
+    };
+    window.addEventListener(OPEN_GOAL_EVENT, onOpenGoal);
+    return () => window.removeEventListener(OPEN_GOAL_EVENT, onOpenGoal);
+  }, [onOpenFleet]);
+  useEffect(() => {
+    if (!fleetViewOpen) setFleetGoalFocus(undefined);
+  }, [fleetViewOpen]);
+
+  // A fresh chat in the goal's project that joins the goal on its first send.
+  const onNewGoalChat = useCallback(
+    (goal: Goal) => {
+      setFleetViewOpen(false);
+      const session = newWorkspaceSession(goal.cwd, sessionDefaults?.runtimeMode);
+      linkSessionToGoal(goal.id, {
+        sessionId: session.id,
+        role: "chat",
+        title: sessionDisplayTitle(session.title, session.harness),
+        harness: session.harness,
+        workCwd: session.cwd,
+      });
+      const tab = newTab(session.id);
+      setSessions((prev) => [...prev, session]);
+      appendTab(tab, goal.cwd);
+      setActiveTabId(tab.id);
+      setComposerFocused(true);
+    },
+    [appendTab, sessionDefaults?.runtimeMode, setFleetViewOpen],
+  );
+
   const onOpenMail = useCallback(() => {
     workspaceNavigation.cancel();
     startTransition(() => {
@@ -16534,6 +16576,8 @@ function Workspace({
                   onToggleSidebar={onToggleSidebar}
                   onOpenSession={onOpenFleetSession}
                   onRetryAgent={onRetryAgent}
+                  onNewGoalChat={onNewGoalChat}
+                  focusGoalId={fleetGoalFocus}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}
                   onQuestionInteraction={onQuestionInteraction}

@@ -23,6 +23,8 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const storage = new Map<string, string>();
+  // These tests cover the Sessions list; Goals has its own.
+  storage.set("irgatos.fleet.mode.v1", "sessions");
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
