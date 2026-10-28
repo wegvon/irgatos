@@ -160,6 +160,8 @@ import {
   type WebLookupDeps,
 } from "./webLookups";
 import { settleSecretApproval, type SecretApproval } from "../../secrets/model/secrets";
+import { markReview, reviewMarks } from "../../fleet/model/reviewMarks";
+import { orchestrator } from "../../orchestration/model/orchestration";
 
 /**
  * Browser access: the Rust side serves a small page to the user's other
@@ -715,7 +717,12 @@ export async function handleWebAccess(
 ): Promise<unknown> {
   switch (action) {
     case "overview": {
-      const fleet = buildFleet(deps.sessions(), { irgatName });
+      // Same review marks and teams as the desktop Fleet.
+      const fleet = buildFleet(deps.sessions(), {
+        irgatName,
+        reviews: reviewMarks(),
+        runs: orchestrator.snapshot(),
+      });
       const overview: WebOverview = {
         needsYou: fleet.needsYou,
         running: fleet.running,
@@ -865,6 +872,16 @@ export async function handleWebAccess(
         throw new Error("Pick one of the access modes.");
       deps.setRuntimeMode(session.id, mode);
       return { mode };
+    }
+    case "reviewMark": {
+      const session = await findSession(deps, input);
+      const state = input.state;
+      if (state !== "reviewed" && state !== "later" && state !== null)
+        throw new Error("Choose reviewed, later or null.");
+      if (typeof input.turnAt !== "number")
+        throw new Error("Missing turnAt.");
+      markReview(session.id, input.turnAt, state);
+      return { marked: state };
     }
     case "renameChat": {
       const session = await findSession(deps, input);

@@ -82,6 +82,8 @@ import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
+import { taskWaitReason } from "../../features/orchestration/model/orchestrationWaiting";
+import { orchestrator } from "../../features/orchestration/model/orchestration";
 import {
   orderedSessionActionIds,
   pruneSessionSelection,
@@ -4199,7 +4201,18 @@ export const SessionCard = memo(function SessionCard({
           </div>
           <div className="mt-1.5 flex flex-col gap-0.5">
             {orchestration.tasks.map((task) => {
-              const label = orchestrationTaskLabel(task, orchestration);
+              // Hover shows why a queued agent waits, not a bare "Queued".
+              const liveRun = orchestrator.run(session.id);
+              const liveTask = liveRun?.tasks.find(
+                (entry) => entry.sessionId === task.sessionId,
+              );
+              const label = orchestrationTaskLabel(
+                task,
+                orchestration,
+                liveRun && liveTask
+                  ? taskWaitReason(liveRun, liveTask)
+                  : undefined,
+              );
               return (
                 <div
                   key={task.sessionId}

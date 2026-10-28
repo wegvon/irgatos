@@ -1,3 +1,4 @@
+import { markReview, useReviewMarks } from "../../fleet/model/reviewMarks";
 import {
   useEffect,
   useMemo,
@@ -170,6 +171,7 @@ export function GoalsView({
   onQuestionInteraction,
 }: Props) {
   const goals = useGoals();
+  const reviews = useReviewMarks();
   // Completion Gate results live outside the sessions; redraw when they move.
   const [gateVersion, gateChanged] = useReducer((n: number) => n + 1, 0);
   useEffect(() => subscribeCompletionGateStatus(gateChanged), []);
@@ -184,10 +186,11 @@ export function GoalsView({
           now,
           unseenFinishedIds,
           interruptedIds: interruptedSessionIds,
+          reviews,
         }),
       ),
     );
-  }, [byId, goals, interruptedSessionIds, now, unseenFinishedIds]);
+  }, [byId, goals, interruptedSessionIds, now, reviews, unseenFinishedIds]);
   const shown = useMemo(() => filterGoalViews(views, query), [views, query]);
   const filtering = query.trim().length > 0;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
@@ -461,6 +464,27 @@ function GoalCard({
           ) : null}
           {view.state === "review" || (view.state === "done" && files) ? (
             <ResultLine view={view} />
+          ) : null}
+          {view.state === "review" && view.toReview.length ? (
+            <span
+              data-goal-review={goal.id}
+              className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-content/40"
+            >
+              <span className="min-w-0 truncate">
+                Stays here until you mark it reviewed.
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  view.toReview.forEach(({ sessionId, turnAt }) =>
+                    markReview(sessionId, turnAt, "reviewed"),
+                  )
+                }
+                className="shrink-0 rounded bg-content/10 px-1.5 py-px text-content/75 hover:bg-content/20 hover:text-content"
+              >
+                Mark reviewed
+              </button>
+            </span>
           ) : null}
         </span>
       </div>

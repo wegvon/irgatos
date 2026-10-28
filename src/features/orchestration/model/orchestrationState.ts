@@ -60,6 +60,24 @@ export type OrchestrationDispatch = {
   cleanupError?: string;
 };
 
+/**
+ * A note the user sent one worker from its row. The orchestrator routes it:
+ * straight to a running worker, into a queued worker's first prompt, or to
+ * the lead when the worker has already stopped. The lead hears about every
+ * note either way, so the plan stays coordinated.
+ */
+export type WorkerGuidance = {
+  id: string;
+  text: string;
+  at: number;
+  status: "pending" | "delivered" | "failed";
+  /** How it arrived: steered into the live turn, the start prompt, or the lead. */
+  via?: "worker" | "prompt" | "lead";
+  error?: string;
+  /** The lead has been told about this note in one of its turns. */
+  leadNotified?: boolean;
+};
+
 export type OrchestrationTask = {
   id: string;
   assignmentId?: string;
@@ -91,6 +109,7 @@ export type OrchestrationTask = {
   activeDispatchId?: string;
   lastDispatchId?: string;
   acceptedDispatchId?: string;
+  guidance?: WorkerGuidance[];
 };
 
 export type OrchestrationRun = {
