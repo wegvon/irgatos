@@ -130,6 +130,9 @@ pub struct SessionUpsert {
     pub provider_session_id: Option<String>,
     #[serde(default)]
     pub provider_account_id: Option<String>,
+    /// Provider switch armed in the composer but not yet handed off.
+    #[serde(default)]
+    pub pending_switch: Option<Value>,
     pub blocks: Value,
     #[serde(default)]
     pub queued_messages: Vec<Value>,
@@ -211,6 +214,8 @@ pub struct SessionRecord {
     pub provider_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_switch: Option<Value>,
     pub blocks: Value,
     #[serde(default)]
     pub queued_messages: Vec<Value>,
@@ -844,6 +849,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("queued_messages_json", "TEXT NOT NULL DEFAULT '[]'"),
         ("queue_status", "TEXT"),
         ("sidebar_hidden", "INTEGER NOT NULL DEFAULT 0"),
+        ("pending_switch_json", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -1194,6 +1200,13 @@ pub(crate) fn upsert_session(
         .map(serde_json::to_string)
         .transpose()
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let pending_switch_json = session
+        .pending_switch
+        .as_ref()
+        .filter(|value| value.is_object())
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let automation_id = session
         .automation_id
         .as_deref()
@@ -1273,8 +1286,9 @@ pub(crate) fn upsert_session(
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id, queued_messages_json, queue_status, sidebar_hidden
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+           automation_id, queued_messages_json, queue_status, sidebar_hidden,
+           pending_switch_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1297,7 +1311,8 @@ pub(crate) fn upsert_session(
            automation_id = excluded.automation_id,
            queued_messages_json = excluded.queued_messages_json,
            queue_status = excluded.queue_status,
-           sidebar_hidden = excluded.sidebar_hidden",
+           sidebar_hidden = excluded.sidebar_hidden,
+           pending_switch_json = excluded.pending_switch_json",
         params![
             session.id,
             session.cwd,
@@ -1323,6 +1338,7 @@ pub(crate) fn upsert_session(
             queued_messages_json,
             session.queue_status,
             i64::from(session.sidebar_hidden),
+            pending_switch_json,
         ],
     )?;
 
@@ -2042,7 +2058,8 @@ fn get_session_record(
                 provider_session_id, {blocks}, created_at, updated_at,
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
-                automation_id, queued_messages_json, queue_status, sidebar_hidden
+                automation_id, queued_messages_json, queue_status, sidebar_hidden,
+                pending_switch_json
          FROM sessions
          WHERE id = ?1 AND inbox_ask IS NULL"
         ),
@@ -2091,6 +2108,7 @@ fn get_session_record(
                 worktree_removed: row.get::<_, i64>(17)? != 0,
                 linked_work_item: optional_json(row.get(15)?),
                 provider_account_id: row.get(16)?,
+                pending_switch: optional_json(row.get(22)?),
                 automation_id: nonempty(row.get(18)?),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
@@ -2231,6 +2249,7 @@ mod tests {
             title: id.into(),
             provider_session_id: None,
             provider_account_id: None,
+            pending_switch: None,
             blocks: json!([{ "role": "user", "text": "hello" }]),
             queued_messages: Vec::new(),
             queue_status: None,
@@ -2347,6 +2366,7 @@ mod tests {
             title: title.into(),
             provider_session_id: Some("acp-session-1".into()),
             provider_account_id: None,
+            pending_switch: None,
             blocks: json!([{ "id": "b1", "role": "user", "text": "hello" }]),
             queued_messages: vec![],
             queue_status: None,
@@ -3187,6 +3207,32 @@ mod tests {
         assert_eq!(record.model_settings["thinking"], "high");
         assert_eq!(record.blocks.as_array().unwrap().len(), 1);
         assert_eq!(record.blocks[0]["text"], "hello");
+    }
+
+    #[test]
+    fn pending_switch_survives_reload_until_cleared() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut session = sample("s1", "/tmp/a", "First");
+        let pending = json!({
+            "from": "claude",
+            "fromModel": "opus",
+            "fromSettings": { "effort": "high" },
+            "fromProviderSessionId": "claude-thread-1",
+            "fromProviderAccountId": "account-work"
+        });
+        session.harness = "codex".into();
+        session.pending_switch = Some(pending.clone());
+        upsert_session(&conn, &session).unwrap();
+        let record = get_session(&conn, "s1").unwrap().unwrap();
+        assert_eq!(record.harness, "codex");
+        assert_eq!(record.pending_switch, Some(pending));
+
+        // Sending the handoff clears it; the next save must drop the row too.
+        session.pending_switch = None;
+        upsert_session(&conn, &session).unwrap();
+        let record = get_session(&conn, "s1").unwrap().unwrap();
+        assert_eq!(record.pending_switch, None);
     }
 
     #[test]
