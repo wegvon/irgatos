@@ -85,3 +85,15 @@ test("keeps one progress summary across a coordinated goal's agents", async ({ p
   await expect(progress).toContainText("Waiting on earlier tasks");
   await expect(card).toContainText("1 decision waiting on you");
 });
+
+test("explains an interrupted goal and resumes it in one click", async ({ page }) => {
+  await page.goto("/tests/browser/fleet.html?mode=goals");
+  const card = page.locator("[data-goal]", { hasText: "Migrate the billing schema" });
+  const recovery = card.locator('[data-goal-recovery="interrupted"]');
+  await expect(recovery).toContainText("Stopped before it finished");
+  await expect(recovery).toContainText("1 of 3 steps: Write the migration");
+  await expect(recovery).toContainText("The file changes, on billing-v2");
+  await expect(recovery).toContainText("Backfill old invoices");
+  await recovery.getByRole("button", { name: "Resume" }).click();
+  expect(await events(page)).toEqual(["resume:migrate:interrupted"]);
+});

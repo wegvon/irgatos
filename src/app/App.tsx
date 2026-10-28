@@ -16584,6 +16584,12 @@ function Workspace({
                   onNewGoalChat={onNewGoalChat}
                   onOpenGoalChanges={onOpenGoalChanges}
                   orchestrationRuns={orchestrationRuns}
+                  onResumeGoalSession={(sessionId, cause) =>
+                    cause === "limit"
+                      ? onUsageLimitResume(sessionId)
+                      : onResumeInterrupted(sessionId)
+                  }
+                  onResumeGoalAtReset={onUsageLimitResumeAtReset}
                   focusGoalId={fleetGoalFocus}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}

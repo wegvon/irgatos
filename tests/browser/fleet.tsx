@@ -14,6 +14,7 @@ import {
 import { saveGoals } from "../../src/features/goals/model/goalStore";
 import { syncGoals } from "../../src/features/goals/model/goals";
 import type { OrchestrationRun } from "../../src/features/orchestration/model/orchestrationState";
+import { INTERRUPT_MESSAGE } from "../../src/features/sessions/model/inFlight";
 import "../../src/styles/index.css";
 
 // The real Fleet view over sessions from three projects. Answering a request
@@ -119,7 +120,24 @@ const seed: Session[] = [
     ],
   }),
   chat("migrate", "codex", "/Users/demo/src/api", "Migrate the billing schema", {
-    blocks: [sent(40 * MIN, "Migrate")],
+    branch: "billing-v2",
+    blocks: [
+      sent(40 * MIN, "Migrate"),
+      {
+        id: "migrate-steps",
+        role: "tasks",
+        text: "",
+        taskList: {
+          items: [
+            { text: "Write the migration", status: "completed" },
+            { text: "Backfill old invoices", status: "in_progress" },
+            { text: "Drop the old columns", status: "pending" },
+          ],
+        },
+      },
+      edit("/Users/demo/src/api/migrations/0042_billing.sql"),
+      { id: "migrate-stop", role: "system", text: INTERRUPT_MESSAGE, notice: "interrupt" },
+    ],
   }),
   chat("publish-notes", "codex", "/Users/demo/src/sdk", "Draft the 2.4 release notes", {
     orchestrationLeadId: "publish",
@@ -215,6 +233,7 @@ function Fixture() {
         unseenFinishedIds={new Set(["limiter"])}
         interruptedSessionIds={new Set(["migrate"])}
         orchestrationRuns={runs}
+        onResumeGoalSession={(id, cause) => events.push(`resume:${id}:${cause}`)}
         onClose={() => {}}
         onOpenSession={(id) => events.push(`open:${id}`)}
         onApproval={(id, requestId, decision) => {

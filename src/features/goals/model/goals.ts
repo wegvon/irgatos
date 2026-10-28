@@ -482,6 +482,9 @@ export function goalView(
       continue;
     }
     const agent = sessionAgent(session, { interruptedIds: options.interruptedIds });
+    // A usage limit stopped it short, like an interruption.
+    if (session.usageLimit && !session.busy && agent.status !== "needs_you")
+      agent.status = "stopped";
     const running = agent.status === "running";
     const memberActivity = running ? fleetActivity(session) : undefined;
     members.push({

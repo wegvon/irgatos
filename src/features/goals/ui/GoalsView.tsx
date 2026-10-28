@@ -51,6 +51,14 @@ import {
   type ProgressItem,
 } from "../model/progress";
 import {
+  recoveryBrief,
+  type RecoveryBrief,
+  type RecoveryCause,
+} from "../model/recovery";
+import { RecoveryDetails } from "./RecoveryDetails";
+import { sessionInterruption } from "../../sessions/model/sessionInterruption";
+import { isLiveHarness } from "../../../integrations/harness/core/registry";
+import {
   goalResult,
   type GoalCheckRun,
   type GoalPreview,
@@ -99,6 +107,9 @@ type Props = {
   onOpenChanges?: (sessionId: string, workCwd: string) => void;
   /** Orchestration runs, whose task lists are a goal's progress. */
   orchestrationRuns?: readonly OrchestrationRun[];
+  /** Picks a stopped chat back up: Resume, or Resume at reset after a limit. */
+  onResumeSession?: (sessionId: string, cause: RecoveryCause) => void;
+  onResumeAtReset?: (sessionId: string, enabled: boolean) => void;
   onApproval: (
     sessionId: string,
     requestId: number,
@@ -152,6 +163,8 @@ export function GoalsView({
   onNewGoalChat,
   onOpenChanges,
   orchestrationRuns,
+  onResumeSession,
+  onResumeAtReset,
   onApproval,
   onQuestionReply,
   onQuestionInteraction,
@@ -271,6 +284,8 @@ export function GoalsView({
                         view={view}
                         sessionsById={byId}
                         orchestrationRuns={orchestrationRuns}
+                        onResumeSession={onResumeSession}
+                        onResumeAtReset={onResumeAtReset}
                         gateVersion={gateVersion}
                         now={now}
                         onOpenChanges={onOpenChanges}
@@ -317,6 +332,8 @@ function GoalCard({
   view,
   sessionsById,
   orchestrationRuns,
+  onResumeSession,
+  onResumeAtReset,
   gateVersion,
   onOpenChanges,
   now,
@@ -331,6 +348,8 @@ function GoalCard({
   view: GoalView;
   sessionsById: ReadonlyMap<string, Session>;
   orchestrationRuns?: readonly OrchestrationRun[];
+  onResumeSession?: Props["onResumeSession"];
+  onResumeAtReset?: Props["onResumeAtReset"];
   gateVersion: number;
   onOpenChanges?: Props["onOpenChanges"];
   now: number;
@@ -358,6 +377,10 @@ function GoalCard({
     : progressHeadline({ ...summary, decisions: 0 });
   const progress = headline ?? progressText(view);
   const criteria = criteriaSummary(goal.criteria);
+  const recovery = useMemo(
+    () => goalRecovery(view, sessionsById, now),
+    [now, sessionsById, view],
+  );
   const result = useMemo(
     () =>
       view.state === "working" || view.state === "needsYou"
@@ -445,7 +468,7 @@ function GoalCard({
               {workers ? ` · ${workers} ${workers === 1 ? "agent" : "agents"}` : ""}
             </Dot>
           </span>
-          {view.state === "interrupted" || view.state === "failed" ? (
+          {(view.state === "interrupted" || view.state === "failed") && !recovery ? (
             <span className="flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-rose-400/90">
               <RotateCcw className="size-3 shrink-0" />
               <span className="truncate">
@@ -494,6 +517,15 @@ function GoalCard({
           <MoreHorizontal className="size-3.5" />
         </button>
       </span>
+      {recovery && !goal.doneAt ? (
+        <RecoveryPanel
+          recovery={recovery}
+          showTitle={view.members.length > 1}
+          onResume={onResumeSession}
+          onResumeAtReset={onResumeAtReset}
+          onOpen={() => onOpenSession(recovery.sessionId)}
+        />
+      ) : null}
       {view.requests.map(({ sessionId, sessionTitle, request }) => (
         <div key={`${sessionId}:${request.kind}:${request.requestId}`}>
           {sessionId !== primary?.link.sessionId ? (
@@ -749,6 +781,114 @@ function GoalDetail({
           ) : null}
         </DetailSection>
       ) : null}
+    </div>
+  );
+}
+
+type GoalRecovery = {
+  sessionId: string;
+  title: string;
+  cause: RecoveryCause;
+  brief: RecoveryBrief;
+  /** A usage limit with a reset still ahead. */
+  resetsAt?: number;
+  resumeAtReset?: boolean;
+};
+
+/** The first of the goal's chats that stopped short and can be picked up. */
+function goalRecovery(
+  view: GoalView,
+  sessionsById: ReadonlyMap<string, Session>,
+  now: number,
+): GoalRecovery | undefined {
+  for (const member of view.members) {
+    if (!member.open) continue;
+    const session = sessionsById.get(member.link.sessionId);
+    if (!session || session.busy) continue;
+    const cause: RecoveryCause | undefined = session.usageLimit
+      ? "limit"
+      : sessionInterruption(session)
+        ? "interrupted"
+        : undefined;
+    if (!cause) continue;
+    const brief = recoveryBrief(session, cause, {
+      goal: view.goal,
+      now,
+      nativeResume: isLiveHarness(session.harness),
+    });
+    if (!brief) continue;
+    const resetsAt = session.usageLimit?.resetsAt;
+    return {
+      sessionId: session.id,
+      title: member.link.title,
+      cause,
+      brief,
+      ...(resetsAt && resetsAt > now ? { resetsAt } : {}),
+      ...(session.usageLimit?.resumeAtReset ? { resumeAtReset: true } : {}),
+    };
+  }
+  return undefined;
+}
+
+/** What stopped, what is safe, and the one step that carries on. */
+function RecoveryPanel({
+  recovery,
+  showTitle,
+  onResume,
+  onResumeAtReset,
+  onOpen,
+}: {
+  recovery: GoalRecovery;
+  showTitle: boolean;
+  onResume?: Props["onResumeSession"];
+  onResumeAtReset?: Props["onResumeAtReset"];
+  onOpen: () => void;
+}) {
+  const limit = recovery.cause === "limit";
+  const waiting = limit && recovery.resetsAt != null;
+  const button =
+    "rounded-md px-3 py-1 text-[12px] font-medium";
+  return (
+    <div
+      data-goal-recovery={recovery.cause}
+      className={`flex flex-col gap-2 border-t border-stroke px-3 py-2 ${limit ? "bg-amber-400/[0.04]" : "bg-rose-400/[0.04]"}`}
+    >
+      <span className="flex min-w-0 items-center gap-1.5 text-[12px] text-content/80">
+        <RotateCcw className={`size-3.5 shrink-0 ${limit ? "text-amber-400" : "text-rose-400"}`} />
+        <span className="min-w-0 truncate">
+          {limit ? "Stopped at a usage limit" : "Stopped before it finished"}
+          {showTitle ? <span className="text-content/45"> · {recovery.title}</span> : null}
+        </span>
+      </span>
+      <RecoveryDetails brief={recovery.brief} tone={limit ? "amber" : "rose"} framed={false} />
+      <span className="flex flex-wrap gap-2">
+        {waiting ? (
+          <button
+            type="button"
+            disabled={!onResumeAtReset}
+            onClick={() => onResumeAtReset?.(recovery.sessionId, !recovery.resumeAtReset)}
+            className={`${button} ${recovery.resumeAtReset ? "bg-content/10 text-amber-400" : "bg-content text-background-base hover:bg-content/80"}`}
+          >
+            {recovery.resumeAtReset ? "Resuming at reset" : "Resume at reset"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={!onResume}
+            onClick={() => onResume?.(recovery.sessionId, recovery.cause)}
+            className={`${button} bg-content text-background-base hover:bg-content/80`}
+          >
+            Resume
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`${button} bg-content/10 text-content/70 hover:bg-content/20`}
+        >
+          {limit ? "Pick another model" : "Open chat"}
+        </button>
+      </span>
     </div>
   );
 }
