@@ -44,6 +44,8 @@ export function canDispatchQueuedHead(session: Session): boolean {
   const head = queuedHead(session);
   if (!head) return false;
   if (isEditingQueuedHead(session)) return false;
+  // Still being steered into the turn that just ended; its outcome decides.
+  if (session.sendingQueuedMessageId === head.id) return false;
   if (isPreparingHandoff(session)) return false;
   return true;
 }
@@ -82,8 +84,58 @@ export function queuedMessageForSubmit(
     (entry) => entry.id === messageId,
   );
   if (!message) return undefined;
-  if (mode === "steer") return message.irgatSessionCompletion ? undefined : message;
+  if (mode === "steer") {
+    if (message.irgatSessionCompletion) return undefined;
+    // A busy turn cannot take a plan; steering it would only queue a copy.
+    return session.busy && !canSteerQueuedMessage(message) ? undefined : message;
+  }
   if (queuedHead(session)?.id !== messageId) return undefined;
   if (!canDispatchQueuedHead(session)) return undefined;
   return message;
+}
+
+/** Plans and orchestration proposals start their own turn; they cannot steer one. */
+export function canSteerQueuedMessage(message: QueuedMessage): boolean {
+  return (
+    !message.irgatSessionCompletion &&
+    message.intent !== "plan" &&
+    message.intent !== "orchestrate"
+  );
+}
+
+/**
+ * Keep a follow-up the provider never accepted. It keeps its identity (a queued
+ * row is updated in place, a typed one is added) and waits, paused, for Retry.
+ */
+export function keepUnsentMessage(
+  session: Session,
+  message: QueuedMessage,
+  error: string,
+): Session {
+  const queued = session.queuedMessages ?? [];
+  const exists = queued.some((entry) => entry.id === message.id);
+  return {
+    ...session,
+    queuedMessages: exists
+      ? queued.map((entry) =>
+          entry.id === message.id ? { ...entry, error } : entry,
+        )
+      : [...queued, { ...message, error }],
+    queueStatus: "paused",
+    sendingQueuedMessageId:
+      session.sendingQueuedMessageId === message.id
+        ? undefined
+        : session.sendingQueuedMessageId,
+  };
+}
+
+/** Retry failed follow-ups: clear their errors and let the queue send them. */
+export function retryUnsentMessages(session: Session): Session {
+  return {
+    ...session,
+    queueStatus: "active",
+    queuedMessages: session.queuedMessages?.map(({ error: _error, ...entry }) =>
+      entry,
+    ),
+  };
 }

@@ -10,6 +10,7 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { canSteerQueuedMessage } from "../model/messageQueue";
 import type { MessageQueueStatus, QueuedMessage } from "../model/session";
 
 export function MessageQueue({
@@ -178,12 +179,17 @@ export function MessageQueue({
                   {onSteer && !message.irgatSessionCompletion ? (
                     <button
                       type="button"
-                      disabled={sending}
+                      disabled={sending || !canSteerQueuedMessage(message)}
+                      title={
+                        canSteerQueuedMessage(message)
+                          ? undefined
+                          : "Plans start their own turn after the current one."
+                      }
                       onClick={() => onSteer?.(message.id)}
-                      className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content"
+                      className="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-content/10 hover:text-content disabled:opacity-40 disabled:hover:bg-transparent"
                     >
                       <CornerDownRight className="size-3.5" />
-                      Steer
+                      {sending ? "Sending…" : message.error ? "Retry" : "Steer"}
                     </button>
                   ) : null}
                   <button

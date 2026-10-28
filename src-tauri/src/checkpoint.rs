@@ -19,6 +19,7 @@ use crate::state_file;
 const MAX_SNAPSHOT_FILES: usize = 500;
 
 mod turn;
+mod worker;
 
 #[derive(Clone)]
 pub struct CheckpointStore {
@@ -216,7 +217,11 @@ impl CheckpointStore {
         session_id: &str,
         from_cwd: &str,
         to_cwd: &str,
+        scopes: Option<&[String]>,
     ) -> Result<CheckpointApplyResult, String> {
+        if self.has_worker(session_id, from_cwd)? {
+            return self.apply_worker(session_id, from_cwd, to_cwd, scopes);
+        }
         let manifest = self
             .load_matching(session_id, from_cwd)?
             .ok_or("This worker has no recoverable change checkpoint")?;
@@ -233,6 +238,15 @@ impl CheckpointStore {
         }
         let dir = self.session_dir(session_id);
         let changed = verified_worker_delta(&dir, &from_root, &manifest)?;
+        if let Some(scopes) = scopes {
+            let outside = worker::outside_scopes(from_cwd, scopes, &changed)?;
+            if !outside.is_empty() {
+                return Err(format!(
+                    "The worker changed files outside its assignment: {}. Nothing was integrated and the worker worktree was kept.",
+                    outside.join(", ")
+                ));
+            }
+        }
 
         // Preflight every path before writing any of them. A retry may see a
         // mixture of before/after states if the app stopped during a previous
@@ -281,6 +295,9 @@ impl CheckpointStore {
     }
 
     fn cleanup_safe(&self, session_id: &str, cwd: &str) -> Result<bool, String> {
+        if self.has_worker(session_id, cwd)? {
+            return self.worker_unchanged(session_id, cwd);
+        }
         let Some(manifest) = self.load_matching(session_id, cwd)? else {
             return Ok(false);
         };
@@ -294,6 +311,7 @@ impl CheckpointStore {
 
     fn forget(&self, session_id: &str) -> Result<(), String> {
         self.forget_turns(session_id)?;
+        self.forget_worker(session_id)?;
         let dir = self.session_dir(session_id);
         if dir.exists() {
             std::fs::remove_dir_all(dir).map_err(|e| e.to_string())?;
@@ -713,11 +731,45 @@ pub async fn session_checkpoint_apply(
     session_id: String,
     from_cwd: String,
     to_cwd: String,
+    scopes: Option<Vec<String>>,
 ) -> Result<CheckpointApplyResult, String> {
     validate_id(&session_id, "session")?;
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        store.exclusive(|store| store.apply(&session_id, &from_cwd, &to_cwd))
+        store.exclusive(|store| store.apply(&session_id, &from_cwd, &to_cwd, scopes.as_deref()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Record an isolated worker checkout before its first turn.
+#[tauri::command]
+pub async fn session_checkpoint_worker_begin(
+    store: State<'_, CheckpointStore>,
+    session_id: String,
+    cwd: String,
+) -> Result<(), String> {
+    validate_id(&session_id, "session")?;
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.exclusive(|store| store.begin_worker(&session_id, &cwd))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// The worker's actual changes, including shell writes, against its scope.
+#[tauri::command]
+pub async fn session_checkpoint_worker_review(
+    store: State<'_, CheckpointStore>,
+    session_id: String,
+    cwd: String,
+    scopes: Vec<String>,
+) -> Result<Option<worker::WorkerReview>, String> {
+    validate_id(&session_id, "session")?;
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        store.exclusive(|store| store.review_worker(&session_id, &cwd, &scopes))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2132,14 +2184,14 @@ mod tests {
         store.capture("worker", &from, &["a.txt".into()]).unwrap();
         assert!(!store.cleanup_safe("worker", &from).unwrap());
 
-        let applied = store.apply("worker", &from, &to).unwrap();
+        let applied = store.apply("worker", &from, &to, None).unwrap();
         assert_eq!(applied.files, ["a.txt"]);
         assert_eq!(applied.already_applied, 0);
         assert_eq!(
             std::fs::read_to_string(target.0.join("a.txt")).unwrap(),
             "worker result\n"
         );
-        let retried = store.apply("worker", &from, &to).unwrap();
+        let retried = store.apply("worker", &from, &to, None).unwrap();
         assert_eq!(retried.already_applied, 1);
     }
 
@@ -2164,7 +2216,7 @@ mod tests {
         store.capture("worker", &from, &["a.txt".into()]).unwrap();
         std::fs::write(target.0.join("a.txt"), "lead changed\n").unwrap();
 
-        let conflict = store.apply("worker", &from, &to).unwrap_err();
+        let conflict = store.apply("worker", &from, &to, None).unwrap_err();
         assert!(conflict.contains("lead checkout changed"));
         assert_eq!(
             std::fs::read_to_string(source.0.join("a.txt")).unwrap(),
@@ -2178,7 +2230,7 @@ mod tests {
         std::fs::write(source.0.join("unreported.txt"), "unknown\n").unwrap();
         assert!(!store.cleanup_safe("worker", &from).unwrap());
         assert!(store
-            .apply("worker", &from, &to)
+            .apply("worker", &from, &to, None)
             .unwrap_err()
             .contains("not captured"));
     }

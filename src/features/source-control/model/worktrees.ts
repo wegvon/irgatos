@@ -55,6 +55,37 @@ export async function createOrchestrationWorktree(
   return tree;
 }
 
+export type WorkerEnvironment = {
+  dependencies: string[];
+  config: string[];
+  setupCommand: string | null;
+  port: number | null;
+};
+
+/** Clone ignored dependencies/config from the lead and run the project setup. */
+export function prepareWorkerEnvironment(leadCwd: string, path: string) {
+  return invoke<WorkerEnvironment>("worktree_prepare_worker", {
+    leadCwd,
+    path,
+  });
+}
+
+/** One line for the worker's assignment; empty when nothing was needed. */
+export function describeWorkerEnvironment(env: WorkerEnvironment): string {
+  return [
+    env.dependencies.length
+      ? `dependencies copied from the lead checkout (${env.dependencies.join(", ")})`
+      : "",
+    env.config.length
+      ? `ignored configuration copied (${env.config.slice(0, 8).join(", ")}${env.config.length > 8 ? ", …" : ""})`
+      : "",
+    env.setupCommand ? `the project setup command ran: ${env.setupCommand}` : "",
+    env.port ? `PORT=${env.port} is reserved for this checkout` : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
 export async function renameWorktreeBranch(
   cwd: string,
   path: string,
