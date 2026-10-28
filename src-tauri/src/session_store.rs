@@ -153,6 +153,11 @@ pub struct SessionUpsert {
     pub linked_work_item: Option<Value>,
     #[serde(default)]
     pub automation_id: Option<String>,
+    /// The stored revision this snapshot was built from. A write whose base
+    /// is no longer current is refused (see `STALE_SESSION_WRITE`). `None`
+    /// writes unconditionally, for callers that never loaded the row.
+    #[serde(default)]
+    pub base_revision: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -194,6 +199,8 @@ pub struct SessionSummary {
     pub linked_work_item: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
+    #[serde(default)]
+    pub revision: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,11 +244,14 @@ pub struct SessionRecord {
     pub automation_id: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub revision: i64,
 }
 
 #[tauri::command(async)]
 pub fn session_upsert(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     mut session: SessionUpsert,
 ) -> Result<SessionSummary, String> {
@@ -278,7 +288,23 @@ pub fn session_upsert(
     if let Some(snapshots) = &store.snapshots {
         snapshots.after_save();
     }
+    announce_saved(&app, &window, &summary);
     Ok(summary)
+}
+
+pub(crate) const SESSION_SAVED: &str = "irgat:session-saved";
+
+/// Other windows showing this chat refresh their copy instead of holding a
+/// snapshot that the next save would have to refuse.
+pub(crate) fn announce_saved(app: &AppHandle, window: &tauri::Window, summary: &SessionSummary) {
+    let _ = app.emit(
+        SESSION_SAVED,
+        json!({
+            "sessionId": summary.id,
+            "revision": summary.revision,
+            "origin": window.label(),
+        }),
+    );
 }
 
 fn generated_image_paths(blocks: &Value) -> Vec<String> {
@@ -850,6 +876,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("queue_status", "TEXT"),
         ("sidebar_hidden", "INTEGER NOT NULL DEFAULT 0"),
         ("pending_switch_json", "TEXT"),
+        ("revision", "INTEGER NOT NULL DEFAULT 0"),
+        ("write_fingerprint", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -1259,6 +1287,29 @@ pub(crate) fn upsert_session(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .optional()?;
+    let (stored_revision, stored_fingerprint): (i64, Option<String>) = conn
+        .query_row(
+            "SELECT revision, write_fingerprint FROM sessions WHERE id = ?1",
+            params![session.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((0, None));
+    if let Some(base) = session.base_revision {
+        // A row deleted elsewhere is not "newer data", so recreating it stays
+        // allowed; only a snapshot older than the stored one is refused.
+        if existing.is_some() && base != stored_revision {
+            return Err(stale_write(stored_revision));
+        }
+    }
+    let fingerprint = write_fingerprint(session, &blocks_json, &queued_messages_json);
+    // Identical rewrites keep the revision, so a window that merely adopts
+    // another window's save does not invalidate that window in turn.
+    let revision = if existing.is_some() && stored_fingerprint.as_deref() == Some(&fingerprint) {
+        stored_revision
+    } else {
+        stored_revision + 1
+    };
     let created_at = existing
         .as_ref()
         .map(|(value, _, _, _, _, _)| *value)
@@ -1287,8 +1338,8 @@ pub(crate) fn upsert_session(
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
            automation_id, queued_messages_json, queue_status, sidebar_hidden,
-           pending_switch_json
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)
+           pending_switch_json, revision, write_fingerprint
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1312,7 +1363,9 @@ pub(crate) fn upsert_session(
            queued_messages_json = excluded.queued_messages_json,
            queue_status = excluded.queue_status,
            sidebar_hidden = excluded.sidebar_hidden,
-           pending_switch_json = excluded.pending_switch_json",
+           pending_switch_json = excluded.pending_switch_json,
+           revision = excluded.revision,
+           write_fingerprint = excluded.write_fingerprint",
         params![
             session.id,
             session.cwd,
@@ -1339,6 +1392,8 @@ pub(crate) fn upsert_session(
             session.queue_status,
             i64::from(session.sidebar_hidden),
             pending_switch_json,
+            revision,
+            fingerprint,
         ],
     )?;
 
@@ -1367,7 +1422,60 @@ pub(crate) fn upsert_session(
         draft: is_draft,
         linked_work_item: session.linked_work_item.clone(),
         automation_id: automation_id.map(str::to_owned),
+        revision,
     })
+}
+
+/// Error text prefix the frontend matches to tell a refused stale snapshot
+/// from a failed write. The stored revision follows the colon.
+pub(crate) const STALE_SESSION_WRITE: &str = "stale-session-write";
+
+#[derive(Debug)]
+struct StaleWrite(i64);
+
+impl std::fmt::Display for StaleWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{STALE_SESSION_WRITE}:{}", self.0)
+    }
+}
+
+impl std::error::Error for StaleWrite {}
+
+fn stale_write(current: i64) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(StaleWrite(current)))
+}
+
+/// Everything a write stores for this row, so an identical rewrite is
+/// recognised without comparing transcripts again.
+fn write_fingerprint(session: &SessionUpsert, blocks_json: &str, queue_json: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let header = json!([
+        session.cwd,
+        session.harness,
+        session.model,
+        session.model_settings,
+        session.runtime_mode,
+        session.title,
+        session.provider_session_id,
+        session.provider_account_id,
+        session.queue_status,
+        session.context_used,
+        session.context_window,
+        session.branch,
+        session.worktree_cwd,
+        session.worktree_removed,
+        session.linked_work_item,
+        session.automation_id,
+        session.sidebar_hidden,
+        session.pending_switch,
+    ]);
+    let mut hash = Sha256::new();
+    hash.update(header.to_string().as_bytes());
+    hash.update([0]);
+    hash.update(blocks_json.as_bytes());
+    hash.update([0]);
+    hash.update(queue_json.as_bytes());
+    format!("{:x}", hash.finalize())
 }
 
 struct SearchProgressGuard<'a>(&'a Connection);
@@ -1755,6 +1863,7 @@ fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<Session
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item,
             automation_id: nonempty(row.get(17)?),
+            revision: 0,
         })
     })?;
     rows.collect()
@@ -1801,6 +1910,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(17)?),
+            revision: 0,
         })
     })?;
     rows.collect()
@@ -1850,6 +1960,7 @@ fn list_recent(
             draft: row.get::<_, i64>(15)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(16)?),
+            revision: 0,
         })
     })?;
     rows.collect()
@@ -2059,7 +2170,7 @@ fn get_session_record(
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
                 automation_id, queued_messages_json, queue_status, sidebar_hidden,
-                pending_switch_json
+                pending_switch_json, revision
          FROM sessions
          WHERE id = ?1 AND inbox_ask IS NULL"
         ),
@@ -2112,6 +2223,7 @@ fn get_session_record(
                 automation_id: nonempty(row.get(18)?),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                revision: row.get(23)?,
             })
         },
     )
@@ -2260,6 +2372,7 @@ mod tests {
             worktree_removed: false,
             linked_work_item: None,
             automation_id: None,
+            base_revision: None,
         };
         {
             let store = SessionStore::open(path.clone()).unwrap();
@@ -2354,6 +2467,66 @@ mod tests {
         let _ = std::fs::remove_dir_all(data_dir);
     }
 
+    #[test]
+    fn closing_a_stale_window_cannot_revert_a_newer_transcript() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let first = upsert_session(&conn, &sample("chat", "/tmp/a", "Chat")).unwrap();
+        assert_eq!(first.revision, 1);
+        // Both windows open revision 1.
+        let loaded = get_session(&conn, "chat").unwrap().unwrap();
+        assert_eq!(loaded.revision, 1);
+
+        let mut window_a = sample("chat", "/tmp/a", "Chat");
+        window_a.base_revision = Some(loaded.revision);
+        window_a.blocks = json!([
+            { "id": "b1", "role": "user", "text": "hello" },
+            { "id": "b2", "role": "assistant", "text": "hi" },
+            { "id": "b3", "role": "user", "text": "continue" },
+        ]);
+        let saved = upsert_session(&conn, &window_a).unwrap();
+        assert_eq!(saved.revision, 2);
+
+        // Window B closes and flushes the snapshot it opened.
+        let mut window_b = sample("chat", "/tmp/a", "Chat");
+        window_b.base_revision = Some(loaded.revision);
+        let refused = upsert_session(&conn, &window_b).unwrap_err().to_string();
+        assert_eq!(refused, format!("{STALE_SESSION_WRITE}:2"));
+
+        let stored = get_session(&conn, "chat").unwrap().unwrap();
+        assert_eq!(stored.blocks.as_array().unwrap().len(), 3);
+        assert_eq!(stored.revision, 2);
+
+        // Rebased on the stored revision, B may write again.
+        window_b.base_revision = Some(2);
+        window_b.blocks = window_a.blocks.clone();
+        window_b.title = "Renamed".into();
+        assert_eq!(upsert_session(&conn, &window_b).unwrap().revision, 3);
+    }
+
+    #[test]
+    fn identical_rewrites_keep_the_revision() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut session = sample("same", "/tmp/a", "Same");
+        assert_eq!(upsert_session(&conn, &session).unwrap().revision, 1);
+        session.base_revision = Some(1);
+        assert_eq!(upsert_session(&conn, &session).unwrap().revision, 1);
+        session.title = "Changed".into();
+        assert_eq!(upsert_session(&conn, &session).unwrap().revision, 2);
+    }
+
+    #[test]
+    fn unconditional_writes_and_recreated_rows_still_save() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        upsert_session(&conn, &sample("free", "/tmp/a", "Free")).unwrap();
+        upsert_session(&conn, &sample("free", "/tmp/a", "Again")).unwrap();
+        let mut gone = sample("gone", "/tmp/a", "Gone");
+        gone.base_revision = Some(7);
+        assert_eq!(upsert_session(&conn, &gone).unwrap().revision, 1);
+    }
+
     fn sample(id: &str, cwd: &str, title: &str) -> SessionUpsert {
         SessionUpsert {
             sidebar_hidden: false,
@@ -2377,6 +2550,7 @@ mod tests {
             worktree_removed: false,
             linked_work_item: None,
             automation_id: None,
+            base_revision: None,
         }
     }
 
