@@ -93,9 +93,15 @@ const seed: Session[] = [
       edit("/Users/demo/src/api/src/limiter.ts"),
       edit("/Users/demo/src/api/src/limiter.test.ts"),
       {
+        id: "limiter-test",
+        role: "tool",
+        text: "Run tests",
+        tool: { kind: "execute", status: "completed", preview: { kind: "shell", query: "pnpm vitest run limiter" } },
+      },
+      {
         id: "r",
         role: "assistant",
-        text: "Fixed the window reset.\n\n<completion_criteria>\n- A client blocked at the limit can call again once its window ends\n- Existing limiter tests still pass\n- No change to the limits users see\n</completion_criteria>\n\n<criteria_check>\n- [met] A client blocked at the limit can call again once its window ends — new test resets after 60s\n- [met] Existing limiter tests still pass — 42 passed\n- [unverified] No change to the limits users see — needs a look at the dashboard\n</criteria_check>",
+        text: "Fixed the window reset: a blocked client's window now restarts when it ends, so it can call again. Try it on the local server at http://localhost:4000/limits.\n\n<completion_criteria>\n- A client blocked at the limit can call again once its window ends\n- Existing limiter tests still pass\n- No change to the limits users see\n</completion_criteria>\n\n<criteria_check>\n- [met] A client blocked at the limit can call again once its window ends — new test resets after 60s\n- [met] Existing limiter tests still pass — 42 passed\n- [unverified] No change to the limits users see — needs a look at the dashboard\n</criteria_check>\n\n<known_limitations>\n- Clients already blocked when you deploy stay blocked until their old window ends\n</known_limitations>",
       },
     ],
   }),

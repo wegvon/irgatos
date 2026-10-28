@@ -13800,6 +13800,34 @@ function Workspace({
     if (!fleetViewOpen) setFleetGoalFocus(undefined);
   }, [fleetViewOpen]);
 
+  // A goal's "View changes": open its chat, then its changes once it is active.
+  const [goalChangesRequest, setGoalChangesRequest] = useState<{
+    sessionId: string;
+    cwd: string;
+    at: number;
+  } | null>(null);
+  const onOpenGoalChanges = useCallback(
+    (sessionId: string, workCwd: string) => {
+      setGoalChangesRequest({ sessionId, cwd: workCwd, at: Date.now() });
+      onOpenFleetSession(sessionId);
+    },
+    [onOpenFleetSession],
+  );
+  useEffect(() => {
+    if (!goalChangesRequest) return;
+    // A chat that never opened does not get its diff later by surprise.
+    if (Date.now() - goalChangesRequest.at > 10_000) {
+      setGoalChangesRequest(null);
+      return;
+    }
+    if (activeSessionId !== goalChangesRequest.sessionId) return;
+    setGoalChangesRequest(null);
+    onOpenDiff(undefined, {
+      sessionId: goalChangesRequest.sessionId,
+      cwd: goalChangesRequest.cwd,
+    });
+  }, [activeSessionId, goalChangesRequest, onOpenDiff]);
+
   // A fresh chat in the goal's project that joins the goal on its first send.
   const onNewGoalChat = useCallback(
     (goal: Goal) => {
@@ -16554,6 +16582,7 @@ function Workspace({
                   onOpenSession={onOpenFleetSession}
                   onRetryAgent={onRetryAgent}
                   onNewGoalChat={onNewGoalChat}
+                  onOpenGoalChanges={onOpenGoalChanges}
                   focusGoalId={fleetGoalFocus}
                   onApproval={onApproval}
                   onQuestionReply={onQuestionReply}

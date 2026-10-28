@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { basename } from "../../../platform/tauri/fs";
 import { projectName } from "../../../shared/lib/paths";
@@ -6,7 +13,9 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  Eye,
   FileDiff,
+  Globe,
   GitBranch,
   GitPullRequest,
   LoaderCircle,
@@ -27,6 +36,19 @@ import { formatLiveElapsed } from "../../sessions/model/liveAgents";
 import type { Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import {
+  completionGateStatus,
+  subscribeCompletionGateStatus,
+} from "../../sessions/model/completionGate";
+import { requestOpenArtifact } from "../../artifacts/model/openArtifact";
+import { OPEN_BROWSER_URL_EVENT } from "../../source-control/model/worktreeEnv";
+import {
+  goalResult,
+  type GoalCheckRun,
+  type GoalPreview,
+  type GoalResult,
+} from "../model/result";
 import {
   removeGoal,
   renameGoal,
@@ -66,6 +88,8 @@ type Props = {
   onOpenSession: (sessionId: string) => void;
   /** A fresh conversation that joins the goal instead of starting its own. */
   onNewGoalChat?: (goal: Goal) => void;
+  /** The delivering chat's changes, as supporting detail. */
+  onOpenChanges?: (sessionId: string, workCwd: string) => void;
   onApproval: (
     sessionId: string,
     requestId: number,
@@ -117,13 +141,20 @@ export function GoalsView({
   sidebar = false,
   onOpenSession,
   onNewGoalChat,
+  onOpenChanges,
   onApproval,
   onQuestionReply,
   onQuestionInteraction,
 }: Props) {
   const goals = useGoals();
+  // Completion Gate results live outside the sessions; redraw when they move.
+  const [gateVersion, gateChanged] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => subscribeCompletionGateStatus(gateChanged), []);
+  const byId = useMemo(
+    () => new Map(sessions.map((session) => [session.id, session])),
+    [sessions],
+  );
   const views = useMemo(() => {
-    const byId = new Map(sessions.map((session) => [session.id, session]));
     return sortGoalViews(
       goals.map((goal) =>
         goalView(goal, byId, {
@@ -133,7 +164,7 @@ export function GoalsView({
         }),
       ),
     );
-  }, [goals, interruptedSessionIds, now, sessions, unseenFinishedIds]);
+  }, [byId, goals, interruptedSessionIds, now, unseenFinishedIds]);
   const shown = useMemo(() => filterGoalViews(views, query), [views, query]);
   const filtering = query.trim().length > 0;
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
@@ -228,7 +259,10 @@ export function GoalsView({
                     >
                       <GoalCard
                         view={view}
+                        sessionsById={byId}
+                        gateVersion={gateVersion}
                         now={now}
+                        onOpenChanges={onOpenChanges}
                         expanded={expanded.has(view.goal.id)}
                         onToggle={() => toggle(setExpanded, view.goal.id)}
                         onOpenSession={onOpenSession}
@@ -270,6 +304,9 @@ function primarySession(view: GoalView): GoalMemberView | undefined {
 
 function GoalCard({
   view,
+  sessionsById,
+  gateVersion,
+  onOpenChanges,
   now,
   expanded,
   onToggle,
@@ -280,6 +317,9 @@ function GoalCard({
   onQuestionInteraction,
 }: {
   view: GoalView;
+  sessionsById: ReadonlyMap<string, Session>;
+  gateVersion: number;
+  onOpenChanges?: Props["onOpenChanges"];
   now: number;
   expanded: boolean;
   onToggle: () => void;
@@ -297,6 +337,15 @@ function GoalCard({
   const workers = view.members.length - chats;
   const progress = progressText(view);
   const criteria = criteriaSummary(goal.criteria);
+  const result = useMemo(
+    () =>
+      view.state === "working" || view.state === "needsYou"
+        ? undefined
+        : goalResult(view, sessionsById, { gateStatus: completionGateStatus }),
+    // The gate's results are read through its version.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view, sessionsById, gateVersion],
+  );
   const primary = primarySession(view);
   const files = view.editedPaths.length;
   return (
@@ -308,7 +357,7 @@ function GoalCard({
       }}
       className={`${FLEET_CARD} ${waiting ? FLEET_CARD_WAITING : FLEET_CARD_CALM}`}
     >
-      <div className={`${FLEET_CARD_HEAD} !pr-32`}>
+      <div className={`${FLEET_CARD_HEAD} ${result && !expanded && view.state === "review" ? "!pr-44" : "!pr-32"}`}>
         <button
           type="button"
           onClick={onToggle}
@@ -394,6 +443,15 @@ function GoalCard({
         <span className="pr-1 text-[11px] tabular-nums text-content/35">
           {formatLiveElapsed(view.lastActivityAt, now)} ago
         </span>
+        {result && !expanded && view.state === "review" ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="h-6 rounded px-1.5 text-[11px] font-medium text-accent hover:bg-content/10"
+          >
+            Review
+          </button>
+        ) : null}
         {primary ? (
           <button
             type="button"
@@ -435,7 +493,13 @@ function GoalCard({
         </div>
       ))}
       {expanded ? (
-        <GoalDetail view={view} onOpenSession={onOpenSession} onNewChat={onNewChat} />
+        <GoalDetail
+          view={view}
+          result={result}
+          onOpenSession={onOpenSession}
+          onNewChat={onNewChat}
+          onOpenChanges={onOpenChanges}
+        />
       ) : null}
       {menu ? (
         <ExplorerMenu
@@ -508,12 +572,16 @@ function memberStatus(member: GoalMemberView): string {
 
 function GoalDetail({
   view,
+  result,
   onOpenSession,
   onNewChat,
+  onOpenChanges,
 }: {
   view: GoalView;
+  result?: GoalResult;
   onOpenSession: (sessionId: string) => void;
   onNewChat?: () => void;
+  onOpenChanges?: (sessionId: string, workCwd: string) => void;
 }) {
   const { goal } = view;
   const [editingScope, setEditingScope] = useState(false);
@@ -522,7 +590,28 @@ function GoalDetail({
   const showRequest = request && request !== goal.title;
   return (
     <div data-goal-detail className="flex flex-col gap-3 border-t border-stroke px-3 py-2.5 text-[12px]">
+      {result?.summary ? (
+        <DetailSection title="Delivered">
+          <div className="max-h-48 overflow-y-auto pr-1 text-content/80">
+            <AgentMarkdown text={result.summary} className="text-[12px] leading-relaxed" cwd={result.workCwd} />
+          </div>
+        </DetailSection>
+      ) : null}
       <CriteriaSection goalId={goal.id} criteria={goal.criteria} />
+      {result?.checks.length ? <ChecksSection checks={result.checks} /> : null}
+      {result?.previews.length ? <PreviewsSection previews={result.previews} /> : null}
+      {result?.limitations.length ? (
+        <DetailSection title="Known limitations">
+          <ul className="flex flex-col gap-0.5" data-goal-limitations>
+            {result.limitations.map((item, index) => (
+              <li key={index} className="flex min-w-0 items-start gap-2 text-content/70">
+                <span className="mt-px w-3 shrink-0 text-center text-amber-400">!</span>
+                <span className="min-w-0 leading-5">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </DetailSection>
+      ) : null}
       <DetailSection title="Scope">
         {editingScope ? (
           <InlineEdit
@@ -586,8 +675,8 @@ function GoalDetail({
           </button>
         ) : null}
       </DetailSection>
-      {view.editedPaths.length || view.artifacts || view.pullRequests.length || view.worktrees.length ? (
-        <DetailSection title="Results">
+      {view.editedPaths.length || view.pullRequests.length || view.worktrees.length ? (
+        <DetailSection title="Changes">
           {view.pullRequests.map((pr) => (
             <button
               key={pr.url}
@@ -604,15 +693,24 @@ function GoalDetail({
           {view.editedPaths.length ? (
             <span className="flex min-w-0 items-start gap-1.5 px-1 text-content/60">
               <FileDiff className="mt-0.5 size-3 shrink-0 text-accent" />
-              <span className="min-w-0 break-words font-mono text-[11px] text-content/55">
-                {view.editedPaths.slice(0, 8).map((path) => basename(path)).join(", ")}
-                {view.editedPaths.length > 8 ? `, +${view.editedPaths.length - 8}` : ""}
+              <span className="min-w-0 break-words">
+                <span className="text-content/70">
+                  {view.editedPaths.length} {view.editedPaths.length === 1 ? "file" : "files"} changed
+                </span>{" "}
+                <span className="font-mono text-[11px] text-content/45">
+                  {view.editedPaths.slice(0, 6).map((path) => basename(path)).join(", ")}
+                  {view.editedPaths.length > 6 ? `, +${view.editedPaths.length - 6}` : ""}
+                </span>
               </span>
-            </span>
-          ) : null}
-          {view.artifacts ? (
-            <span className="px-1 text-content/55">
-              {view.artifacts} {view.artifacts === 1 ? "artifact" : "artifacts"} saved
+              {result && onOpenChanges ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenChanges(result.sessionId, result.workCwd)}
+                  className="ml-auto shrink-0 rounded px-1.5 text-[11px] text-content/50 hover:bg-content/[0.06] hover:text-content"
+                >
+                  View changes
+                </button>
+              ) : null}
             </span>
           ) : null}
           {view.worktrees.length ? (
@@ -623,6 +721,68 @@ function GoalDetail({
         </DetailSection>
       ) : null}
     </div>
+  );
+}
+
+const CHECK_MARK: Record<GoalCheckRun["state"], { mark: string; tone: string; label: string }> = {
+  passed: { mark: "✓", tone: "text-emerald-400", label: "Passed" },
+  failed: { mark: "✗", tone: "text-rose-400", label: "Failed" },
+  running: { mark: "…", tone: "text-content/40", label: "Running" },
+};
+
+/** Tests, builds and the Completion Gate that ran on the delivery. */
+function ChecksSection({ checks }: { checks: readonly GoalCheckRun[] }) {
+  return (
+    <DetailSection title="Checks">
+      <ul className="flex flex-col gap-0.5" data-goal-checks>
+        {checks.map((check) => {
+          const mark = CHECK_MARK[check.state];
+          return (
+            <li key={`${check.gate ? "gate" : "run"}:${check.label}`} className="flex min-w-0 items-center gap-2">
+              <span aria-label={mark.label} className={`w-3 shrink-0 text-center ${mark.tone}`}>
+                {mark.mark}
+              </span>
+              {check.gate ? (
+                <span className="shrink-0 text-content/75">{check.label}</span>
+              ) : null}
+              <span className="min-w-0 truncate font-mono text-[11px] text-content/55" title={check.command ?? check.label}>
+                {check.gate ? check.command : check.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </DetailSection>
+  );
+}
+
+/** What the user can look at instead of the code. */
+function PreviewsSection({ previews }: { previews: readonly GoalPreview[] }) {
+  return (
+    <DetailSection title="Look at it">
+      <div className="flex flex-wrap gap-1.5" data-goal-previews>
+        {previews.map((preview) => (
+          <button
+            key={preview.key}
+            type="button"
+            title={preview.url ?? preview.artifact?.path ?? preview.title}
+            onClick={() => {
+              if (preview.artifact) requestOpenArtifact(preview.artifact, true);
+              else if (preview.url)
+                window.dispatchEvent(new CustomEvent<string>(OPEN_BROWSER_URL_EVENT, { detail: preview.url }));
+            }}
+            className="flex min-w-0 max-w-[16rem] items-center gap-1.5 rounded-md border border-content/10 bg-content/[0.03] px-2 py-1 text-[11.5px] text-content/75 hover:border-content/20 hover:text-content"
+          >
+            {preview.kind === "url" ? (
+              <Globe className="size-3 shrink-0 opacity-70" />
+            ) : (
+              <Eye className="size-3 shrink-0 opacity-70" />
+            )}
+            <span className="truncate">{preview.title}</span>
+          </button>
+        ))}
+      </div>
+    </DetailSection>
   );
 }
 

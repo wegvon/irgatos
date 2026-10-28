@@ -21,6 +21,7 @@ const MAX_CRITERION_CHARS = 300;
 
 const CRITERIA_TAG = "completion_criteria";
 const CHECK_TAG = "criteria_check";
+const LIMITS_TAG = "known_limitations";
 
 function lastTagBody(text: string, tag: string): string | undefined {
   const open = `<${tag}>`;
@@ -50,6 +51,17 @@ export function parseCriteria(text: string): string[] | undefined {
   const body = lastTagBody(text, CRITERIA_TAG);
   if (body == null) return undefined;
   const items = listItems(body).slice(0, MAX_CRITERIA).map(clip);
+  return items.length ? items : undefined;
+}
+
+/** What the delivery says it left out or only partly did. */
+export function parseLimitations(text: string): string[] | undefined {
+  const body = lastTagBody(text, LIMITS_TAG);
+  if (body == null) return undefined;
+  const items = listItems(body)
+    .filter((item) => !/^(?:none|n\/a|-)\.?$/i.test(item))
+    .slice(0, MAX_CRITERIA)
+    .map(clip);
   return items.length ? items : undefined;
 }
 
@@ -195,24 +207,38 @@ function renderCheckLine(line: string): string {
   return `- ${MARK[verdictOf(match[1])]} ${item.slice(match[0].length)}`;
 }
 
+const TAG_NAMES = [CRITERIA_TAG, CHECK_TAG, LIMITS_TAG];
+
+/** The reply ends in the first letters of one of these tags, mid-stream. */
+function partialTag(text: string): boolean {
+  const match = /<\/?([a-z_]*)$/.exec(text);
+  return !!match && TAG_NAMES.some((name) => name.startsWith(match[1]));
+}
+
 /**
  * The reply as the reader sees it: the tagged lists become headed lists. Works
  * on a reply still streaming in, so a half-written tag never flashes.
  */
 export function renderCriteriaMarkdown(text: string): string {
-  if (!text.includes("<completion_criteria") && !text.includes("<criteria_check"))
-    return text;
+  if (
+    !text.includes("<completion_criteria") &&
+    !text.includes("<criteria_check") &&
+    !text.includes("<known_limitations")
+  )
+    return partialTag(text) ? text.slice(0, text.lastIndexOf("<")) : text;
   let out = text
     .replace(/<completion_criteria>\s*/g, "\n**Done when**\n\n")
     .replace(/\s*<\/completion_criteria>/g, "\n")
     .replace(/<criteria_check>\s*/g, "\n**Checked against the goal**\n\n")
-    .replace(/\s*<\/criteria_check>/g, "\n");
+    .replace(/\s*<\/criteria_check>/g, "\n")
+    .replace(/<known_limitations>\s*/g, "\n**Known limitations**\n\n")
+    .replace(/\s*<\/known_limitations>/g, "\n");
   out = out
     .split("\n")
     .map((line) => (VERDICT.test(line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, "")) ? renderCheckLine(line) : line))
     .join("\n");
   // A tag cut off mid-stream.
-  return out.replace(/<\/?(?:completion_criteria|criteria_check)?[a-z_]*$/, "");
+  return partialTag(out) ? out.slice(0, out.lastIndexOf("<")) : out;
 }
 
 const rendered = new WeakMap<Block, Block>();
@@ -246,7 +272,13 @@ const CHECK_FORMAT = `<criteria_check>
 - [met] <criterion> — <what shows it: a test, a command's output, a file, a preview>
 - [unmet] <criterion> — <what is missing>
 - [unverified] <criterion> — <why it could not be checked>
-</criteria_check>`;
+</criteria_check>
+
+If anything is left out, only partly done, or works with a caveat, list it after the check, one line each, in words the user understands:
+
+<known_limitations>
+- <limitation>
+</known_limitations>`;
 
 /** For the turn that starts a goal: set out criteria first, then work. */
 export function draftCriteriaContext(): string {

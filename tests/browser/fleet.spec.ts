@@ -61,3 +61,15 @@ test("groups work under goals and answers a goal's decision in place", async ({ 
   await expect(detail).toContainText("Draft the 2.4 release notes");
   await expect(detail).toContainText("worker");
 });
+
+test("reviews a delivered goal without reading code", async ({ page }) => {
+  await page.goto("/tests/browser/fleet.html?mode=goals");
+  const review = page.locator('[data-goal-section="review"]');
+  await review.getByRole("button", { name: "Review", exact: true }).click();
+  const detail = review.locator("[data-goal-detail]");
+  await expect(detail).toContainText("Delivered");
+  await expect(detail.locator("[data-goal-checks]")).toContainText("pnpm vitest run limiter");
+  await expect(detail.locator("[data-goal-previews]")).toContainText("localhost:4000/limits");
+  await expect(detail.locator("[data-goal-limitations]")).toContainText("stay blocked");
+  await expect(detail).toContainText("2 files changed");
+});

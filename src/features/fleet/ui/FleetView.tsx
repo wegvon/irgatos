@@ -102,6 +102,8 @@ type Props = {
   onNewGoalChat?: (goal: Goal) => void;
   /** Opens Fleet on this goal, e.g. from a chat's goal line. */
   focusGoalId?: string;
+  /** Shows a goal's changes in its chat's diff view. */
+  onOpenGoalChanges?: (sessionId: string, workCwd: string) => void;
 };
 
 export type FleetRowActions = {
@@ -214,6 +216,7 @@ export function FleetView({
   onRetryAgent,
   onNewGoalChat,
   focusGoalId,
+  onOpenGoalChanges,
 }: Props) {
   const now = useMinuteClock();
   const [mode, setModeState] = useState<FleetMode>(() =>
@@ -408,6 +411,7 @@ export function FleetView({
           }
           onOpenSession={onOpenSession}
           onNewGoalChat={onNewGoalChat}
+          onOpenChanges={onOpenGoalChanges}
           onApproval={onApproval}
           onQuestionReply={onQuestionReply}
           onQuestionInteraction={onQuestionInteraction}
