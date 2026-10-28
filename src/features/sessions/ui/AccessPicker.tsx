@@ -12,9 +12,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
-  RUNTIME_MODE_HINT,
   RUNTIME_MODE_LABEL,
   RUNTIME_MODES,
+  runtimeModeHint,
+  type HarnessId,
   type RuntimeMode,
 } from "../model/session";
 import { Popover } from "../../../shared/ui/Popover";
@@ -26,6 +27,8 @@ type Props = {
   busy?: boolean;
   side?: "top" | "bottom";
   variant?: "pill" | "plain";
+  /** Words the hints for what this provider's modes really do. */
+  harness?: HarnessId;
 };
 
 const MENU_WIDTH = 288;
@@ -44,6 +47,7 @@ export function AccessPicker({
   busy = false,
   side = "top",
   variant = "pill",
+  harness,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(() =>
@@ -92,7 +96,7 @@ export function AccessPicker({
       <button
         type="button"
         data-access-picker-trigger
-        title={`${RUNTIME_MODE_HINT[value]}${busy ? " Changes apply to the next turn." : ""}`}
+        title={`${runtimeModeHint(value, harness)}${busy ? " Changes apply to the next turn." : ""}`}
         aria-label={RUNTIME_MODE_LABEL[value]}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -172,7 +176,7 @@ export function AccessPicker({
                     {RUNTIME_MODE_LABEL[mode]}
                   </span>
                   <span className="mt-0.5 block text-[11px] leading-4 text-content/50">
-                    {RUNTIME_MODE_HINT[mode]}
+                    {runtimeModeHint(mode, harness)}
                   </span>
                 </span>
               </button>

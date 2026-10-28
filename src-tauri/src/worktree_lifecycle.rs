@@ -619,6 +619,183 @@ pub(crate) fn start_setup(app: AppHandle, path: &Path) -> Option<String> {
     Some(command)
 }
 
+/// What the app prepared in a worker checkout before the worker's first turn.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerEnvironment {
+    /// Ignored dependency folders cloned from the lead checkout.
+    pub dependencies: Vec<String>,
+    /// Small ignored configuration files copied from the lead checkout.
+    pub config: Vec<String>,
+    /// The project's worktree setup command, when it has one.
+    pub setup_command: Option<String>,
+    pub port: Option<u16>,
+}
+
+/// Lives in the worker's own Git dir, so a retained checkout is not prepared twice.
+const WORKER_ENV_FILE: &str = "irgatos-worker-env.json";
+const DEPENDENCY_DIRS: &[&str] = &["node_modules", ".venv", "venv"];
+const MAX_CONFIG_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_CONFIG_FILES: usize = 200;
+
+/// Ignored paths in a checkout; a fully ignored folder is one `dir/` entry.
+fn ignored_entries(root: &Path) -> Result<Vec<String>, String> {
+    let mut cmd = Command::new("git");
+    crate::hide_window_console(&mut cmd);
+    let output = cmd
+        .arg("-C")
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+        ])
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("PATH", crate::harness::gui_search_path())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| String::from_utf8_lossy(entry).into_owned())
+        .filter(|entry| !entry.split('/').any(|part| part == ".." || part == ".git"))
+        .collect())
+}
+
+/// Copy-on-write where the volume supports it, so a large `node_modules`
+/// costs seconds and no extra space on APFS.
+fn clone_dir(from: &Path, to: &Path) -> Result<(), String> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let attempts: &[&[&str]] = if cfg!(target_os = "macos") {
+        &[&["-cpR"], &["-pR"]]
+    } else {
+        &[&["-pR"]]
+    };
+    let mut error = String::new();
+    for flags in attempts {
+        let output = Command::new("cp")
+            .args(*flags)
+            .arg(from)
+            .arg(to)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if output.status.success() {
+            return Ok(());
+        }
+        error = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        let _ = std::fs::remove_dir_all(to);
+    }
+    Err(error)
+}
+
+fn provision_from_lead(lead: &Path, worker: &Path) -> Result<WorkerEnvironment, String> {
+    let mut env = WorkerEnvironment::default();
+    for entry in ignored_entries(lead)? {
+        let relative = entry.trim_end_matches('/');
+        let from = lead.join(relative);
+        let to = worker.join(relative);
+        if to.symlink_metadata().is_ok() {
+            continue;
+        }
+        let Ok(meta) = from.symlink_metadata() else {
+            continue;
+        };
+        let name = relative.rsplit('/').next().unwrap_or(relative);
+        if meta.is_dir() {
+            if DEPENDENCY_DIRS.contains(&name) {
+                clone_dir(&from, &to)
+                    .map_err(|error| format!("Could not prepare {relative}: {error}"))?;
+                env.dependencies.push(relative.to_owned());
+            }
+        } else if meta.is_file()
+            && meta.len() <= MAX_CONFIG_FILE_BYTES
+            && env.config.len() < MAX_CONFIG_FILES
+        {
+            if let Some(parent) = to.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::copy(&from, &to).map_err(|e| format!("Could not copy {relative}: {e}"))?;
+            env.config.push(relative.to_owned());
+        }
+    }
+    Ok(env)
+}
+
+/// Make a fresh worker checkout runnable before the worker starts: ignored
+/// dependencies and configuration come from the lead checkout, then the
+/// project's own setup command runs to completion. A failure is returned
+/// with the setup output, so the lead sees why the worker never started.
+pub(crate) fn prepare_worker(
+    lead: &Path,
+    worker: &Path,
+    timeout: Duration,
+) -> Result<WorkerEnvironment, String> {
+    let location = locate(worker)
+        .filter(|location| location.worktree_git_dir.is_some())
+        .ok_or("Worker environments are only prepared in linked worktrees")?;
+    let marker = location
+        .worktree_git_dir
+        .as_ref()
+        .unwrap()
+        .join(WORKER_ENV_FILE);
+    if let Some(env) = std::fs::read(&marker)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<WorkerEnvironment>(&bytes).ok())
+    {
+        return Ok(env);
+    }
+    let lead = locate(lead).ok_or("The lead checkout is not a Git repository")?;
+    let mut env = provision_from_lead(&lead.root, &location.root)?;
+    env.port = ensure_port_at(&location, port_is_free);
+    if let Some(command) = settings_for(&location).effective.setup {
+        let done = run_setup(&location, &command, env.port, timeout);
+        record_setup(&done);
+        if done.status != SetupStatus::Succeeded {
+            let exit = done
+                .exit_code
+                .map(|code| format!(" exited with {code}"))
+                .unwrap_or_else(|| " failed".into());
+            return Err(format!(
+                "Worker environment setup `{command}`{exit}.{}{}",
+                if done.output.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n{}", done.output)
+                },
+                done.log_path
+                    .map(|path| format!("\nLog: {path}"))
+                    .unwrap_or_default()
+            ));
+        }
+        env.setup_command = Some(command);
+    }
+    let text = serde_json::to_vec(&env).map_err(|e| e.to_string())?;
+    std::fs::write(&marker, text).map_err(|e| e.to_string())?;
+    Ok(env)
+}
+
+#[tauri::command(async)]
+pub async fn worktree_prepare_worker(
+    lead_cwd: String,
+    path: String,
+) -> Result<WorkerEnvironment, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        prepare_worker(&expand_home(&lead_cwd), &expand_home(&path), SETUP_TIMEOUT)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 fn location_for(cwd: &str) -> Result<GitLocation, String> {
     locate(&expand_home(cwd)).ok_or_else(|| "This folder is not a Git repository".into())
 }
@@ -931,5 +1108,86 @@ mod tests {
         let slow = run_setup(&location, "sleep 5", None, Duration::from_millis(300));
         assert_eq!(slow.status, SetupStatus::Failed);
         assert!(slow.output.contains("Stopped after"));
+    }
+
+    /// A lead checkout with ignored dependencies/configuration and one
+    /// orchestration worktree created the way the app creates it.
+    fn worker_repo(setup: Option<&str>) -> (Repo, PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("irgat-worker-env-{}", uuid::Uuid::new_v4()));
+        let lead = dir.join("repo");
+        std::fs::create_dir_all(lead.join("node_modules/dep/bin")).unwrap();
+        std::fs::create_dir_all(lead.join("packages/ui/node_modules/x")).unwrap();
+        std::fs::create_dir_all(lead.join("target/debug")).unwrap();
+        git(&lead, &["init", "-b", "main"]);
+        std::fs::write(lead.join(".gitignore"), "node_modules/\n.env\ntarget/\n").unwrap();
+        std::fs::write(lead.join("check.sh"), "#!/bin/sh\ntest -f node_modules/dep/index.js && grep -q API .env && test -f packages/ui/node_modules/x/i.js\n").unwrap();
+        git(&lead, &["add", "."]);
+        git(&lead, &["commit", "-m", "initial"]);
+        std::fs::write(
+            lead.join("node_modules/dep/index.js"),
+            "module.exports = 1\n",
+        )
+        .unwrap();
+        std::fs::write(lead.join("packages/ui/node_modules/x/i.js"), "x\n").unwrap();
+        std::fs::write(lead.join("target/debug/huge"), "build output\n").unwrap();
+        std::fs::write(lead.join(".env"), "API_URL=http://localhost\n").unwrap();
+        if let Some(setup) = setup {
+            std::fs::create_dir_all(lead.join(".irgatos")).unwrap();
+            std::fs::write(
+                lead.join(".irgatos/worktree.json"),
+                serde_json::json!({ "setup": setup }).to_string(),
+            )
+            .unwrap();
+        }
+        let tree = crate::worktrees::create_seeded(&lead, "irgat/orch-envtest").unwrap();
+        (Repo(dir), lead, PathBuf::from(tree.path))
+    }
+
+    #[test]
+    fn worker_checkout_can_run_project_checks_without_manual_setup() {
+        let (_repo, lead, worker) = worker_repo(Some("echo ran >> setup-count.txt"));
+        assert!(!worker.join("node_modules").exists());
+        let env = prepare_worker(&lead, &worker, Duration::from_secs(30)).unwrap();
+        assert_eq!(
+            env.dependencies,
+            ["node_modules", "packages/ui/node_modules"]
+        );
+        assert_eq!(env.config, [".env"]);
+        assert_eq!(
+            env.setup_command.as_deref(),
+            Some("echo ran >> setup-count.txt")
+        );
+        assert!(!worker.join("target").exists());
+        let status = Command::new("/bin/sh")
+            .arg("check.sh")
+            .current_dir(&worker)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        // A cloned folder, never a link back into the lead's dependencies.
+        assert!(!worker
+            .join("node_modules")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        // Retrying in a retained checkout does not prepare it twice.
+        assert_eq!(
+            prepare_worker(&lead, &worker, Duration::from_secs(30)).unwrap(),
+            env
+        );
+        assert_eq!(
+            std::fs::read_to_string(worker.join("setup-count.txt")).unwrap(),
+            "ran\n"
+        );
+    }
+
+    #[test]
+    fn failed_worker_setup_reports_its_output() {
+        let (_repo, lead, worker) = worker_repo(Some("echo dependency missing; exit 3"));
+        let error = prepare_worker(&lead, &worker, Duration::from_secs(30)).unwrap_err();
+        assert!(error.contains("exited with 3"), "{error}");
+        assert!(error.contains("dependency missing"), "{error}");
+        assert!(error.contains("Log: "), "{error}");
     }
 }

@@ -625,7 +625,7 @@ fn checked_output(command: &mut Command) -> Result<Vec<u8>, String> {
     Ok(output.stdout)
 }
 
-fn run_git(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+pub(super) fn run_git(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     checked_output(&mut git_command(root, args))
 }
 
@@ -637,7 +637,7 @@ impl Drop for PrivateIndex {
     }
 }
 
-fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
+pub(super) fn capture_workspace(root: &Path, reference: &str) -> Result<String, String> {
     if run_git(root, &["config", "--bool", "core.sparseCheckout"])
         .ok()
         .is_some_and(|bytes| bytes.starts_with(b"true"))

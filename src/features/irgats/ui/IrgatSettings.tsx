@@ -138,6 +138,7 @@ export function IrgatSettings({
         >
           <AccessPicker
             value={runtimeMode}
+            harness={harness}
             onChange={onRuntimeModeChange}
             busy={busy}
             side="bottom"
