@@ -5084,20 +5084,7 @@ function Workspace({
         (session) => session.id === sessionId,
       );
       if (appeared) return appeared;
-      if (
-        !restored.worktreeRemoved &&
-        restored.providerSessionId &&
-        isLiveHarness(restored.harness)
-      ) {
-        bindHarnessSession(
-          restored.harness,
-          restored.id,
-          restored.providerSessionId,
-          sessionWorkCwd(restored),
-          restored.providerAccountId,
-          restored.blocks,
-        );
-      }
+      bindResumedSessions([restored]);
       lastPersisted.current.set(restored.id, persistFingerprint(restored));
       if (!sessionsRef.current.some((session) => session.id === restored.id)) {
         const next = [...sessionsRef.current, restored];
@@ -9267,7 +9254,10 @@ function Workspace({
                   ? completeHandoff(s, wrap.text)
                   : s;
                 // A command owns its arguments; deliver the recap with the next chat prompt.
-                return rawCommand ? ready : consumeHandoff(ready);
+                // A failed turn keeps it pending so the retry still carries it.
+                return rawCommand || providerFailureSeen
+                  ? ready
+                  : consumeHandoff(ready);
               }),
             );
           }
