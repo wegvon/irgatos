@@ -450,6 +450,15 @@ export function dueHabits(
   return { run, skipped };
 }
 
+/**
+ * What still runs while its Irgat is paused: only what the user started by
+ * hand. Scheduled runs wait, and once it is resumed one missed too long ago
+ * is skipped like any other.
+ */
+export function runsWhilePaused(run: readonly Habit[]): Habit[] {
+  return run.filter((habit) => habit.trigger?.source === "manual");
+}
+
 /** The habit as it stands after a run, or a skip, at `now`. */
 export function afterRun(
   habit: Habit,
@@ -525,9 +534,17 @@ export function subscribeCheckHabitsNow(onCheck: () => void): () => void {
   return () => window.removeEventListener(CHECK_NOW, onCheck);
 }
 
-/** Due and waiting for the scheduler to pick it up: Run now, or a missed minute. */
-export function habitStarting(habit: Habit, now = Date.now()): boolean {
+/**
+ * Due and waiting for the scheduler to pick it up: Run now, or a missed
+ * minute. While its Irgat is paused only a run started by hand starts.
+ */
+export function habitStarting(
+  habit: Habit,
+  now = Date.now(),
+  irgatPaused = false,
+): boolean {
   if (habitQuotaHeld(habit, now) || habitWaiting(habit, now)) return false;
+  if (irgatPaused && runsWhilePaused([habit]).length === 0) return false;
   return !!habit.runRequested || (habit.enabled && habit.nextRunAt <= now);
 }
 

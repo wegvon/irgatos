@@ -47,6 +47,7 @@ import {
   parseCard,
   type IrgatCard,
 } from "../../irgats/model/irgatCards";
+import { findIrgat } from "../../irgats/model/irgat";
 import {
   HABITS_MAX,
   checkHabitsNow,
@@ -954,6 +955,10 @@ async function handleHabits(
       return { habit: habitView(habit) };
     }
     case "habits.run": {
+      if (findIrgat(irgatId)?.paused)
+        throw new Error(
+          "This Irgat is paused, so its habits wait. Ask the user to resume it, or to run the habit from its page.",
+        );
       const running = habitRunningSince(requiredString(input.id, "id", 128));
       if (running != null)
         throw new Error(

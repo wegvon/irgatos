@@ -158,10 +158,13 @@ export function HabitRow({
   habit,
   actions,
   onOpen,
+  irgatPaused = false,
 }: {
   habit: Habit;
   actions: HabitActions;
   onOpen: () => void;
+  /** Its Irgat is paused: a due run waits for the resume. */
+  irgatPaused?: boolean;
 }) {
   const runningSince = useHabitRunning(habit.id);
   const running = runningSince != null;
@@ -172,7 +175,7 @@ export function HabitRow({
     !running && habit.delayedUntil != null && habit.delayedUntil > now
       ? habit.delayedUntil
       : undefined;
-  const starting = !running && habitStarting(habit);
+  const starting = !running && habitStarting(habit, now, irgatPaused);
   return (
     <li
       data-habit={habit.id}
@@ -226,6 +229,8 @@ export function HabitRow({
               `Delayed · starts ${when(delayedUntil, now)}`
             ) : starting ? (
               "Starting…"
+            ) : habit.enabled && irgatPaused ? (
+              `On hold while paused · ${habitScheduleLabel(habit.schedule)}`
             ) : habit.enabled ? (
               habitScheduleLabel(habit.schedule)
             ) : (
@@ -341,11 +346,13 @@ export function HabitsList({
   habits,
   actions,
   onOpen,
+  irgatPaused = false,
   empty = <Empty>No habits yet</Empty>,
 }: {
   habits: Habit[] | undefined;
   actions: HabitActions;
   onOpen: (id: string) => void;
+  irgatPaused?: boolean;
   /** Shown once loaded with none. */
   empty?: ReactNode;
 }) {
@@ -381,6 +388,7 @@ export function HabitsList({
               habit={habit}
               actions={actions}
               onOpen={() => onOpen(habit.id)}
+              irgatPaused={irgatPaused}
             />
           ))}
         </ul>

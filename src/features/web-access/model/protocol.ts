@@ -285,6 +285,8 @@ export type WebIrgatDetail = {
   busy: boolean;
   showSessions: boolean;
   groupInFolder: boolean;
+  /** Its habits wait until it is resumed. */
+  paused: boolean;
   soul: string;
   memory: { index: number; text: string; date?: string; struck: boolean }[];
   agents: WebAgent[];

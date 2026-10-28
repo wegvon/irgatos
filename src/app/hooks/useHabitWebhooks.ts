@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { listIrgats } from "../../features/irgats/model/irgat";
+import { listIrgats, subscribeIrgats } from "../../features/irgats/model/irgat";
 import { subscribeIrgatFiles } from "../../features/irgats/model/irgatFiles";
 import { loadHabits } from "../../features/irgats/model/irgatHabits";
 import {
@@ -32,8 +32,11 @@ export function useHabitWebhooks(enabled = true) {
       try {
         do {
           again = false;
+          // A paused Irgat's trigger URLs answer 404, like a paused habit's.
           const lists = await Promise.all(
-            listIrgats().map(({ id }) => loadHabits(id).catch(() => [])),
+            listIrgats()
+              .filter(({ paused }) => !paused)
+              .map(({ id }) => loadHabits(id).catch(() => [])),
           );
           if (disposed) return;
           await syncHabitWebhook(lists.flatMap(habitWebhookTokens));
@@ -44,12 +47,16 @@ export function useHabitWebhooks(enabled = true) {
     };
     void sync();
     const stopFiles = subscribeIrgatFiles(() => void sync());
+    const stopIrgats = subscribeIrgats(() => void sync());
     const timer = window.setInterval(() => void sync(), RESYNC_MS);
     let unlisten: (() => void) | undefined;
     void listen<HabitWebhookEvent>(HABIT_WEBHOOK_EVENT, (event) => {
       void fireHabitWebhook(
         event.payload,
-        listIrgats().map(({ id }) => id),
+        // A paused Irgat's triggers are ignored, like a paused habit's.
+        listIrgats()
+          .filter(({ paused }) => !paused)
+          .map(({ id }) => id),
       ).catch((error) =>
         console.warn("Could not start the habit from its trigger", error),
       );
@@ -64,6 +71,7 @@ export function useHabitWebhooks(enabled = true) {
     return () => {
       disposed = true;
       stopFiles();
+      stopIrgats();
       window.clearInterval(timer);
       unlisten?.();
     };

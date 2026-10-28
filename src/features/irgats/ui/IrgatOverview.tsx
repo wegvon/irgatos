@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { IconButton } from "../../../app/shell/TitleBar";
 import {
   Artifacts,
@@ -10,6 +17,8 @@ import {
   ListFilter,
   MessageMultiple,
   PanelRightToggle,
+  Pause,
+  Play,
   Plus,
   Search,
   Settings,
@@ -18,7 +27,13 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import type { ArtifactCard } from "../../artifacts/artifacts";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import type { IrgatSpawnedSession, Session } from "../../sessions/model/session";
-import type { IrgatLook, IrgatState } from "../model/irgat";
+import {
+  findIrgat,
+  setIrgatPaused,
+  subscribeIrgats,
+  type IrgatLook,
+  type IrgatState,
+} from "../model/irgat";
 import { HABITS_MAX } from "../model/irgatHabits";
 import {
   INITIAL_OVERVIEW_LIMITS,
@@ -192,6 +207,10 @@ export function IrgatOverview({
   const habitsLoad = useHabitsLoad(irgatId, state.status);
   const habits = habitsLoad.habits;
   const actions = habitActions(irgatId);
+  const paused = useSyncExternalStore(
+    subscribeIrgats,
+    () => findIrgat(irgatId)?.paused === true,
+  );
   const files = useIrgatFiles(irgatId, state.status);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [query, setQuery] = useState("");
@@ -268,6 +287,7 @@ export function IrgatOverview({
             color={agent.color}
             cwd={cwd}
             onBack={back}
+            irgatPaused={paused}
             onRunNow={() => actions.runNow(habit.id)}
             onToggle={() => actions.toggle(habit.id)}
             onRemove={() => {
@@ -379,21 +399,40 @@ export function IrgatOverview({
           }
           onClose={onClose}
           actions={
-            tab === "habits" ? (
+            <>
+              {tab === "habits" ? (
+                <IconButton
+                  label={
+                    habits && habits.length >= HABITS_MAX
+                      ? `At most ${HABITS_MAX} habits`
+                      : "New habit"
+                  }
+                  disabled={habitsFull}
+                  onClick={() => push({ kind: "new-habit" })}
+                >
+                  <Plus className="size-3.5" strokeWidth={1.75} />
+                </IconButton>
+              ) : null}
               <IconButton
-                label={
-                  habits && habits.length >= HABITS_MAX
-                    ? `At most ${HABITS_MAX} habits`
-                    : "New habit"
-                }
-                disabled={habitsFull}
-                onClick={() => push({ kind: "new-habit" })}
+                label={paused ? `Resume ${agent.name}` : `Pause ${agent.name}`}
+                active={paused}
+                onClick={() => setIrgatPaused(irgatId, !paused)}
               >
-                <Plus className="size-3.5" strokeWidth={1.75} />
+                {paused ? (
+                  <Play className="size-3.5" strokeWidth={1.75} />
+                ) : (
+                  <Pause className="size-3.5" strokeWidth={1.75} />
+                )}
               </IconButton>
-            ) : null
+            </>
           }
         />
+        {paused ? (
+          <PausedNotice
+            name={agent.name}
+            onResume={() => setIrgatPaused(irgatId, false)}
+          />
+        ) : null}
         {tab === "sessions" && launches.length ? (
           <SessionSearchBar
             query={query}
@@ -519,6 +558,7 @@ export function IrgatOverview({
               onOpenHabit={(id) => push({ kind: "habit", id })}
               onNewHabit={() => push({ kind: "new-habit" })}
               onOpenTab={onTabChange}
+              irgatPaused={paused}
             />
           ) : tab === "sessions" ? (
             launches.length ? (
@@ -546,6 +586,7 @@ export function IrgatOverview({
             <HabitsList
               habits={habits}
               actions={actions}
+              irgatPaused={paused}
               onOpen={(id) => push({ kind: "habit", id })}
               empty={
                 <EmptyState icon={Clock}>
@@ -571,6 +612,43 @@ export function IrgatOverview({
         </div>
       </PanelStack>
     </IrgatSidebar>
+  );
+}
+
+/**
+ * Under the header while the Irgat is paused, on every tab: what pausing
+ * holds back, and the way out.
+ */
+function PausedNotice({
+  name,
+  onResume,
+}: {
+  name: string;
+  onResume: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      data-irgat-paused
+      className="flex shrink-0 items-center gap-2 border-b border-stroke px-3 py-2 text-[12px] leading-4"
+    >
+      <Pause
+        aria-hidden
+        className="size-3.5 shrink-0 text-amber-500 dark:text-amber-300"
+        strokeWidth={1.75}
+      />
+      <span className="min-w-0 flex-1 text-content/60">
+        {name} is paused. Its habits wait until you resume; you can still
+        chat with it.
+      </span>
+      <button
+        type="button"
+        onClick={onResume}
+        className="shrink-0 rounded-md border border-stroke px-2 py-1 text-[12px] text-content/80 hover:bg-content/5"
+      >
+        Resume
+      </button>
+    </div>
   );
 }
 
