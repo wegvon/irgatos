@@ -910,7 +910,10 @@ import type { IrgatChangesRequest } from "../features/irgats/ui/IrgatChangesView
 import {
   claimDueAutomations,
   listAutomations,
-  recoverAutomationRuns,
+  adoptAutomationRuns,
+  startAutomationRun,
+  unlaunchableHeldRuns,
+  subscribeAutomations,
   updateAutomationRun,
   type Automation,
   type AutomationRun,
@@ -919,6 +922,7 @@ import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQu
 import type { QuickLaunch } from "../features/quick-composer/model/quickComposer";
 import type { AgentRetryRequest } from "../features/agent-tree/ui/AgentTreeView";
 import { claimInboxAutomationRuns } from "../features/automations/model/automationEvents";
+import { previousConversation } from "../features/automations/model/automationReuse";
 import {
   SECOND_OPINION_TITLE,
   buildSecondOpinionRequest,
@@ -9778,8 +9782,6 @@ function Workspace({
       }
     >(),
   );
-  const automationRecoveryRef = useRef<Promise<void> | null>(null);
-  const automationRecoveryCutoffRef = useRef(Date.now());
 
   const launchAutomation = useCallback(
     async (
@@ -9826,28 +9828,42 @@ function Workspace({
         reservationId = undefined;
       };
       try {
+        // Claim it: one window executes a run, and only while its automation
+        // still exists and is on. A run that waited starts with the
+        // automation's current settings; an Inbox event run keeps its own
+        // prompt, written for that event.
+        const started = await startAutomationRun(run.id);
+        if (!started) return;
+        automation = started.automation;
+        if (run.trigger !== "event") prompt = automation.prompt;
+        run = started.run;
         const eventRun = run.trigger === "event";
         const linkedWorkItem =
           sourceWorkItem ?? linkedWorkItemFromAutomationEvent(run);
-        let session =
-          automation.reuseSession && automation.lastSessionId
-            ? sessionsRef.current.find(
-                (entry) =>
-                  entry.id === automation.lastSessionId &&
-                  entry.harness === automation.harness &&
-                  !entry.busy &&
-                  !entry.worktreeRemoved &&
-                  !automationSessionReservations.current.has(entry.id) &&
-                  (automation.workspaceMode === "current"
-                    ? entry.workspaceMode !== "worktree" &&
-                      !entry.worktreeCwd &&
-                      pathKey(entry.cwd) === pathKey(automation.cwd)
-                    : automation.workspaceMode === "existing"
-                      ? pathKey(sessionWorkCwd(entry)) ===
-                        pathKey(automation.worktreeCwd ?? "")
-                      : false),
+        // Continue the last run: from history when its tab was closed.
+        const previous =
+          automation.reuseSession &&
+          automation.lastSessionId &&
+          automation.workspaceMode !== "worktree"
+            ? await ensureOpenSession(automation.lastSessionId).catch(
+                () => null,
               )
             : undefined;
+        const continuing = previousConversation(
+          automation,
+          previous,
+          automationSessionReservations.current,
+        );
+        if (continuing.kind === "busy") {
+          await updateAutomationRun(run.id, "skipped", {
+            error: continuing.reason,
+          });
+          return;
+        }
+        const startNote =
+          continuing.kind === "new" ? continuing.note : undefined;
+        let session =
+          continuing.kind === "reuse" ? continuing.session : undefined;
 
         if (!session) {
           session = {
@@ -9893,7 +9909,19 @@ function Workspace({
           );
           sessionsRef.current = nextSessions;
           setSessions(nextSessions);
-          if (reveal) {
+          const reusedId = session.id;
+          if (
+            !tabsRef.current.some((tab) =>
+              leafIds(tab.layout).includes(reusedId),
+            )
+          ) {
+            const tab = newTab(reusedId);
+            appendTab(tab, automation.cwd);
+            if (reveal) {
+              setActiveTabId(tab.id);
+              setComposerFocused(false);
+            }
+          } else if (reveal) {
             focusOpenSession(session.id);
           }
         }
@@ -9942,9 +9970,10 @@ function Workspace({
                 : outcome.status === "cancelled"
                   ? "cancelled"
                   : "failed";
+            const error = outcome.error ?? startNote;
             void updateAutomationRun(run.id, status, {
               sessionId: session.id,
-              ...(outcome.error ? { error: outcome.error } : {}),
+              ...(error ? { error } : {}),
             })
               .catch(() => undefined)
               .finally(releaseReservation);
@@ -9959,7 +9988,7 @@ function Workspace({
         if (!releaseAfterSettle) releaseReservation();
       }
     },
-    [appendTab, focusOpenSession, submitSession],
+    [appendTab, ensureOpenSession, focusOpenSession, submitSession],
   );
 
   // Held runs go once their hold ends, or right away on Run anyway.
@@ -9982,6 +10011,25 @@ function Workspace({
     drain();
     return usageLimitRegistry.subscribe(drain);
   }, [launchAutomation]);
+
+  // A held run whose automation is turned off or deleted stops waiting.
+  useEffect(() => {
+    const prune = () => {
+      if (heldAutomationRuns.current.size === 0) return;
+      void listAutomations()
+        .then((automations) => {
+          for (const id of unlaunchableHeldRuns(
+            heldAutomationRuns.current,
+            automations,
+          )) {
+            heldAutomationRuns.current.delete(id);
+            usageLimitRegistry.dropWork(id);
+          }
+        })
+        .catch(() => undefined);
+    };
+    return subscribeAutomations(prune);
+  }, []);
 
   const queueIrgatSessionCompletion = useCallback(
     async (
@@ -10140,27 +10188,18 @@ function Workspace({
     new Map<string, { signature: string; promise: Promise<unknown> }>(),
   );
 
-  const ensureAutomationRecovery = useCallback(() => {
-    if (!automationRecoveryRef.current) {
-      const recovery = (async () => {
-        const pending = await recoverAutomationRuns(
-          automationRecoveryCutoffRef.current,
-        );
-        for (const item of pending) {
-          await launchAutomation(
-            item.automation,
-            item.run,
-            false,
-            item.run.prompt ?? item.automation.prompt,
-          ).catch(() => undefined);
-        }
-      })();
-      automationRecoveryRef.current = recovery.catch((error: unknown) => {
-        automationRecoveryRef.current = null;
-        throw error;
-      });
+  // Runs left by a closed window are adopted here; restart recovery already
+  // happened once in the backend, so opening a window never touches runs
+  // another window owns.
+  const adoptOrphanedAutomationRuns = useCallback(async () => {
+    for (const item of await adoptAutomationRuns()) {
+      void launchAutomation(
+        item.automation,
+        item.run,
+        false,
+        item.run.prompt ?? item.automation.prompt,
+      ).catch(() => undefined);
     }
-    return automationRecoveryRef.current;
   }, [launchAutomation]);
 
   useEffect(() => {
@@ -10170,7 +10209,7 @@ function Workspace({
       if (disposed || evaluating) return;
       evaluating = true;
       try {
-        await ensureAutomationRecovery();
+        await adoptOrphanedAutomationRuns();
         const due = await claimDueAutomations();
         for (const item of due) {
           if (disposed) break;
@@ -10194,12 +10233,11 @@ function Workspace({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [ensureAutomationRecovery, launchAutomation]);
+  }, [adoptOrphanedAutomationRuns, launchAutomation]);
 
   const onInboxAppeared = useCallback(
     (items: Parameters<typeof claimInboxAutomationRuns>[0]) => {
-      void ensureAutomationRecovery()
-        .then(() => claimInboxAutomationRuns(items))
+      void claimInboxAutomationRuns(items)
         .then((due) => {
           for (const item of due) {
             void launchAutomation(
@@ -10213,7 +10251,7 @@ function Workspace({
         })
         .catch(() => undefined);
     },
-    [ensureAutomationRecovery, launchAutomation],
+    [launchAutomation],
   );
 
   const onUpdatePlan = useCallback(
