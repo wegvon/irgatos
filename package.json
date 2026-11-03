@@ -11,7 +11,6 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:browser": "playwright test",
     "host:build": "tsc --noEmit -p host/tsconfig.json && node host/build.mjs",
     "host:package": "npm run host:build && node host/package.mjs",
     "host": "node build/host/irgat-host.mjs",
@@ -76,7 +75,6 @@
     "streamdown": "^2.5.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2",
     "@types/node": "26.5.0",
